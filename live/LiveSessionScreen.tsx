@@ -1,12 +1,13 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
 
-import type { LiveSession } from "../engine/types.ts";
+import type { ArcProfile, LiveSession } from "../engine/types.ts";
 import { LiveStage, createEmptyLiveSession } from "../engine/types.ts";
 import { getFirstStage, getNextStage } from "../engine/arcEngine.ts";
 import { getBeneficialActionReinforcement, getSuccessFocusReinforcement } from "../engine/reinforcement.ts";
-import { demoProfile } from "./demoProfile.ts";
+import { appendSessionLogEntry, loadProfile } from "../data/storage.ts";
 import { getStageCopy, getStageInputKind } from "./stageCopy.ts";
 
 const BODY_LOCATIONS = ["חזה", "בטן", "גרון", "כתפיים", "ראש"];
@@ -40,27 +41,68 @@ function applyScale(stage: LiveStage, session: LiveSession, value: number): Live
 }
 
 export default function LiveSessionScreen() {
-  const [profile] = useState(demoProfile);
+  const [profile, setProfile] = useState<ArcProfile | null>(null);
   const [session, setSession] = useState<LiveSession>(() => createEmptyLiveSession());
-  const [stage, setStage] = useState<LiveStage>(() => getFirstStage(createEmptyLiveSession(), demoProfile));
+  const [stage, setStage] = useState<LiveStage>(LiveStage.Finish);
   const [rewardStep, setRewardStep] = useState<RewardStep>("show");
   const [pendingWantsSuccessFocus, setPendingWantsSuccessFocus] = useState<boolean | null>(null);
   const [successFocusMinutes, setSuccessFocusMinutes] = useState<number | null>(null);
   const [bodyLocationText, setBodyLocationText] = useState("");
+  const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
+  const [reachedBeneficialAction, setReachedBeneficialAction] = useState(false);
+  const [usedInterferingAction, setUsedInterferingAction] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadProfile().then((loaded) => {
+      if (cancelled) return;
+      if (!loaded) {
+        router.replace("/build");
+        return;
+      }
+      setProfile(loaded);
+      const fresh = createEmptyLiveSession();
+      setSession(fresh);
+      setStage(getFirstStage(fresh, loaded));
+      setSessionStartedAt(new Date().toISOString());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const advance = useCallback(
     (updatedSession: LiveSession) => {
+      if (!profile) return;
+      const nextStage = getNextStage(stage, updatedSession, profile);
+      const success = stage === LiveStage.BeneficialAction || reachedBeneficialAction;
+      const fall = stage === LiveStage.InterferingAction || usedInterferingAction;
+
       setSession(updatedSession);
-      setStage((current) => getNextStage(current, updatedSession, profile));
+      setStage(nextStage);
+      setReachedBeneficialAction(success);
+      setUsedInterferingAction(fall);
       setRewardStep("show");
       setPendingWantsSuccessFocus(null);
       setSuccessFocusMinutes(null);
       setBodyLocationText("");
+
+      if (nextStage === LiveStage.Finish) {
+        const finishedAt = new Date().toISOString();
+        appendSessionLogEntry({
+          id: `${sessionStartedAt}_${finishedAt}`,
+          startedAt: sessionStartedAt,
+          finishedAt,
+          success,
+          fall,
+        });
+      }
     },
-    [profile]
+    [profile, stage, reachedBeneficialAction, usedInterferingAction, sessionStartedAt]
   );
 
   const restart = useCallback(() => {
+    if (!profile) return;
     const fresh = createEmptyLiveSession();
     setSession(fresh);
     setStage(getFirstStage(fresh, profile));
@@ -68,7 +110,18 @@ export default function LiveSessionScreen() {
     setPendingWantsSuccessFocus(null);
     setSuccessFocusMinutes(null);
     setBodyLocationText("");
+    setSessionStartedAt(new Date().toISOString());
+    setReachedBeneficialAction(false);
+    setUsedInterferingAction(false);
   }, [profile]);
+
+  if (!profile) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.content} />
+      </SafeAreaView>
+    );
+  }
 
   const copy = getStageCopy(stage, profile);
   const inputKind = getStageInputKind(stage);
