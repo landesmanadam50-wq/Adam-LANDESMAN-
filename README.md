@@ -1,6 +1,6 @@
-# ARC Engine — core (verified)
+# Archi — ARC Engine + Expo app (verified)
 
-זה קוד TypeScript אמיתי, לא פסאודו-קוד — הידור עם `tsc` והרצת 10 בדיקות עברו בהצלחה.
+זה קוד TypeScript אמיתי, לא פסאודו-קוד. פרויקט Expo (React Native) עם `engine/` מחובר בפועל: הרצת 10 בדיקות עברה בהצלחה, `tsc --noEmit` עובר נקי, ו-Metro באמת מצליח לבנות (bundle) את האפליקציה כולל ה-imports מ-`engine/`.
 
 ## מה יש כאן
 
@@ -9,29 +9,47 @@
 - `engine/arcEngine.ts` — הלב: `shouldShowStage()` ו-`getNextStage()`, שממשים את כל טבלת הדילוגים מה-roadmap
 - `engine/reinforcement.ts` — יצירת טקסט חיזוק ספציפי מהפרופיל
 - `engine/arcEngine.test.ts` — 10 בדיקות (Node's built-in test runner, בלי jest) שמוודאות שכל תרחיש דילוג עובד
+- `App.tsx` — מסך placeholder של Expo שמייבא בפועל מ-`engine/` (`getFirstStage`) ומציג את השלב הראשון, כהוכחה שהחיווט עובד
 
-## איך להשתמש בזה בפרויקט React Native
-
-1. להעתיק את תיקיית `engine/` כמו שהיא לתוך שורש פרויקט ה-Expo.
-2. שום קובץ כאן לא תלוי ב-React/React Native — אפשר לייבא ישירות ממסכי `app/live/*.tsx`:
+`engine/` עצמו לא תלוי ב-React/React Native בכלל — אפשר לייבא אותו מכל מסך:
 
 ```ts
-import { getNextStage } from "../../engine/arcEngine";
-import { LiveStage } from "../../engine/types";
+import { getNextStage } from "./engine/arcEngine.ts";
+import { LiveStage } from "./engine/types.ts";
 
 const next = getNextStage(LiveStage.PresenceCheck, liveSession, arcProfile);
 ```
 
-3. להריץ את הבדיקות (Node 22+, בלי שום `npm install`):
+(שימו לב לסיומת `.ts` המפורשת ב-imports היחסיים — ראו הסבר למטה.)
+
+## הרצה
+
+```bash
+npm install
+npx expo start          # שרת פיתוח (Expo Go / סימולטור)
+npm run web              # דורש: npx expo install react-dom react-native-web
+```
+
+## בדיקות ואימות
+
+בדיקות המנוע (Node 22+, בלי jest):
 ```bash
 node --experimental-transform-types --test engine/arcEngine.test.ts
 ```
-דגל ה-`--experimental-transform-types` הכרחי כי `LiveStage` הוא `enum` אמיתי — מצב ברירת המחדל של Node ("strip-only") מוריד רק אנוטציות טיפוסים ולא יודע להמיר `enum` לקוד ריצה. כל ה-imports היחסיים כתובים עם סיומת `.ts` מפורשת (כמו שESM Resolution של Node דורש) והטיפוסים שאינם ערכי ריצה (`ArcProfile`, `LiveSession`, `IntensityThresholds`) מיובאים עם `import type` — כדי שה-stripping יידע להסיר אותם.
+דגל ה-`--experimental-transform-types` הכרחי כי `LiveStage` הוא `enum` אמיתי — מצב ברירת המחדל של Node ("strip-only") מוריד רק אנוטציות טיפוסים ולא יודע להמיר `enum` לקוד ריצה. כל ה-imports היחסיים כתובים עם סיומת `.ts` מפורשת (כמו שESM Resolution של Node דורש) והטיפוסים שאינם ערכי ריצה (`ArcProfile`, `LiveSession`, `IntensityThresholds`) מיובאים עם `import type` — כדי שה-stripping יידע להסיר אותם. אותם imports עובדים גם תחת Metro (הבנדלר של Expo/React Native) בלי שינוי.
 
-4. בדיקת טיפוסים (`tsc --noEmit -p tsconfig.json`) — עובר נקי (בלי `engine/arcEngine.test.ts`, שדורש `@types/node` שיהיה מותקן כרגיל בפרויקט Expo האמיתי).
+בדיקת טיפוסים על כל הפרויקט (כולל `App.tsx` וקובץ הבדיקות):
+```bash
+npx tsc --noEmit
+```
+`tsconfig.json` מרחיב את `expo/tsconfig.base` ומוסיף `allowImportingTsExtensions` (בשביל סיומות ה-`.ts`) ו-`types: ["node"]` (בשביל `node:test`/`node:assert` בקובץ הבדיקות).
 
-(או דרך Jest, אם זה מה שהפרויקט המלא ישתמש בו — הלוגיקה עצמה לא תלויה בפריימוורק הבדיקות; אם בפרויקט המלא כבר יהיה build step של TypeScript/Metro, אפשר גם להחזיר את ה-imports לצורה בלי סיומת.)
+בדיקת bundling אמיתית עם Metro (לא סתם type-check):
+```bash
+npx expo export --platform android
+```
+זה בפועל קימפל את כל האפליקציה כולל `engine/` לקובץ Hermes bytecode — ה-imports נפתרים נכון וה-build עובר.
 
 ## למה זה מוכן ל-TRAIN ולמדיטציות גם
 
-כל הפונקציות הן טהורות: מקבלות `ArcProfile` + מצב, ומחזירות תשובה — בלי React, בלי state פנימי, בלי side effects. כשתגיע לבנות את TRAIN, הוא יכול לקרוא לאותן פונקציות בדיוק (`getNextStage`, `getIntensityBand` וכו') בלי לשכפל אף שורת לוגיקה.
+כל הפונקציות ב-`engine/` הן טהורות: מקבלות `ArcProfile` + מצב, ומחזירות תשובה — בלי React, בלי state פנימי, בלי side effects. כשתגיע לבנות את TRAIN, הוא יכול לקרוא לאותן פונקציות בדיוק (`getNextStage`, `getIntensityBand` וכו') בלי לשכפל אף שורת לוגיקה.
