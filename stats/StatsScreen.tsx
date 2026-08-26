@@ -2,18 +2,21 @@ import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { loadSessionLog } from "../data/storage.ts";
+import { getOrCreatePilotStartedAt, loadSessionLog } from "../data/storage.ts";
 import { computeWeeklyStats, type WeekStat } from "../data/weeklyStats.ts";
+import { computePilotProgress, type PilotProgress } from "../data/pilotProgress.ts";
 
 export default function StatsScreen() {
   const [loading, setLoading] = useState(true);
   const [weeks, setWeeks] = useState<WeekStat[]>([]);
+  const [pilotProgress, setPilotProgress] = useState<PilotProgress | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    loadSessionLog().then((entries) => {
+    Promise.all([loadSessionLog(), getOrCreatePilotStartedAt()]).then(([entries, pilotStartedAt]) => {
       if (cancelled) return;
       setWeeks(computeWeeklyStats(entries));
+      setPilotProgress(computePilotProgress(pilotStartedAt));
       setLoading(false);
     });
     return () => {
@@ -25,6 +28,14 @@ export default function StatsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>התקדמות שבועית</Text>
+
+        {pilotProgress && (
+          <Text style={styles.pilotProgress}>
+            {pilotProgress.isComplete
+              ? `הפיילוט הסתיים (${pilotProgress.totalWeeks} שבועות)`
+              : `שבוע ${pilotProgress.currentWeek} מתוך ${pilotProgress.totalWeeks} (${pilotProgress.weeksRemaining} שבועות נותרו)`}
+          </Text>
+        )}
 
         {!loading && weeks.length === 0 && <Text style={styles.body}>עדיין אין סשנים מתועדים.</Text>}
 
@@ -61,6 +72,12 @@ const styles = StyleSheet.create({
   body: {
     fontSize: 16,
     textAlign: "right",
+  },
+  pilotProgress: {
+    fontSize: 15,
+    textAlign: "right",
+    color: "#0a7ea4",
+    marginBottom: 20,
   },
   weekRow: {
     borderBottomWidth: 1,

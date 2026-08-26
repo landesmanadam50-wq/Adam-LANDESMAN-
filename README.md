@@ -1,6 +1,6 @@
 # Archi — pilot-ready ARC Engine app (verified)
 
-זה קוד TypeScript אמיתי, לא פסאודו-קוד. פרויקט Expo (React Native, Expo Router) שבו `engine/` מחובר בפועל לכל הזרימה: כיול פרופיל (BUILD) → סשן LIVE → שמירה מקומית → סטטיסטיקה שבועית. 44 בדיקות עברו בהצלחה, `tsc --noEmit` עובר נקי, ו-Metro באמת בונה ומשרת את כל האפליקציה.
+זה קוד TypeScript אמיתי, לא פסאודו-קוד. פרויקט Expo (React Native, Expo Router) שבו `engine/` מחובר בפועל לכל הזרימה: כיול פרופיל (BUILD) → סשן LIVE → שמירה מקומית → סטטיסטיקה שבועית עם משך פיילוט ניתן לקונפיגורציה. 39 בדיקות עברו בהצלחה, `tsc --noEmit` עובר נקי, ו-Metro באמת בונה ומשרת את כל האפליקציה.
 
 ## מבנה הפרויקט
 
@@ -8,7 +8,7 @@
 - `build/` — אשף כיול הפרופיל (BUILD): `profileWizard.ts` (לוגיקה טהורה, בסגנון `arcEngine.ts`) + `ProfileBuilderScreen.tsx`
 - `live/` — מסך סשן ה-LIVE: `stageCopy.ts` (מיפוי טהור) + `LiveSessionScreen.tsx`
 - `stats/` — לוח ההתקדמות השבועית: `StatsScreen.tsx`
-- `data/` — שכבת נתונים: `sessionLog.ts` (טיפוסים), `weeklyStats.ts` (אגרגציה טהורה), `storage.ts` (עטיפת AsyncStorage)
+- `data/` — שכבת נתונים: `sessionLog.ts` (טיפוסים), `weeklyStats.ts` (אגרגציה טהורה), `pilotConfig.ts` (משך הפיילוט), `pilotProgress.ts` (חישוב שבוע נוכחי, טהור), `storage.ts` (עטיפת AsyncStorage)
 - `app/` — נתיבי Expo Router בלבד (`index.tsx`, `build/index.tsx`, `live/index.tsx`, `stats/index.tsx`, `_layout.tsx`)
 
 **חשוב:** כל הלוגיקה (`engine/`, `build/profileWizard.ts`, `live/stageCopy.ts`, `data/weeklyStats.ts`) יושבת בכוונה מחוץ ל-`app/` ונבדקת בנפרד מה-UI. Expo Router סורק כל קובץ תחת `app/` כנתיב אפשרי — קובץ `*.test.ts` שם היה נכשל על `import "node:test"` (לא זמין ב-runtime של React Native). כל קובץ תחת `app/` הוא רק "עטיפה" דקה שמייבאת וממרנדרת את הרכיב האמיתי.
@@ -22,6 +22,12 @@
 5. **התקדמות שבועית** — `stats/StatsScreen.tsx` קורא את כל היסטוריית הסשנים ומציג אותם מקובצים לפי שבוע ISO (`data/weeklyStats.ts`), החדש ביותר קודם: כמות סשנים, הצלחות, נפילות.
 
 **אין עדיין** מבנה תוכנית רב-שבועית (יעדים/תכנים שמשתנים משבוע לשבוע) — זה שלב עתידי. השבועי הנוכחי הוא לוח סטטיסטיקה בלבד.
+
+### משך הפיילוט
+
+הפיילוט הנוכחי הוא **8 שבועות** — מוגדר במקום אחד בלבד: `data/pilotConfig.ts` (`PILOT_DURATION_WEEKS`). כדי להאריך ל-11 שבועות (או כל משך אחר) בעתיד: לשנות את המספר הזה, בלי לגעת בשום מקום אחר במערכת.
+
+שעון הפיילוט של כל מתאמן מתחיל בפעם הראשונה שהוא שומר פרופיל ב-BUILD (`getOrCreatePilotStartedAt()` ב-`data/storage.ts`) — עריכת הפרופיל אחר כך לא מאפסת אותו. `data/pilotProgress.ts` הוא פונקציה טהורה (`computePilotProgress`) שמחשבת, לפי תאריך ההתחלה ומשך הפיילוט, באיזה שבוע המתאמן נמצא ("שבוע 3 מתוך 8", "5 שבועות נותרו") — מוצג בראש `stats/StatsScreen.tsx`. נבדק ב-`data/pilotProgress.test.ts` (6 בדיקות), כולל בדיקה מפורשת שמשך של 11 שבועות עובד בלי שינוי קוד.
 
 ## הרצה
 

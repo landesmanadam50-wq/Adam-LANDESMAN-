@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
 import type { ArcType } from "../engine/types.ts";
-import { loadProfile, saveProfile } from "../data/storage.ts";
+import { getOrCreatePilotStartedAt, loadProfile, saveProfile } from "../data/storage.ts";
 import {
   buildProfileFromDraft,
   createEmptyDraft,
@@ -85,6 +85,7 @@ export default function ProfileBuilderScreen() {
   const finish = useCallback(async () => {
     const profile = buildProfileFromDraft(draft);
     await saveProfile(profile);
+    await getOrCreatePilotStartedAt();
     router.replace("/");
   }, [draft]);
 
