@@ -2,6 +2,10 @@
   "name": "archi",
   "version": "1.0.0",
   "main": "expo-router/entry",
+  "engines": {
+    "node": ">=22.13.0",
+    "npm": ">=10.0.0"
+  },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "babel-preset-expo": "~57.0.0",
