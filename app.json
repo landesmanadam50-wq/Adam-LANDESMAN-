@@ -3,6 +3,7 @@
     "name": "Archi",
     "slug": "archi",
     "scheme": "archi",
+    "owner": "archi-mind-body",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -27,6 +28,18 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "77ad4148-dbc6-43f3-87ac-83c839e2ff90"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/77ad4148-dbc6-43f3-87ac-83c839e2ff90"
+    }
   }
 }
