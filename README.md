@@ -1,55 +1,83 @@
-# Archi — ARC Engine + Expo app (verified)
+# Archi — pilot-ready ARC Engine app (verified)
 
-זה קוד TypeScript אמיתי, לא פסאודו-קוד. פרויקט Expo (React Native) עם `engine/` מחובר בפועל: הרצת 10 בדיקות עברה בהצלחה, `tsc --noEmit` עובר נקי, ו-Metro באמת מצליח לבנות (bundle) את האפליקציה כולל ה-imports מ-`engine/`.
+זה קוד TypeScript אמיתי, לא פסאודו-קוד. פרויקט Expo (React Native, Expo Router) שבו `engine/` מחובר בפועל לכל הזרימה: כיול פרופיל (BUILD) → סשן LIVE → שמירה מקומית → סטטיסטיקה שבועית. 44 בדיקות עברו בהצלחה, `tsc --noEmit` עובר נקי, ו-Metro באמת בונה ומשרת את כל האפליקציה.
 
-## מה יש כאן
+## מבנה הפרויקט
 
-- `engine/types.ts` — כל הטיפוסים: `ArcProfile`, `LiveSession`, `LiveStage` (enum ל-15 השלבים), `STAGE_ORDER`
-- `engine/thresholds.ts` — ספי ברירת המחדל (Presence 6, עוצמה 10-5-3), כפונקציה `getIntensityBand` שניתנת לבדיקה
-- `engine/arcEngine.ts` — הלב: `shouldShowStage()` ו-`getNextStage()`, שממשים את כל טבלת הדילוגים מה-roadmap
-- `engine/reinforcement.ts` — יצירת טקסט חיזוק ספציפי מהפרופיל
-- `engine/arcEngine.test.ts` — 10 בדיקות (Node's built-in test runner, בלי jest) שמוודאות שכל תרחיש דילוג עובד
-- `App.tsx` — מסך placeholder של Expo שמייבא בפועל מ-`engine/` (`getFirstStage`) ומציג את השלב הראשון, כהוכחה שהחיווט עובד
+- `engine/` — מנוע ה-ARC הטהור (בלי React): `types.ts`, `thresholds.ts`, `arcEngine.ts`, `reinforcement.ts`
+- `build/` — אשף כיול הפרופיל (BUILD): `profileWizard.ts` (לוגיקה טהורה, בסגנון `arcEngine.ts`) + `ProfileBuilderScreen.tsx`
+- `live/` — מסך סשן ה-LIVE: `stageCopy.ts` (מיפוי טהור) + `LiveSessionScreen.tsx`
+- `stats/` — לוח ההתקדמות השבועית: `StatsScreen.tsx`
+- `data/` — שכבת נתונים: `sessionLog.ts` (טיפוסים), `weeklyStats.ts` (אגרגציה טהורה), `storage.ts` (עטיפת AsyncStorage)
+- `app/` — נתיבי Expo Router בלבד (`index.tsx`, `build/index.tsx`, `live/index.tsx`, `stats/index.tsx`, `_layout.tsx`)
 
-`engine/` עצמו לא תלוי ב-React/React Native בכלל — אפשר לייבא אותו מכל מסך:
+**חשוב:** כל הלוגיקה (`engine/`, `build/profileWizard.ts`, `live/stageCopy.ts`, `data/weeklyStats.ts`) יושבת בכוונה מחוץ ל-`app/` ונבדקת בנפרד מה-UI. Expo Router סורק כל קובץ תחת `app/` כנתיב אפשרי — קובץ `*.test.ts` שם היה נכשל על `import "node:test"` (לא זמין ב-runtime של React Native). כל קובץ תחת `app/` הוא רק "עטיפה" דקה שמייבאת וממרנדרת את הרכיב האמיתי.
 
-```ts
-import { getNextStage } from "./engine/arcEngine.ts";
-import { LiveStage } from "./engine/types.ts";
+## הזרימה המלאה (end-to-end)
 
-const next = getNextStage(LiveStage.PresenceCheck, liveSession, arcProfile);
-```
+1. **הפעלה ראשונה** — מסך הבית בודק אם יש פרופיל שמור (`data/storage.ts`). אם אין — מוביל ל-`/build`.
+2. **BUILD (כיול)** — אשף שלב-אחר-שלב (`build/ProfileBuilderScreen.tsx`) שבונה `ArcProfile` אמיתי: מטרה, סוג ARC (מצב/זהות/הרגל), מצב מפריע/תומך, פעולה פנימית ומיטיבה, כלי ויסות, מנטרה (רשות), פעולה מונעת (רשות), הרגל מפריע לצמצום (רשות). בסיום — `saveProfile()` שומר ל-`AsyncStorage` ומוביל חזרה הביתה.
+3. **LIVE** — `live/LiveSessionScreen.tsx` טוען את הפרופיל האמיתי מהאחסון (לא פרופיל דמו) ומריץ את כל 15 שלבי `engine/arcEngine.ts` בפועל, כולל תת-הזרימה positive-first של Reward → Success Focus / Interfering Action.
+4. **מעקב הצלחה/נפילה** — כל סשן שמגיע ל-Finish נשמר ב-`data/storage.ts` כ-`SessionLogEntry`: `success` = הגיע ל-BeneficialAction בסשן זה, `fall` = השתמש בחלון ה-Interfering Action בסשן זה. אלו שני אותות עצמאיים (לא הדדית בלעדיים) מאותו סשן.
+5. **התקדמות שבועית** — `stats/StatsScreen.tsx` קורא את כל היסטוריית הסשנים ומציג אותם מקובצים לפי שבוע ISO (`data/weeklyStats.ts`), החדש ביותר קודם: כמות סשנים, הצלחות, נפילות.
 
-(שימו לב לסיומת `.ts` המפורשת ב-imports היחסיים — ראו הסבר למטה.)
+**אין עדיין** מבנה תוכנית רב-שבועית (יעדים/תכנים שמשתנים משבוע לשבוע) — זה שלב עתידי. השבועי הנוכחי הוא לוח סטטיסטיקה בלבד.
 
 ## הרצה
 
+**התקנה חד-פעמית:**
 ```bash
 npm install
-npx expo start          # שרת פיתוח (Expo Go / סימולטור)
-npm run web              # דורש: npx expo install react-dom react-native-web
 ```
+
+**שרת פיתוח:**
+```bash
+npx expo start
+```
+- **טלפון**: Expo Go, לסרוק את ה-QR (אותה רשת Wi-Fi).
+- **סימולטור iOS** (מק בלבד): `i`. **אמולטור Android**: `a`. **דפדפן**: פעם אחת `npx expo install react-dom react-native-web`, ואז `w`.
+
+בפעם הראשונה תועבר ישר למסך כיול הפרופיל; אחרי שמירה — למסך הבית עם "התחל סשן LIVE" ו"התקדמות שבועית".
 
 ## בדיקות ואימות
 
-בדיקות המנוע (Node 22+, בלי jest):
 ```bash
-node --experimental-transform-types --test engine/arcEngine.test.ts
+npm test        # כל הבדיקות הטהורות: engine/, live/, data/, build/ (44 בדיקות, Node's built-in test runner)
+npm run typecheck   # tsc --noEmit על כל הפרויקט
 ```
-דגל ה-`--experimental-transform-types` הכרחי כי `LiveStage` הוא `enum` אמיתי — מצב ברירת המחדל של Node ("strip-only") מוריד רק אנוטציות טיפוסים ולא יודע להמיר `enum` לקוד ריצה. כל ה-imports היחסיים כתובים עם סיומת `.ts` מפורשת (כמו שESM Resolution של Node דורש) והטיפוסים שאינם ערכי ריצה (`ArcProfile`, `LiveSession`, `IntensityThresholds`) מיובאים עם `import type` — כדי שה-stripping יידע להסיר אותם. אותם imports עובדים גם תחת Metro (הבנדלר של Expo/React Native) בלי שינוי.
-
-בדיקת טיפוסים על כל הפרויקט (כולל `App.tsx` וקובץ הבדיקות):
-```bash
-npx tsc --noEmit
-```
-`tsconfig.json` מרחיב את `expo/tsconfig.base` ומוסיף `allowImportingTsExtensions` (בשביל סיומות ה-`.ts`) ו-`types: ["node"]` (בשביל `node:test`/`node:assert` בקובץ הבדיקות).
 
 בדיקת bundling אמיתית עם Metro (לא סתם type-check):
 ```bash
 npx expo export --platform android
 ```
-זה בפועל קימפל את כל האפליקציה כולל `engine/` לקובץ Hermes bytecode — ה-imports נפתרים נכון וה-build עובר.
 
-## למה זה מוכן ל-TRAIN ולמדיטציות גם
+כל שכבות הלוגיקה (`engine/`, `build/profileWizard.ts`, `live/stageCopy.ts`, `data/weeklyStats.ts`) הן טהורות ונבדקות ישירות. `data/storage.ts` הוא עטיפת `AsyncStorage` דקה בלבד — לא נבדק ב-`node --test` (תלוי במודול native), ומאומת בפועל על ידי הרצת האפליקציה.
 
-כל הפונקציות ב-`engine/` הן טהורות: מקבלות `ArcProfile` + מצב, ומחזירות תשובה — בלי React, בלי state פנימי, בלי side effects. כשתגיע לבנות את TRAIN, הוא יכול לקרוא לאותן פונקציות בדיוק (`getNextStage`, `getIntensityBand` וכו') בלי לשכפל אף שורת לוגיקה.
+**אימות אמיתי שבוצע (לא רק type-check):** הורצה `npx expo start` בפועל, נמשך ה-bundle החי דרך HTTP, ואומת שהקוד המהודר של `Home`, `StatsScreen` ו-`ProfileBuilderScreen` מכיל את הניתוב הנכון (`Link` עם ה-`href` הנכון לכל מסך) ואת טקסטי ה-UI הנכונים (חלקם מוצגים כ-escape יוניקוד `ה...` על ידי Babel במקום בייטים גולמיים — קידוד תקין לחלוטין, לא באג).
+
+## פריסה לבדיקה (EAS Update)
+
+הוגדר `expo-updates` ו-`eas.json`, אבל **אני (Claude) לא יכול לפרסם עדכון בעצמי** — זה דורש התחברות לחשבון Expo שלך. הפעולות החד-פעמיות:
+
+```bash
+npm install -g eas-cli   # או להשתמש ב-npx eas-cli לכל פקודה
+eas login                 # התחברות חד-פעמית לחשבון Expo שלך
+eas update:configure      # קובע runtimeVersion, updates.url, ו-extra.eas.projectId ב-app.json באופן אוטומטי
+```
+
+לאחר מכן, כדי לפרסם גרסה לבדיקה:
+```bash
+npm run deploy:preview -- --message "תיאור קצר של מה שהשתנה"
+```
+(או ישירות: `eas update --branch preview --message "..."`)
+
+הפקודה מדפיסה קישור/QR. בודקי הפיילוט פותחים אותו **דרך אפליקציית Expo Go** (אין צורך ב-build מותאם אישית — הפרויקט לא משתמש במודולי native מותאמים) וטוענים את הגרסה שפורסמה, בלי להריץ שרת פיתוח בכלל.
+
+לעדכן גרסה חדשה בהמשך: לחזור על `npm run deploy:preview -- --message "..."` — בודקים שכבר פתחו את הקישור יקבלו את העדכון בפעם הבאה שהם פותחים את האפליקציה.
+
+## מה עוד חסר
+
+- **תוכנית רב-שבועית** — כרגע יש רק לוח סטטיסטיקה; אין עדיין תכנים/יעדים שמשתנים לפי שבוע בתוכנית.
+- **מעקב זמן אמיתי על Interfering Action** — "נפילה" מוגדרת כרגע כ"השתמש בחלון בכלל", לא כ"חרג בפועל מהדקות המותרות" (אין עדיין טיימר בפועל).
+- **לולאת ARC Thought** — לפי `engine/arcEngine.ts`, ה-4 שלבי ARC Thought הם קו ישר: אם הנוכחות התחילה נמוכה, כל ה-4 מוצגים ברצף בלי בדיקה חוזרת מוקדמת. זו התנהגות המנוע הקיימת (מכוסה בבדיקות), לא באג.
+- **ריבוי מתאמנים על מכשיר אחד** — אין מסך התחברות/משתמשים; הפרופיל וההיסטוריה הם per-device (`AsyncStorage`), לא per-account.
