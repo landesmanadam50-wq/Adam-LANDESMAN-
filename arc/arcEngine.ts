@@ -133,6 +133,27 @@ export function getAvailableProactiveTargets(
   return targets;
 }
 
+/**
+ * Whether the UI needs to ask the trainee which target a proactive
+ * session is about (rather than letting resolveEncodingTarget() infer
+ * one blind). Only relevant for proactive: reactive sessions have an
+ * unambiguous target already (reactive_urge -> habit; reactive_emotion
+ * infers state/identity by priority, matching current behavior). No
+ * selection is needed when a target is already recorded, or when there
+ * are 0-1 available targets -- 0 falls through to resolveEncodingTarget's
+ * own generic fallback, 1 should be auto-selected by the caller instead
+ * of prompting.
+ */
+export function needsProactiveTargetSelection(
+  triggerType: TriggerType | null,
+  activeLayers: DevelopmentLayer[],
+  profile: ArcBuildProfile,
+  selectedTarget: DevelopmentLayer | null
+): boolean {
+  if (triggerType !== "proactive" || selectedTarget !== null) return false;
+  return getAvailableProactiveTargets(activeLayers, profile).length > 1;
+}
+
 // ---------------------------------------------------------------------------
 // Encoding target resolution (#7) -- the one place this decision is made
 // ---------------------------------------------------------------------------

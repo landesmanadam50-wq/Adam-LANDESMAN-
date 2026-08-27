@@ -82,6 +82,15 @@ export interface ArcProgramProgress {
 
 export interface ArcLiveState {
   triggerType: TriggerType | null;
+  /**
+   * Which DevelopmentLayer's encoding/action this proactive session targets,
+   * set explicitly once (auto-picked when only one target is available, or
+   * chosen by the trainee when more than one is) rather than left for
+   * resolveEncodingTarget() to infer blind -- see arc/arcEngine.ts's
+   * needsProactiveTargetSelection(). Always null for reactive sessions,
+   * where the target is unambiguous from triggerType/activeLayers.
+   */
+  selectedTarget: DevelopmentLayer | null;
 
   presenceRating: number | null;
   sensationLocation: string | null;
@@ -102,11 +111,17 @@ export interface ArcLiveState {
   loopIterationCount: number;
   activeTools: string[];
   currentArcStage: ArcStage;
+
+  /** The protocol reached "act" this session (every completed session does, by construction). */
+  actionReached: boolean;
+  /** The trainee confirmed they actually performed the real-world action -- the only thing that earns Training Day credit. */
+  realActionCompleted: boolean;
 }
 
 export function createEmptyLiveState(): ArcLiveState {
   return {
     triggerType: null,
+    selectedTarget: null,
     presenceRating: null,
     sensationLocation: null,
     sensationIntensity: null,
@@ -122,5 +137,7 @@ export function createEmptyLiveState(): ArcLiveState {
     loopIterationCount: 0,
     activeTools: [],
     currentArcStage: "trigger_selection",
+    actionReached: false,
+    realActionCompleted: false,
   };
 }

@@ -26,6 +26,23 @@ export interface ArcStageCopy {
   body: string;
 }
 
+export interface YesNoLabels {
+  yes: string;
+  no: string;
+}
+
+/** Per-stage button wording for the three "yesno" stages -- Instruction Layer content, not decision logic. */
+export function getYesNoLabels(stage: ArcStage): YesNoLabels {
+  switch (stage) {
+    case "reactive_transition_check":
+      return { yes: "כן, לעבור לוויסות", no: "עוד קצת שהייה" };
+    case "accept":
+    case "preventive_action_check":
+    default:
+      return { yes: "כן", no: "לא" };
+  }
+}
+
 const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   trigger_selection: "triggerSelect",
   presence_check: "scale0to10",
@@ -119,7 +136,7 @@ export function getStageCopy(
       const { encoding } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
-        selectedTarget: null,
+        selectedTarget: state.selectedTarget,
         buildProfile: profile,
       });
       if (!encoding) return { title: "קיבוע", body: "קח רגע לקבע את התחושה החדשה." };
@@ -137,7 +154,7 @@ export function getStageCopy(
       const { actionLabel } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
-        selectedTarget: null,
+        selectedTarget: state.selectedTarget,
         buildProfile: profile,
       });
       return { title: "פעולה", body: actionLabel ? `עכשיו הזמן: ${actionLabel}.` : "עכשיו הזמן לפעולה." };
