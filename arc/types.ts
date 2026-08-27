@@ -9,6 +9,8 @@ export type ArcStage =
   | "arc_thought_combined_attention"
   | "arc_thought_expand_presence"
   | "arc_thought_presence_recheck"
+  | "preventive_action_check"
+  | "preventive_action"
   | "sensation_check"
   | "stay"
   | "accept"
@@ -31,6 +33,13 @@ export interface EncodingProfile {
 
 export interface ArcBuildProfile {
   programPath: string;
+  /**
+   * @deprecated Legacy two-track ("standard" vs "advanced") signal from
+   * before program/ existed. Kept only so old stored profiles still parse
+   * and can be migrated. The real source of truth for what a trainee
+   * needs is the persisted ArcProgramSelection (program/programTypes.ts)
+   * -- new code must not read this field to make decisions.
+   */
   identityActionNeeded: boolean;
 
   interferingState: string | null;
@@ -62,8 +71,13 @@ export interface ArcProgramProgress {
   trainingDatesThisWeek: string[];
 
   buildExtensionRequired: boolean;
-  nextLayerToBuild: DevelopmentLayer[] | null;
+  nextLayersToBuild: DevelopmentLayer[] | null;
   programCompleted: boolean;
+
+  /** Guards completeProgramWeek() against double-crediting the same week. */
+  lastCompletedWeek: number | null;
+  /** Every LIVE session that reached "act", regardless of daily training credit (max 1/day). */
+  liveSessionCount: number;
 }
 
 export interface ArcLiveState {
@@ -81,8 +95,11 @@ export interface ArcLiveState {
   acceptanceNeeded: boolean | null;
   regulationReady: boolean | null;
   regulationNeeded: boolean;
+  wantsPreventiveAction: boolean | null;
 
   arcThoughtCompleted: boolean;
+  /** Safety cap on the ARC Thought and reactive/proactive re-check loops -- see arc/arcEngine.ts. */
+  loopIterationCount: number;
   activeTools: string[];
   currentArcStage: ArcStage;
 }
@@ -100,7 +117,9 @@ export function createEmptyLiveState(): ArcLiveState {
     acceptanceNeeded: null,
     regulationReady: null,
     regulationNeeded: false,
+    wantsPreventiveAction: null,
     arcThoughtCompleted: false,
+    loopIterationCount: 0,
     activeTools: [],
     currentArcStage: "trigger_selection",
   };

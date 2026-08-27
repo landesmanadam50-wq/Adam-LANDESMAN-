@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   buildProfileFromDraft,
   createEmptyDraft,
-  draftFromProfile,
+  draftFromProfileAndSelection,
+  selectionFromDraft,
   getFirstProfileStep,
   getNextProfileStep,
   getPreviousProfileStep,
@@ -154,13 +155,31 @@ test("buildProfileFromDraft throws on an incomplete draft", () => {
   assert.throws(() => buildProfileFromDraft(createEmptyDraft()));
 });
 
-test("draftFromProfile round-trips a habit-only profile through buildProfileFromDraft", () => {
+test("draftFromProfileAndSelection prefers the persisted selection over the profile", () => {
   const draft = filledHabitOnlyDraft({ hasPreventiveAction: true, preventiveActionDescription: "לצאת להליכה" });
   const profile = buildProfileFromDraft(draft);
-  const roundTripped = draftFromProfile(profile);
+  const selection = selectionFromDraft(draft);
+  const roundTripped = draftFromProfileAndSelection(profile, selection);
   assert.equal(roundTripped.needsState, false);
   assert.equal(roundTripped.needsIdentityExplicit, false);
   assert.equal(roundTripped.habit, draft.habit);
   assert.equal(roundTripped.hasPreventiveAction, true);
   assert.equal(roundTripped.preventiveActionDescription, "לצאת להליכה");
+});
+
+test("draftFromProfileAndSelection falls back to the legacy programPath when no selection was ever saved", () => {
+  const draft = filledStateOnlyDraft({ desiredIdentity: "x", identityInterferingEmotion: "x", identityAction: "x" });
+  const profile = buildProfileFromDraft(draft); // programPath: standard_3_week or advanced_2_week
+  const roundTripped = draftFromProfileAndSelection(profile, null);
+  assert.equal(roundTripped.needsState, true, "standard/advanced programPath implies needsState");
+});
+
+test("selectionFromDraft always sets needsHabit true for the current four presets", () => {
+  const selection = selectionFromDraft(filledHabitOnlyDraft());
+  assert.equal(selection.needsHabit, true);
+  assert.equal(selection.programPath, "habit_only_1_week");
+});
+
+test("selectionFromDraft throws on an incomplete draft (no needsState answer yet)", () => {
+  assert.throws(() => selectionFromDraft(createEmptyDraft()));
 });

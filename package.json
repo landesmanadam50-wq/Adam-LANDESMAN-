@@ -25,6 +25,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.2",
     "typescript": "~6.0.3"
   },
   "overrides": {
@@ -37,7 +39,8 @@
     "web": "expo start --web",
     "test": "node --experimental-transform-types --test data/*.test.ts build/*.test.ts arc/*.test.ts program/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "deploy:preview": "npx eas-cli update --branch preview"
+    "deploy:preview": "npx eas-cli update --branch preview",
+    "lint": "expo lint"
   },
   "private": true
 }

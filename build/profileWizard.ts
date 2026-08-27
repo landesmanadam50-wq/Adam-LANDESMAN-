@@ -8,7 +8,7 @@
  * function) so it stays testable with node --test.
  *
  * The needs assessment (needsState / needsIdentityImmediately /
- * needsIdentity) feeds program/selection.ts's resolveProgramPath,
+ * needsIdentity) feeds program/selection.ts's resolveCurrentPreset,
  * which is how programPath gets assigned -- habit is always needed
  * (buildProgramSelection hardcodes needsHabit: true), so habit
  * questions are never skipped, but state/identity questions are only
@@ -17,10 +17,29 @@
  * ArcBuildProfile has no "goal" field (unlike the old engine/'s
  * ArcProfile), so this wizard doesn't ask for one -- there's nowhere
  * to store it.
+ *
+ * The persisted ArcProgramSelection (program/programTypes.ts) is the
+ * real source of truth for what a trainee needs -- ArcBuildProfile
+ * .identityActionNeeded is legacy-only. draftFromProfileAndSelection
+ * prefers a passed-in selection and only falls back to inferring from
+ * the profile/legacy programPath when no selection was ever saved
+ * (old data from before ArcProgramSelection persistence existed).
  */
 
 import type { ArcBuildProfile, EncodingProfile } from "../arc/types.ts";
-import { resolveProgramPath } from "../program/selection.ts";
+import type { ArcProgramSelection, KnownProgramPath } from "../program/programTypes.ts";
+import { deriveNeedsFromLegacyProgramPath, resolveCurrentPreset } from "../program/selection.ts";
+
+const LEGACY_PROGRAM_PATHS: KnownProgramPath[] = [
+  "standard_3_week",
+  "advanced_2_week",
+  "identity_habit_2_week",
+  "habit_only_1_week",
+];
+
+function isKnownLegacyProgramPath(programPath: string): programPath is KnownProgramPath {
+  return (LEGACY_PROGRAM_PATHS as string[]).includes(programPath);
+}
 
 export type ProfileStep =
   | "needsState"
@@ -105,12 +124,26 @@ export function createEmptyDraft(): ProfileDraft {
   };
 }
 
-export function draftFromProfile(profile: ArcBuildProfile): ProfileDraft {
-  const needsState = profile.stateEncoding !== null || profile.interferingState !== null;
-  const needsIdentity = profile.identityEncoding !== null || profile.desiredIdentity !== null;
+export function draftFromProfileAndSelection(
+  profile: ArcBuildProfile,
+  selection: ArcProgramSelection | null
+): ProfileDraft {
+  // Prefer the persisted selection (the real source of truth). Only
+  // infer from the profile/legacy programPath if no selection was
+  // ever saved for this profile -- data from before ArcProgramSelection
+  // persistence existed.
+  const resolvedSelection: Omit<ArcProgramSelection, "programPath"> =
+    selection ??
+    (isKnownLegacyProgramPath(profile.programPath)
+      ? deriveNeedsFromLegacyProgramPath(profile.programPath)
+      : { needsState: false, needsIdentity: false, needsHabit: true, needsIdentityImmediately: false });
+
+  const needsState = resolvedSelection.needsState;
+  const needsIdentity = resolvedSelection.needsIdentity;
+
   return {
     needsState,
-    needsIdentityImmediately: needsState ? profile.identityActionNeeded : null,
+    needsIdentityImmediately: needsState ? resolvedSelection.needsIdentityImmediately : null,
     needsIdentityExplicit: needsState ? null : needsIdentity,
     interferingState: profile.interferingState ?? "",
     supportiveState: profile.supportiveState ?? "",
@@ -211,13 +244,31 @@ function encodingFromMantra(target: string, mantra: string): EncodingProfile | n
   return { target, bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: mantra.trim() };
 }
 
+/** Builds the real source-of-truth ArcProgramSelection to persist alongside the profile. */
+export function selectionFromDraft(draft: ProfileDraft): ArcProgramSelection {
+  if (draft.needsState === null) {
+    throw new Error("Cannot build an ArcProgramSelection from an incomplete draft");
+  }
+  return {
+    needsState: draft.needsState,
+    needsIdentity: resolvesNeedsIdentity(draft),
+    needsHabit: true, // every one of today's four presets ends in a habit week
+    needsIdentityImmediately: !!draft.needsIdentityImmediately,
+    programPath: resolveCurrentPreset({
+      needsState: draft.needsState,
+      needsIdentityImmediately: draft.needsIdentityImmediately ?? false,
+      needsIdentity: draft.needsIdentityExplicit ?? false,
+    }),
+  };
+}
+
 export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
   if (!isDraftComplete(draft) || draft.needsState === null) {
     throw new Error("Cannot build an ArcBuildProfile from an incomplete draft");
   }
 
   const needsIdentity = resolvesNeedsIdentity(draft);
-  const programPath = resolveProgramPath({
+  const programPath = resolveCurrentPreset({
     needsState: draft.needsState,
     needsIdentityImmediately: draft.needsIdentityImmediately ?? false,
     needsIdentity: draft.needsIdentityExplicit ?? false,
@@ -225,6 +276,9 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
 
   return {
     programPath,
+    // Legacy field, kept only so old code paths reading it don't break.
+    // The real source of truth is the persisted ArcProgramSelection
+    // (see selectionFromDraft above) -- new code must read that instead.
     identityActionNeeded: needsIdentity,
 
     interferingState: draft.needsState ? draft.interferingState.trim() : null,

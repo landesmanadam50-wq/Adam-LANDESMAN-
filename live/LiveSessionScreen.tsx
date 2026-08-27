@@ -3,21 +3,23 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
-import type { ArcBuildProfile, ArcLiveState, ArcStage, TriggerType } from "../arc/types.ts";
+import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
-import { getFirstArcStage, getNextArcStage } from "../arc/arcEngine.ts";
+import { getAvailableLiveTriggers, getFirstArcStage, getNextArcStage } from "../arc/arcEngine.ts";
 import { getStageCopy, getStageInputKind } from "../arc/stageCopy.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
-import { appendSessionLogEntry, loadProfile } from "../data/storage.ts";
+import { appendSessionLogEntry, loadProfile, loadProgramProgress, saveProgramProgress } from "../data/storage.ts";
+import { recordValidLiveCompletion } from "../program/progress.ts";
+import { todayLocalDateString } from "../program/dateUtils.ts";
 
 const BODY_LOCATIONS = ["חזה", "בטן", "גרון", "כתפיים", "ראש"];
 const SUCCESS_FOCUS_MINUTES = [0, 5, 10, 15, 20];
 
-const TRIGGER_OPTIONS: { value: TriggerType; label: string }[] = [
-  { value: "reactive_emotion", label: "רגש קשה כרגע" },
-  { value: "reactive_urge", label: "דחף כרגע" },
-  { value: "proactive", label: "תרגול יזום" },
-];
+const TRIGGER_LABELS: Record<TriggerType, string> = {
+  reactive_emotion: "רגש קשה כרגע",
+  reactive_urge: "דחף כרגע",
+  proactive: "תרגול יזום",
+};
 
 function applyScale(stage: ArcStage, session: ArcLiveState, value: number): ArcLiveState {
   switch (stage) {
@@ -33,6 +35,7 @@ function applyScale(stage: ArcStage, session: ArcLiveState, value: number): ArcL
 
 export default function LiveSessionScreen() {
   const [profile, setProfile] = useState<ArcBuildProfile | null>(null);
+  const [activeLayers, setActiveLayers] = useState<DevelopmentLayer[]>([]);
   const [session, setSession] = useState<ArcLiveState>(() => createEmptyLiveState());
   const [stage, setStage] = useState<ArcStage>("complete");
   const [pendingSensationLocation, setPendingSensationLocation] = useState("");
@@ -41,13 +44,14 @@ export default function LiveSessionScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    loadProfile().then((loaded) => {
+    Promise.all([loadProfile(), loadProgramProgress()]).then(([loadedProfile, loadedProgress]) => {
       if (cancelled) return;
-      if (!loaded) {
+      if (!loadedProfile || !loadedProgress) {
         router.replace("/build");
         return;
       }
-      setProfile(loaded);
+      setProfile(loadedProfile);
+      setActiveLayers(loadedProgress.activeLayers);
       setSession(createEmptyLiveState());
       setStage(getFirstArcStage());
       setSessionStartedAt(new Date().toISOString());
@@ -58,35 +62,46 @@ export default function LiveSessionScreen() {
   }, []);
 
   const advance = useCallback(
-    (updatedSession: ArcLiveState) => {
-      const nextStage = getNextArcStage(stage, updatedSession);
+    (updatedSession: ArcLiveState, actionCompleted = false) => {
+      if (!profile) return;
+      const outcome = getNextArcStage(stage, updatedSession, profile);
+      const sessionWithStage: ArcLiveState = {
+        ...updatedSession,
+        currentArcStage: outcome.stage,
+        loopIterationCount: outcome.loopIterationCount,
+      };
 
-      setSession(updatedSession);
-      setStage(nextStage);
+      setSession(sessionWithStage);
+      setStage(outcome.stage);
       setPendingSensationLocation("");
       setSuccessFocusMinutes(null);
 
-      if (nextStage === "complete") {
-        // success: true is safe unconditionally here -- every ArcStage path
-        // (reactive and proactive) passes through "act" before reaching
-        // "complete", so finishing a session always means the action happened.
-        //
-        // fall: the old engine/'s "used the interfering-action window"
-        // signal has no equivalent stage in the new ArcStage list (arc/types.ts
-        // has no interfering-action concept at all), so there's currently no
-        // way to detect a fall. Always false until that's reintroduced as a
-        // deliberate product decision, not silently invented here.
+      if (outcome.stage === "complete") {
         const finishedAt = new Date().toISOString();
+        // success now reflects whether the trainee actually confirmed
+        // completing the real action at "act", not just that the
+        // session reached the end screen.
         appendSessionLogEntry({
           id: `${sessionStartedAt}_${finishedAt}`,
           startedAt: sessionStartedAt,
           finishedAt,
-          success: true,
-          fall: false,
+          success: actionCompleted,
+          fall: false, // see README: no interfering-action-window stage exists in this ArcStage list yet
+        });
+
+        loadProgramProgress().then((progress) => {
+          if (!progress) return;
+          const updated = recordValidLiveCompletion({
+            progress,
+            reachedAct: true, // every path reaches "act" before "complete" is possible
+            actionCompleted,
+            localDate: todayLocalDateString(),
+          });
+          saveProgramProgress(updated);
         });
       }
     },
-    [stage, sessionStartedAt]
+    [profile, stage, sessionStartedAt]
   );
 
   const restart = useCallback(() => {
@@ -105,9 +120,11 @@ export default function LiveSessionScreen() {
     );
   }
 
-  const copy = getStageCopy(stage, profile, session);
+  const copy = getStageCopy(stage, profile, session, activeLayers);
   const inputKind = getStageInputKind(stage);
   const isHabitSensation = session.triggerType === "reactive_urge";
+  const isSensationRecheck = session.sensationIntensity !== null;
+  const availableTriggers = getAvailableLiveTriggers(activeLayers);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -117,9 +134,9 @@ export default function LiveSessionScreen() {
 
         {inputKind === "triggerSelect" && (
           <View style={styles.chipRow}>
-            {TRIGGER_OPTIONS.map(({ value, label }) => (
+            {availableTriggers.map((value) => (
               <Pressable key={value} style={styles.chip} onPress={() => advance({ ...session, triggerType: value })}>
-                <Text style={styles.buttonText}>{label}</Text>
+                <Text style={styles.buttonText}>{TRIGGER_LABELS[value]}</Text>
               </Pressable>
             ))}
           </View>
@@ -127,7 +144,7 @@ export default function LiveSessionScreen() {
 
         {inputKind === "scale0to10" && (
           <View style={styles.scaleRow}>
-            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
               <Pressable key={value} style={styles.scaleButton} onPress={() => advance(applyScale(stage, session, value))}>
                 <Text style={styles.buttonText}>{value}</Text>
               </Pressable>
@@ -137,7 +154,7 @@ export default function LiveSessionScreen() {
 
         {inputKind === "sensationCheck" && (
           <View>
-            {!isHabitSensation && (
+            {!isHabitSensation && !isSensationRecheck && (
               <View style={styles.chipRow}>
                 {BODY_LOCATIONS.map((location) => (
                   <Pressable
@@ -158,7 +175,7 @@ export default function LiveSessionScreen() {
                   onPress={() =>
                     advance({
                       ...session,
-                      sensationLocation: isHabitSensation ? null : pendingSensationLocation || null,
+                      sensationLocation: isHabitSensation ? null : pendingSensationLocation || session.sensationLocation,
                       sensationIntensity: value,
                     })
                   }
@@ -178,7 +195,9 @@ export default function LiveSessionScreen() {
                 advance(
                   stage === "accept"
                     ? { ...session, acceptanceNeeded: false }
-                    : { ...session, regulationReady: true }
+                    : stage === "preventive_action_check"
+                      ? { ...session, wantsPreventiveAction: true }
+                      : { ...session, regulationReady: true }
                 )
               }
             >
@@ -190,7 +209,9 @@ export default function LiveSessionScreen() {
                 advance(
                   stage === "accept"
                     ? { ...session, acceptanceNeeded: true }
-                    : { ...session, regulationReady: false }
+                    : stage === "preventive_action_check"
+                      ? { ...session, wantsPreventiveAction: false }
+                      : { ...session, regulationReady: false }
                 )
               }
             >
@@ -199,7 +220,13 @@ export default function LiveSessionScreen() {
           </View>
         )}
 
-        {inputKind === "info" && (
+        {inputKind === "info" && stage === "act" && (
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advance(session, true)}>
+            <Text style={styles.buttonText}>עשיתי את זה</Text>
+          </Pressable>
+        )}
+
+        {inputKind === "info" && stage !== "act" && (
           <Pressable
             style={[styles.button, styles.fullWidthButton]}
             onPress={() =>

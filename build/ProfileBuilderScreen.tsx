@@ -3,16 +3,25 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
-import { getOrCreatePilotStartedAt, loadProfile, loadProgramProgress, saveProfile, saveProgramProgress } from "../data/storage.ts";
+import {
+  getOrCreatePilotStartedAt,
+  loadProfile,
+  loadProgramProgress,
+  loadProgramSelection,
+  saveProfile,
+  saveProgramProgress,
+  saveProgramSelection,
+} from "../data/storage.ts";
 import { createInitialProgress } from "../program/progress.ts";
 import {
   buildProfileFromDraft,
   createEmptyDraft,
-  draftFromProfile,
+  draftFromProfileAndSelection,
   getFirstProfileStep,
   getNextProfileStep,
   getPreviousProfileStep,
   isDraftComplete,
+  selectionFromDraft,
   type ProfileDraft,
   type ProfileStep,
 } from "./profileWizard.ts";
@@ -68,9 +77,9 @@ export default function ProfileBuilderScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    loadProfile().then((existing) => {
+    Promise.all([loadProfile(), loadProgramSelection()]).then(([existing, selection]) => {
       if (cancelled) return;
-      const initialDraft = existing ? draftFromProfile(existing) : createEmptyDraft();
+      const initialDraft = existing ? draftFromProfileAndSelection(existing, selection) : createEmptyDraft();
       setDraft(initialDraft);
       setStep(getFirstProfileStep(initialDraft));
       setLoading(false);
@@ -91,7 +100,9 @@ export default function ProfileBuilderScreen() {
 
   const finish = useCallback(async () => {
     const profile = buildProfileFromDraft(draft);
+    const selection = selectionFromDraft(draft);
     await saveProfile(profile);
+    await saveProgramSelection(selection);
     await getOrCreatePilotStartedAt();
 
     // Only (re)start program progress if there's none yet, or the

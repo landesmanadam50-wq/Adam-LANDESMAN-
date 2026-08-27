@@ -52,3 +52,23 @@ test("Proactive: desired state 7 -> encode (at/above threshold 5)", () => {
 test("Proactive uses its own threshold, not the reactive intensity map", () => {
   assert.notEqual(getProactiveStage(7), getReactiveStage(7));
 });
+
+// --- Rating validation (#13): out-of-range input must be rejected, not silently misclassified ---
+
+test("getReactiveStage rejects an out-of-range value instead of silently returning 'stay'", () => {
+  assert.throws(() => getReactiveStage(20));
+});
+
+test("getReactiveStage rejects zero instead of silently returning 'encode'", () => {
+  assert.throws(() => getReactiveStage(0));
+});
+
+test("getProactiveStage rejects an out-of-range value", () => {
+  assert.throws(() => getProactiveStage(-3));
+  assert.throws(() => getProactiveStage(11));
+});
+
+test("shouldRunArcThought rejects an out-of-range presence value", () => {
+  assert.throws(() => shouldRunArcThought(0));
+  assert.throws(() => shouldRunArcThought(15));
+});

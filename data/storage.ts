@@ -12,12 +12,19 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { ArcBuildProfile, ArcProgramProgress } from "../arc/types.ts";
+import type { ArcProgramSelection } from "../program/programTypes.ts";
+import { PROGRAM_DEFINITIONS } from "../program/config.ts";
 import type { SessionLogEntry } from "./sessionLog.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
+const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
 const PROGRAM_PROGRESS_KEY = "archi.programProgress.v2";
 const SESSION_LOG_KEY = "archi.sessionLog.v1";
 const PILOT_STARTED_AT_KEY = "archi.pilotStartedAt.v1";
+
+function isKnownProgramPath(programPath: string): boolean {
+  return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
+}
 
 export async function loadProfile(): Promise<ArcBuildProfile | null> {
   const raw = await AsyncStorage.getItem(PROFILE_KEY);
@@ -28,9 +35,50 @@ export async function saveProfile(profile: ArcBuildProfile): Promise<void> {
   await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
 }
 
+/**
+ * The real source of truth for what a trainee needs (state/identity/
+ * habit, and whether identity was wanted immediately) -- BUILD reads
+ * this back instead of inferring from ArcBuildProfile.identityActionNeeded,
+ * which is legacy-only. Validated the same way loadProgramProgress()
+ * is: an unrecognized programPath returns null instead of a value
+ * downstream code would crash on.
+ */
+export async function loadProgramSelection(): Promise<ArcProgramSelection | null> {
+  const raw = await AsyncStorage.getItem(PROGRAM_SELECTION_KEY);
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as ArcProgramSelection;
+  if (!isKnownProgramPath(parsed.programPath)) {
+    console.warn(
+      `[storage] Stored program selection has an unknown programPath "${parsed.programPath}" -- discarding it rather than letting downstream code use it.`
+    );
+    return null;
+  }
+  return parsed;
+}
+
+export async function saveProgramSelection(selection: ArcProgramSelection): Promise<void> {
+  await AsyncStorage.setItem(PROGRAM_SELECTION_KEY, JSON.stringify(selection));
+}
+
+/**
+ * Validates programPath against PROGRAM_DEFINITIONS before returning:
+ * every real caller (program/progress.ts, stats/StatsScreen.tsx) calls
+ * getProgramDefinition(progress.programPath), which throws on an
+ * unrecognized path. Rather than let that throw reach the UI, treat a
+ * corrupt/legacy-incompatible programPath as "no progress yet" -- a
+ * fresh ArcProgramProgress is created the next time BUILD completes.
+ */
 export async function loadProgramProgress(): Promise<ArcProgramProgress | null> {
   const raw = await AsyncStorage.getItem(PROGRAM_PROGRESS_KEY);
-  return raw ? (JSON.parse(raw) as ArcProgramProgress) : null;
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as ArcProgramProgress;
+  if (!isKnownProgramPath(parsed.programPath)) {
+    console.warn(
+      `[storage] Stored program progress has an unknown programPath "${parsed.programPath}" -- discarding it rather than crashing downstream.`
+    );
+    return null;
+  }
+  return parsed;
 }
 
 export async function saveProgramProgress(progress: ArcProgramProgress): Promise<void> {
