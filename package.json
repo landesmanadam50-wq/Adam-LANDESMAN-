@@ -35,7 +35,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "node --experimental-transform-types --test engine/*.test.ts live/*.test.ts data/*.test.ts build/*.test.ts arc/*.test.ts program/*.test.ts",
+    "test": "node --experimental-transform-types --test data/*.test.ts build/*.test.ts arc/*.test.ts program/*.test.ts",
     "typecheck": "tsc --noEmit",
     "deploy:preview": "npx eas-cli update --branch preview"
   },

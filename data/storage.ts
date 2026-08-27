@@ -11,20 +11,30 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { ArcProfile } from "../engine/types.ts";
+import type { ArcBuildProfile, ArcProgramProgress } from "../arc/types.ts";
 import type { SessionLogEntry } from "./sessionLog.ts";
 
-const PROFILE_KEY = "archi.profile.v1";
+const PROFILE_KEY = "archi.buildProfile.v2";
+const PROGRAM_PROGRESS_KEY = "archi.programProgress.v2";
 const SESSION_LOG_KEY = "archi.sessionLog.v1";
 const PILOT_STARTED_AT_KEY = "archi.pilotStartedAt.v1";
 
-export async function loadProfile(): Promise<ArcProfile | null> {
+export async function loadProfile(): Promise<ArcBuildProfile | null> {
   const raw = await AsyncStorage.getItem(PROFILE_KEY);
-  return raw ? (JSON.parse(raw) as ArcProfile) : null;
+  return raw ? (JSON.parse(raw) as ArcBuildProfile) : null;
 }
 
-export async function saveProfile(profile: ArcProfile): Promise<void> {
+export async function saveProfile(profile: ArcBuildProfile): Promise<void> {
   await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+}
+
+export async function loadProgramProgress(): Promise<ArcProgramProgress | null> {
+  const raw = await AsyncStorage.getItem(PROGRAM_PROGRESS_KEY);
+  return raw ? (JSON.parse(raw) as ArcProgramProgress) : null;
+}
+
+export async function saveProgramProgress(progress: ArcProgramProgress): Promise<void> {
+  await AsyncStorage.setItem(PROGRAM_PROGRESS_KEY, JSON.stringify(progress));
 }
 
 export async function loadSessionLog(): Promise<SessionLogEntry[]> {
@@ -43,6 +53,10 @@ export async function appendSessionLogEntry(entry: SessionLogEntry): Promise<voi
  * right after BUILD saves their profile) and never moves after that --
  * editing the profile later doesn't reset it. Idempotent, so it's also
  * safe to call defensively wherever pilot progress is displayed.
+ *
+ * Independent of program/ (a trainee's own program can be 1-3 weeks
+ * depending on what they need): this is the fixed pilot testing window
+ * (data/pilotConfig.ts), not their program length.
  */
 export async function getOrCreatePilotStartedAt(): Promise<string> {
   const existing = await AsyncStorage.getItem(PILOT_STARTED_AT_KEY);

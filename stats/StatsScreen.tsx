@@ -2,23 +2,35 @@ import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { getOrCreatePilotStartedAt, loadSessionLog } from "../data/storage.ts";
+import { getOrCreatePilotStartedAt, loadProgramProgress, loadSessionLog } from "../data/storage.ts";
 import { computeWeeklyStats, type WeekStat } from "../data/weeklyStats.ts";
 import { computePilotProgress, type PilotProgress } from "../data/pilotProgress.ts";
+import { getProgramDefinition } from "../program/engine.ts";
+import type { ArcProgramProgress, DevelopmentLayer } from "../arc/types.ts";
+
+const LAYER_LABELS: Record<DevelopmentLayer, string> = {
+  state: "מצב",
+  identity: "זהות",
+  habit: "הרגל",
+};
 
 export default function StatsScreen() {
   const [loading, setLoading] = useState(true);
   const [weeks, setWeeks] = useState<WeekStat[]>([]);
   const [pilotProgress, setPilotProgress] = useState<PilotProgress | null>(null);
+  const [programProgress, setProgramProgress] = useState<ArcProgramProgress | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadSessionLog(), getOrCreatePilotStartedAt()]).then(([entries, pilotStartedAt]) => {
-      if (cancelled) return;
-      setWeeks(computeWeeklyStats(entries));
-      setPilotProgress(computePilotProgress(pilotStartedAt));
-      setLoading(false);
-    });
+    Promise.all([loadSessionLog(), getOrCreatePilotStartedAt(), loadProgramProgress()]).then(
+      ([entries, pilotStartedAt, program]) => {
+        if (cancelled) return;
+        setWeeks(computeWeeklyStats(entries));
+        setPilotProgress(computePilotProgress(pilotStartedAt));
+        setProgramProgress(program);
+        setLoading(false);
+      }
+    );
     return () => {
       cancelled = true;
     };
@@ -34,6 +46,14 @@ export default function StatsScreen() {
             {pilotProgress.isComplete
               ? `הפיילוט הסתיים (${pilotProgress.totalWeeks} שבועות)`
               : `שבוע ${pilotProgress.currentWeek} מתוך ${pilotProgress.totalWeeks} (${pilotProgress.weeksRemaining} שבועות נותרו)`}
+          </Text>
+        )}
+
+        {programProgress && (
+          <Text style={styles.programProgress}>
+            {programProgress.programCompleted
+              ? `התוכנית הושלמה (${getProgramDefinition(programProgress.programPath).totalWeeks} שבועות)`
+              : `תוכנית: שבוע ${programProgress.currentProgramWeek} מתוך ${getProgramDefinition(programProgress.programPath).totalWeeks} · ${programProgress.activeLayers.map((l) => LAYER_LABELS[l]).join(", ")}`}
           </Text>
         )}
 
@@ -77,6 +97,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: "right",
     color: "#0a7ea4",
+    marginBottom: 8,
+  },
+  programProgress: {
+    fontSize: 15,
+    textAlign: "right",
+    color: "#444",
     marginBottom: 20,
   },
   weekRow: {

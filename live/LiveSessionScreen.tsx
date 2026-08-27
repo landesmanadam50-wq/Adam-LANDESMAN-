@@ -1,56 +1,43 @@
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
-import type { ArcProfile, LiveSession } from "../engine/types.ts";
-import { LiveStage, createEmptyLiveSession } from "../engine/types.ts";
-import { getFirstStage, getNextStage } from "../engine/arcEngine.ts";
-import { getBeneficialActionReinforcement, getSuccessFocusReinforcement } from "../engine/reinforcement.ts";
+import type { ArcBuildProfile, ArcLiveState, ArcStage, TriggerType } from "../arc/types.ts";
+import { createEmptyLiveState } from "../arc/types.ts";
+import { getFirstArcStage, getNextArcStage } from "../arc/arcEngine.ts";
+import { getStageCopy, getStageInputKind } from "../arc/stageCopy.ts";
+import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
 import { appendSessionLogEntry, loadProfile } from "../data/storage.ts";
-import { getStageCopy, getStageInputKind } from "./stageCopy.ts";
 
 const BODY_LOCATIONS = ["חזה", "בטן", "גרון", "כתפיים", "ראש"];
-const SUCCESS_FOCUS_MINUTES = [5, 10, 15, 20];
+const SUCCESS_FOCUS_MINUTES = [0, 5, 10, 15, 20];
 
-type RewardStep = "show" | "askSuccessFocus" | "askInterferingAction";
+const TRIGGER_OPTIONS: { value: TriggerType; label: string }[] = [
+  { value: "reactive_emotion", label: "רגש קשה כרגע" },
+  { value: "reactive_urge", label: "דחף כרגע" },
+  { value: "proactive", label: "תרגול יזום" },
+];
 
-function applyYesNo(stage: LiveStage, session: LiveSession, answer: boolean): LiveSession {
+function applyScale(stage: ArcStage, session: ArcLiveState, value: number): ArcLiveState {
   switch (stage) {
-    case LiveStage.PreventiveActionCheck:
-      return { ...session, wantsPreventiveActionNow: answer };
-    case LiveStage.EmotionGate:
-      return { ...session, hasRelevantEmotionOrUrge: answer };
-    case LiveStage.AcceptanceCheck:
-      return { ...session, needsAcceptance: answer };
-    default:
-      return session;
-  }
-}
-
-function applyScale(stage: LiveStage, session: LiveSession, value: number): LiveSession {
-  switch (stage) {
-    case LiveStage.PresenceCheck:
-    case LiveStage.ArcThoughtPresenceRecheck:
-      return { ...session, presenceLevel: value };
-    case LiveStage.IntensityCheck:
-      return { ...session, intensityLevel: value };
+    case "presence_check":
+    case "arc_thought_presence_recheck":
+      return { ...session, presenceRating: value };
+    case "desired_state_check":
+      return { ...session, desiredStateRating: value };
     default:
       return session;
   }
 }
 
 export default function LiveSessionScreen() {
-  const [profile, setProfile] = useState<ArcProfile | null>(null);
-  const [session, setSession] = useState<LiveSession>(() => createEmptyLiveSession());
-  const [stage, setStage] = useState<LiveStage>(LiveStage.Finish);
-  const [rewardStep, setRewardStep] = useState<RewardStep>("show");
-  const [pendingWantsSuccessFocus, setPendingWantsSuccessFocus] = useState<boolean | null>(null);
+  const [profile, setProfile] = useState<ArcBuildProfile | null>(null);
+  const [session, setSession] = useState<ArcLiveState>(() => createEmptyLiveState());
+  const [stage, setStage] = useState<ArcStage>("complete");
+  const [pendingSensationLocation, setPendingSensationLocation] = useState("");
   const [successFocusMinutes, setSuccessFocusMinutes] = useState<number | null>(null);
-  const [bodyLocationText, setBodyLocationText] = useState("");
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
-  const [reachedBeneficialAction, setReachedBeneficialAction] = useState(false);
-  const [usedInterferingAction, setUsedInterferingAction] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,9 +48,8 @@ export default function LiveSessionScreen() {
         return;
       }
       setProfile(loaded);
-      const fresh = createEmptyLiveSession();
-      setSession(fresh);
-      setStage(getFirstStage(fresh, loaded));
+      setSession(createEmptyLiveState());
+      setStage(getFirstArcStage());
       setSessionStartedAt(new Date().toISOString());
     });
     return () => {
@@ -72,48 +58,44 @@ export default function LiveSessionScreen() {
   }, []);
 
   const advance = useCallback(
-    (updatedSession: LiveSession) => {
-      if (!profile) return;
-      const nextStage = getNextStage(stage, updatedSession, profile);
-      const success = stage === LiveStage.BeneficialAction || reachedBeneficialAction;
-      const fall = stage === LiveStage.InterferingAction || usedInterferingAction;
+    (updatedSession: ArcLiveState) => {
+      const nextStage = getNextArcStage(stage, updatedSession);
 
       setSession(updatedSession);
       setStage(nextStage);
-      setReachedBeneficialAction(success);
-      setUsedInterferingAction(fall);
-      setRewardStep("show");
-      setPendingWantsSuccessFocus(null);
+      setPendingSensationLocation("");
       setSuccessFocusMinutes(null);
-      setBodyLocationText("");
 
-      if (nextStage === LiveStage.Finish) {
+      if (nextStage === "complete") {
+        // success: true is safe unconditionally here -- every ArcStage path
+        // (reactive and proactive) passes through "act" before reaching
+        // "complete", so finishing a session always means the action happened.
+        //
+        // fall: the old engine/'s "used the interfering-action window"
+        // signal has no equivalent stage in the new ArcStage list (arc/types.ts
+        // has no interfering-action concept at all), so there's currently no
+        // way to detect a fall. Always false until that's reintroduced as a
+        // deliberate product decision, not silently invented here.
         const finishedAt = new Date().toISOString();
         appendSessionLogEntry({
           id: `${sessionStartedAt}_${finishedAt}`,
           startedAt: sessionStartedAt,
           finishedAt,
-          success,
-          fall,
+          success: true,
+          fall: false,
         });
       }
     },
-    [profile, stage, reachedBeneficialAction, usedInterferingAction, sessionStartedAt]
+    [stage, sessionStartedAt]
   );
 
   const restart = useCallback(() => {
-    if (!profile) return;
-    const fresh = createEmptyLiveSession();
-    setSession(fresh);
-    setStage(getFirstStage(fresh, profile));
-    setRewardStep("show");
-    setPendingWantsSuccessFocus(null);
+    setSession(createEmptyLiveState());
+    setStage(getFirstArcStage());
+    setPendingSensationLocation("");
     setSuccessFocusMinutes(null);
-    setBodyLocationText("");
     setSessionStartedAt(new Date().toISOString());
-    setReachedBeneficialAction(false);
-    setUsedInterferingAction(false);
-  }, [profile]);
+  }, []);
 
   if (!profile) {
     return (
@@ -123,8 +105,9 @@ export default function LiveSessionScreen() {
     );
   }
 
-  const copy = getStageCopy(stage, profile);
+  const copy = getStageCopy(stage, profile, session);
   const inputKind = getStageInputKind(stage);
+  const isHabitSensation = session.triggerType === "reactive_urge";
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -132,129 +115,99 @@ export default function LiveSessionScreen() {
         <Text style={styles.title}>{copy.title}</Text>
         {copy.body.length > 0 && <Text style={styles.body}>{copy.body}</Text>}
 
+        {inputKind === "triggerSelect" && (
+          <View style={styles.chipRow}>
+            {TRIGGER_OPTIONS.map(({ value, label }) => (
+              <Pressable key={value} style={styles.chip} onPress={() => advance({ ...session, triggerType: value })}>
+                <Text style={styles.buttonText}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {inputKind === "scale0to10" && (
+          <View style={styles.scaleRow}>
+            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
+              <Pressable key={value} style={styles.scaleButton} onPress={() => advance(applyScale(stage, session, value))}>
+                <Text style={styles.buttonText}>{value}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {inputKind === "sensationCheck" && (
+          <View>
+            {!isHabitSensation && (
+              <View style={styles.chipRow}>
+                {BODY_LOCATIONS.map((location) => (
+                  <Pressable
+                    key={location}
+                    style={[styles.chip, pendingSensationLocation === location && styles.chipSelected]}
+                    onPress={() => setPendingSensationLocation(location)}
+                  >
+                    <Text style={styles.buttonText}>{location}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            <View style={styles.scaleRow}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((value) => (
+                <Pressable
+                  key={value}
+                  style={styles.scaleButton}
+                  onPress={() =>
+                    advance({
+                      ...session,
+                      sensationLocation: isHabitSensation ? null : pendingSensationLocation || null,
+                      sensationIntensity: value,
+                    })
+                  }
+                >
+                  <Text style={styles.buttonText}>{value}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
+
         {inputKind === "yesno" && (
           <View style={styles.buttonRow}>
-            <Pressable style={styles.button} onPress={() => advance(applyYesNo(stage, session, true))}>
+            <Pressable
+              style={styles.button}
+              onPress={() =>
+                advance(
+                  stage === "accept"
+                    ? { ...session, acceptanceNeeded: false }
+                    : { ...session, regulationReady: true }
+                )
+              }
+            >
               <Text style={styles.buttonText}>כן</Text>
             </Pressable>
-            <Pressable style={styles.button} onPress={() => advance(applyYesNo(stage, session, false))}>
+            <Pressable
+              style={styles.button}
+              onPress={() =>
+                advance(
+                  stage === "accept"
+                    ? { ...session, acceptanceNeeded: true }
+                    : { ...session, regulationReady: false }
+                )
+              }
+            >
               <Text style={styles.buttonText}>לא</Text>
             </Pressable>
           </View>
         )}
 
-        {(inputKind === "scale0to10" || inputKind === "scale1to10") && (
-          <View style={styles.scaleRow}>
-            {(inputKind === "scale0to10" ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).map(
-              (value) => (
-                <Pressable
-                  key={value}
-                  style={styles.scaleButton}
-                  onPress={() => advance(applyScale(stage, session, value))}
-                >
-                  <Text style={styles.buttonText}>{value}</Text>
-                </Pressable>
-              )
-            )}
-          </View>
-        )}
-
-        {inputKind === "bodyLocation" && (
-          <View>
-            <View style={styles.chipRow}>
-              {BODY_LOCATIONS.map((location) => (
-                <Pressable
-                  key={location}
-                  style={styles.chip}
-                  onPress={() => advance({ ...session, bodyLocation: location })}
-                >
-                  <Text style={styles.buttonText}>{location}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <TextInput
-              style={styles.textInput}
-              placeholder="או תאר במילים שלך"
-              value={bodyLocationText}
-              onChangeText={setBodyLocationText}
-              textAlign="right"
-            />
-            <Pressable
-              style={[styles.button, styles.fullWidthButton]}
-              onPress={() => advance({ ...session, bodyLocation: bodyLocationText })}
-            >
-              <Text style={styles.buttonText}>המשך</Text>
-            </Pressable>
-          </View>
-        )}
-
         {inputKind === "info" && (
-          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advance(session)}>
+          <Pressable
+            style={[styles.button, styles.fullWidthButton]}
+            onPress={() =>
+              advance(stage === "regulate" ? { ...session, activeTools: [...session.activeTools, profile.regulationTool ?? ""] } : session)
+            }
+          >
             <Text style={styles.buttonText}>המשך</Text>
           </Pressable>
-        )}
-
-        {inputKind === "reward" && (
-          <View>
-            {rewardStep === "show" && (
-              <View>
-                <Text style={styles.body}>{getBeneficialActionReinforcement(profile)}</Text>
-                <Pressable
-                  style={[styles.button, styles.fullWidthButton]}
-                  onPress={() => setRewardStep("askSuccessFocus")}
-                >
-                  <Text style={styles.buttonText}>המשך</Text>
-                </Pressable>
-              </View>
-            )}
-            {rewardStep === "askSuccessFocus" && (
-              <View>
-                <Text style={styles.body}>האם תרצה להתמקד בהצלחה שלך?</Text>
-                <View style={styles.buttonRow}>
-                  {[true, false].map((answer) => (
-                    <Pressable
-                      key={String(answer)}
-                      style={styles.button}
-                      onPress={() => {
-                        if (profile.interferingAction) {
-                          setPendingWantsSuccessFocus(answer);
-                          setRewardStep("askInterferingAction");
-                        } else {
-                          advance({ ...session, wantsSuccessFocus: answer });
-                        }
-                      }}
-                    >
-                      <Text style={styles.buttonText}>{answer ? "כן" : "לא"}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            )}
-            {rewardStep === "askInterferingAction" && profile.interferingAction && (
-              <View>
-                <Text style={styles.body}>
-                  {`להשתמש עכשיו בחלון של ${profile.interferingAction.description} (עד ${profile.interferingAction.allowedMinutes} דקות)?`}
-                </Text>
-                <View style={styles.buttonRow}>
-                  {[true, false].map((answer) => (
-                    <Pressable
-                      key={String(answer)}
-                      style={styles.button}
-                      onPress={() =>
-                        advance({
-                          ...session,
-                          wantsSuccessFocus: pendingWantsSuccessFocus ?? false,
-                          wantsToUseInterferingActionWindow: answer,
-                        })
-                      }
-                    >
-                      <Text style={styles.buttonText}>{answer ? "כן" : "לא"}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            )}
-          </View>
         )}
 
         {inputKind === "successFocus" && (
@@ -276,12 +229,6 @@ export default function LiveSessionScreen() {
               </View>
             )}
           </View>
-        )}
-
-        {inputKind === "interferingAction" && (
-          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advance(session)}>
-            <Text style={styles.buttonText}>התחל</Text>
-          </Pressable>
         )}
 
         {inputKind === "finish" && (
@@ -348,6 +295,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 8,
   },
+  chipSelected: {
+    backgroundColor: "#0a7ea4",
+  },
   button: {
     backgroundColor: "#0a7ea4",
     paddingVertical: 12,
@@ -361,14 +311,6 @@ const styles = StyleSheet.create({
   buttonText: {
     color: "#fff",
     fontWeight: "600",
-    fontSize: 16,
-  },
-  textInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
     fontSize: 16,
   },
 });

@@ -3,8 +3,8 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
-import type { ArcType } from "../engine/types.ts";
-import { getOrCreatePilotStartedAt, loadProfile, saveProfile } from "../data/storage.ts";
+import { getOrCreatePilotStartedAt, loadProfile, loadProgramProgress, saveProfile, saveProgramProgress } from "../data/storage.ts";
+import { createInitialProgress } from "../program/progress.ts";
 import {
   buildProfileFromDraft,
   createEmptyDraft,
@@ -17,47 +17,54 @@ import {
   type ProfileStep,
 } from "./profileWizard.ts";
 
-const ARC_TYPES: { value: ArcType; label: string }[] = [
-  { value: "state", label: "מצב" },
-  { value: "identity", label: "זהות" },
-  { value: "habit", label: "הרגל" },
-];
-
-const MINUTES_OPTIONS = [5, 10, 15, 20];
-
 const STEP_TITLES: Record<ProfileStep, string> = {
-  goal: "מה המטרה שלך?",
-  arcType: "באיזה סוג ARC אתה עובד?",
+  needsState: "האם יש מצב פנימי (כמו פחד או חרדה) שאתה רוצה לעבוד על שינויו?",
+  needsIdentityImmediately: "לעבוד גם על זהות מקבילה כבר מההתחלה?",
+  needsIdentityExplicit: "האם יש זהות שתרצה לפתח?",
   interferingState: "מה המצב הפנימי המפריע?",
   supportiveState: "מה המצב התומך?",
   internalAction: "מה הפעולה הפנימית שלך? (למשל סריקת גוף)",
-  beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע?",
-  regulationTool: "מה כלי הוויסות שלך? (למשל נשימה 4-7-8)",
-  mantra: "יש לך מנטרה? (רשות)",
+  stateMantra: "יש לך מנטרה למצב הזה? (רשות)",
+  desiredIdentity: "מה הזהות הרצויה?",
+  identityInterferingEmotion: "מה הרגש שמפריע לזהות הזו?",
+  identityAction: "מה הפעולה שמבטאת את הזהות הזו?",
+  identityMantra: "יש לך מנטרה לזהות הזו? (רשות)",
+  habit: "מה ההרגל שתרצה לעבוד עליו?",
+  beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע במקומו?",
   preventiveActionAsk: "יש לך פעולה מונעת מוגדרת מראש?",
   preventiveActionDescription: "תאר את הפעולה המונעת",
-  interferingActionAsk: "יש הרגל מפריע שתרצה לצמצם בהדרגה?",
-  interferingActionDescription: "תאר את ההרגל המפריע",
-  interferingActionMinutes: "כמה דקות מותר כרגע?",
+  regulationTool: "מה כלי הוויסות שלך? (למשל נשימה 4-7-8)",
   review: "סיכום",
 };
 
 const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
-  goal: "goal",
   interferingState: "interferingState",
   supportiveState: "supportiveState",
   internalAction: "internalAction",
+  stateMantra: "stateMantra",
+  desiredIdentity: "desiredIdentity",
+  identityInterferingEmotion: "identityInterferingEmotion",
+  identityAction: "identityAction",
+  identityMantra: "identityMantra",
+  habit: "habit",
   beneficialAction: "beneficialAction",
-  regulationTool: "regulationTool",
-  mantra: "mantra",
   preventiveActionDescription: "preventiveActionDescription",
-  interferingActionDescription: "interferingActionDescription",
+  regulationTool: "regulationTool",
+};
+
+const OPTIONAL_TEXT_STEPS: ProfileStep[] = ["stateMantra", "identityMantra"];
+
+const YESNO_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
+  needsState: "needsState",
+  needsIdentityImmediately: "needsIdentityImmediately",
+  needsIdentityExplicit: "needsIdentityExplicit",
+  preventiveActionAsk: "hasPreventiveAction",
 };
 
 export default function ProfileBuilderScreen() {
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<ProfileDraft>(createEmptyDraft());
-  const [step, setStep] = useState<ProfileStep>("goal");
+  const [step, setStep] = useState<ProfileStep>("needsState");
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +93,16 @@ export default function ProfileBuilderScreen() {
     const profile = buildProfileFromDraft(draft);
     await saveProfile(profile);
     await getOrCreatePilotStartedAt();
+
+    // Only (re)start program progress if there's none yet, or the
+    // resolved program changed (e.g. the trainee's needs assessment
+    // answers changed on a re-edit) -- otherwise editing unrelated
+    // fields like regulationTool shouldn't reset accumulated weeks.
+    const existingProgress = await loadProgramProgress();
+    if (!existingProgress || existingProgress.programPath !== profile.programPath) {
+      await saveProgramProgress(createInitialProgress(profile.programPath));
+    }
+
     router.replace("/");
   }, [draft]);
 
@@ -98,7 +115,8 @@ export default function ProfileBuilderScreen() {
   }
 
   const textField = TEXT_STEP_FIELDS[step];
-  const isOptionalTextStep = step === "mantra";
+  const yesNoField = YESNO_STEP_FIELDS[step];
+  const isOptionalTextStep = OPTIONAL_TEXT_STEPS.includes(step);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -124,45 +142,11 @@ export default function ProfileBuilderScreen() {
           </View>
         )}
 
-        {step === "arcType" && (
-          <View style={styles.buttonRow}>
-            {ARC_TYPES.map(({ value, label }) => (
-              <Pressable key={value} style={styles.chip} onPress={() => goNext({ ...draft, arcType: value })}>
-                <Text style={styles.buttonText}>{label}</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        {(step === "preventiveActionAsk" || step === "interferingActionAsk") && (
+        {yesNoField && (
           <View style={styles.buttonRow}>
             {[true, false].map((answer) => (
-              <Pressable
-                key={String(answer)}
-                style={styles.button}
-                onPress={() =>
-                  goNext(
-                    step === "preventiveActionAsk"
-                      ? { ...draft, hasPreventiveAction: answer }
-                      : { ...draft, hasInterferingAction: answer }
-                  )
-                }
-              >
+              <Pressable key={String(answer)} style={styles.button} onPress={() => goNext({ ...draft, [yesNoField]: answer })}>
                 <Text style={styles.buttonText}>{answer ? "כן" : "לא"}</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        {step === "interferingActionMinutes" && (
-          <View style={styles.buttonRow}>
-            {MINUTES_OPTIONS.map((minutes) => (
-              <Pressable
-                key={minutes}
-                style={styles.chip}
-                onPress={() => goNext({ ...draft, interferingActionAllowedMinutes: minutes })}
-              >
-                <Text style={styles.buttonText}>{minutes} דק'</Text>
               </Pressable>
             ))}
           </View>
@@ -170,20 +154,17 @@ export default function ProfileBuilderScreen() {
 
         {step === "review" && (
           <View>
-            <Text style={styles.body}>{`מטרה: ${draft.goal}`}</Text>
+            <Text style={styles.body}>{`הרגל: ${draft.habit}`}</Text>
             <Text style={styles.body}>{`פעולה מיטיבה: ${draft.beneficialAction}`}</Text>
             <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
-            <Pressable
-              style={[styles.button, styles.fullWidthButton]}
-              disabled={!isDraftComplete(draft)}
-              onPress={finish}
-            >
+            {draft.needsState && <Text style={styles.body}>{`מצב פנימי: ${draft.interferingState} → ${draft.supportiveState}`}</Text>}
+            <Pressable style={[styles.button, styles.fullWidthButton]} disabled={!isDraftComplete(draft)} onPress={finish}>
               <Text style={styles.buttonText}>שמור והתחל</Text>
             </Pressable>
           </View>
         )}
 
-        {step !== "goal" && (
+        {step !== "needsState" && (
           <Pressable style={styles.backButton} onPress={goBack}>
             <Text style={styles.backButtonText}>חזור</Text>
           </Pressable>
@@ -219,12 +200,6 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "center",
     gap: 12,
-  },
-  chip: {
-    backgroundColor: "#E6F4FE",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
   },
   button: {
     backgroundColor: "#0a7ea4",
