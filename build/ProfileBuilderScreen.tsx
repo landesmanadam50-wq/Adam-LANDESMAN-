@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 
 import {
+  getOrCreateGoalModel,
   getOrCreatePilotStartedAt,
   loadProfile,
   loadProgramProgress,
@@ -27,11 +28,10 @@ import {
 } from "./profileWizard.ts";
 
 const STEP_TITLES: Record<ProfileStep, string> = {
-  needsState: "האם יש מצב פנימי (כמו פחד או חרדה) שאתה רוצה לעבוד על שינויו?",
+  needsState: "האם יש מצב פנימי (כמו רוגע, ביטחון או חמלה) שתרצה לפתח ולחזק?",
   needsIdentityImmediately: "לעבוד גם על זהות מקבילה כבר מההתחלה?",
   needsIdentityExplicit: "האם יש זהות שתרצה לפתח?",
-  interferingState: "מה המצב הפנימי המפריע?",
-  supportiveState: "מה המצב התומך?",
+  supportiveState: "מה המצב הרצוי שתרצה לחוש יותר?",
   internalAction: "מה הפעולה הפנימית שלך? (למשל סריקת גוף)",
   stateMantra: "יש לך מנטרה למצב הזה? (רשות)",
   desiredIdentity: "מה הזהות הרצויה?",
@@ -40,14 +40,11 @@ const STEP_TITLES: Record<ProfileStep, string> = {
   identityMantra: "יש לך מנטרה לזהות הזו? (רשות)",
   habit: "מה ההרגל שתרצה לעבוד עליו?",
   beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע במקומו?",
-  preventiveActionAsk: "יש לך פעולה מונעת מוגדרת מראש?",
-  preventiveActionDescription: "תאר את הפעולה המונעת",
   regulationTool: "מה כלי הוויסות שלך? (למשל נשימה 4-7-8)",
   review: "סיכום",
 };
 
 const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
-  interferingState: "interferingState",
   supportiveState: "supportiveState",
   internalAction: "internalAction",
   stateMantra: "stateMantra",
@@ -57,7 +54,6 @@ const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   identityMantra: "identityMantra",
   habit: "habit",
   beneficialAction: "beneficialAction",
-  preventiveActionDescription: "preventiveActionDescription",
   regulationTool: "regulationTool",
 };
 
@@ -67,7 +63,6 @@ const YESNO_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   needsState: "needsState",
   needsIdentityImmediately: "needsIdentityImmediately",
   needsIdentityExplicit: "needsIdentityExplicit",
-  preventiveActionAsk: "hasPreventiveAction",
 };
 
 export default function ProfileBuilderScreen() {
@@ -79,6 +74,13 @@ export default function ProfileBuilderScreen() {
     let cancelled = false;
     Promise.all([loadProfile(), loadProgramSelection()]).then(([existing, selection]) => {
       if (cancelled) return;
+      if (existing) {
+        // Idempotent -- migrates any interferingState/preventiveAction this
+        // trainee answered before those questions moved to BUILD-ARC into
+        // their first ArcMap, using the profile as stored right now, before
+        // this wizard's own save can overwrite those fields with null.
+        getOrCreateGoalModel(existing);
+      }
       const initialDraft = existing ? draftFromProfileAndSelection(existing, selection) : createEmptyDraft();
       setDraft(initialDraft);
       setStep(getFirstProfileStep(initialDraft));
@@ -168,7 +170,7 @@ export default function ProfileBuilderScreen() {
             <Text style={styles.body}>{`הרגל: ${draft.habit}`}</Text>
             <Text style={styles.body}>{`פעולה מיטיבה: ${draft.beneficialAction}`}</Text>
             <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
-            {draft.needsState && <Text style={styles.body}>{`מצב פנימי: ${draft.interferingState} → ${draft.supportiveState}`}</Text>}
+            {draft.needsState && <Text style={styles.body}>{`מצב רצוי: ${draft.supportiveState}`}</Text>}
             <Pressable style={[styles.button, styles.fullWidthButton]} disabled={!isDraftComplete(draft)} onPress={finish}>
               <Text style={styles.buttonText}>שמור והתחל</Text>
             </Pressable>

@@ -167,13 +167,16 @@ export default function ArcMapManagerScreen() {
 
         {editingId !== null && (
           <View style={styles.form}>
-            <Text style={styles.label}>מצב מפריע</Text>
+            {/* Recognition wording, not evocation: this asks what tends to
+                interfere in these situations -- never to imagine/evoke/
+                strengthen/reproduce it. */}
+            <Text style={styles.label}>איזה מצב פנימי נוטה להפריע לך במצבים האלה?</Text>
             <TextInput
               style={styles.textInput}
               value={draft.interferingState}
               onChangeText={(value) => setDraft((d) => ({ ...d, interferingState: value }))}
               textAlign="right"
-              placeholder="לדוגמה: ביקורת עצמית"
+              placeholder="לדוגמה: ביקורת עצמית (רשות)"
             />
             <Text style={styles.label}>הקשר מאתגר</Text>
             <TextInput

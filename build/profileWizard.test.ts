@@ -10,6 +10,7 @@ import {
   getPreviousProfileStep,
   isDraftComplete,
   resolvesNeedsIdentity,
+  PROFILE_STEP_ORDER,
   type ProfileDraft,
 } from "./profileWizard.ts";
 
@@ -21,7 +22,6 @@ function filledStateOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
     ...createEmptyDraft(),
     needsState: true,
     needsIdentityImmediately: false,
-    interferingState: "פחד",
     supportiveState: "חמלה",
     internalAction: "סריקת גוף",
     desiredIdentity: "אומץ",
@@ -30,7 +30,6 @@ function filledStateOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
     habit: "גלילה ברשת",
     beneficialAction: "לגשת ולפתוח שיחה",
     regulationTool: "נשימה 4-7-8",
-    hasPreventiveAction: false,
     ...overrides,
   };
 }
@@ -43,7 +42,6 @@ function filledHabitOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
     habit: "גלילה ברשת",
     beneficialAction: "לגשת ולפתוח שיחה",
     regulationTool: "נשימה 4-7-8",
-    hasPreventiveAction: false,
     ...overrides,
   };
 }
@@ -84,14 +82,10 @@ test("state path always continues into identity questions (advanced_2_week / sta
   assert.equal(getNextProfileStep("stateMantra", draft), "desiredIdentity");
 });
 
-test("declining preventive action skips its description step", () => {
-  const draft = filledHabitOnlyDraft({ hasPreventiveAction: false });
-  assert.equal(getNextProfileStep("preventiveActionAsk", draft), "regulationTool");
-});
-
-test("accepting preventive action enters its description step", () => {
-  const draft = filledHabitOnlyDraft({ hasPreventiveAction: true, preventiveActionDescription: "לצאת להליכה" });
-  assert.equal(getNextProfileStep("preventiveActionAsk", draft), "preventiveActionDescription");
+test("interferingState/preventiveAction steps no longer exist in this wizard -- that's BUILD-ARC's job now", () => {
+  assert.equal((PROFILE_STEP_ORDER as string[]).includes("interferingState"), false);
+  assert.equal((PROFILE_STEP_ORDER as string[]).includes("preventiveActionAsk"), false);
+  assert.equal((PROFILE_STEP_ORDER as string[]).includes("preventiveActionDescription"), false);
 });
 
 test("getPreviousProfileStep mirrors getNextProfileStep, skipping hidden steps", () => {
@@ -156,15 +150,38 @@ test("buildProfileFromDraft throws on an incomplete draft", () => {
 });
 
 test("draftFromProfileAndSelection prefers the persisted selection over the profile", () => {
-  const draft = filledHabitOnlyDraft({ hasPreventiveAction: true, preventiveActionDescription: "לצאת להליכה" });
+  const draft = filledHabitOnlyDraft();
   const profile = buildProfileFromDraft(draft);
   const selection = selectionFromDraft(draft);
   const roundTripped = draftFromProfileAndSelection(profile, selection);
   assert.equal(roundTripped.needsState, false);
   assert.equal(roundTripped.needsIdentityExplicit, false);
   assert.equal(roundTripped.habit, draft.habit);
-  assert.equal(roundTripped.hasPreventiveAction, true);
-  assert.equal(roundTripped.preventiveActionDescription, "לצאת להליכה");
+});
+
+test("buildProfileFromDraft never collects interferingState/preventiveAction -- always null, regardless of needsState", () => {
+  const stateProfile = buildProfileFromDraft(
+    filledStateOnlyDraft({ desiredIdentity: "x", identityInterferingEmotion: "x", identityAction: "x" })
+  );
+  assert.equal(stateProfile.interferingState, null);
+  assert.equal(stateProfile.preventiveAction, null);
+
+  const habitProfile = buildProfileFromDraft(filledHabitOnlyDraft());
+  assert.equal(habitProfile.interferingState, null);
+  assert.equal(habitProfile.preventiveAction, null);
+});
+
+test("buildProfileFromDraft's stateEncoding target is the Desired State, not a discontinued Interfering State field", () => {
+  const profile = buildProfileFromDraft(
+    filledStateOnlyDraft({
+      desiredIdentity: "x",
+      identityInterferingEmotion: "x",
+      identityAction: "x",
+      supportiveState: "חמלה",
+      stateMantra: "אני בטוח כאן",
+    })
+  );
+  assert.equal(profile.stateEncoding?.target, "חמלה");
 });
 
 test("draftFromProfileAndSelection falls back to the legacy programPath when no selection was ever saved", () => {

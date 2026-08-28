@@ -24,6 +24,20 @@
  * prefers a passed-in selection and only falls back to inferring from
  * the profile/legacy programPath when no selection was ever saved
  * (old data from before ArcProgramSelection persistence existed).
+ *
+ * BUILD-GOAL vs. BUILD-ARC: this wizard only collects the Desired
+ * State (supportiveState) -- the positive direction a trainee wants to
+ * develop. It deliberately does NOT ask for an Interfering State or a
+ * Preventive Action; those are Challenge Pattern data that belongs to
+ * an ArcMap (arc/buildTypes.ts), collected in BUILD-ARC
+ * (build/ArcMapManagerScreen.tsx) only once a Desired State already
+ * exists, and framed as recognition ("what tends to interfere"), never
+ * as a second thing this wizard asks the trainee to name up front.
+ * ArcBuildProfile.interferingState/preventiveAction are still real
+ * fields on the type (so old stored profiles still parse), but this
+ * wizard always writes them as null now -- data/storage.ts's
+ * getOrCreateGoalModel() is what migrates any previously-collected
+ * value into a trainee's first ArcMap.
  */
 
 import type { ArcBuildProfile, EncodingProfile } from "../arc/types.ts";
@@ -45,7 +59,6 @@ export type ProfileStep =
   | "needsState"
   | "needsIdentityImmediately"
   | "needsIdentityExplicit"
-  | "interferingState"
   | "supportiveState"
   | "internalAction"
   | "stateMantra"
@@ -55,8 +68,6 @@ export type ProfileStep =
   | "identityMantra"
   | "habit"
   | "beneficialAction"
-  | "preventiveActionAsk"
-  | "preventiveActionDescription"
   | "regulationTool"
   | "review";
 
@@ -64,7 +75,6 @@ export const PROFILE_STEP_ORDER: ProfileStep[] = [
   "needsState",
   "needsIdentityImmediately",
   "needsIdentityExplicit",
-  "interferingState",
   "supportiveState",
   "internalAction",
   "stateMantra",
@@ -74,8 +84,6 @@ export const PROFILE_STEP_ORDER: ProfileStep[] = [
   "identityMantra",
   "habit",
   "beneficialAction",
-  "preventiveActionAsk",
-  "preventiveActionDescription",
   "regulationTool",
   "review",
 ];
@@ -85,7 +93,6 @@ export interface ProfileDraft {
   needsIdentityImmediately: boolean | null;
   needsIdentityExplicit: boolean | null;
 
-  interferingState: string;
   supportiveState: string;
   internalAction: string;
   stateMantra: string;
@@ -97,8 +104,6 @@ export interface ProfileDraft {
 
   habit: string;
   beneficialAction: string;
-  hasPreventiveAction: boolean | null;
-  preventiveActionDescription: string;
 
   regulationTool: string;
 }
@@ -108,7 +113,6 @@ export function createEmptyDraft(): ProfileDraft {
     needsState: null,
     needsIdentityImmediately: null,
     needsIdentityExplicit: null,
-    interferingState: "",
     supportiveState: "",
     internalAction: "",
     stateMantra: "",
@@ -118,8 +122,6 @@ export function createEmptyDraft(): ProfileDraft {
     identityMantra: "",
     habit: "",
     beneficialAction: "",
-    hasPreventiveAction: null,
-    preventiveActionDescription: "",
     regulationTool: "",
   };
 }
@@ -145,7 +147,6 @@ export function draftFromProfileAndSelection(
     needsState,
     needsIdentityImmediately: needsState ? resolvedSelection.needsIdentityImmediately : null,
     needsIdentityExplicit: needsState ? null : needsIdentity,
-    interferingState: profile.interferingState ?? "",
     supportiveState: profile.supportiveState ?? "",
     internalAction: profile.internalAction ?? "",
     stateMantra: profile.stateEncoding?.mantra ?? "",
@@ -155,8 +156,6 @@ export function draftFromProfileAndSelection(
     identityMantra: profile.identityEncoding?.mantra ?? "",
     habit: profile.habit ?? "",
     beneficialAction: profile.beneficialAction ?? "",
-    hasPreventiveAction: profile.preventiveAction !== null,
-    preventiveActionDescription: profile.preventiveAction ?? "",
     regulationTool: profile.regulationTool ?? "",
   };
 }
@@ -172,7 +171,6 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
       return draft.needsState === true;
     case "needsIdentityExplicit":
       return draft.needsState === false;
-    case "interferingState":
     case "supportiveState":
     case "internalAction":
     case "stateMantra":
@@ -182,8 +180,6 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
     case "identityAction":
     case "identityMantra":
       return resolvesNeedsIdentity(draft);
-    case "preventiveActionDescription":
-      return draft.hasPreventiveAction === true;
     default:
       return true;
   }
@@ -220,7 +216,6 @@ export function isDraftComplete(draft: ProfileDraft): boolean {
   if (draft.needsState === false && draft.needsIdentityExplicit === null) return false;
 
   if (draft.needsState === true) {
-    if (draft.interferingState.trim().length === 0) return false;
     if (draft.supportiveState.trim().length === 0) return false;
     if (draft.internalAction.trim().length === 0) return false;
   }
@@ -233,7 +228,6 @@ export function isDraftComplete(draft: ProfileDraft): boolean {
 
   if (draft.habit.trim().length === 0) return false;
   if (draft.beneficialAction.trim().length === 0) return false;
-  if (draft.hasPreventiveAction === true && draft.preventiveActionDescription.trim().length === 0) return false;
   if (draft.regulationTool.trim().length === 0) return false;
 
   return true;
@@ -281,9 +275,14 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     // (see selectionFromDraft above) -- new code must read that instead.
     identityActionNeeded: needsIdentity,
 
-    interferingState: draft.needsState ? draft.interferingState.trim() : null,
+    // Interfering State/Preventive Action are Challenge Pattern data now
+    // -- they live on an ArcMap (BUILD-ARC), never collected here. See
+    // data/storage.ts's getOrCreateGoalModel() for how a previously
+    // stored value (from before this change) gets migrated into a
+    // trainee's first ArcMap instead of being silently lost.
+    interferingState: null,
     supportiveState: draft.needsState ? draft.supportiveState.trim() : null,
-    stateEncoding: draft.needsState ? encodingFromMantra(draft.interferingState.trim(), draft.stateMantra) : null,
+    stateEncoding: draft.needsState ? encodingFromMantra(draft.supportiveState.trim(), draft.stateMantra) : null,
     internalAction: draft.needsState ? draft.internalAction.trim() : null,
 
     desiredIdentity: needsIdentity ? draft.desiredIdentity.trim() : null,
@@ -293,7 +292,7 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
 
     habit: draft.habit.trim(),
     beneficialAction: draft.beneficialAction.trim(),
-    preventiveAction: draft.hasPreventiveAction ? draft.preventiveActionDescription.trim() : null,
+    preventiveAction: null,
 
     regulationTool: draft.regulationTool.trim(),
     actionDuration: null,
