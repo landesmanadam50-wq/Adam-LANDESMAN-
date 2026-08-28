@@ -29,7 +29,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "node --experimental-transform-types --test engine/*.test.ts live/*.test.ts data/*.test.ts build/*.test.ts",
+    "test": "node --experimental-transform-types --test arc/*.test.ts program/*.test.ts live/*.test.ts data/*.test.ts build/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "deploy:preview": "eas update --branch preview"

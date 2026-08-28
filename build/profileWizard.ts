@@ -1,109 +1,189 @@
 /**
  * build/profileWizard.ts
  *
- * Pure (React-free) logic for the BUILD calibration wizard that turns
- * a trainee's answers into a real engine/types.ts ArcProfile. Mirrors
- * the shape of engine/arcEngine.ts (a fixed step order, a "should this
- * step show" gate, a "walk to the next visible step" function) so the
- * two flows read the same way and this stays testable with node --test
- * instead of requiring a React renderer.
+ * Pure (React-free) logic for the BUILD calibration wizard, producing
+ * a real arc/types.ts ArcBuildProfile. Mirrors the shape of
+ * arc/arcEngine.ts / program/progress.ts (a fixed step order, a
+ * "should this step show" gate, a "walk to the next visible step"
+ * function) so it stays testable with node --test.
+ *
+ * The needs assessment (needsState / needsIdentityImmediately /
+ * needsIdentity) feeds program/selection.ts's resolveCurrentPreset,
+ * which is how programPath gets assigned -- habit is always needed
+ * (buildProgramSelection hardcodes needsHabit: true), so habit
+ * questions are never skipped, but state/identity questions are only
+ * asked when the resolved program actually calls for that layer.
+ *
+ * ArcBuildProfile has no "goal" field (unlike the old engine/'s
+ * ArcProfile), so this wizard doesn't ask for one -- there's nowhere
+ * to store it.
+ *
+ * The persisted ArcProgramSelection (program/programTypes.ts) is the
+ * real source of truth for what a trainee needs -- ArcBuildProfile
+ * .identityActionNeeded is legacy-only. draftFromProfileAndSelection
+ * prefers a passed-in selection and only falls back to inferring from
+ * the profile/legacy programPath when no selection was ever saved
+ * (old data from before ArcProgramSelection persistence existed).
  */
 
-import type { ArcProfile, ArcType } from "../engine/types.ts";
-import { DEFAULT_PRESENCE_THRESHOLD, DEFAULT_INTENSITY_THRESHOLDS } from "../engine/thresholds.ts";
+import type { ArcBuildProfile, EncodingProfile } from "../arc/types.ts";
+import type { ArcProgramSelection, KnownProgramPath } from "../program/programTypes.ts";
+import { deriveNeedsFromLegacyProgramPath, resolveCurrentPreset } from "../program/selection.ts";
+
+const LEGACY_PROGRAM_PATHS: KnownProgramPath[] = [
+  "standard_3_week",
+  "advanced_2_week",
+  "identity_habit_2_week",
+  "habit_only_1_week",
+];
+
+function isKnownLegacyProgramPath(programPath: string): programPath is KnownProgramPath {
+  return (LEGACY_PROGRAM_PATHS as string[]).includes(programPath);
+}
 
 export type ProfileStep =
-  | "goal"
-  | "arcType"
+  | "needsState"
+  | "needsIdentityImmediately"
+  | "needsIdentityExplicit"
   | "interferingState"
   | "supportiveState"
   | "internalAction"
+  | "stateMantra"
+  | "desiredIdentity"
+  | "identityInterferingEmotion"
+  | "identityAction"
+  | "identityMantra"
+  | "habit"
   | "beneficialAction"
-  | "regulationTool"
-  | "mantra"
   | "preventiveActionAsk"
   | "preventiveActionDescription"
-  | "interferingActionAsk"
-  | "interferingActionDescription"
-  | "interferingActionMinutes"
+  | "regulationTool"
   | "review";
 
 export const PROFILE_STEP_ORDER: ProfileStep[] = [
-  "goal",
-  "arcType",
+  "needsState",
+  "needsIdentityImmediately",
+  "needsIdentityExplicit",
   "interferingState",
   "supportiveState",
   "internalAction",
+  "stateMantra",
+  "desiredIdentity",
+  "identityInterferingEmotion",
+  "identityAction",
+  "identityMantra",
+  "habit",
   "beneficialAction",
-  "regulationTool",
-  "mantra",
   "preventiveActionAsk",
   "preventiveActionDescription",
-  "interferingActionAsk",
-  "interferingActionDescription",
-  "interferingActionMinutes",
+  "regulationTool",
   "review",
 ];
 
 export interface ProfileDraft {
-  goal: string;
-  arcType: ArcType | null;
+  needsState: boolean | null;
+  needsIdentityImmediately: boolean | null;
+  needsIdentityExplicit: boolean | null;
+
   interferingState: string;
   supportiveState: string;
   internalAction: string;
+  stateMantra: string;
+
+  desiredIdentity: string;
+  identityInterferingEmotion: string;
+  identityAction: string;
+  identityMantra: string;
+
+  habit: string;
   beneficialAction: string;
-  regulationTool: string;
-  mantra: string;
   hasPreventiveAction: boolean | null;
   preventiveActionDescription: string;
-  hasInterferingAction: boolean | null;
-  interferingActionDescription: string;
-  interferingActionAllowedMinutes: number | null;
+
+  regulationTool: string;
 }
 
 export function createEmptyDraft(): ProfileDraft {
   return {
-    goal: "",
-    arcType: null,
+    needsState: null,
+    needsIdentityImmediately: null,
+    needsIdentityExplicit: null,
     interferingState: "",
     supportiveState: "",
     internalAction: "",
+    stateMantra: "",
+    desiredIdentity: "",
+    identityInterferingEmotion: "",
+    identityAction: "",
+    identityMantra: "",
+    habit: "",
     beneficialAction: "",
-    regulationTool: "",
-    mantra: "",
     hasPreventiveAction: null,
     preventiveActionDescription: "",
-    hasInterferingAction: null,
-    interferingActionDescription: "",
-    interferingActionAllowedMinutes: null,
+    regulationTool: "",
   };
 }
 
-export function draftFromProfile(profile: ArcProfile): ProfileDraft {
+export function draftFromProfileAndSelection(
+  profile: ArcBuildProfile,
+  selection: ArcProgramSelection | null
+): ProfileDraft {
+  // Prefer the persisted selection (the real source of truth). Only
+  // infer from the profile/legacy programPath if no selection was
+  // ever saved for this profile -- data from before ArcProgramSelection
+  // persistence existed.
+  const resolvedSelection: Omit<ArcProgramSelection, "programPath"> =
+    selection ??
+    (isKnownLegacyProgramPath(profile.programPath)
+      ? deriveNeedsFromLegacyProgramPath(profile.programPath)
+      : { needsState: false, needsIdentity: false, needsHabit: true, needsIdentityImmediately: false });
+
+  const needsState = resolvedSelection.needsState;
+  const needsIdentity = resolvedSelection.needsIdentity;
+
   return {
-    goal: profile.goal,
-    arcType: profile.arcType,
-    interferingState: profile.interferingState,
-    supportiveState: profile.supportiveState,
-    internalAction: profile.actions.internalAction,
-    beneficialAction: profile.actions.beneficialAction,
-    regulationTool: profile.regulationTool,
-    mantra: profile.mantra ?? "",
-    hasPreventiveAction: !!profile.preventiveAction,
-    preventiveActionDescription: profile.preventiveAction?.description ?? "",
-    hasInterferingAction: !!profile.interferingAction,
-    interferingActionDescription: profile.interferingAction?.description ?? "",
-    interferingActionAllowedMinutes: profile.interferingAction?.allowedMinutes ?? null,
+    needsState,
+    needsIdentityImmediately: needsState ? resolvedSelection.needsIdentityImmediately : null,
+    needsIdentityExplicit: needsState ? null : needsIdentity,
+    interferingState: profile.interferingState ?? "",
+    supportiveState: profile.supportiveState ?? "",
+    internalAction: profile.internalAction ?? "",
+    stateMantra: profile.stateEncoding?.mantra ?? "",
+    desiredIdentity: profile.desiredIdentity ?? "",
+    identityInterferingEmotion: profile.identityInterferingEmotion ?? "",
+    identityAction: profile.identityAction ?? "",
+    identityMantra: profile.identityEncoding?.mantra ?? "",
+    habit: profile.habit ?? "",
+    beneficialAction: profile.beneficialAction ?? "",
+    hasPreventiveAction: profile.preventiveAction !== null,
+    preventiveActionDescription: profile.preventiveAction ?? "",
+    regulationTool: profile.regulationTool ?? "",
   };
+}
+
+/** True once the needs assessment resolves to "this trainee needs identity work". */
+export function resolvesNeedsIdentity(draft: ProfileDraft): boolean {
+  return draft.needsState === true ? true : draft.needsIdentityExplicit === true;
 }
 
 export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): boolean {
   switch (step) {
+    case "needsIdentityImmediately":
+      return draft.needsState === true;
+    case "needsIdentityExplicit":
+      return draft.needsState === false;
+    case "interferingState":
+    case "supportiveState":
+    case "internalAction":
+    case "stateMantra":
+      return draft.needsState === true;
+    case "desiredIdentity":
+    case "identityInterferingEmotion":
+    case "identityAction":
+    case "identityMantra":
+      return resolvesNeedsIdentity(draft);
     case "preventiveActionDescription":
       return draft.hasPreventiveAction === true;
-    case "interferingActionDescription":
-    case "interferingActionMinutes":
-      return draft.hasInterferingAction === true;
     default:
       return true;
   }
@@ -134,54 +214,89 @@ export function getPreviousProfileStep(current: ProfileStep, draft: ProfileDraft
   return null;
 }
 
-/** True once every required (non-optional) field has a real value. */
 export function isDraftComplete(draft: ProfileDraft): boolean {
-  return (
-    draft.goal.trim().length > 0 &&
-    draft.arcType !== null &&
-    draft.interferingState.trim().length > 0 &&
-    draft.supportiveState.trim().length > 0 &&
-    draft.internalAction.trim().length > 0 &&
-    draft.beneficialAction.trim().length > 0 &&
-    draft.regulationTool.trim().length > 0 &&
-    (draft.hasPreventiveAction !== true || draft.preventiveActionDescription.trim().length > 0) &&
-    (draft.hasInterferingAction !== true ||
-      (draft.interferingActionDescription.trim().length > 0 && draft.interferingActionAllowedMinutes !== null))
-  );
+  if (draft.needsState === null) return false;
+  if (draft.needsState === true && draft.needsIdentityImmediately === null) return false;
+  if (draft.needsState === false && draft.needsIdentityExplicit === null) return false;
+
+  if (draft.needsState === true) {
+    if (draft.interferingState.trim().length === 0) return false;
+    if (draft.supportiveState.trim().length === 0) return false;
+    if (draft.internalAction.trim().length === 0) return false;
+  }
+
+  if (resolvesNeedsIdentity(draft)) {
+    if (draft.desiredIdentity.trim().length === 0) return false;
+    if (draft.identityInterferingEmotion.trim().length === 0) return false;
+    if (draft.identityAction.trim().length === 0) return false;
+  }
+
+  if (draft.habit.trim().length === 0) return false;
+  if (draft.beneficialAction.trim().length === 0) return false;
+  if (draft.hasPreventiveAction === true && draft.preventiveActionDescription.trim().length === 0) return false;
+  if (draft.regulationTool.trim().length === 0) return false;
+
+  return true;
 }
 
-export function buildProfileFromDraft(draft: ProfileDraft): ArcProfile {
-  if (!isDraftComplete(draft) || draft.arcType === null) {
-    throw new Error("Cannot build an ArcProfile from an incomplete draft");
-  }
+function encodingFromMantra(target: string, mantra: string): EncodingProfile | null {
+  if (mantra.trim().length === 0) return null;
+  return { target, bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: mantra.trim() };
+}
 
-  const profile: ArcProfile = {
-    goal: draft.goal.trim(),
-    interferingState: draft.interferingState.trim(),
-    supportiveState: draft.supportiveState.trim(),
-    arcType: draft.arcType,
-    actions: {
-      internalAction: draft.internalAction.trim(),
-      beneficialAction: draft.beneficialAction.trim(),
-    },
-    regulationTool: draft.regulationTool.trim(),
-    presenceThreshold: DEFAULT_PRESENCE_THRESHOLD,
-    intensityThresholds: DEFAULT_INTENSITY_THRESHOLDS,
+/** Builds the real source-of-truth ArcProgramSelection to persist alongside the profile. */
+export function selectionFromDraft(draft: ProfileDraft): ArcProgramSelection {
+  if (draft.needsState === null) {
+    throw new Error("Cannot build an ArcProgramSelection from an incomplete draft");
+  }
+  return {
+    needsState: draft.needsState,
+    needsIdentity: resolvesNeedsIdentity(draft),
+    needsHabit: true, // every one of today's four presets ends in a habit week
+    needsIdentityImmediately: !!draft.needsIdentityImmediately,
+    programPath: resolveCurrentPreset({
+      needsState: draft.needsState,
+      needsIdentityImmediately: draft.needsIdentityImmediately ?? false,
+      needsIdentity: draft.needsIdentityExplicit ?? false,
+    }),
   };
+}
 
-  if (draft.mantra.trim().length > 0) {
-    profile.mantra = draft.mantra.trim();
-  }
-  if (draft.hasPreventiveAction) {
-    profile.preventiveAction = { description: draft.preventiveActionDescription.trim() };
-  }
-  if (draft.hasInterferingAction && draft.interferingActionAllowedMinutes !== null) {
-    profile.interferingAction = {
-      description: draft.interferingActionDescription.trim(),
-      allowedMinutes: draft.interferingActionAllowedMinutes,
-      reductionStage: 1,
-    };
+export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
+  if (!isDraftComplete(draft) || draft.needsState === null) {
+    throw new Error("Cannot build an ArcBuildProfile from an incomplete draft");
   }
 
-  return profile;
+  const needsIdentity = resolvesNeedsIdentity(draft);
+  const programPath = resolveCurrentPreset({
+    needsState: draft.needsState,
+    needsIdentityImmediately: draft.needsIdentityImmediately ?? false,
+    needsIdentity: draft.needsIdentityExplicit ?? false,
+  });
+
+  return {
+    programPath,
+    // Legacy field, kept only so old code paths reading it don't break.
+    // The real source of truth is the persisted ArcProgramSelection
+    // (see selectionFromDraft above) -- new code must read that instead.
+    identityActionNeeded: needsIdentity,
+
+    interferingState: draft.needsState ? draft.interferingState.trim() : null,
+    supportiveState: draft.needsState ? draft.supportiveState.trim() : null,
+    stateEncoding: draft.needsState ? encodingFromMantra(draft.interferingState.trim(), draft.stateMantra) : null,
+    internalAction: draft.needsState ? draft.internalAction.trim() : null,
+
+    desiredIdentity: needsIdentity ? draft.desiredIdentity.trim() : null,
+    identityInterferingEmotion: needsIdentity ? draft.identityInterferingEmotion.trim() : null,
+    identityEncoding: needsIdentity ? encodingFromMantra(draft.desiredIdentity.trim(), draft.identityMantra) : null,
+    identityAction: needsIdentity ? draft.identityAction.trim() : null,
+
+    habit: draft.habit.trim(),
+    beneficialAction: draft.beneficialAction.trim(),
+    preventiveAction: draft.hasPreventiveAction ? draft.preventiveActionDescription.trim() : null,
+
+    regulationTool: draft.regulationTool.trim(),
+    actionDuration: null,
+    successFocusDuration: null,
+  };
 }
