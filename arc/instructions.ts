@@ -32,9 +32,21 @@ export function getInterferingStateRecognitionPrompt(interferingState: string): 
 
 export const INDUCTION_PATTERN_DENYLIST: RegExp[] = [
   /תיזכר/,
+  // "תזכור"/"זכור" -- imperative "remember [the difficult feeling]",
+  // a different conjugation than the reflexive "תיזכר" above.
+  /תזכור/,
+  /^זכור /,
+  / זכור /,
   /דמיין/,
   /תחזק את/,
-  /תחזיק את .* במודעות/,
+  // "hold/keep X in awareness/mind/the head" -- covers "בתודעה"/"בראש"
+  // in addition to "במודעות".
+  /תחזיק את .* (במודעות|בתודעה|בראש)/,
+  // "bring the interfering state into awareness" -- evoking it, not
+  // noticing it if it's already there.
+  /(תביא|הבא) .*למודעות/,
+  // "keep/leave the [interfering] state active"
+  /(תשמור|השאר) .* (פעיל|פעילה|פעילים)/,
   // Matches "בו-זמנית"/"בו־זמנית"/"בו זמנית"/"בוזמנית" -- the actual
   // shipped bug used a plain ASCII hyphen (U+002D), not the Hebrew
   // maqaf (U+05BE) the original pattern only accounted for.
@@ -45,6 +57,10 @@ export const INDUCTION_PATTERN_DENYLIST: RegExp[] = [
   /חפש.{0,3} .*(קול|צליל)/,
   /(צור|ייצר|תיצור).{0,3} .*(קול|צליל)/,
   /התמקד.{0,3} (בכוח|בחוזקה) .*(קול|צליל)/,
+  // Regulation/transition instructions must never claim the trainee is
+  // now calmer/better/more regulated -- only neutral present-state
+  // noticing is allowed (see arc/stageCopy.ts's "regulate"/"encode").
+  /כמה אתה רגוע יותר/,
 ];
 
 export function containsInductionPattern(instructionText: string): boolean {

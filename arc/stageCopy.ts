@@ -11,7 +11,13 @@
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { resolveEncodingTarget } from "./arcEngine.ts";
-import { getAwarenessInstruction, getCombinedAttentionInstruction, getExpandPresenceInstruction } from "./instructions.ts";
+import {
+  getAwarenessInstruction,
+  getCombinedAttentionInstruction,
+  getExpandPresenceInstruction,
+  getChallengeContextRecognitionPrompt,
+  getInterferingStateRecognitionPrompt,
+} from "./instructions.ts";
 
 export type ArcStageInputKind =
   | "triggerSelect"
@@ -69,6 +75,28 @@ export function getStageInputKind(stage: ArcStage): ArcStageInputKind {
   return STAGE_INPUT_KINDS[stage];
 }
 
+/**
+ * A one-time recognition preamble shown alongside the very first
+ * presence_check, for a reactive_emotion session only (the general
+ * "something is interfering" trigger -- see arc/arcEngine.ts's
+ * getAvailableLiveTriggers). Uses the mapped Challenge Context (if any)
+ * or Interfering State (if any) purely for recognition, per
+ * arc/instructions.ts's getChallengeContextRecognitionPrompt /
+ * getInterferingStateRecognitionPrompt -- both phrased as a yes/no
+ * question about what may already be present, never an instruction to
+ * evoke or hold it. Challenge Context is checked first: if the trainee
+ * recognizes the mapped situation, that's the more concrete signal;
+ * Interfering State recognition is the fallback when no Challenge
+ * Context was mapped. Returns null (no preamble) for every other
+ * trigger type, and when neither was mapped.
+ */
+function getRecognitionPreamble(profile: ArcBuildProfile, state: ArcLiveState): string | null {
+  if (state.triggerType !== "reactive_emotion") return null;
+  if (profile.challengeContext) return getChallengeContextRecognitionPrompt(profile.challengeContext);
+  if (profile.interferingState) return getInterferingStateRecognitionPrompt(profile.interferingState);
+  return null;
+}
+
 export function getStageCopy(
   stage: ArcStage,
   profile: ArcBuildProfile,
@@ -79,8 +107,11 @@ export function getStageCopy(
     case "trigger_selection":
       return { title: "מה מביא אותך לכאן?", body: "בחר את מה שהכי מתאים לרגע הזה." };
 
-    case "presence_check":
-      return { title: "בדיקת נוכחות", body: "עד כמה אתה נוכח כרגע, בסולם 1 עד 10?" };
+    case "presence_check": {
+      const question = "עד כמה אתה נוכח כרגע, בסולם 1 עד 10?";
+      const preamble = getRecognitionPreamble(profile, state);
+      return { title: "בדיקת נוכחות", body: preamble ? `${preamble} ${question}` : question };
+    }
 
     case "arc_thought_awareness":
       return { title: "מודעות", body: getAwarenessInstruction() };
@@ -130,27 +161,51 @@ export function getStageCopy(
       return { title: "בדיקת מעבר", body: "האם אתה מרגיש מוכן לעבור לוויסות, או שאתה צריך עוד רגע עם התחושה?" };
 
     case "regulate":
-      return { title: "ויסות", body: `השתמש בכלי הוויסות שלך: ${profile.regulationTool ?? "כלי הוויסות שלך"}.` };
+      // Regulation works with whatever sensation is already, currently
+      // present -- never an instruction to recreate or intensify the
+      // mapped Interfering State. "Notice current sensation" always
+      // comes first; the regulation tool/cue follows.
+      return {
+        title: "ויסות",
+        body: profile.regulationTool
+          ? `שים לב לתחושה שלך עכשיו. השתמש בכלי הוויסות שלך: ${profile.regulationTool}.`
+          : "שים לב לתחושה שלך עכשיו.",
+      };
 
     case "desired_state_check":
       return { title: "בדיקת מצב רצוי", body: "עד כמה אתה קרוב למצב הרצוי, בסולם 1 עד 10?" };
 
     case "encode": {
+      // The transition into Encoding: notice the sensation again --
+      // neutrally, never implying it must be calmer or better than
+      // before -- while the regulation tool/cue continues underneath
+      // rather than being dropped. This is the one lightweight
+      // Regulation Anchor Encoding preserves (see arc/config.ts /
+      // program logic for why Encoding doesn't re-list every
+      // Regulation mechanism).
+      const transition = profile.regulationTool
+        ? `המשך עם ${profile.regulationTool}, ושים לב לתחושה שלך עכשיו.`
+        : "שים לב לתחושה שלך עכשיו.";
+
       const { encoding } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
         selectedTarget: state.selectedTarget,
         buildProfile: profile,
       });
-      if (!encoding) return { title: "קיבוע", body: "קח רגע לקבע את התחושה החדשה." };
+      if (!encoding) return { title: "קיבוע", body: `${transition} קח רגע לקבע את התחושה החדשה.` };
       const parts = [encoding.bodySensationCue, encoding.breathCue, encoding.bodyLanguageCue, encoding.gazeCue].filter(
         (c): c is string => !!c
       );
       const cueText = parts.length > 0 ? parts.join(" · ") : null;
-      return {
-        title: "קיבוע",
-        body: encoding.mantra ? `חזור על: "${encoding.mantra}".` : cueText ?? "קח רגע לקבע את התחושה החדשה.",
-      };
+      // Desired State / Identity are intentionally activated here, at
+      // Encoding -- never earlier. encoding.target is the Desired
+      // State (see build/profileWizard.ts's buildProfileFromDraft).
+      const anchor =
+        encoding.mantra != null
+          ? `חזור על: "${encoding.mantra}".`
+          : (cueText ?? (encoding.target ? `עבור לשפת הגוף של ${encoding.target}.` : "קח רגע לקבע את התחושה החדשה."));
+      return { title: "קיבוע", body: `${transition} ${anchor}` };
     }
 
     case "act": {

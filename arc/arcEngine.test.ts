@@ -17,7 +17,9 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
   return {
     programPath: "standard_3_week",
     identityActionNeeded: false,
+    goal: null,
     interferingState: "פחד",
+    challengeContext: null,
     supportiveState: "חמלה",
     stateEncoding: null,
     internalAction: "סריקת גוף",
