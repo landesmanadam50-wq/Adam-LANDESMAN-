@@ -27,11 +27,13 @@ import {
 } from "./profileWizard.ts";
 
 const STEP_TITLES: Record<ProfileStep, string> = {
-  needsState: "האם יש מצב פנימי (כמו פחד או חרדה) שאתה רוצה לעבוד על שינויו?",
+  goal: "מה תרצה להשיג? (לאן אתה רוצה להתקדם)",
+  needsState: "האם יש מצב פנימי (כמו רוגע, ביטחון או חמלה) שתרצה לפתח ולחזק?",
   needsIdentityImmediately: "לעבוד גם על זהות מקבילה כבר מההתחלה?",
   needsIdentityExplicit: "האם יש זהות שתרצה לפתח?",
-  interferingState: "מה המצב הפנימי המפריע?",
-  supportiveState: "מה המצב התומך?",
+  supportiveState: "מה המצב הרצוי שתרצה לחוש יותר?",
+  interferingState: "מה נוטה להפריע למצב הרצוי הזה?",
+  challengeContext: "באילו מצבים זה קורה בדרך כלל?",
   internalAction: "מה הפעולה הפנימית שלך? (למשל סריקת גוף)",
   stateMantra: "יש לך מנטרה למצב הזה? (רשות)",
   desiredIdentity: "מה הזהות הרצויה?",
@@ -47,8 +49,10 @@ const STEP_TITLES: Record<ProfileStep, string> = {
 };
 
 const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
-  interferingState: "interferingState",
+  goal: "goal",
   supportiveState: "supportiveState",
+  interferingState: "interferingState",
+  challengeContext: "challengeContext",
   internalAction: "internalAction",
   stateMantra: "stateMantra",
   desiredIdentity: "desiredIdentity",
@@ -165,10 +169,12 @@ export default function ProfileBuilderScreen() {
 
         {step === "review" && (
           <View>
+            <Text style={styles.body}>{`מטרה: ${draft.goal}`}</Text>
             <Text style={styles.body}>{`הרגל: ${draft.habit}`}</Text>
             <Text style={styles.body}>{`פעולה מיטיבה: ${draft.beneficialAction}`}</Text>
             <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
-            {draft.needsState && <Text style={styles.body}>{`מצב פנימי: ${draft.interferingState} → ${draft.supportiveState}`}</Text>}
+            {draft.needsState && <Text style={styles.body}>{`מצב רצוי: ${draft.supportiveState}`}</Text>}
+            {draft.needsState && <Text style={styles.body}>{`נוטה להפריע: ${draft.interferingState} (${draft.challengeContext})`}</Text>}
             <Pressable style={[styles.button, styles.fullWidthButton]} disabled={!isDraftComplete(draft)} onPress={finish}>
               <Text style={styles.buttonText}>שמור והתחל</Text>
             </Pressable>

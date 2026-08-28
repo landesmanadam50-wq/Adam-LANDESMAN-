@@ -103,3 +103,32 @@ test("audit catches an instruction that forces intense focus onto sound", () => 
   assert.equal(containsInductionPattern("התמקד בחוזקה בקול שאתה שומע."), true);
   assert.equal(containsInductionPattern("התמקד בכוח בצליל הזה."), true);
 });
+
+test("audit catches 'remember the criticism' phrased as an imperative, not just the reflexive form", () => {
+  assert.equal(containsInductionPattern("תזכור את הביקורת שהרגשת קודם."), true);
+  assert.equal(containsInductionPattern("זכור את הרגע שבו הרגשת חרדה."), true);
+});
+
+test("audit catches an instruction to bring the interfering state into awareness", () => {
+  assert.equal(containsInductionPattern("תביא את הביקורת העצמית למודעות."), true);
+  assert.equal(containsInductionPattern("הבא את הרגש הקשה למודעות שלך."), true);
+});
+
+test("audit catches an instruction to keep the interfering state active", () => {
+  assert.equal(containsInductionPattern("תשמור על המצב הזה פעיל."), true);
+  assert.equal(containsInductionPattern("השאר את הביקורת פעילה."), true);
+});
+
+test("audit catches 'hold it in the head/consciousness', not only 'in awareness'", () => {
+  assert.equal(containsInductionPattern("תחזיק את הביקורת בראש."), true);
+  assert.equal(containsInductionPattern("תחזיק את החרדה בתודעה."), true);
+});
+
+test("audit catches an instruction claiming the trainee is now calmer -- Regulation/Encoding must stay neutral about outcome", () => {
+  assert.equal(containsInductionPattern("שים לב כמה אתה רגוע יותר עכשיו."), true);
+});
+
+test("audit does not flag legitimate recognition prompts that simply name the mapped state or context", () => {
+  assert.equal(containsInductionPattern(getInterferingStateRecognitionPrompt("ביקורת עצמית")), false);
+  assert.equal(containsInductionPattern(getChallengeContextRecognitionPrompt("אחרי טעות")), false);
+});

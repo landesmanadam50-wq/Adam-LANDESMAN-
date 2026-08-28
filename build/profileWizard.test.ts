@@ -19,10 +19,12 @@ function filledStateOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
   // so a complete state draft always carries identity fields too.
   return {
     ...createEmptyDraft(),
+    goal: "להגיב לעצמי בצורה בונה יותר",
     needsState: true,
     needsIdentityImmediately: false,
-    interferingState: "פחד",
     supportiveState: "חמלה",
+    interferingState: "פחד",
+    challengeContext: "אחרי טעות",
     internalAction: "סריקת גוף",
     desiredIdentity: "אומץ",
     identityInterferingEmotion: "פחד",
@@ -38,6 +40,7 @@ function filledStateOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
 function filledHabitOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDraft {
   return {
     ...createEmptyDraft(),
+    goal: "ללמוד ביעילות",
     needsState: false,
     needsIdentityExplicit: false,
     habit: "גלילה ברשת",
@@ -48,8 +51,13 @@ function filledHabitOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
   };
 }
 
-test("first step is needsState for a fresh draft", () => {
-  assert.equal(getFirstProfileStep(createEmptyDraft()), "needsState");
+test("first step is goal for a fresh draft", () => {
+  assert.equal(getFirstProfileStep(createEmptyDraft()), "goal");
+});
+
+test("goal is followed by needsState once filled", () => {
+  const draft = { ...createEmptyDraft(), goal: "x" };
+  assert.equal(getNextProfileStep("goal", draft), "needsState");
 });
 
 test("needsState=true skips needsIdentityExplicit and asks needsIdentityImmediately instead", () => {
@@ -97,7 +105,8 @@ test("accepting preventive action enters its description step", () => {
 test("getPreviousProfileStep mirrors getNextProfileStep, skipping hidden steps", () => {
   const draft = filledHabitOnlyDraft();
   assert.equal(getPreviousProfileStep("habit", draft), "needsIdentityExplicit");
-  assert.equal(getPreviousProfileStep("needsState", draft), null);
+  assert.equal(getPreviousProfileStep("needsState", draft), "goal");
+  assert.equal(getPreviousProfileStep("goal", draft), null);
 });
 
 test("isDraftComplete is false until every required field for the resolved path is filled", () => {
@@ -109,6 +118,58 @@ test("isDraftComplete is false until every required field for the resolved path 
 test("isDraftComplete requires identity fields once resolvesNeedsIdentity is true", () => {
   const draft = filledStateOnlyDraft({ desiredIdentity: "", identityInterferingEmotion: "", identityAction: "" });
   assert.equal(isDraftComplete(draft), false);
+});
+
+test("isDraftComplete requires goal regardless of which layers are needed", () => {
+  assert.equal(isDraftComplete(filledStateOnlyDraft({ goal: "" })), false);
+  assert.equal(isDraftComplete(filledHabitOnlyDraft({ goal: "" })), false);
+});
+
+test("isDraftComplete requires challengeContext when the state layer is needed, but not otherwise", () => {
+  assert.equal(isDraftComplete(filledStateOnlyDraft({ challengeContext: "" })), false);
+  // habit-only draft never asks challengeContext (needsState is false), so an empty value there is fine.
+  assert.equal(isDraftComplete(filledHabitOnlyDraft({ challengeContext: "" })), true);
+});
+
+test("BUILD-GOAL / BUILD-ARC data relationships: buildProfileFromDraft writes goal, and the state-layer ARC Map (supportiveState/interferingState/challengeContext) together, not as a duplicate or parallel flow", () => {
+  const profile = buildProfileFromDraft(
+    filledStateOnlyDraft({ desiredIdentity: "x", identityInterferingEmotion: "x", identityAction: "x" })
+  );
+  assert.equal(profile.goal, "להגיב לעצמי בצורה בונה יותר");
+  assert.equal(profile.supportiveState, "חמלה");
+  assert.equal(profile.interferingState, "פחד");
+  assert.equal(profile.challengeContext, "אחרי טעות");
+});
+
+test("the state-layer encoding target is the Desired State (supportiveState), never the Interfering State", () => {
+  const profile = buildProfileFromDraft(
+    filledStateOnlyDraft({
+      desiredIdentity: "x",
+      identityInterferingEmotion: "x",
+      identityAction: "x",
+      stateMantra: "אני בטוח כאן",
+    })
+  );
+  assert.equal(profile.stateEncoding?.target, "חמלה", "target must be supportiveState (Desired State), not interferingState");
+  assert.notEqual(profile.stateEncoding?.target, profile.interferingState);
+});
+
+test("draftFromProfileAndSelection round-trips goal and challengeContext, and defaults them safely for old profiles that predate these fields", () => {
+  const draft = filledStateOnlyDraft({ desiredIdentity: "x", identityInterferingEmotion: "x", identityAction: "x" });
+  const profile = buildProfileFromDraft(draft);
+  const selection = selectionFromDraft(draft);
+  const roundTripped = draftFromProfileAndSelection(profile, selection);
+  assert.equal(roundTripped.goal, draft.goal);
+  assert.equal(roundTripped.challengeContext, draft.challengeContext);
+
+  // Simulate an old, already-persisted profile from before goal/challengeContext
+  // existed -- JSON.parse of old stored data has no such keys at all.
+  const legacyProfile = { ...profile } as typeof profile;
+  delete (legacyProfile as { goal?: unknown }).goal;
+  delete (legacyProfile as { challengeContext?: unknown }).challengeContext;
+  const migrated = draftFromProfileAndSelection(legacyProfile, selection);
+  assert.equal(migrated.goal, "", "missing goal on old data defaults to empty, not a crash");
+  assert.equal(migrated.challengeContext, "", "missing challengeContext on old data defaults to empty, not a crash");
 });
 
 test("buildProfileFromDraft assigns standard_3_week when state is needed without immediate identity", () => {

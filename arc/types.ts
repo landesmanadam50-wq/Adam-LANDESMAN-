@@ -42,8 +42,27 @@ export interface ArcBuildProfile {
    */
   identityActionNeeded: boolean;
 
+  /**
+   * BUILD-GOAL: the positive direction the whole program moves toward
+   * (Goal -> Habit -> Identity -> Desired State). Independent of which
+   * layers (state/identity/habit) end up active -- every trainee has a
+   * goal regardless of which program path it resolves to.
+   */
+  goal: string | null;
+
+  /**
+   * The ARC Map around the state-layer Desired State (supportiveState
+   * below): where it's especially relevant (challengeContext), what
+   * commonly interferes with it (interferingState), and what to do
+   * about it (preventiveAction, further down). These are recognition/
+   * mapping data only -- see arc/instructions.ts's containsInductionPattern
+   * and getInterferingStateRecognitionPrompt/getChallengeContextRecognitionPrompt
+   * for how LIVE is allowed to use them (recognition, never induction).
+   */
   interferingState: string | null;
+  /** The Desired State (BUILD-GOAL's last step) -- distinct from, and never combined with, interferingState. Intentionally activated only at Encoding. */
   supportiveState: string | null;
+  challengeContext: string | null;
   stateEncoding: EncodingProfile | null;
   internalAction: string | null;
 

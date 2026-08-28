@@ -14,9 +14,18 @@
  * questions are never skipped, but state/identity questions are only
  * asked when the resolved program actually calls for that layer.
  *
- * ArcBuildProfile has no "goal" field (unlike the old engine/'s
- * ArcProfile), so this wizard doesn't ask for one -- there's nowhere
- * to store it.
+ * BUILD-GOAL / BUILD-ARC: "goal" is asked once, unconditionally, as
+ * the positive direction the whole program moves toward (Goal -> Habit
+ * -> Identity -> Desired State). The state cluster below it is the ARC
+ * Map around that Desired State (supportiveState): where it's
+ * especially relevant (challengeContext) and what commonly interferes
+ * with it (interferingState) -- both mapping/recognition data, per
+ * arc/instructions.ts's containsInductionPattern audit and
+ * getInterferingStateRecognitionPrompt/getChallengeContextRecognitionPrompt.
+ * This is intentionally the SAME single flow the old "מה המצב התומך?" /
+ * "מה המצב הפנימי המפריע?" questions already were -- not a second,
+ * parallel BUILD-ARC screen -- since a separate multi-map structure
+ * isn't required to represent one trainee's one active ARC Map.
  *
  * The persisted ArcProgramSelection (program/programTypes.ts) is the
  * real source of truth for what a trainee needs -- ArcBuildProfile
@@ -42,11 +51,13 @@ function isKnownLegacyProgramPath(programPath: string): programPath is KnownProg
 }
 
 export type ProfileStep =
+  | "goal"
   | "needsState"
   | "needsIdentityImmediately"
   | "needsIdentityExplicit"
-  | "interferingState"
   | "supportiveState"
+  | "interferingState"
+  | "challengeContext"
   | "internalAction"
   | "stateMantra"
   | "desiredIdentity"
@@ -61,11 +72,13 @@ export type ProfileStep =
   | "review";
 
 export const PROFILE_STEP_ORDER: ProfileStep[] = [
+  "goal",
   "needsState",
   "needsIdentityImmediately",
   "needsIdentityExplicit",
-  "interferingState",
   "supportiveState",
+  "interferingState",
+  "challengeContext",
   "internalAction",
   "stateMantra",
   "desiredIdentity",
@@ -81,12 +94,15 @@ export const PROFILE_STEP_ORDER: ProfileStep[] = [
 ];
 
 export interface ProfileDraft {
+  goal: string;
+
   needsState: boolean | null;
   needsIdentityImmediately: boolean | null;
   needsIdentityExplicit: boolean | null;
 
-  interferingState: string;
   supportiveState: string;
+  interferingState: string;
+  challengeContext: string;
   internalAction: string;
   stateMantra: string;
 
@@ -105,11 +121,13 @@ export interface ProfileDraft {
 
 export function createEmptyDraft(): ProfileDraft {
   return {
+    goal: "",
     needsState: null,
     needsIdentityImmediately: null,
     needsIdentityExplicit: null,
-    interferingState: "",
     supportiveState: "",
+    interferingState: "",
+    challengeContext: "",
     internalAction: "",
     stateMantra: "",
     desiredIdentity: "",
@@ -142,11 +160,13 @@ export function draftFromProfileAndSelection(
   const needsIdentity = resolvedSelection.needsIdentity;
 
   return {
+    goal: profile.goal ?? "",
     needsState,
     needsIdentityImmediately: needsState ? resolvedSelection.needsIdentityImmediately : null,
     needsIdentityExplicit: needsState ? null : needsIdentity,
-    interferingState: profile.interferingState ?? "",
     supportiveState: profile.supportiveState ?? "",
+    interferingState: profile.interferingState ?? "",
+    challengeContext: profile.challengeContext ?? "",
     internalAction: profile.internalAction ?? "",
     stateMantra: profile.stateEncoding?.mantra ?? "",
     desiredIdentity: profile.desiredIdentity ?? "",
@@ -172,8 +192,9 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
       return draft.needsState === true;
     case "needsIdentityExplicit":
       return draft.needsState === false;
-    case "interferingState":
     case "supportiveState":
+    case "interferingState":
+    case "challengeContext":
     case "internalAction":
     case "stateMantra":
       return draft.needsState === true;
@@ -215,13 +236,15 @@ export function getPreviousProfileStep(current: ProfileStep, draft: ProfileDraft
 }
 
 export function isDraftComplete(draft: ProfileDraft): boolean {
+  if (draft.goal.trim().length === 0) return false;
   if (draft.needsState === null) return false;
   if (draft.needsState === true && draft.needsIdentityImmediately === null) return false;
   if (draft.needsState === false && draft.needsIdentityExplicit === null) return false;
 
   if (draft.needsState === true) {
-    if (draft.interferingState.trim().length === 0) return false;
     if (draft.supportiveState.trim().length === 0) return false;
+    if (draft.interferingState.trim().length === 0) return false;
+    if (draft.challengeContext.trim().length === 0) return false;
     if (draft.internalAction.trim().length === 0) return false;
   }
 
@@ -281,9 +304,15 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     // (see selectionFromDraft above) -- new code must read that instead.
     identityActionNeeded: needsIdentity,
 
+    goal: draft.goal.trim(),
+
     interferingState: draft.needsState ? draft.interferingState.trim() : null,
     supportiveState: draft.needsState ? draft.supportiveState.trim() : null,
-    stateEncoding: draft.needsState ? encodingFromMantra(draft.interferingState.trim(), draft.stateMantra) : null,
+    challengeContext: draft.needsState ? draft.challengeContext.trim() : null,
+    // The encoding target is the Desired State (supportiveState), never
+    // the Interfering State -- Encoding intentionally activates the
+    // former and must never intentionally reactivate the latter.
+    stateEncoding: draft.needsState ? encodingFromMantra(draft.supportiveState.trim(), draft.stateMantra) : null,
     internalAction: draft.needsState ? draft.internalAction.trim() : null,
 
     desiredIdentity: needsIdentity ? draft.desiredIdentity.trim() : null,

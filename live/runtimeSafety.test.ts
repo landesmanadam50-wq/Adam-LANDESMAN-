@@ -32,8 +32,10 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
   return {
     programPath: "standard_3_week",
     identityActionNeeded: false,
+    goal: "להגיב לעצמי בצורה בונה יותר",
     interferingState: "ביקורת עצמית",
     supportiveState: "חמלה",
+    challengeContext: "אחרי טעות",
     stateEncoding: null,
     internalAction: "סריקת גוף",
     desiredIdentity: "אדם רגוע ובוטח",
@@ -167,6 +169,58 @@ test("ambient sound appears as a passive anchor in the real Combined Attention/E
     assert.match(expansionCopy.body, /אפשר לצלילים להישאר ברקע/, `${activeLayers}: Expand Presence must let sound stay backgrounded`);
     assert.equal(containsInductionPattern(expansionCopy.body), false);
   }
+});
+
+test("a full reactive_emotion session, walked end to end through the real engine, never trips the induction-pattern audit at any stage, and never leaks the Desired State before Encoding", () => {
+  const p = profile({
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+  });
+  const activeLayers: DevelopmentLayer[] = ["state", "identity", "habit"];
+  let state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
+  let stage = getFirstArcStage();
+
+  const visited: { stage: ArcStage; body: string }[] = [];
+  let iterations = 0;
+  while (stage !== "complete" && iterations < 30) {
+    if (stage === "presence_check" || stage === "arc_thought_presence_recheck") {
+      state = { ...state, presenceRating: 3 }; // stays low -- forces the full ARC Thought path
+    }
+    if (stage === "sensation_check") {
+      // Mid intensity (regulationMinIntensity <= 5 < transitionMinIntensity, per
+      // arc/config.ts) routes to "regulate" -- the path this spec adds continuity to.
+      state = { ...state, sensationLocation: "חזה", sensationIntensity: 5 };
+    }
+    if (stage === "accept") {
+      state = { ...state, acceptanceNeeded: false };
+    }
+
+    const copy = getStageCopy(stage, p, state, activeLayers);
+    visited.push({ stage, body: copy.body });
+    assert.equal(containsInductionPattern(copy.body), false, `${stage} produced unsafe copy: "${copy.body}"`);
+
+    const next = getNextArcStage(stage, state, p);
+    stage = next.stage;
+    state = { ...state, loopIterationCount: next.loopIterationCount };
+    iterations++;
+  }
+
+  assert.ok(visited.some((v) => v.stage === "regulate"), "sanity: the walk must actually reach regulate");
+  assert.ok(visited.some((v) => v.stage === "encode"), "sanity: the walk must actually reach encode");
+
+  const beforeEncode = visited.filter((v) => v.stage !== "encode" && v.stage !== "act");
+  for (const { stage: s, body } of beforeEncode) {
+    assert.ok(!body.includes(p.supportiveState ?? " "), `${s} must not name the Desired State before Encoding: "${body}"`);
+  }
+
+  const arcThoughtAndRegulation = visited.filter((v) =>
+    ["arc_thought_awareness", "arc_thought_combined_attention", "arc_thought_expand_presence", "regulate", "stay", "accept"].includes(v.stage)
+  );
+  for (const { stage: s, body } of arcThoughtAndRegulation) {
+    assert.ok(!body.includes(p.interferingState ?? " "), `${s} must not name the Interfering State: "${body}"`);
+  }
+
+  const encodeCopy = visited.find((v) => v.stage === "encode");
+  assert.ok(encodeCopy?.body.includes("כתפיים משוחררות"), "Encoding is where the Desired State's encoding cue is intentionally introduced");
 });
 
 test("ARC Thought is presence-gated only -- reached the same way regardless of trigger type (no alternate route around the safety check)", () => {

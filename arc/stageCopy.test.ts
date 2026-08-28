@@ -10,7 +10,9 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
   return {
     programPath: "standard_3_week",
     identityActionNeeded: false,
+    goal: "להגיב לעצמי בצורה בונה יותר",
     interferingState: "פחד",
+    challengeContext: "אחרי טעות",
     supportiveState: "חמלה",
     stateEncoding: null,
     internalAction: "סריקת גוף",
@@ -103,4 +105,89 @@ test("preventive_action_check copy names the configured preventive action", () =
   const p = profile({ preventiveAction: "לצאת להליכה" });
   const copy = getStageCopy("preventive_action_check", p, liveState({ triggerType: "reactive_urge" }), ["habit"]);
   assert.ok(copy.body.includes("לצאת להליכה"));
+});
+
+test("presence_check shows a Challenge Context recognition preamble for reactive_emotion when one is mapped", () => {
+  const p = profile({ challengeContext: "אחרי טעות" });
+  const copy = getStageCopy("presence_check", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /אחרי טעות/);
+  assert.match(copy.body, /\?/, "phrased as a recognition question");
+});
+
+test("presence_check falls back to an Interfering State recognition preamble when no Challenge Context is mapped", () => {
+  const p = profile({ interferingState: "ביקורת עצמית", challengeContext: null });
+  const copy = getStageCopy("presence_check", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /ביקורת עצמית/);
+});
+
+test("presence_check shows no recognition preamble for reactive_urge or proactive triggers, or when nothing is mapped", () => {
+  const p = profile({ challengeContext: "אחרי טעות", interferingState: "ביקורת עצמית" });
+  const urgeCopy = getStageCopy("presence_check", p, liveState({ triggerType: "reactive_urge" }), ["habit"]);
+  const proactiveCopy = getStageCopy("presence_check", p, liveState({ triggerType: "proactive" }), ["state"]);
+  const plainQuestion = "עד כמה אתה נוכח כרגע, בסולם 1 עד 10?";
+  assert.equal(urgeCopy.body, plainQuestion);
+  assert.equal(proactiveCopy.body, plainQuestion);
+
+  const nothingMapped = profile({ challengeContext: null, interferingState: null });
+  const noneCopy = getStageCopy("presence_check", nothingMapped, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.equal(noneCopy.body, plainQuestion);
+});
+
+test("presence_check's recognition preamble never trips the induction-pattern audit", () => {
+  const p = profile({ challengeContext: "אחרי טעות", interferingState: "ביקורת עצמית" });
+  const copy = getStageCopy("presence_check", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("regulate opens with a neutral present-sensation notice, then the trainee's actual regulation tool", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8" });
+  const copy = getStageCopy("regulate", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /^שים לב לתחושה שלך עכשיו\./);
+  assert.match(copy.body, /נשימה 4-7-8/);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("regulate never claims the sensation has improved, and never references the mapped Interfering State", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8", interferingState: "ביקורת עצמית" });
+  const copy = getStageCopy("regulate", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(!copy.body.includes("ביקורת עצמית"));
+  assert.ok(!/רגוע יותר|טוב יותר|הצלחת/.test(copy.body));
+});
+
+test("encode continues the regulation tool and notices the sensation again -- neutrally -- before the encoding cue", () => {
+  const p = profile({
+    regulationTool: "נשימה 4-7-8",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+  });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /^המשך עם נשימה 4-7-8, ושים לב לתחושה שלך עכשיו\./);
+  assert.match(copy.body, /כתפיים משוחררות/);
+  assert.ok(!/רגוע יותר|טוב יותר/.test(copy.body), "must not imply the sensation improved");
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("encode falls back to naming the Desired State body-language transition when no cue or mantra is configured", () => {
+  const p = profile({
+    regulationTool: "נשימה 4-7-8",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: null },
+  });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /עבור לשפת הגוף של חמלה/);
+});
+
+test("encode never references the mapped Interfering State, even though it's available on the profile", () => {
+  const p = profile({
+    regulationTool: "נשימה 4-7-8",
+    interferingState: "ביקורת עצמית",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "אני חומל" },
+  });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(!copy.body.includes("ביקורת עצמית"));
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("encode with no regulation tool configured still works, with a neutral sensation notice and no dangling reference to a tool", () => {
+  const p = profile({ regulationTool: null, stateEncoding: null });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.equal(copy.body, "שים לב לתחושה שלך עכשיו. קח רגע לקבע את התחושה החדשה.");
 });
