@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { getStageCopy, getStageInputKind } from "./stageCopy.ts";
 import { createEmptyLiveState } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
+import { containsInductionPattern } from "./instructions.ts";
 
 function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
   return {
@@ -79,6 +80,23 @@ test("sensation_check copy switches to a recheck message once intensity was alre
     ["state"]
   );
   assert.notEqual(first.title, recheck.title);
+});
+
+test("arc_thought_combined_attention no longer names interferingState/supportiveState -- regression for the induction-pattern bug", () => {
+  const p = profile({ interferingState: "ביקורת עצמית", supportiveState: "חמלה" });
+  const copy = getStageCopy("arc_thought_combined_attention", p, liveState(), ["state"]);
+  assert.ok(!copy.body.includes("ביקורת עצמית"));
+  assert.ok(!copy.body.includes("חמלה"));
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("no ARC Thought stage's real generated copy trips the induction-pattern audit", () => {
+  const p = profile();
+  const arcThoughtStages: ArcStage[] = ["arc_thought_awareness", "arc_thought_combined_attention", "arc_thought_expand_presence"];
+  for (const stage of arcThoughtStages) {
+    const copy = getStageCopy(stage, p, liveState(), ["state"]);
+    assert.equal(containsInductionPattern(copy.body), false, `${stage} body flagged: "${copy.body}"`);
+  }
 });
 
 test("preventive_action_check copy names the configured preventive action", () => {

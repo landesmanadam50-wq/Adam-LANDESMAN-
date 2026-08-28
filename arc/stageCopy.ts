@@ -11,6 +11,7 @@
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { resolveEncodingTarget } from "./arcEngine.ts";
+import { getAwarenessInstruction, getCombinedAttentionInstruction, getExpandPresenceInstruction } from "./instructions.ts";
 
 export type ArcStageInputKind =
   | "triggerSelect"
@@ -82,16 +83,18 @@ export function getStageCopy(
       return { title: "בדיקת נוכחות", body: "עד כמה אתה נוכח כרגע, בסולם 1 עד 10?" };
 
     case "arc_thought_awareness":
-      return { title: "מודעות", body: "שים לב לתחושה הפנימית שלך כרגע." };
+      return { title: "מודעות", body: getAwarenessInstruction() };
 
-    case "arc_thought_combined_attention": {
-      const s = profile.interferingState ?? "המצב המפריע";
-      const support = profile.supportiveState ?? "המצב התומך";
-      return { title: "תשומת לב משולבת", body: `החזק בו-זמנית את המודעות ל-${s} וגם ל-${support}.` };
-    }
+    case "arc_thought_combined_attention":
+      // Deliberately does not name interferingState/supportiveState: holding
+      // two named states in awareness simultaneously is an induction-style
+      // pattern (see arc/instructions.ts's containsInductionPattern), not
+      // present-moment awareness. getCombinedAttentionInstruction() takes
+      // no state parameters for exactly this reason.
+      return { title: "תשומת לב משולבת", body: getCombinedAttentionInstruction() };
 
     case "arc_thought_expand_presence":
-      return { title: "הרחבה", body: "הרחב את תשומת הלב שלך למרחב הסובב אותך, מעבר לתחושה הפנימית." };
+      return { title: "הרחבה", body: getExpandPresenceInstruction() };
 
     case "arc_thought_presence_recheck":
       return { title: "בדיקת נוכחות חוזרת", body: "אחרי ההרחבה — עד כמה אתה נוכח עכשיו, בסולם 1 עד 10?" };
