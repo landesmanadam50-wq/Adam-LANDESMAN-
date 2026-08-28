@@ -91,8 +91,9 @@ test("the real awareness/combined-attention/expand-presence copy, reached via th
 
   const expected: Partial<Record<LiveStage, string>> = {
     [LiveStage.ArcThoughtAwareness]: "שים לב למה שכבר נמצא עכשיו בתודעה ובגוף שלך.",
-    [LiveStage.ArcThoughtCombinedAttention]: "שים לב למה שכבר נמצא עכשיו בתודעה. במקביל, שים לב לנקודה אחת מולך ולתחושה של הגוף כולו.",
-    [LiveStage.ArcThoughtExpansion]: "הרחב בעדינות את שדה הראייה והעבר יותר תשומת לב לתחושות הגוף.",
+    [LiveStage.ArcThoughtCombinedAttention]:
+      "שים לב למה שכבר נמצא עכשיו בתודעה. במקביל, שים לב לנקודה אחת מולך, לצלילים מסביב ולתחושה של הגוף כולו.",
+    [LiveStage.ArcThoughtExpansion]: "הרחב בעדינות את שדה הראייה, אפשר לצלילים להישאר ברקע והעבר יותר תשומת לב לתחושות הגוף.",
   };
 
   for (const expectedStage of ARC_THOUGHT_STAGES) {
@@ -125,6 +126,23 @@ test("no persisted LiveSession exists to restore a legacy instruction: createEmp
     "wantsSuccessFocus",
     "wantsToUseInterferingActionWindow",
   ]);
+});
+
+test("ambient sound appears as a passive anchor in the real Combined Attention/Expand Presence copy, for every arcType and never trips the audit", () => {
+  for (const arcType of ARC_TYPES) {
+    const p = profile({ arcType });
+    let { stage, session } = walkToArcThoughtAwareness(p);
+    stage = getNextStage(stage, session, p); // -> ArcThoughtCombinedAttention
+
+    const combinedAttentionCopy = getStageCopy(stage, p);
+    assert.match(combinedAttentionCopy.body, /לצלילים מסביב/, `${arcType}: Combined Attention must mention ambient sound as an anchor`);
+    assert.equal(containsInductionPattern(combinedAttentionCopy.body), false);
+
+    stage = getNextStage(stage, session, p); // -> ArcThoughtExpansion
+    const expansionCopy = getStageCopy(stage, p);
+    assert.match(expansionCopy.body, /אפשר לצלילים להישאר ברקע/, `${arcType}: Expand Presence must let sound stay backgrounded`);
+    assert.equal(containsInductionPattern(expansionCopy.body), false);
+  }
 });
 
 test("ARC Thought is presence-gated only -- every arcType reaches it the same way (no alternate route around the safety check)", () => {
