@@ -3,108 +3,183 @@ import assert from "node:assert/strict";
 import {
   buildProfileFromDraft,
   createEmptyDraft,
-  draftFromProfile,
+  draftFromProfileAndSelection,
+  selectionFromDraft,
   getFirstProfileStep,
   getNextProfileStep,
   getPreviousProfileStep,
   isDraftComplete,
+  resolvesNeedsIdentity,
+  type ProfileDraft,
 } from "./profileWizard.ts";
 
-function filledDraft(overrides: Partial<ReturnType<typeof createEmptyDraft>> = {}) {
+function filledStateOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDraft {
+  // "state" draft, but resolvesNeedsIdentity is always true when needsState is
+  // true (program/selection.ts guarantees state programs also build identity),
+  // so a complete state draft always carries identity fields too.
   return {
     ...createEmptyDraft(),
-    goal: "goal",
-    arcType: "identity" as const,
+    needsState: true,
+    needsIdentityImmediately: false,
     interferingState: "פחד",
     supportiveState: "חמלה",
     internalAction: "סריקת גוף",
+    desiredIdentity: "אומץ",
+    identityInterferingEmotion: "פחד",
+    identityAction: "לומר שלום",
+    habit: "גלילה ברשת",
     beneficialAction: "לגשת ולפתוח שיחה",
     regulationTool: "נשימה 4-7-8",
+    hasPreventiveAction: false,
     ...overrides,
   };
 }
 
-test("first step is goal for a fresh draft", () => {
-  assert.equal(getFirstProfileStep(createEmptyDraft()), "goal");
+function filledHabitOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDraft {
+  return {
+    ...createEmptyDraft(),
+    needsState: false,
+    needsIdentityExplicit: false,
+    habit: "גלילה ברשת",
+    beneficialAction: "לגשת ולפתוח שיחה",
+    regulationTool: "נשימה 4-7-8",
+    hasPreventiveAction: false,
+    ...overrides,
+  };
+}
+
+test("first step is needsState for a fresh draft", () => {
+  assert.equal(getFirstProfileStep(createEmptyDraft()), "needsState");
 });
 
-test("declining preventive and interfering action skips their description steps", () => {
-  const draft = filledDraft({ hasPreventiveAction: false, hasInterferingAction: false });
-  assert.equal(getNextProfileStep("preventiveActionAsk", draft), "interferingActionAsk");
-  assert.equal(getNextProfileStep("interferingActionAsk", draft), "review");
+test("needsState=true skips needsIdentityExplicit and asks needsIdentityImmediately instead", () => {
+  const draft = filledStateOnlyDraft();
+  assert.equal(getNextProfileStep("needsState", draft), "needsIdentityImmediately");
+});
+
+test("needsState=false skips needsIdentityImmediately and asks needsIdentityExplicit instead", () => {
+  const draft = filledHabitOnlyDraft();
+  assert.equal(getNextProfileStep("needsState", draft), "needsIdentityExplicit");
+});
+
+test("resolvesNeedsIdentity is always true when needsState is true, regardless of needsIdentityExplicit", () => {
+  assert.equal(resolvesNeedsIdentity(filledStateOnlyDraft()), true);
+});
+
+test("resolvesNeedsIdentity follows needsIdentityExplicit when needsState is false", () => {
+  assert.equal(resolvesNeedsIdentity(filledHabitOnlyDraft({ needsIdentityExplicit: false })), false);
+  assert.equal(resolvesNeedsIdentity(filledHabitOnlyDraft({ needsIdentityExplicit: true })), true);
+});
+
+test("state-only draft skips identity questions entirely when identity isn't needed", () => {
+  // needsState true always resolves needsIdentity true (per program/selection.ts), so
+  // exercise the one path where identity is genuinely skipped: needsState false, needsIdentityExplicit false.
+  const draft = filledHabitOnlyDraft();
+  assert.equal(getNextProfileStep("needsIdentityExplicit", draft), "habit");
+});
+
+test("state path always continues into identity questions (advanced_2_week / standard_3_week both build identity)", () => {
+  const draft = filledStateOnlyDraft();
+  assert.equal(getNextProfileStep("internalAction", draft), "stateMantra");
+  assert.equal(getNextProfileStep("stateMantra", draft), "desiredIdentity");
+});
+
+test("declining preventive action skips its description step", () => {
+  const draft = filledHabitOnlyDraft({ hasPreventiveAction: false });
+  assert.equal(getNextProfileStep("preventiveActionAsk", draft), "regulationTool");
 });
 
 test("accepting preventive action enters its description step", () => {
-  const draft = filledDraft({ hasPreventiveAction: true });
+  const draft = filledHabitOnlyDraft({ hasPreventiveAction: true, preventiveActionDescription: "לצאת להליכה" });
   assert.equal(getNextProfileStep("preventiveActionAsk", draft), "preventiveActionDescription");
 });
 
-test("accepting interfering action enters its description then minutes steps", () => {
-  const draft = filledDraft({ hasInterferingAction: true });
-  assert.equal(getNextProfileStep("interferingActionAsk", draft), "interferingActionDescription");
-  assert.equal(getNextProfileStep("interferingActionDescription", draft), "interferingActionMinutes");
-  assert.equal(getNextProfileStep("interferingActionMinutes", draft), "review");
-});
-
 test("getPreviousProfileStep mirrors getNextProfileStep, skipping hidden steps", () => {
-  const draft = filledDraft({ hasPreventiveAction: false, hasInterferingAction: false });
-  assert.equal(getPreviousProfileStep("interferingActionAsk", draft), "preventiveActionAsk");
-  assert.equal(getPreviousProfileStep("review", draft), "interferingActionAsk");
+  const draft = filledHabitOnlyDraft();
+  assert.equal(getPreviousProfileStep("habit", draft), "needsIdentityExplicit");
+  assert.equal(getPreviousProfileStep("needsState", draft), null);
 });
 
-test("getPreviousProfileStep returns null before the first step", () => {
-  assert.equal(getPreviousProfileStep("goal", createEmptyDraft()), null);
-});
-
-test("isDraftComplete is false until every required field is filled", () => {
+test("isDraftComplete is false until every required field for the resolved path is filled", () => {
   assert.equal(isDraftComplete(createEmptyDraft()), false);
-  assert.equal(isDraftComplete(filledDraft()), true);
+  assert.equal(isDraftComplete(filledStateOnlyDraft()), true);
+  assert.equal(isDraftComplete(filledHabitOnlyDraft()), true);
 });
 
-test("isDraftComplete requires the description when an optional action is accepted", () => {
-  const draft = filledDraft({ hasPreventiveAction: true, preventiveActionDescription: "" });
+test("isDraftComplete requires identity fields once resolvesNeedsIdentity is true", () => {
+  const draft = filledStateOnlyDraft({ desiredIdentity: "", identityInterferingEmotion: "", identityAction: "" });
   assert.equal(isDraftComplete(draft), false);
-  assert.equal(isDraftComplete({ ...draft, preventiveActionDescription: "לצאת להליכה" }), true);
+});
+
+test("buildProfileFromDraft assigns standard_3_week when state is needed without immediate identity", () => {
+  const profile = buildProfileFromDraft(
+    filledStateOnlyDraft({ needsIdentityImmediately: false, desiredIdentity: "x", identityInterferingEmotion: "x", identityAction: "x" })
+  );
+  assert.equal(profile.programPath, "standard_3_week");
+});
+
+test("buildProfileFromDraft assigns advanced_2_week when identity is needed immediately", () => {
+  const profile = buildProfileFromDraft(
+    filledStateOnlyDraft({ needsIdentityImmediately: true, desiredIdentity: "x", identityInterferingEmotion: "x", identityAction: "x" })
+  );
+  assert.equal(profile.programPath, "advanced_2_week");
+});
+
+test("buildProfileFromDraft assigns habit_only_1_week when neither state nor identity is needed", () => {
+  const profile = buildProfileFromDraft(filledHabitOnlyDraft());
+  assert.equal(profile.programPath, "habit_only_1_week");
+  assert.equal(profile.interferingState, null);
+  assert.equal(profile.stateEncoding, null);
+  assert.equal(profile.desiredIdentity, null);
+});
+
+test("buildProfileFromDraft assigns identity_habit_2_week when only identity is explicitly needed", () => {
+  const profile = buildProfileFromDraft(
+    filledHabitOnlyDraft({ needsIdentityExplicit: true, desiredIdentity: "אומץ", identityInterferingEmotion: "פחד", identityAction: "לומר שלום" })
+  );
+  assert.equal(profile.programPath, "identity_habit_2_week");
+  assert.equal(profile.desiredIdentity, "אומץ");
+});
+
+test("buildProfileFromDraft omits the mantra encoding when none was given, includes it when given", () => {
+  const withoutMantra = buildProfileFromDraft(filledStateOnlyDraft({ desiredIdentity: "x", identityInterferingEmotion: "x", identityAction: "x", stateMantra: "" }));
+  assert.equal(withoutMantra.stateEncoding, null);
+
+  const withMantra = buildProfileFromDraft(
+    filledStateOnlyDraft({ desiredIdentity: "x", identityInterferingEmotion: "x", identityAction: "x", stateMantra: "אני בטוח כאן" })
+  );
+  assert.equal(withMantra.stateEncoding?.mantra, "אני בטוח כאן");
 });
 
 test("buildProfileFromDraft throws on an incomplete draft", () => {
   assert.throws(() => buildProfileFromDraft(createEmptyDraft()));
 });
 
-test("buildProfileFromDraft omits optional fields the trainee declined", () => {
-  const draft = filledDraft({ hasPreventiveAction: false, hasInterferingAction: false, mantra: "" });
+test("draftFromProfileAndSelection prefers the persisted selection over the profile", () => {
+  const draft = filledHabitOnlyDraft({ hasPreventiveAction: true, preventiveActionDescription: "לצאת להליכה" });
   const profile = buildProfileFromDraft(draft);
-  assert.equal(profile.preventiveAction, undefined);
-  assert.equal(profile.interferingAction, undefined);
-  assert.equal(profile.mantra, undefined);
+  const selection = selectionFromDraft(draft);
+  const roundTripped = draftFromProfileAndSelection(profile, selection);
+  assert.equal(roundTripped.needsState, false);
+  assert.equal(roundTripped.needsIdentityExplicit, false);
+  assert.equal(roundTripped.habit, draft.habit);
+  assert.equal(roundTripped.hasPreventiveAction, true);
+  assert.equal(roundTripped.preventiveActionDescription, "לצאת להליכה");
 });
 
-test("buildProfileFromDraft includes accepted optional fields", () => {
-  const draft = filledDraft({
-    hasPreventiveAction: true,
-    preventiveActionDescription: "לצאת להליכה",
-    hasInterferingAction: true,
-    interferingActionDescription: "גלילה ברשת",
-    interferingActionAllowedMinutes: 10,
-    mantra: "אני בטוח כאן",
-  });
-  const profile = buildProfileFromDraft(draft);
-  assert.equal(profile.preventiveAction?.description, "לצאת להליכה");
-  assert.equal(profile.interferingAction?.description, "גלילה ברשת");
-  assert.equal(profile.interferingAction?.allowedMinutes, 10);
-  assert.equal(profile.mantra, "אני בטוח כאן");
+test("draftFromProfileAndSelection falls back to the legacy programPath when no selection was ever saved", () => {
+  const draft = filledStateOnlyDraft({ desiredIdentity: "x", identityInterferingEmotion: "x", identityAction: "x" });
+  const profile = buildProfileFromDraft(draft); // programPath: standard_3_week or advanced_2_week
+  const roundTripped = draftFromProfileAndSelection(profile, null);
+  assert.equal(roundTripped.needsState, true, "standard/advanced programPath implies needsState");
 });
 
-test("draftFromProfile round-trips through buildProfileFromDraft", () => {
-  const draft = filledDraft({
-    hasPreventiveAction: true,
-    preventiveActionDescription: "לצאת להליכה",
-    hasInterferingAction: true,
-    interferingActionDescription: "גלילה ברשת",
-    interferingActionAllowedMinutes: 10,
-    mantra: "אני בטוח כאן",
-  });
-  const profile = buildProfileFromDraft(draft);
-  const roundTripped = draftFromProfile(profile);
-  assert.deepEqual(roundTripped, draft);
+test("selectionFromDraft always sets needsHabit true for the current four presets", () => {
+  const selection = selectionFromDraft(filledHabitOnlyDraft());
+  assert.equal(selection.needsHabit, true);
+  assert.equal(selection.programPath, "habit_only_1_week");
+});
+
+test("selectionFromDraft throws on an incomplete draft (no needsState answer yet)", () => {
+  assert.throws(() => selectionFromDraft(createEmptyDraft()));
 });
