@@ -20,6 +20,8 @@
   "devDependencies": {
     "@types/react": "~19.2.2",
     "eas-cli": "^22.4.0",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -29,7 +31,11 @@
     "web": "expo start --web",
     "test": "node --experimental-transform-types --test engine/*.test.ts live/*.test.ts data/*.test.ts build/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "lint": "expo lint",
     "deploy:preview": "eas update --branch preview"
+  },
+  "overrides": {
+    "react-dom": "19.2.3"
   },
   "private": true
 }
