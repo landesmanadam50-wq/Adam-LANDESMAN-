@@ -9,6 +9,7 @@
 
 import type { ArcProfile } from "../engine/types.ts";
 import { LiveStage } from "../engine/types.ts";
+import { getAwarenessInstruction, getCombinedAttentionInstruction, getExpandPresenceInstruction } from "../engine/instructions.ts";
 
 export type StageInputKind =
   | "yesno"
@@ -69,19 +70,29 @@ export function getStageCopy(stage: LiveStage, profile: ArcProfile): StageCopy {
         body: "עד כמה אתה נוכח כרגע, בסולם 0 עד 10?",
       };
     case LiveStage.ArcThoughtAwareness:
+      // Deliberately parameterless: naming profile.actions.internalAction
+      // (or any other calibrated target) here directs attention to a
+      // specific thing rather than present-moment awareness. Desired
+      // State/Identity enter only at Encoding -- see that case below.
       return {
         title: "מודעות",
-        body: `שים לב לתחושה הפנימית — ${profile.actions.internalAction}.`,
+        body: getAwarenessInstruction(),
       };
     case LiveStage.ArcThoughtCombinedAttention:
+      // Deliberately does not name interferingState/supportiveState: holding
+      // two named states in awareness simultaneously is an induction-style
+      // pattern (see engine/instructions.ts's containsInductionPattern), not
+      // present-moment awareness. This is the exact fix for the runtime bug
+      // reported from a published build -- getCombinedAttentionInstruction()
+      // takes no state parameters for exactly this reason.
       return {
         title: "תשומת לב משולבת",
-        body: `החזק בו-זמנית את המודעות ל-${profile.interferingState} וגם ל-${profile.supportiveState}.`,
+        body: getCombinedAttentionInstruction(),
       };
     case LiveStage.ArcThoughtExpansion:
       return {
         title: "הרחבה",
-        body: "הרחב את תשומת הלב שלך למרחב הסובב אותך, מעבר לתחושה הפנימית.",
+        body: getExpandPresenceInstruction(),
       };
     case LiveStage.ArcThoughtPresenceRecheck:
       return {
