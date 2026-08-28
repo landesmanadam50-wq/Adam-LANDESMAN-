@@ -15,12 +15,16 @@ import type { ArcBuildProfile, ArcProgramProgress } from "../arc/types.ts";
 import type { ArcProgramSelection } from "../program/programTypes.ts";
 import { PROGRAM_DEFINITIONS } from "../program/config.ts";
 import type { SessionLogEntry } from "./sessionLog.ts";
+import type { ArcMap, BuildGoalProfile } from "../arc/buildTypes.ts";
+import { createGoalModelFromProfile, generateStableId } from "../arc/buildTypes.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
 const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
 const PROGRAM_PROGRESS_KEY = "archi.programProgress.v2";
 const SESSION_LOG_KEY = "archi.sessionLog.v1";
 const PILOT_STARTED_AT_KEY = "archi.pilotStartedAt.v1";
+const BUILD_GOAL_PROFILE_KEY = "archi.buildGoalProfile.v1";
+const ARC_MAPS_KEY = "archi.arcMaps.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -112,4 +116,52 @@ export async function getOrCreatePilotStartedAt(): Promise<string> {
   const now = new Date().toISOString();
   await AsyncStorage.setItem(PILOT_STARTED_AT_KEY, now);
   return now;
+}
+
+export async function loadBuildGoalProfile(): Promise<BuildGoalProfile | null> {
+  const raw = await AsyncStorage.getItem(BUILD_GOAL_PROFILE_KEY);
+  return raw ? (JSON.parse(raw) as BuildGoalProfile) : null;
+}
+
+export async function saveBuildGoalProfile(goalProfile: BuildGoalProfile): Promise<void> {
+  await AsyncStorage.setItem(BUILD_GOAL_PROFILE_KEY, JSON.stringify(goalProfile));
+}
+
+/** LIVE reads this (read-only) to find its active ArcMap -- see arc/buildTypes.ts's resolveActiveArcMap/applyActiveArcMap. Defaults to [] rather than null: "no ArcMaps yet" and "nothing stored yet" are the same thing to every caller. */
+export async function loadArcMaps(): Promise<ArcMap[]> {
+  const raw = await AsyncStorage.getItem(ARC_MAPS_KEY);
+  return raw ? (JSON.parse(raw) as ArcMap[]) : [];
+}
+
+export async function saveArcMaps(arcMaps: ArcMap[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_MAPS_KEY, JSON.stringify(arcMaps));
+}
+
+/**
+ * Creates the BuildGoalProfile + first ArcMap from an existing
+ * ArcBuildProfile's flat state fields, the first time this is called
+ * for a given install -- idempotent, so it's safe to call defensively
+ * (e.g. every time Home loads) without regenerating arcMapId/
+ * desiredStateId on a later call. Existing users are migrated silently
+ * from data they already entered; nobody is asked BUILD's questions
+ * again.
+ *
+ * Only ever called from BUILD-adjacent/Home code, never from LIVE --
+ * LIVE only reads via loadArcMaps()/loadBuildGoalProfile(), per the
+ * "LIVE retrieves, it does not create" rule.
+ */
+export async function getOrCreateGoalModel(
+  profile: ArcBuildProfile
+): Promise<{ goalProfile: BuildGoalProfile; arcMaps: ArcMap[] } | null> {
+  const existingGoalProfile = await loadBuildGoalProfile();
+  if (existingGoalProfile) {
+    return { goalProfile: existingGoalProfile, arcMaps: await loadArcMaps() };
+  }
+
+  const created = createGoalModelFromProfile(profile, (kind) => generateStableId(kind === "desiredState" ? "state" : "arcmap"));
+  if (!created) return null;
+
+  await saveBuildGoalProfile(created.goalProfile);
+  await saveArcMaps(created.arcMaps);
+  return created;
 }

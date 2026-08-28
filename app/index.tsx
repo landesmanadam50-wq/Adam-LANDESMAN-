@@ -3,7 +3,7 @@ import { Link, useFocusEffect } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { loadProfile } from "../data/storage.ts";
+import { getOrCreateGoalModel, loadProfile } from "../data/storage.ts";
 
 export default function Home() {
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
@@ -12,7 +12,15 @@ export default function Home() {
     useCallback(() => {
       let cancelled = false;
       loadProfile().then((profile) => {
-        if (!cancelled) setHasProfile(!!profile);
+        if (cancelled) return;
+        setHasProfile(!!profile);
+        if (profile) {
+          // Idempotent: creates the goal model from existing profile data
+          // the first time only, silently, for every user (new or
+          // already-migrated) without asking BUILD's questions again.
+          // LIVE only ever reads this data -- it never creates it itself.
+          getOrCreateGoalModel(profile);
+        }
       });
       return () => {
         cancelled = true;

@@ -27,7 +27,8 @@ import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "
 import { createEmptyLiveState } from "../arc/types.ts";
 import { getFirstArcStage } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
-import { loadProfile, loadProgramProgress, loadProgramSelection, saveProgramProgress, appendSessionLogEntry } from "../data/storage.ts";
+import { loadProfile, loadProgramProgress, loadProgramSelection, loadArcMaps, saveProgramProgress, appendSessionLogEntry } from "../data/storage.ts";
+import { applyActiveArcMap } from "../arc/buildTypes.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
@@ -58,21 +59,25 @@ export default function LiveSessionScreen() {
       // loadProgramSelection() is loaded for completeness (per the LIVE
       // load contract) even though today's routing only needs
       // activeLayers, which loadProgramProgress() already derives from
-      // ProgramDefinition -- see program/engine.ts.
-      Promise.all([loadProfile(), loadProgramProgress(), loadProgramSelection()]).then(([loadedProfile, loadedProgress]) => {
-        if (cancelled) return;
-        if (!loadedProfile || !loadedProgress) {
-          router.replace("/build");
-          return;
+      // ProgramDefinition -- see program/engine.ts. loadArcMaps() is a
+      // read-only retrieval -- LIVE never creates ArcMaps, only
+      // BUILD/Home's getOrCreateGoalModel() does.
+      Promise.all([loadProfile(), loadProgramProgress(), loadProgramSelection(), loadArcMaps()]).then(
+        ([loadedProfile, loadedProgress, , loadedArcMaps]) => {
+          if (cancelled) return;
+          if (!loadedProfile || !loadedProgress) {
+            router.replace("/build");
+            return;
+          }
+          setProfile(applyActiveArcMap(loadedProfile, loadedArcMaps));
+          setActiveLayers(loadedProgress.activeLayers);
+          setSession(createEmptyLiveState());
+          setStage(getFirstArcStage());
+          setPendingSensationLocation("");
+          setSuccessFocusMinutes(null);
+          setSessionStartedAt(new Date().toISOString());
         }
-        setProfile(loadedProfile);
-        setActiveLayers(loadedProgress.activeLayers);
-        setSession(createEmptyLiveState());
-        setStage(getFirstArcStage());
-        setPendingSensationLocation("");
-        setSuccessFocusMinutes(null);
-        setSessionStartedAt(new Date().toISOString());
-      });
+      );
       return () => {
         cancelled = true;
       };

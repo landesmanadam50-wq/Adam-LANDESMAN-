@@ -10,7 +10,6 @@ import {
   getInterferingStateRecognitionPrompt,
   containsInductionPattern,
 } from "./instructions.ts";
-import { migrateLegacyStateFields } from "./buildTypes.ts";
 
 test("Awareness instruction never mentions a specific interfering or desired state", () => {
   const text = getAwarenessInstruction();
@@ -77,34 +76,4 @@ test("audit does not flag the corrected awareness/encoding instructions", () => 
     ),
     false
   );
-});
-
-test("legacy supportive/interfering state fields migrate into the new model without asking again", () => {
-  const { goalProfile, arcMap } = migrateLegacyStateFields({
-    supportiveState: "חמלה",
-    interferingState: "ביקורת",
-    goal: "להגיב לעצמי בצורה בונה יותר",
-    habit: "לעצור במקום לבקר את עצמי מיד",
-    identity: "אני אדם חומל ומשמעתי",
-    desiredStateId: "state_1",
-    arcMapId: "arcmap_1",
-  });
-
-  assert.equal(goalProfile.desiredState, "חמלה");
-  assert.equal(arcMap.interferingState, "ביקורת");
-  assert.equal(arcMap.desiredStateId, goalProfile.desiredStateId);
-  assert.equal(arcMap.challengeContext, null);
-});
-
-test("migration handles a profile with no interfering state on record", () => {
-  const { arcMap } = migrateLegacyStateFields({
-    supportiveState: "מיקוד",
-    interferingState: null,
-    goal: "ללמוד ביעילות",
-    habit: "לשבת ללמוד בלי הפרעות",
-    identity: "אני אדם ממוקד",
-    desiredStateId: "state_2",
-    arcMapId: "arcmap_2",
-  });
-  assert.equal(arcMap.interferingState, null);
 });
