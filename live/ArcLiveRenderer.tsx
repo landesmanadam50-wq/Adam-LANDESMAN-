@@ -13,12 +13,16 @@
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy } from "../arc/stageCopy.ts";
-import { getStageCopy, getYesNoLabels } from "../arc/stageCopy.ts";
-import { getAvailableProactiveTargets, needsProactiveTargetSelection } from "../arc/arcEngine.ts";
+import { CHALLENGE_RECOGNITION_LABELS, getStageCopy, getYesNoLabels } from "../arc/stageCopy.ts";
+import { getAvailableProactiveTargets, getPreventiveActionSubStage, needsProactiveTargetSelection } from "../arc/arcEngine.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
+import type { ArcMap } from "../arc/buildTypes.ts";
+import { resolveSelectedArcMap } from "../arc/buildTypes.ts";
 import {
   AcceptScreen,
   ActionScreen,
+  ArcMapSelectionScreen,
+  ChallengeRecognitionScreen,
   CompleteScreen,
   DesiredStateRatingScreen,
   EncodingScreen,
@@ -49,6 +53,7 @@ export interface ArcLiveRendererProps {
   profile: ArcBuildProfile;
   activeLayers: DevelopmentLayer[];
   availableTriggers: TriggerType[];
+  arcMaps: ArcMap[];
   pendingSensationLocation: string;
   successFocusMinutes: number | null;
   onSelectTrigger: (trigger: TriggerType) => void;
@@ -57,6 +62,8 @@ export interface ArcLiveRendererProps {
   onSubmitSensationIntensity: (value: number) => void;
   onYesNoAnswer: (yes: boolean) => void;
   onSelectTarget: (target: DevelopmentLayer) => void;
+  onSelectArcMap: (arcMapId: string) => void;
+  onChallengeRecognitionAnswer: (yes: boolean) => void;
   onGenericContinue: () => void;
   onRegulateContinue: () => void;
   onActionCompleted: () => void;
@@ -66,8 +73,8 @@ export interface ArcLiveRendererProps {
 }
 
 export function ArcLiveRenderer(props: ArcLiveRendererProps) {
-  const { stage, session, profile, activeLayers } = props;
-  const copy: ArcStageCopy = getStageCopy(stage, profile, session, activeLayers);
+  const { stage, session, profile, activeLayers, arcMaps } = props;
+  const copy: ArcStageCopy = getStageCopy(stage, profile, session, activeLayers, arcMaps);
 
   switch (stage) {
     case "trigger_selection":
@@ -90,8 +97,26 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
     case "preventive_action":
       return <InstructionScreen copy={copy} onContinue={props.onGenericContinue} />;
 
-    case "preventive_action_check":
+    case "preventive_action_check": {
+      const subStage = getPreventiveActionSubStage(arcMaps, session.selectedArcMapId, session.challengeRecognized);
+
+      if (subStage === "select_arc_map") {
+        return <ArcMapSelectionScreen copy={copy} arcMaps={arcMaps} onSelect={props.onSelectArcMap} />;
+      }
+      if (subStage === "recognize_challenge") {
+        return <ChallengeRecognitionScreen copy={copy} labels={CHALLENGE_RECOGNITION_LABELS} onAnswer={props.onChallengeRecognitionAnswer} />;
+      }
+
+      const activeArcMap = resolveSelectedArcMap(arcMaps, session.selectedArcMapId);
+      const preventiveAction = activeArcMap?.preventiveAction ?? profile.preventiveAction;
+      if (preventiveAction === null) {
+        // Recognized the challenge (or there was nothing to recognize),
+        // but this particular ArcMap has no Preventive Action configured
+        // -- nothing to offer, so just move on.
+        return <InstructionScreen copy={copy} onContinue={props.onGenericContinue} />;
+      }
       return <PreventiveActionCheckScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
+    }
 
     case "sensation_check": {
       const isHabitSensation = session.triggerType === "reactive_urge";

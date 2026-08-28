@@ -5,6 +5,7 @@ import { getStageCopy, getStageInputKind } from "./stageCopy.ts";
 import { createEmptyLiveState } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { containsInductionPattern } from "./instructions.ts";
+import type { ArcMap } from "./buildTypes.ts";
 
 function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
   return {
@@ -103,4 +104,93 @@ test("preventive_action_check copy names the configured preventive action", () =
   const p = profile({ preventiveAction: "לצאת להליכה" });
   const copy = getStageCopy("preventive_action_check", p, liveState({ triggerType: "reactive_urge" }), ["habit"]);
   assert.ok(copy.body.includes("לצאת להליכה"));
+});
+
+const mapWithContext: ArcMap = {
+  id: "map1",
+  desiredStateId: "d1",
+  interferingState: "ביקורת עצמית",
+  challengeContext: "אחרי טעות",
+  preventiveAction: "לעצור ולשים לב למה שכבר נוכח",
+};
+const mapNoContext: ArcMap = {
+  id: "map2",
+  desiredStateId: "d1",
+  interferingState: null,
+  challengeContext: null,
+  preventiveAction: "לעצור לפני תגובה אוטומטית",
+};
+
+test("preventive_action_check shows an ArcMap picker when more than one exists and none is selected", () => {
+  const p = profile({ preventiveAction: null });
+  const copy = getStageCopy("preventive_action_check", p, liveState({ triggerType: "reactive_urge" }), ["habit"], [
+    mapWithContext,
+    mapNoContext,
+  ]);
+  assert.equal(copy.title, "זיהוי דפוס");
+});
+
+test("preventive_action_check asks to recognize the Challenge Context, and mentions Interfering State as a recognition question only", () => {
+  const p = profile({ preventiveAction: null });
+  const copy = getStageCopy(
+    "preventive_action_check",
+    p,
+    liveState({ triggerType: "reactive_urge", selectedArcMapId: "map1" }),
+    ["habit"],
+    [mapWithContext]
+  );
+  assert.ok(copy.body.includes("אחרי טעות"));
+  assert.ok(copy.body.includes("ביקורת עצמית"));
+  assert.ok(copy.body.includes("?"), "must be phrased as a recognition question");
+  assert.equal(containsInductionPattern(copy.body), false, "never an instruction to evoke/imagine/strengthen the interfering state");
+});
+
+test("preventive_action_check skips straight to offering the action once challengeRecognized is set, using the SELECTED map's action", () => {
+  const p = profile({ preventiveAction: null });
+  const copy = getStageCopy(
+    "preventive_action_check",
+    p,
+    liveState({ triggerType: "reactive_urge", selectedArcMapId: "map1", challengeRecognized: true }),
+    ["habit"],
+    [mapWithContext]
+  );
+  assert.ok(copy.body.includes("לעצור ולשים לב למה שכבר נוכח"));
+});
+
+test("preventive_action_check with a Challenge-Context-free ArcMap goes straight to offering the action", () => {
+  const p = profile({ preventiveAction: null });
+  const copy = getStageCopy(
+    "preventive_action_check",
+    p,
+    liveState({ triggerType: "reactive_urge", selectedArcMapId: "map2" }),
+    ["habit"],
+    [mapNoContext]
+  );
+  assert.ok(copy.body.includes("לעצור לפני תגובה אוטומטית"));
+});
+
+test("preventive_action_check offer_action degrades gracefully when the selected map has no preventiveAction", () => {
+  const noAction: ArcMap = { id: "map3", desiredStateId: "d1", interferingState: null, challengeContext: null, preventiveAction: null };
+  const p = profile({ preventiveAction: null });
+  const copy = getStageCopy(
+    "preventive_action_check",
+    p,
+    liveState({ triggerType: "reactive_urge", selectedArcMapId: "map3" }),
+    ["habit"],
+    [noAction]
+  );
+  assert.equal(copy.body, "אין פעולה מונעת מוגדרת לדפוס הזה כרגע.");
+});
+
+test("preventive_action (the follow-through stage) uses the selected ArcMap's action, not a stale legacy field", () => {
+  const p = profile({ preventiveAction: "legacy-stale-action" });
+  const copy = getStageCopy(
+    "preventive_action",
+    p,
+    liveState({ triggerType: "reactive_urge", selectedArcMapId: "map1" }),
+    ["habit"],
+    [mapWithContext]
+  );
+  assert.ok(copy.body.includes("לעצור ולשים לב למה שכבר נוכח"));
+  assert.ok(!copy.body.includes("legacy-stale-action"));
 });

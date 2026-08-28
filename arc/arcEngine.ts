@@ -49,6 +49,8 @@ import {
 } from "./engine.ts";
 import { ARC_CONFIG } from "./config.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, EncodingProfile, TriggerType } from "./types.ts";
+import type { ArcMap } from "./buildTypes.ts";
+import { resolveSelectedArcMap } from "./buildTypes.ts";
 
 export interface ArcStageResult {
   stage: ArcStage;
@@ -215,8 +217,43 @@ function inferLayerFromTrigger(
 }
 
 // ---------------------------------------------------------------------------
-// Preventive action (#12)
+// Preventive action (#12) -- ArcMap selection/recognition
 // ---------------------------------------------------------------------------
+
+export type PreventiveActionSubStage = "select_arc_map" | "recognize_challenge" | "offer_action";
+
+/**
+ * Which sub-step of the (unchanged) preventive_action_check ArcStage the
+ * UI should show. This is NOT a new ArcStage -- selecting among several
+ * ArcMaps and recognizing a challenge context are steps WITHIN
+ * preventive_action_check, exactly like the proactive-target picker is a
+ * step within desired_state_check (see needsProactiveTargetSelection).
+ * Every existing ArcStage transition, threshold, and loop rule stays
+ * untouched; this only decides what to render while stage stays
+ * "preventive_action_check".
+ *
+ * - More than one ArcMap and none chosen yet -> the trainee must pick one.
+ * - The selected/default ArcMap has a Challenge Context and it hasn't
+ *   been recognized yet -> ask (recognize_challenge is also where
+ *   Interfering State gets a supportive, recognition-only mention --
+ *   never an instruction to evoke/imagine/strengthen it).
+ * - Otherwise -> offer the Preventive Action, which only ever appears
+ *   once its Challenge Context has been recognized (or there was none
+ *   to recognize in the first place, e.g. an ArcMap migrated from
+ *   legacy data with no Challenge Context on record).
+ */
+export function getPreventiveActionSubStage(
+  arcMaps: ArcMap[],
+  selectedArcMapId: string | null,
+  challengeRecognized: boolean | null
+): PreventiveActionSubStage {
+  if (arcMaps.length > 1 && selectedArcMapId === null) return "select_arc_map";
+  const activeArcMap = resolveSelectedArcMap(arcMaps, selectedArcMapId);
+  if (activeArcMap !== null && activeArcMap.challengeContext !== null && challengeRecognized === null) {
+    return "recognize_challenge";
+  }
+  return "offer_action";
+}
 
 function afterArcThought(state: ArcLiveState, profile: ArcBuildProfile): ArcStage {
   if (state.triggerType === null) return "sensation_check";

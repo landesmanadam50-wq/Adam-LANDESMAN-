@@ -10,12 +10,11 @@
  * can't go stale across multiple maps.
  *
  * Today's BUILD wizard only ever produces ONE desired state per
- * profile (ArcBuildProfile.supportiveState) and has no UI yet for
- * creating additional ArcMaps for it -- createGoalModelFromProfile
- * migrates that single legacy state into the first ArcMap. A future
- * BUILD-ARC screen is what would let a trainee add a second, third,
- * etc. ArcMap for the same desired state; this file's job is just to
- * make that possible without breaking anything that exists today.
+ * profile (ArcBuildProfile.supportiveState); createGoalModelFromProfile
+ * migrates that single legacy state into the first ArcMap. The
+ * BUILD-ARC screen (build/ArcMapManagerScreen.tsx) is what lets a
+ * trainee create/edit/remove further ArcMaps for that same desired
+ * state, using createArcMap/upsertArcMap/removeArcMap below.
  */
 
 import type { ArcBuildProfile } from "./types.ts";
@@ -90,31 +89,70 @@ export function createGoalModelFromProfile(
 }
 
 /**
- * Which ArcMap LIVE should treat as the active challenge pattern.
- * There's no multi-map selection UI yet, so this just picks the first
- * one -- the natural place to add real selection (e.g. matching the
- * trainee's current context) once BUILD-ARC supports creating more
- * than one ArcMap for the same desired state, without LIVE inventing
- * that logic itself.
+ * The default ArcMap when nothing has been explicitly selected --
+ * picks the first one. Used both as the fallback inside
+ * resolveSelectedArcMap (a single ArcMap needs no picker) and by
+ * applyPreventiveActionRouting below.
  */
 export function resolveActiveArcMap(arcMaps: ArcMap[]): ArcMap | null {
   return arcMaps[0] ?? null;
 }
 
 /**
- * Overlays the active ArcMap's interferingState/preventiveAction onto
- * profile, falling back to the profile's own flat fields when the
- * ArcMap doesn't have a value for one of them. This is the ONLY thing
- * that lets ArcMap actually reach LIVE -- arc/arcEngine.ts and
- * arc/stageCopy.ts stay untouched, always reading a plain
- * ArcBuildProfile, so nothing about them needs to know ArcMap exists.
+ * Which ArcMap LIVE should treat as the trainee's actual choice this
+ * session: the one matching selectedArcMapId once they've picked (or
+ * been auto-assigned) one, falling back to resolveActiveArcMap only
+ * while nothing has been selected yet.
  */
-export function applyActiveArcMap(profile: ArcBuildProfile, arcMaps: ArcMap[]): ArcBuildProfile {
-  const activeArcMap = resolveActiveArcMap(arcMaps);
-  if (!activeArcMap) return profile;
-  return {
-    ...profile,
-    interferingState: activeArcMap.interferingState ?? profile.interferingState,
-    preventiveAction: activeArcMap.preventiveAction ?? profile.preventiveAction,
-  };
+export function resolveSelectedArcMap(arcMaps: ArcMap[], selectedArcMapId: string | null): ArcMap | null {
+  if (selectedArcMapId !== null) {
+    return arcMaps.find((arcMap) => arcMap.id === selectedArcMapId) ?? null;
+  }
+  return resolveActiveArcMap(arcMaps);
+}
+
+/**
+ * Overlays a preventiveAction onto profile ONLY for the purpose of
+ * arc/arcEngine.ts's existing afterArcThought() routing check
+ * (profile.preventiveAction !== null) -- so LIVE still offers
+ * preventive_action_check whenever ANY ArcMap could have one, even
+ * though which map (and therefore which specific action) is actually
+ * relevant isn't known until the trainee selects/recognizes it inside
+ * that stage (see getPreventiveActionSubStage). Deliberately does NOT
+ * overlay interferingState: that's resolved fresh from the selected
+ * ArcMap inside arc/stageCopy.ts's preventive_action_check case, never
+ * from the profile object, so there's nothing to overlay here for it.
+ */
+export function applyPreventiveActionRouting(profile: ArcBuildProfile, arcMaps: ArcMap[]): ArcBuildProfile {
+  if (profile.preventiveAction !== null) return profile;
+  const anyPreventiveAction = arcMaps.find((arcMap) => arcMap.preventiveAction !== null)?.preventiveAction ?? null;
+  if (anyPreventiveAction === null) return profile;
+  return { ...profile, preventiveAction: anyPreventiveAction };
+}
+
+export interface ArcMapDraft {
+  interferingState: string | null;
+  challengeContext: string | null;
+  preventiveAction: string | null;
+}
+
+export function createArcMap(desiredStateId: string, draft: ArcMapDraft, generateId: () => string): ArcMap {
+  return { id: generateId(), desiredStateId, ...draft };
+}
+
+export function upsertArcMap(arcMaps: ArcMap[], arcMap: ArcMap): ArcMap[] {
+  const index = arcMaps.findIndex((m) => m.id === arcMap.id);
+  if (index === -1) return [...arcMaps, arcMap];
+  const next = [...arcMaps];
+  next[index] = arcMap;
+  return next;
+}
+
+export function removeArcMap(arcMaps: ArcMap[], arcMapId: string): ArcMap[] {
+  return arcMaps.filter((m) => m.id !== arcMapId);
+}
+
+/** The label BUILD-ARC's list and LIVE's ArcMap picker both show for one ArcMap -- kept in one place so they can never drift apart. */
+export function getArcMapDisplayLabel(arcMap: ArcMap): string {
+  return arcMap.challengeContext ?? arcMap.interferingState ?? "דפוס ללא תיאור";
 }

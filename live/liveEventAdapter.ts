@@ -19,6 +19,7 @@
 
 import { getAvailableProactiveTargets, getNextArcStage, needsProactiveTargetSelection } from "../arc/arcEngine.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, TriggerType } from "../arc/types.ts";
+import type { ArcMap } from "../arc/buildTypes.ts";
 
 export function applyTriggerSelection(session: ArcLiveState, triggerType: TriggerType): ArcLiveState {
   return { ...session, triggerType };
@@ -58,6 +59,24 @@ export function applyTargetSelection(session: ArcLiveState, target: DevelopmentL
   return { ...session, selectedTarget: target };
 }
 
+export function applyArcMapSelection(session: ArcLiveState, arcMapId: string): ArcLiveState {
+  return { ...session, selectedArcMapId: arcMapId };
+}
+
+/**
+ * Recognizing the Challenge Context ("yes, this is what's happening")
+ * just reveals the next preventive_action_check sub-step -- no stage
+ * transition yet. NOT recognizing it means there's nothing to offer:
+ * this also sets wantsPreventiveAction to false so the existing,
+ * unchanged preventive_action_check -> sensation_check/preventive_action
+ * transition in getNextArcStage() correctly skips straight past the
+ * Preventive Action offer once this patch is committed.
+ */
+export function applyChallengeRecognition(session: ArcLiveState, recognized: boolean): ArcLiveState {
+  if (recognized) return { ...session, challengeRecognized: true };
+  return { ...session, challengeRecognized: false, wantsPreventiveAction: false };
+}
+
 export function applyRegulationToolUsed(session: ArcLiveState, tool: string | null): ArcLiveState {
   if (!tool) return session;
   return { ...session, activeTools: [...session.activeTools, tool] };
@@ -88,6 +107,21 @@ function autoSelectSingleProactiveTarget(
   return session;
 }
 
+/**
+ * When a session reaches preventive_action_check with no ArcMap chosen
+ * yet and exactly one ArcMap exists, record it explicitly instead of
+ * leaving selectedArcMapId null -- mirrors autoSelectSingleProactiveTarget.
+ * More than one ArcMap is left null; the renderer shows a picker for
+ * that case (see getPreventiveActionSubStage).
+ */
+function autoSelectSingleArcMap(session: ArcLiveState, stage: ArcStage, arcMaps: ArcMap[]): ArcLiveState {
+  if (stage !== "preventive_action_check" || session.selectedArcMapId !== null) return session;
+  if (arcMaps.length === 1) {
+    return { ...session, selectedArcMapId: arcMaps[0].id };
+  }
+  return session;
+}
+
 export interface AdvanceResult {
   session: ArcLiveState;
   stage: ArcStage;
@@ -96,15 +130,16 @@ export interface AdvanceResult {
 /**
  * The single integration point: apply the engine's decision for what
  * comes after `currentStage` to `session`, fold in the actionReached
- * flag and any auto-selected proactive target, and return the result.
- * Call this after an applyXxx function above has already shaped the raw
- * answer into `session`.
+ * flag and any auto-selected proactive target/ArcMap, and return the
+ * result. Call this after an applyXxx function above has already shaped
+ * the raw answer into `session`.
  */
 export function advanceLiveSession(
   currentStage: ArcStage,
   session: ArcLiveState,
   profile: ArcBuildProfile,
-  activeLayers: DevelopmentLayer[]
+  activeLayers: DevelopmentLayer[],
+  arcMaps: ArcMap[] = []
 ): AdvanceResult {
   const outcome = getNextArcStage(currentStage, session, profile);
   let nextSession: ArcLiveState = {
@@ -114,6 +149,7 @@ export function advanceLiveSession(
     actionReached: session.actionReached || outcome.stage === "act",
   };
   nextSession = autoSelectSingleProactiveTarget(nextSession, outcome.stage, activeLayers, profile);
+  nextSession = autoSelectSingleArcMap(nextSession, outcome.stage, arcMaps);
   return { session: nextSession, stage: outcome.stage };
 }
 

@@ -92,6 +92,17 @@ export interface ArcLiveState {
    */
   selectedTarget: DevelopmentLayer | null;
 
+  /**
+   * Which ArcMap this reactive_habit session's Challenge Context/
+   * Preventive Action step is about -- set explicitly once (auto-picked
+   * when only one ArcMap exists, or chosen by the trainee when more than
+   * one does) via arc/arcEngine.ts's getPreventiveActionSubStage(). Never
+   * left for the UI to guess.
+   */
+  selectedArcMapId: string | null;
+  /** Whether the trainee confirmed the selected ArcMap's Challenge Context actually matches what's happening now -- null = not yet asked. Preventive Action is only ever offered once this is true (or there was no Challenge Context to recognize). */
+  challengeRecognized: boolean | null;
+
   presenceRating: number | null;
   sensationLocation: string | null;
   sensationIntensity: number | null;
@@ -122,6 +133,8 @@ export function createEmptyLiveState(): ArcLiveState {
   return {
     triggerType: null,
     selectedTarget: null,
+    selectedArcMapId: null,
+    challengeRecognized: null,
     presenceRating: null,
     sensationLocation: null,
     sensationIntensity: null,

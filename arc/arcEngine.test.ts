@@ -6,12 +6,14 @@ import {
   getAvailableProactiveTargets,
   getFirstArcStage,
   getNextArcStage,
+  getPreventiveActionSubStage,
   resolveEncodingTarget,
   resolveLiveRoute,
 } from "./arcEngine.ts";
 import { createEmptyLiveState } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState } from "./types.ts";
 import { ARC_CONFIG } from "./config.ts";
+import type { ArcMap } from "./buildTypes.ts";
 
 function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
   return {
@@ -237,6 +239,55 @@ test("reactive_emotion never routes through preventive action, even with one con
   const p = profile({ preventiveAction: "לצאת להליכה" });
   const s = state({ triggerType: "reactive_emotion", presenceRating: 8 });
   assert.equal(getNextArcStage("presence_check", s, p).stage, "sensation_check");
+});
+
+// ---------------------------------------------------------------------------
+// Preventive action -- ArcMap selection/recognition sub-steps
+// ---------------------------------------------------------------------------
+
+const mapWithContext: ArcMap = {
+  id: "map1",
+  desiredStateId: "d1",
+  interferingState: "ביקורת עצמית",
+  challengeContext: "אחרי טעות",
+  preventiveAction: "לעצור ולשים לב למה שכבר נוכח",
+};
+const mapNoContext: ArcMap = {
+  id: "map2",
+  desiredStateId: "d1",
+  interferingState: null,
+  challengeContext: null,
+  preventiveAction: "לעצור לפני תגובה אוטומטית",
+};
+
+test("getPreventiveActionSubStage asks to select an ArcMap when more than one exists and none is chosen", () => {
+  assert.equal(getPreventiveActionSubStage([mapWithContext, mapNoContext], null, null), "select_arc_map");
+});
+
+test("getPreventiveActionSubStage skips selection once an ArcMap has been chosen", () => {
+  assert.notEqual(getPreventiveActionSubStage([mapWithContext, mapNoContext], "map1", null), "select_arc_map");
+});
+
+test("getPreventiveActionSubStage skips selection entirely when there's only one ArcMap", () => {
+  assert.notEqual(getPreventiveActionSubStage([mapWithContext], null, null), "select_arc_map");
+});
+
+test("getPreventiveActionSubStage asks to recognize the Challenge Context when the active map has one and it hasn't been answered", () => {
+  assert.equal(getPreventiveActionSubStage([mapWithContext], null, null), "recognize_challenge");
+  assert.equal(getPreventiveActionSubStage([mapWithContext, mapNoContext], "map1", null), "recognize_challenge");
+});
+
+test("getPreventiveActionSubStage goes straight to offer_action when the active map has no Challenge Context to recognize", () => {
+  assert.equal(getPreventiveActionSubStage([mapNoContext], null, null), "offer_action");
+});
+
+test("getPreventiveActionSubStage goes to offer_action once recognition has been answered, either way", () => {
+  assert.equal(getPreventiveActionSubStage([mapWithContext], null, true), "offer_action");
+  assert.equal(getPreventiveActionSubStage([mapWithContext], null, false), "offer_action");
+});
+
+test("getPreventiveActionSubStage is offer_action when there are no ArcMaps at all (legacy fallback)", () => {
+  assert.equal(getPreventiveActionSubStage([], null, null), "offer_action");
 });
 
 // ---------------------------------------------------------------------------

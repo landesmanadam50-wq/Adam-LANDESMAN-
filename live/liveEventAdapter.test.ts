@@ -24,11 +24,15 @@ import assert from "node:assert/strict";
 import { getAvailableLiveTriggers, getAvailableProactiveTargets, getFirstArcStage, resolveLiveRoute } from "../arc/arcEngine.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
+import type { ArcMap } from "../arc/buildTypes.ts";
+import { applyPreventiveActionRouting } from "../arc/buildTypes.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
 import { createInitialProgress } from "../program/progress.ts";
 import {
   advanceLiveSession,
   applyActionCompletion,
+  applyArcMapSelection,
+  applyChallengeRecognition,
   applyScaleAnswer,
   applySensationAnswer,
   applyTriggerSelection,
@@ -227,6 +231,75 @@ test("14. Two qualifying LIVE completions on the same local date cap at one Trai
   progress = recordValidLiveCompletion({ progress, reachedAct: true, actionCompleted: true, localDate: "2026-01-05" });
   assert.equal(progress.trainingDatesThisWeek.length, 1);
   assert.equal(progress.liveSessionCount, 2, "both sessions are counted, only one day is credited");
+});
+
+// --- ArcMap selection/recognition, end to end through the adapter ---
+
+const mapA: ArcMap = {
+  id: "mapA",
+  desiredStateId: "d1",
+  interferingState: "ביקורת עצמית",
+  challengeContext: "אחרי טעות",
+  preventiveAction: "לעצור ולשים לב למה שכבר נוכח",
+};
+const mapB: ArcMap = {
+  id: "mapB",
+  desiredStateId: "d1",
+  interferingState: "תסכול",
+  challengeContext: "כשמשהו לא מצליח",
+  preventiveAction: "לעצור לפני תגובה אוטומטית",
+};
+
+test("15. A single ArcMap is auto-selected -- no picker needed", () => {
+  // Mirrors what LiveSessionScreen actually does: overlay a
+  // "does any ArcMap have a preventiveAction" routing signal onto the
+  // profile before it reaches the engine, since afterArcThought() only
+  // ever checks the plain profile it's given.
+  const p = applyPreventiveActionRouting(profile({ preventiveAction: null }), [mapA]);
+  const session = applyTriggerSelection(createEmptyLiveState(), "reactive_urge");
+  const outcome = advanceLiveSession("presence_check", { ...session, presenceRating: 9 }, p, ["habit"], [mapA]);
+  assert.equal(outcome.stage, "preventive_action_check");
+  assert.equal(outcome.session.selectedArcMapId, "mapA", "auto-selected since it's the only ArcMap");
+});
+
+test("16. Multiple ArcMaps: nothing is auto-selected -- the trainee must pick one", () => {
+  const p = applyPreventiveActionRouting(profile({ preventiveAction: null }), [mapA, mapB]);
+  const session = applyTriggerSelection(createEmptyLiveState(), "reactive_urge");
+  const outcome = advanceLiveSession("presence_check", { ...session, presenceRating: 9 }, p, ["habit"], [mapA, mapB]);
+  assert.equal(outcome.stage, "preventive_action_check");
+  assert.equal(outcome.session.selectedArcMapId, null);
+});
+
+test("17. Selecting an ArcMap is a local choice -- it does not itself advance the stage", () => {
+  let session = createEmptyLiveState();
+  session = applyArcMapSelection(session, "mapB");
+  assert.equal(session.selectedArcMapId, "mapB");
+  assert.equal(session.currentArcStage, "trigger_selection", "unchanged -- selection alone never advances a stage");
+});
+
+test("18. Recognizing the Challenge Context (yes) reveals the next sub-step without advancing the stage", () => {
+  let session = createEmptyLiveState();
+  session = applyChallengeRecognition(session, true);
+  assert.equal(session.challengeRecognized, true);
+  assert.equal(session.wantsPreventiveAction, null, "not decided yet -- the offer_action sub-step still needs its own answer");
+});
+
+test("19. NOT recognizing the Challenge Context skips the Preventive Action offer entirely and advances to sensation_check", () => {
+  const p = profile({ preventiveAction: null });
+  let session = applyArcMapSelection(createEmptyLiveState(), "mapA");
+  session = applyChallengeRecognition(session, false);
+  assert.equal(session.wantsPreventiveAction, false);
+  const outcome = advanceLiveSession("preventive_action_check", session, p, ["habit"], [mapA]);
+  assert.equal(outcome.stage, "sensation_check", "Preventive Action was never offered -- the Challenge Context wasn't recognized");
+});
+
+test("20. Recognizing the Challenge Context, then accepting the Preventive Action, reaches preventive_action", () => {
+  const p = profile({ preventiveAction: null });
+  let session = applyArcMapSelection(createEmptyLiveState(), "mapA");
+  session = applyChallengeRecognition(session, true);
+  session = { ...session, wantsPreventiveAction: true }; // the offer_action sub-step's own yes/no answer
+  const outcome = advanceLiveSession("preventive_action_check", session, p, ["habit"], [mapA]);
+  assert.equal(outcome.stage, "preventive_action");
 });
 
 // --- first stage sanity ---

@@ -14,6 +14,8 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget } from "../arc/arcEngine.ts";
+import type { ArcMap } from "../arc/buildTypes.ts";
+import { getArcMapDisplayLabel } from "../arc/buildTypes.ts";
 
 const SCALE_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
@@ -98,6 +100,46 @@ export function InstructionScreen({ copy, onContinue }: { copy: ArcStageCopy; on
     <View>
       <Title copy={copy} />
       <PrimaryButton label="המשך" onPress={onContinue} />
+    </View>
+  );
+}
+
+export function ArcMapSelectionScreen({
+  copy,
+  arcMaps,
+  onSelect,
+}: {
+  copy: ArcStageCopy;
+  arcMaps: ArcMap[];
+  onSelect: (arcMapId: string) => void;
+}) {
+  return (
+    <View>
+      <Title copy={copy} />
+      <View style={styles.chipRow}>
+        {arcMaps.map((arcMap) => (
+          <Pressable key={arcMap.id} style={styles.chip} onPress={() => onSelect(arcMap.id)}>
+            <Text style={styles.buttonText}>{getArcMapDisplayLabel(arcMap)}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+export function ChallengeRecognitionScreen({
+  copy,
+  labels,
+  onAnswer,
+}: {
+  copy: ArcStageCopy;
+  labels: YesNoLabels;
+  onAnswer: (yes: boolean) => void;
+}) {
+  return (
+    <View>
+      <Title copy={copy} />
+      <YesNoButtons labels={labels} onAnswer={onAnswer} />
     </View>
   );
 }

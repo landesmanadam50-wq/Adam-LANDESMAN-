@@ -58,6 +58,11 @@ export default function Home() {
                 <Text style={styles.secondaryButtonText}>ערוך פרופיל</Text>
               </Pressable>
             </Link>
+            <Link href="/build-arc" asChild>
+              <Pressable style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>דפוסי אתגר</Text>
+              </Pressable>
+            </Link>
           </>
         )}
       </View>

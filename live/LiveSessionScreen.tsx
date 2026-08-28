@@ -28,12 +28,15 @@ import { createEmptyLiveState } from "../arc/types.ts";
 import { getFirstArcStage } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
 import { loadProfile, loadProgramProgress, loadProgramSelection, loadArcMaps, saveProgramProgress, appendSessionLogEntry } from "../data/storage.ts";
-import { applyActiveArcMap } from "../arc/buildTypes.ts";
+import type { ArcMap } from "../arc/buildTypes.ts";
+import { applyPreventiveActionRouting } from "../arc/buildTypes.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
   advanceLiveSession,
   applyActionCompletion,
+  applyArcMapSelection,
+  applyChallengeRecognition,
   applyRegulationToolUsed,
   applyScaleAnswer,
   applySensationAnswer,
@@ -46,6 +49,7 @@ import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
 
 export default function LiveSessionScreen() {
   const [profile, setProfile] = useState<ArcBuildProfile | null>(null);
+  const [arcMaps, setArcMaps] = useState<ArcMap[]>([]);
   const [activeLayers, setActiveLayers] = useState<DevelopmentLayer[]>([]);
   const [session, setSession] = useState<ArcLiveState>(() => createEmptyLiveState());
   const [stage, setStage] = useState<ArcStage>("trigger_selection");
@@ -69,7 +73,8 @@ export default function LiveSessionScreen() {
             router.replace("/build");
             return;
           }
-          setProfile(applyActiveArcMap(loadedProfile, loadedArcMaps));
+          setProfile(applyPreventiveActionRouting(loadedProfile, loadedArcMaps));
+          setArcMaps(loadedArcMaps);
           setActiveLayers(loadedProgress.activeLayers);
           setSession(createEmptyLiveState());
           setStage(getFirstArcStage());
@@ -108,7 +113,7 @@ export default function LiveSessionScreen() {
 
   const commitAdvance = (patchedSession: ArcLiveState) => {
     if (!profile) return;
-    const { session: nextSession, stage: nextStage } = advanceLiveSession(stage, patchedSession, profile, activeLayers);
+    const { session: nextSession, stage: nextStage } = advanceLiveSession(stage, patchedSession, profile, activeLayers, arcMaps);
     setSession(nextSession);
     setStage(nextStage);
     setPendingSensationLocation("");
@@ -134,7 +139,7 @@ export default function LiveSessionScreen() {
     );
   }
 
-  const copy = getStageCopy(stage, profile, session, activeLayers);
+  const copy = getStageCopy(stage, profile, session, activeLayers, arcMaps);
   const availableTriggers = getAvailableLiveTriggers(activeLayers);
 
   return (
@@ -147,6 +152,7 @@ export default function LiveSessionScreen() {
           profile={profile}
           activeLayers={activeLayers}
           availableTriggers={availableTriggers}
+          arcMaps={arcMaps}
           pendingSensationLocation={pendingSensationLocation}
           successFocusMinutes={successFocusMinutes}
           onSelectTrigger={(trigger) => commitAdvance(applyTriggerSelection(session, trigger))}
@@ -159,6 +165,14 @@ export default function LiveSessionScreen() {
           }}
           onYesNoAnswer={(yes) => commitAdvance(applyYesNoAnswer(stage, session, yes))}
           onSelectTarget={(target) => setSession(applyTargetSelection(session, target))}
+          onSelectArcMap={(arcMapId) => setSession(applyArcMapSelection(session, arcMapId))}
+          onChallengeRecognitionAnswer={(yes) => {
+            if (yes) {
+              setSession(applyChallengeRecognition(session, true));
+            } else {
+              commitAdvance(applyChallengeRecognition(session, false));
+            }
+          }}
           onGenericContinue={() => commitAdvance(session)}
           onRegulateContinue={() => commitAdvance(applyRegulationToolUsed(session, profile.regulationTool))}
           onActionCompleted={() => commitAdvance(applyActionCompletion(session, true))}

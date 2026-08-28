@@ -1,7 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { applyActiveArcMap, createGoalModelFromProfile, generateStableId, resolveActiveArcMap } from "./buildTypes.ts";
+import {
+  applyPreventiveActionRouting,
+  createArcMap,
+  createGoalModelFromProfile,
+  generateStableId,
+  getArcMapDisplayLabel,
+  removeArcMap,
+  resolveActiveArcMap,
+  resolveSelectedArcMap,
+  upsertArcMap,
+} from "./buildTypes.ts";
 import type { ArcMap } from "./buildTypes.ts";
 import type { ArcBuildProfile } from "./types.ts";
 
@@ -101,27 +111,87 @@ test("resolveActiveArcMap returns null for an empty list", () => {
   assert.equal(resolveActiveArcMap([]), null);
 });
 
-test("applyActiveArcMap overlays the active map's fields onto the profile", () => {
-  const p = profile({ interferingState: "old-legacy-value", preventiveAction: "old-legacy-action", supportiveState: "חמלה" });
+test("resolveSelectedArcMap returns the map matching selectedArcMapId when one is set", () => {
   const maps: ArcMap[] = [
-    { id: "map1", desiredStateId: "d1", interferingState: "ביקורת עצמית", challengeContext: "אחרי טעות", preventiveAction: "לעצור ולנשום" },
+    { id: "map1", desiredStateId: "d1", interferingState: "ביקורת עצמית", challengeContext: "אחרי טעות", preventiveAction: null },
+    { id: "map2", desiredStateId: "d1", interferingState: "תסכול", challengeContext: "כשמשהו לא מצליח", preventiveAction: null },
   ];
-  const effective = applyActiveArcMap(p, maps);
-  assert.equal(effective.interferingState, "ביקורת עצמית");
-  assert.equal(effective.preventiveAction, "לעצור ולנשום");
-  assert.equal(effective.supportiveState, "חמלה", "fields the ArcMap doesn't own are untouched");
+  assert.equal(resolveSelectedArcMap(maps, "map2")?.id, "map2");
 });
 
-test("applyActiveArcMap falls back to the profile's own field when the active map leaves it null", () => {
-  const p = profile({ interferingState: "legacy-value", preventiveAction: "legacy-action" });
+test("resolveSelectedArcMap falls back to the first map while nothing is selected yet", () => {
+  const maps: ArcMap[] = [
+    { id: "map1", desiredStateId: "d1", interferingState: null, challengeContext: null, preventiveAction: null },
+    { id: "map2", desiredStateId: "d1", interferingState: null, challengeContext: null, preventiveAction: null },
+  ];
+  assert.equal(resolveSelectedArcMap(maps, null)?.id, "map1");
+});
+
+test("applyPreventiveActionRouting overlays a preventiveAction from any ArcMap that has one", () => {
+  const p = profile({ preventiveAction: null });
+  const maps: ArcMap[] = [
+    { id: "map1", desiredStateId: "d1", interferingState: null, challengeContext: null, preventiveAction: null },
+    { id: "map2", desiredStateId: "d1", interferingState: null, challengeContext: null, preventiveAction: "לעצור ולנשום" },
+  ];
+  const routed = applyPreventiveActionRouting(p, maps);
+  assert.equal(routed.preventiveAction, "לעצור ולנשום");
+});
+
+test("applyPreventiveActionRouting prefers the profile's own field when it's already set", () => {
+  const p = profile({ preventiveAction: "legacy-action" });
+  const maps: ArcMap[] = [{ id: "map1", desiredStateId: "d1", interferingState: null, challengeContext: null, preventiveAction: "map-action" }];
+  const routed = applyPreventiveActionRouting(p, maps);
+  assert.equal(routed.preventiveAction, "legacy-action");
+});
+
+test("applyPreventiveActionRouting is a no-op when nothing (profile or any map) has a preventiveAction", () => {
+  const p = profile({ preventiveAction: null });
   const maps: ArcMap[] = [{ id: "map1", desiredStateId: "d1", interferingState: null, challengeContext: null, preventiveAction: null }];
-  const effective = applyActiveArcMap(p, maps);
-  assert.equal(effective.interferingState, "legacy-value");
-  assert.equal(effective.preventiveAction, "legacy-action");
+  const routed = applyPreventiveActionRouting(p, maps);
+  assert.deepEqual(routed, p);
 });
 
-test("applyActiveArcMap is a no-op when there are no ArcMaps yet", () => {
-  const p = profile({ interferingState: "legacy-value" });
-  const effective = applyActiveArcMap(p, []);
-  assert.deepEqual(effective, p);
+test("createArcMap builds a new ArcMap referencing the given desiredStateId with a fresh id", () => {
+  const arcMap = createArcMap(
+    "d1",
+    { interferingState: "תסכול", challengeContext: "כשמשהו לא מצליח", preventiveAction: "לעצור לפני תגובה אוטומטית" },
+    () => "new-id"
+  );
+  assert.equal(arcMap.id, "new-id");
+  assert.equal(arcMap.desiredStateId, "d1");
+  assert.equal(arcMap.challengeContext, "כשמשהו לא מצליח");
+});
+
+test("upsertArcMap appends when the id is new, replaces in place when it already exists", () => {
+  const existing: ArcMap = { id: "map1", desiredStateId: "d1", interferingState: "a", challengeContext: null, preventiveAction: null };
+  const appended = upsertArcMap([existing], { id: "map2", desiredStateId: "d1", interferingState: "b", challengeContext: null, preventiveAction: null });
+  assert.equal(appended.length, 2);
+
+  const updated = upsertArcMap([existing], { ...existing, interferingState: "changed" });
+  assert.equal(updated.length, 1);
+  assert.equal(updated[0].interferingState, "changed");
+});
+
+test("removeArcMap filters out only the matching id", () => {
+  const maps: ArcMap[] = [
+    { id: "map1", desiredStateId: "d1", interferingState: null, challengeContext: null, preventiveAction: null },
+    { id: "map2", desiredStateId: "d1", interferingState: null, challengeContext: null, preventiveAction: null },
+  ];
+  const next = removeArcMap(maps, "map1");
+  assert.deepEqual(next.map((m) => m.id), ["map2"]);
+});
+
+test("getArcMapDisplayLabel prefers challengeContext, then interferingState, then a generic fallback", () => {
+  assert.equal(
+    getArcMapDisplayLabel({ id: "1", desiredStateId: "d1", interferingState: "ביקורת", challengeContext: "אחרי טעות", preventiveAction: null }),
+    "אחרי טעות"
+  );
+  assert.equal(
+    getArcMapDisplayLabel({ id: "2", desiredStateId: "d1", interferingState: "ביקורת", challengeContext: null, preventiveAction: null }),
+    "ביקורת"
+  );
+  assert.equal(
+    getArcMapDisplayLabel({ id: "3", desiredStateId: "d1", interferingState: null, challengeContext: null, preventiveAction: null }),
+    "דפוס ללא תיאור"
+  );
 });

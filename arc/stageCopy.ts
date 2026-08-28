@@ -10,8 +10,16 @@
  */
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
-import { resolveEncodingTarget } from "./arcEngine.ts";
-import { getAwarenessInstruction, getCombinedAttentionInstruction, getExpandPresenceInstruction } from "./instructions.ts";
+import { getPreventiveActionSubStage, resolveEncodingTarget } from "./arcEngine.ts";
+import {
+  getAwarenessInstruction,
+  getChallengeContextRecognitionPrompt,
+  getCombinedAttentionInstruction,
+  getExpandPresenceInstruction,
+  getInterferingStateRecognitionPrompt,
+} from "./instructions.ts";
+import type { ArcMap } from "./buildTypes.ts";
+import { resolveSelectedArcMap } from "./buildTypes.ts";
 
 export type ArcStageInputKind =
   | "triggerSelect"
@@ -44,6 +52,9 @@ export function getYesNoLabels(stage: ArcStage): YesNoLabels {
   }
 }
 
+/** Wording for the challenge-recognition yes/no sub-step within preventive_action_check -- distinct from the generic yes/no above since "recognized" isn't a plain כן/לא. */
+export const CHALLENGE_RECOGNITION_LABELS: YesNoLabels = { yes: "כן, זה מה שקורה", no: "לא, זה לא זה" };
+
 const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   trigger_selection: "triggerSelect",
   presence_check: "scale0to10",
@@ -73,7 +84,8 @@ export function getStageCopy(
   stage: ArcStage,
   profile: ArcBuildProfile,
   state: ArcLiveState,
-  activeLayers: DevelopmentLayer[]
+  activeLayers: DevelopmentLayer[],
+  arcMaps: ArcMap[] = []
 ): ArcStageCopy {
   switch (stage) {
     case "trigger_selection":
@@ -99,14 +111,41 @@ export function getStageCopy(
     case "arc_thought_presence_recheck":
       return { title: "בדיקת נוכחות חוזרת", body: "אחרי ההרחבה — עד כמה אתה נוכח עכשיו, בסולם 1 עד 10?" };
 
-    case "preventive_action_check":
+    case "preventive_action_check": {
+      const subStage = getPreventiveActionSubStage(arcMaps, state.selectedArcMapId, state.challengeRecognized);
+
+      if (subStage === "select_arc_map") {
+        return { title: "זיהוי דפוס", body: "באיזה מהמצבים הבאים אתה נמצא כרגע?" };
+      }
+
+      const activeArcMap = resolveSelectedArcMap(arcMaps, state.selectedArcMapId);
+
+      if (subStage === "recognize_challenge" && activeArcMap) {
+        // Interfering State appears here ONLY as a recognition question
+        // (see arc/instructions.ts) -- never an instruction to evoke,
+        // imagine, strengthen, or recreate it.
+        const parts = [
+          activeArcMap.challengeContext ? getChallengeContextRecognitionPrompt(activeArcMap.challengeContext) : null,
+          activeArcMap.interferingState ? getInterferingStateRecognitionPrompt(activeArcMap.interferingState) : null,
+        ].filter((p): p is string => p !== null);
+        return { title: "זיהוי המצב", body: parts.join(" ") };
+      }
+
+      // offer_action -- only ever reached once the Challenge Context has
+      // been recognized (or there was none on this ArcMap to recognize).
+      const preventiveAction = activeArcMap?.preventiveAction ?? profile.preventiveAction;
       return {
         title: "פעולה מונעת",
-        body: profile.preventiveAction ? `יש לך פעולה מונעת מוגדרת: ${profile.preventiveAction}. לבצע אותה עכשיו?` : "",
+        body: preventiveAction
+          ? `יש לך פעולה מונעת מוגדרת: ${preventiveAction}. לבצע אותה עכשיו?`
+          : "אין פעולה מונעת מוגדרת לדפוס הזה כרגע.",
       };
+    }
 
-    case "preventive_action":
-      return { title: "פעולה מונעת", body: profile.preventiveAction ?? "" };
+    case "preventive_action": {
+      const activeArcMap = resolveSelectedArcMap(arcMaps, state.selectedArcMapId);
+      return { title: "פעולה מונעת", body: activeArcMap?.preventiveAction ?? profile.preventiveAction ?? "" };
+    }
 
     case "sensation_check":
       if (state.sensationLocation !== null || state.sensationIntensity !== null) {
