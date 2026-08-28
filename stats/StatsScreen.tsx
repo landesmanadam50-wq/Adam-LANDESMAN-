@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { getOrCreatePilotStartedAt, loadProgramProgress, loadSessionLog } from "../data/storage.ts";
+import { getOrCreatePilotStartedAt, loadProgramProgress, loadProgramSelection, loadSessionLog, saveProgramProgress } from "../data/storage.ts";
 import { computeWeeklyStats, type WeekStat } from "../data/weeklyStats.ts";
 import { computePilotProgress, type PilotProgress } from "../data/pilotProgress.ts";
 import { getProgramDefinition } from "../program/engine.ts";
+import { reconcileProgramProgress } from "../program/progress.ts";
 import type { ArcProgramProgress, DevelopmentLayer } from "../arc/types.ts";
 
 const LAYER_LABELS: Record<DevelopmentLayer, string> = {
@@ -22,9 +23,18 @@ export default function StatsScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadSessionLog(), getOrCreatePilotStartedAt(), loadProgramProgress()]).then(
-      ([entries, pilotStartedAt, program]) => {
+    Promise.all([loadSessionLog(), getOrCreatePilotStartedAt(), loadProgramProgress(), loadProgramSelection()]).then(
+      ([entries, pilotStartedAt, storedProgram, selection]) => {
         if (cancelled) return;
+        // See program/progress.ts's reconcileProgramProgress: a stored
+        // ArcProgramProgress can be stale relative to the trainee's
+        // current ArcProgramSelection (e.g. left over from before the
+        // current program was restored), which would otherwise leave
+        // this screen showing nothing or the wrong program.
+        const program = reconcileProgramProgress(storedProgram, selection);
+        if (program && program !== storedProgram) {
+          saveProgramProgress(program);
+        }
         setWeeks(computeWeeklyStats(entries));
         setPilotProgress(computePilotProgress(pilotStartedAt));
         setProgramProgress(program);

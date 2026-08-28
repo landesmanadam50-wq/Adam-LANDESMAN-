@@ -9,9 +9,10 @@ import {
   createInitialProgress,
   getArcWeekStatus,
   recordValidLiveCompletion,
+  reconcileProgramProgress,
 } from "./progress.ts";
 import { getProgramDefinition, getActiveLayers, getLayersToBuild, isLayerActive } from "./engine.ts";
-import { resolveCurrentPreset, deriveNeedsFromLegacyProgramPath } from "./selection.ts";
+import { resolveCurrentPreset, deriveNeedsFromLegacyProgramPath, buildProgramSelection } from "./selection.ts";
 import { PROGRAM_DEFINITIONS } from "./config.ts";
 import type { ArcProgramProgress } from "../arc/types.ts";
 
@@ -263,4 +264,44 @@ test("recordValidLiveCompletion auto-completes the week the moment the required 
   }
   assert.equal(progress.completedProgramWeeks, 1, "the week is completed immediately, no separate completeProgramWeek() call needed");
   assert.equal(progress.programCompleted, true);
+});
+
+test("reconcileProgramProgress: a stale, never-started progress record is resynced to the current selection", () => {
+  const staleProgress = createInitialProgress("habit_only_1_week"); // e.g. left over from an earlier build/test
+  const currentSelection = buildProgramSelection({ needsState: true, needsIdentityImmediately: false });
+  assert.equal(currentSelection.programPath, "standard_3_week");
+
+  const resolved = reconcileProgramProgress(staleProgress, currentSelection);
+  assert.equal(resolved?.programPath, "standard_3_week", "resynced to the trainee's actual current selection");
+  assert.deepEqual(resolved?.activeLayers, ["state"], "week 1 of the newly-resolved program");
+});
+
+test("reconcileProgramProgress: a progress record with real activity is never overridden, even if its programPath no longer matches the current selection", () => {
+  let progressWithActivity = createInitialProgress("habit_only_1_week");
+  progressWithActivity = recordTrainingDay(progressWithActivity, "2026-08-03"); // real, earned activity
+
+  const currentSelection = buildProgramSelection({ needsState: true, needsIdentityImmediately: false });
+  const resolved = reconcileProgramProgress(progressWithActivity, currentSelection);
+
+  assert.equal(resolved, progressWithActivity, "returned unchanged -- earned progress is never discarded");
+  assert.equal(resolved?.programPath, "habit_only_1_week");
+});
+
+test("reconcileProgramProgress: a progress record already matching the current selection's programPath is returned unchanged", () => {
+  const progress = createInitialProgress("standard_3_week");
+  const selection = buildProgramSelection({ needsState: true, needsIdentityImmediately: false });
+  assert.equal(reconcileProgramProgress(progress, selection), progress);
+});
+
+test("reconcileProgramProgress: no persisted progress at all is initialized fresh from the current selection", () => {
+  const selection = buildProgramSelection({ needsState: true, needsIdentityImmediately: false });
+  const resolved = reconcileProgramProgress(null, selection);
+  assert.equal(resolved?.programPath, "standard_3_week");
+  assert.deepEqual(resolved?.activeLayers, ["state"]);
+});
+
+test("reconcileProgramProgress: no current selection at all leaves the persisted progress untouched (nothing to reconcile against)", () => {
+  const progress = createInitialProgress("habit_only_1_week");
+  assert.equal(reconcileProgramProgress(progress, null), progress);
+  assert.equal(reconcileProgramProgress(null, null), null);
 });
