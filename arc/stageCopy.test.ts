@@ -160,8 +160,9 @@ test("encode continues the regulation tool and notices the sensation again -- ne
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
   });
   const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
-  assert.match(copy.body, /^המשך עם נשימה 4-7-8, ושים לב לתחושה שלך עכשיו\./);
-  assert.match(copy.body, /כתפיים משוחררות/);
+  assert.match(copy.body, /^שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה\./, "sensation notice must come first");
+  assert.match(copy.body, /המשך עם נשימה 4-7-8/, "regulation cue must continue, not be dropped");
+  assert.match(copy.body, /כתפיים משוחררות/, "body-language cue must be present");
   assert.ok(!/רגוע יותר|טוב יותר/.test(copy.body), "must not imply the sensation improved");
   assert.equal(containsInductionPattern(copy.body), false);
 });
@@ -189,5 +190,49 @@ test("encode never references the mapped Interfering State, even though it's ava
 test("encode with no regulation tool configured still works, with a neutral sensation notice and no dangling reference to a tool", () => {
   const p = profile({ regulationTool: null, stateEncoding: null });
   const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
-  assert.equal(copy.body, "שים לב לתחושה שלך עכשיו. קח רגע לקבע את התחושה החדשה.");
+  assert.equal(copy.body, "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה. קח רגע לקבע את התחושה החדשה.");
+});
+
+test("stay is Awareness-adjacent -- it must never name the regulation tool, since Regulation begins only at the regulate stage", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8" });
+  const copy = getStageCopy("stay", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(!copy.body.includes("נשימה 4-7-8"), "stay must not reference the regulation tool");
+  assert.ok(!/נשימה|נשוף|הרפ/.test(copy.body), "stay must not contain breathing/relaxation regulation language");
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("stay never changes copy based on regulationTool -- it's identical with or without one configured", () => {
+  const withTool = getStageCopy("stay", profile({ regulationTool: "נשימה 4-7-8" }), liveState(), ["state"]);
+  const withoutTool = getStageCopy("stay", profile({ regulationTool: null }), liveState(), ["state"]);
+  assert.equal(withTool.body, withoutTool.body);
+});
+
+test("desired_state_check (Proactive) names the resolved target -- Desired State, Identity, or Desired Habit -- consuming the mapped data", () => {
+  const p = profile({ supportiveState: "חמלה", desiredIdentity: "אדם ממוקד", beneficialAction: "לגשת ולפתוח שיחה" });
+
+  const stateTarget = getStageCopy("desired_state_check", p, liveState({ triggerType: "proactive", selectedTarget: "state" }), ["state", "identity", "habit"]);
+  assert.match(stateTarget.body, /המטרה: חמלה/);
+
+  const identityTarget = getStageCopy("desired_state_check", p, liveState({ triggerType: "proactive", selectedTarget: "identity" }), ["state", "identity", "habit"]);
+  assert.match(identityTarget.body, /המטרה: אדם ממוקד/);
+
+  const habitTarget = getStageCopy("desired_state_check", p, liveState({ triggerType: "proactive", selectedTarget: "habit" }), ["state", "identity", "habit"]);
+  assert.match(habitTarget.body, /המטרה: לגשת ולפתוח שיחה/);
+});
+
+test("desired_state_check (Proactive) references the mapped Challenge Context only when the resolved target is the state layer", () => {
+  const p = profile({ supportiveState: "חמלה", desiredIdentity: "אדם ממוקד", challengeContext: "אחרי טעות" });
+
+  const stateTarget = getStageCopy("desired_state_check", p, liveState({ triggerType: "proactive", selectedTarget: "state" }), ["state", "identity", "habit"]);
+  assert.match(stateTarget.body, /אחרי טעות/);
+
+  const identityTarget = getStageCopy("desired_state_check", p, liveState({ triggerType: "proactive", selectedTarget: "identity" }), ["state", "identity", "habit"]);
+  assert.ok(!identityTarget.body.includes("אחרי טעות"), "Challenge Context is state-specific -- must not leak into an identity-target proactive session");
+});
+
+test("desired_state_check (Proactive) never requires an Interfering State to be present -- it's absent from the copy entirely", () => {
+  const p = profile({ interferingState: "ביקורת עצמית", supportiveState: "חמלה" });
+  const copy = getStageCopy("desired_state_check", p, liveState({ triggerType: "proactive", selectedTarget: "state" }), ["state"]);
+  assert.ok(!copy.body.includes("ביקורת עצמית"));
+  assert.equal(containsInductionPattern(copy.body), false);
 });

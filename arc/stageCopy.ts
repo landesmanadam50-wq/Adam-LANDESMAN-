@@ -152,7 +152,12 @@ export function getStageCopy(
       };
 
     case "stay":
-      return { title: "הישאר עם זה", body: `העוצמה גבוהה — הישאר עם התחושה, ${profile.regulationTool ?? "בעזרת הנשימה"}.` };
+      // Awareness-adjacent, not Regulation: stay with the sensation
+      // exactly as it is. Regulation (and its tool) begins only at the
+      // "regulate" stage -- naming a regulation tool here would mix
+      // the two, which the Awareness/Regulation instruction layer must
+      // keep separate.
+      return { title: "הישאר עם זה", body: "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה." };
 
     case "accept":
       return { title: "קבלה", body: "האם אתה מוכן לקבל את התחושה הזו כמו שהיא, בלי להילחם בה?" };
@@ -172,40 +177,75 @@ export function getStageCopy(
           : "שים לב לתחושה שלך עכשיו.",
       };
 
-    case "desired_state_check":
-      return { title: "בדיקת מצב רצוי", body: "עד כמה אתה קרוב למצב הרצוי, בסולם 1 עד 10?" };
+    case "desired_state_check": {
+      // Proactive routing must consume the mapped data, not just ask a
+      // generic rating: name whichever target resolveEncodingTarget
+      // actually resolved (Desired State / Identity / Desired Habit),
+      // and reference the mapped Challenge Context when the target is
+      // the state layer -- framed as preparation ("you're preparing
+      // for..."), never as a recognition question the way presence_check
+      // frames it for reactive_emotion (that's about what's already
+      // present; this is about what's coming).
+      const question = "עד כמה אתה קרוב למצב הרצוי, בסולם 1 עד 10?";
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: state.triggerType,
+        selectedTarget: state.selectedTarget,
+        buildProfile: profile,
+      });
+      const targetName = layer === "state" ? profile.supportiveState : layer === "identity" ? profile.desiredIdentity : profile.beneficialAction;
+
+      const parts: string[] = [];
+      if (layer === "state" && profile.challengeContext) {
+        parts.push(`אתה מתכונן למצב: ${profile.challengeContext}.`);
+      }
+      if (targetName) {
+        parts.push(`המטרה: ${targetName}.`);
+      }
+      parts.push(question);
+      return { title: "בדיקת מצב רצוי", body: parts.join(" ") };
+    }
 
     case "encode": {
-      // The transition into Encoding: notice the sensation again --
-      // neutrally, never implying it must be calmer or better than
-      // before -- while the regulation tool/cue continues underneath
-      // rather than being dropped. This is the one lightweight
-      // Regulation Anchor Encoding preserves (see arc/config.ts /
-      // program logic for why Encoding doesn't re-list every
-      // Regulation mechanism).
-      const transition = profile.regulationTool
-        ? `המשך עם ${profile.regulationTool}, ושים לב לתחושה שלך עכשיו.`
-        : "שים לב לתחושה שלך עכשיו.";
-
       const { encoding } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
         selectedTarget: state.selectedTarget,
         buildProfile: profile,
       });
-      if (!encoding) return { title: "קיבוע", body: `${transition} קח רגע לקבע את התחושה החדשה.` };
-      const parts = [encoding.bodySensationCue, encoding.breathCue, encoding.bodyLanguageCue, encoding.gazeCue].filter(
-        (c): c is string => !!c
-      );
-      const cueText = parts.length > 0 ? parts.join(" · ") : null;
-      // Desired State / Identity are intentionally activated here, at
-      // Encoding -- never earlier. encoding.target is the Desired
-      // State (see build/profileWizard.ts's buildProfileFromDraft).
-      const anchor =
-        encoding.mantra != null
-          ? `חזור על: "${encoding.mantra}".`
-          : (cueText ?? (encoding.target ? `עבור לשפת הגוף של ${encoding.target}.` : "קח רגע לקבע את התחושה החדשה."));
-      return { title: "קיבוע", body: `${transition} ${anchor}` };
+
+      // Final Encoding order: (1) notice the updated sensation --
+      // neutrally, no assumption it improved, a large change/small
+      // change/no obvious change are all valid -- then (2) maintain
+      // the lightweight Regulation Cue together with the Body-Language
+      // Encoding Cue (Encoding doesn't drop Regulation, and doesn't
+      // re-list every Regulation mechanism, just this one continuity
+      // anchor), then (3) Identity/Mantra -- intentionally activated
+      // only here, never earlier.
+      const parts: string[] = ["שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה."];
+
+      const maintain: string[] = [];
+      if (profile.regulationTool) maintain.push(`המשך עם ${profile.regulationTool}`);
+      if (encoding?.bodyLanguageCue) {
+        maintain.push(`שמור על ${encoding.bodyLanguageCue}`);
+      } else if (!encoding?.mantra && encoding?.target) {
+        // No explicit body-language cue and no mantra either -- fall
+        // back to a generic body-language transition toward the
+        // Desired State, independent of whether a regulation tool is
+        // also being maintained.
+        maintain.push(`עבור לשפת הגוף של ${encoding.target}`);
+      }
+      if (maintain.length > 0) parts.push(`${maintain.join(", ו")}.`);
+
+      if (encoding?.mantra) {
+        parts.push(`חזור לעצמך: "${encoding.mantra}".`);
+      }
+
+      if (parts.length === 1) {
+        parts.push("קח רגע לקבע את התחושה החדשה.");
+      }
+
+      return { title: "קיבוע", body: parts.join(" ") };
     }
 
     case "act": {
