@@ -223,6 +223,17 @@ export function needsReactiveStateSelection(
 export interface EncodingResolution {
   layer: DevelopmentLayer;
   encoding: EncodingProfile | null;
+  /**
+   * The currentAction for this session -- the BUILD-mapped action for
+   * the resolved layer, UNLESS the session recorded its own
+   * session-specific action (input.selectedAction, from
+   * ArcLiveState.selectedAction: set when the trainee's planned/mapped
+   * action can't be performed right now and they entered an
+   * alternative one instead), in which case that alternative wins.
+   * Action Imagery and the "act" stage both read this single field, so
+   * they can never diverge onto two different actions within the same
+   * session.
+   */
   actionLabel: string | null;
 }
 
@@ -242,17 +253,23 @@ export function resolveEncodingTarget(input: {
   triggerType: TriggerType | null;
   selectedTarget: DevelopmentLayer | null;
   buildProfile: ArcBuildProfile;
+  /** ArcLiveState.selectedAction -- a session-specific alternative action, when the trainee's mapped action can't be performed right now. Overrides the resolved layer's mapped action when set; omitted/null leaves the mapped action as-is (existing behavior, unchanged). */
+  selectedAction?: string | null;
 }): EncodingResolution {
   const layer = input.selectedTarget ?? inferLayerFromTrigger(input.triggerType, input.activeLayers, input.buildProfile);
 
-  switch (layer) {
-    case "habit":
-      return { layer: "habit", encoding: null, actionLabel: input.buildProfile.beneficialAction };
-    case "identity":
-      return { layer: "identity", encoding: input.buildProfile.identityEncoding, actionLabel: input.buildProfile.identityAction };
-    case "state":
-      return { layer: "state", encoding: input.buildProfile.stateEncoding, actionLabel: input.buildProfile.internalAction };
-  }
+  const resolved: EncodingResolution = (() => {
+    switch (layer) {
+      case "habit":
+        return { layer: "habit" as const, encoding: null, actionLabel: input.buildProfile.beneficialAction };
+      case "identity":
+        return { layer: "identity" as const, encoding: input.buildProfile.identityEncoding, actionLabel: input.buildProfile.identityAction };
+      case "state":
+        return { layer: "state" as const, encoding: input.buildProfile.stateEncoding, actionLabel: input.buildProfile.internalAction };
+    }
+  })();
+
+  return input.selectedAction ? { ...resolved, actionLabel: input.selectedAction } : resolved;
 }
 
 function inferLayerFromTrigger(

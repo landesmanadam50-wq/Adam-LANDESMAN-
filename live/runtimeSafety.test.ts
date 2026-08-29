@@ -226,6 +226,10 @@ test("a full reactive_emotion session, walked end to end through the real engine
 
   const encodeCopy = visited.find((v) => v.stage === "encode");
   assert.ok(encodeCopy?.body.includes("כתפיים משוחררות"), "Encoding is where the Desired State's encoding cue is intentionally introduced");
+
+  const actCopy = visited.find((v) => v.stage === "act");
+  assert.ok(actCopy?.body.includes("כתפיים משוחררות"), "the act stage's Action Preparation reminder and Action Imagery still carry the same Body-Language Cue, via the real engine walk");
+  assert.match(actCopy!.body, /דמיין את עצמך מבצע עכשיו את .*, תוך שמירה על כתפיים משוחררות\./, "Action Imagery names both the resolved action and the same cue");
 });
 
 test("a reactive_emotion session targeting the IDENTITY layer (Discipline), walked end to end through the real engine, resolves Discipline's own Body-Language cue and mantra -- never Focus's (state's)", () => {
@@ -269,6 +273,20 @@ test("a reactive_emotion session targeting the IDENTITY layer (Discipline), walk
   const mantraIndex = copy.body.indexOf("אני ממושמע בפעולותיי");
   assert.ok(cueIndex >= 0 && mantraIndex >= 0 && cueIndex < mantraIndex, "Discipline's body-language cue must precede its mantra");
   assert.equal(containsInductionPattern(copy.body), false);
+
+  // Continue the same real walk one more step, into "act" -- Action
+  // Imagery there must carry the SAME Discipline cue forward, never
+  // Focus's, via the real engine/selectedTarget path (not just a
+  // hand-built ArcLiveState).
+  const next = getNextArcStage(stage, state, p, activeLayers);
+  stage = next.stage;
+  state = { ...state, loopIterationCount: next.loopIterationCount };
+  assert.equal(stage, "act", "sanity: the walk must continue from encode into act");
+
+  const actCopy = getStageCopy(stage, p, state, activeLayers);
+  assert.match(actCopy.body, /תוך שמירה על שמור את הראש ישר ויציב/, "Action Imagery must carry Discipline's own cue, via the real engine walk");
+  assert.ok(!actCopy.body.includes("עיניים פקוחות וממוקדות"), "must not leak Focus's cue into Discipline's Action Imagery");
+  assert.equal(containsInductionPattern(actCopy.body), false);
 });
 
 test("a full proactive session, walked end to end through the real engine, consumes the mapped Desired State/Challenge Context and never requires or references an Interfering State", () => {
