@@ -291,13 +291,25 @@ export function getStageCopy(
     }
 
     case "act": {
-      const { actionLabel } = resolveEncodingTarget({
+      // The selected Body-Language cue carries over from Encoding into
+      // Action Preparation, and stays displayed for the whole time this
+      // screen is up (i.e. "during the action") -- same resolution as
+      // encode's, from the same current target's own map, so it can
+      // never mix Focus's cue into a Discipline-targeted session or vice
+      // versa. Omitted entirely (never invented, never an empty
+      // placeholder) when the current target has none configured.
+      const { actionLabel, encoding } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
         selectedTarget: state.selectedTarget,
         buildProfile: profile,
       });
-      return { title: "פעולה", body: actionLabel ? `עכשיו הזמן: ${actionLabel}.` : "עכשיו הזמן לפעולה." };
+      const parts: string[] = [];
+      if (encoding?.bodyLanguageCue) {
+        parts.push(`בזמן הפעולה, שמור על שפת הגוף שבחרת: ${encoding.bodyLanguageCue}.`);
+      }
+      parts.push(actionLabel ? `עכשיו הזמן: ${actionLabel}.` : "עכשיו הזמן לפעולה.");
+      return { title: "פעולה", body: parts.join(" ") };
     }
 
     case "success_focus":

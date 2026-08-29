@@ -68,6 +68,66 @@ test("act copy is specific to the routed layer's action", () => {
   assert.ok(copy.body.includes("לגשת ולפתוח שיחה"));
 });
 
+// --- act carries the current target's Body-Language cue over from
+// Encoding into Action Preparation / the timed Action screen -- the
+// same per-target resolution encode already uses, so it can never mix
+// Focus's cue into a Discipline session or vice versa.
+
+test("act shows the current target's Body-Language cue before the action itself", () => {
+  const p = profile({
+    beneficialAction: "לגשת ולפתוח שיחה",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+  });
+  const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /כתפיים משוחררות/, "the Body-Language cue must carry over into the act screen");
+  const cueIndex = copy.body.indexOf("כתפיים משוחררות");
+  const actionIndex = copy.body.indexOf("עכשיו הזמן");
+  assert.ok(cueIndex >= 0 && actionIndex >= 0 && cueIndex < actionIndex, "the cue must appear before the action instruction (Action Preparation)");
+});
+
+test("act's Body-Language cue is a stable, pure function of the resolved target -- it stays identical across repeated calls, i.e. while a timer would be running", () => {
+  const p = profile({
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+  });
+  const s = liveState({ triggerType: "reactive_emotion" });
+  const first = getStageCopy("act", p, s, ["state"]);
+  const second = getStageCopy("act", p, s, ["state"]);
+  const third = getStageCopy("act", p, s, ["state"]);
+  assert.equal(first.body, second.body);
+  assert.equal(second.body, third.body);
+  assert.match(third.body, /כתפיים משוחררות/, "the cue must still be present on every re-render during the action");
+});
+
+test("act's Body-Language cue comes from the current target/map -- Focus's cue for a state-targeted session, Discipline's for an identity-targeted session", () => {
+  const p = twoTargetProfile();
+
+  const stateAct = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "state" }), ["state", "identity"]);
+  assert.match(stateAct.body, /עיניים פקוחות וממוקדות/, "must resolve Focus's own body-language cue");
+
+  const identityAct = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
+  assert.match(identityAct.body, /שמור את הראש ישר ויציב/, "must resolve Discipline's own body-language cue");
+});
+
+test("act never mixes Focus's and Discipline's Body-Language cues, in either direction", () => {
+  const p = twoTargetProfile();
+
+  const stateAct = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "state" }), ["state", "identity"]);
+  assert.ok(!stateAct.body.includes("שמור את הראש ישר ויציב"), "a Focus-targeted act screen must not leak Discipline's cue");
+
+  const identityAct = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
+  assert.ok(!identityAct.body.includes("עיניים פקוחות וממוקדות"), "a Discipline-targeted act screen must not leak Focus's cue");
+});
+
+test("act never invents a Body-Language cue and never shows an empty placeholder when none is configured for the current target", () => {
+  const p = profile({
+    beneficialAction: "לגשת ולפתוח שיחה",
+    stateEncoding: null,
+    identityEncoding: null,
+  });
+  const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_urge" }), ["habit"]);
+  assert.equal(copy.body, "עכשיו הזמן: לגשת ולפתוח שיחה.", "no cue sentence, and no dangling/empty placeholder, when nothing is configured");
+});
+
 test("sensation_check copy differs for habit (urge intensity) vs state/identity (body + intensity) on first entry", () => {
   const p = profile();
   const habitCopy = getStageCopy("sensation_check", p, liveState({ triggerType: "reactive_urge" }), ["habit"]);
