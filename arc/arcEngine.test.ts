@@ -6,10 +6,12 @@ import {
   getAvailableProactiveTargets,
   getAvailableReactiveExperiences,
   needsCurrentActionResolution,
+  needsNegativeAction,
   resolveActionDuration,
   getFirstArcStage,
   getNextArcStage,
   needsReactiveStateSelection,
+  resolveActPhase,
   resolveEncodingRegulationCue,
   resolveEncodingTarget,
   resolveLiveRoute,
@@ -46,6 +48,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
     successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
     ...overrides,
   };
 }
@@ -519,12 +522,41 @@ test("proactive never uses the reactive intensity thresholds", () => {
 // Tail
 // ---------------------------------------------------------------------------
 
-test("the tail is a fixed line: encode -> act -> success_focus -> complete", () => {
-  const p = profile();
+test("the tail is a fixed line: encode -> act -> success_focus -> negative_action -> complete, when the habit layer is active and a negative action is configured", () => {
+  const p = profile(); // default profile has habit configured (see needsNegativeAction)
   const s = state();
   assert.equal(getNextArcStage("encode", s, p, ALL_LAYERS).stage, "act");
   assert.equal(getNextArcStage("act", s, p, ALL_LAYERS).stage, "success_focus");
+  assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "negative_action");
+  assert.equal(getNextArcStage("negative_action", s, p, ALL_LAYERS).stage, "complete");
+});
+
+test("the tail skips negative_action entirely, going straight to complete, when the habit layer isn't active this session (state/identity-only)", () => {
+  const p = profile();
+  const s = state();
+  const layersWithoutHabit: DevelopmentLayer[] = ["state", "identity"];
+  assert.equal(getNextArcStage("success_focus", s, p, layersWithoutHabit).stage, "complete");
+});
+
+test("the tail skips negative_action when the habit layer is active but no negative action is configured (habit is null)", () => {
+  const p = profile({ habit: null });
+  const s = state();
   assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "complete");
+});
+
+test("needsNegativeAction is true only when the habit layer is active AND a negative action is configured", () => {
+  const withHabit = profile({ habit: "גלילה ברשת" });
+  assert.equal(needsNegativeAction(["state", "identity", "habit"], withHabit), true);
+  assert.equal(needsNegativeAction(["state", "identity"], withHabit), false, "habit layer not active");
+
+  const withoutHabit = profile({ habit: null });
+  assert.equal(needsNegativeAction(["state", "identity", "habit"], withoutHabit), false, "no negative action configured");
+});
+
+test("negative_action always advances unconditionally to complete", () => {
+  const p = profile();
+  assert.equal(getNextArcStage("negative_action", state(), p, ALL_LAYERS).stage, "complete");
+  assert.equal(getNextArcStage("negative_action", state({ negativeActionStarted: true }), p, ALL_LAYERS).stage, "complete");
 });
 
 test("complete is terminal", () => {
@@ -574,4 +606,34 @@ test("resolveEncodingTarget: currentAction becomes the alternative action once s
   });
   assert.equal(resolved.actionLabel, "לעשות 5 דקות תרגילים בבית", "currentAction is the alternative");
   assert.equal(p.internalAction, "לצאת להליכה של 20 דקות", "the planned/BUILD action itself is untouched");
+});
+
+// --- resolveActPhase: the "act" stage's four sub-phases, in their
+// fixed, one-directional order -- see arc/instructionTiming.ts and
+// arc/actionTimer.ts for why Imagery/Preparation timing and the actual
+// Action Timer must stay explicitly separate concepts.
+
+test("resolveActPhase stays at 'choice' until currentAction is resolved", () => {
+  assert.equal(resolveActPhase(false, null, false, false), "choice");
+  assert.equal(resolveActPhase(false, null, true, true), "choice", "not yet resolved, even if the later flags are somehow set");
+});
+
+test("resolveActPhase moves to 'imagery' once currentAction is resolved (planned confirmed)", () => {
+  assert.equal(resolveActPhase(true, null, false, false), "imagery");
+});
+
+test("resolveActPhase moves to 'imagery' once currentAction is resolved (a valid alternative was entered)", () => {
+  assert.equal(resolveActPhase(false, "חלופה", false, false), "imagery");
+});
+
+test("resolveActPhase moves to 'preparation' only once Action Imagery is completed", () => {
+  assert.equal(resolveActPhase(true, null, true, false), "preparation");
+});
+
+test("resolveActPhase moves to 'performing' only once both Action Imagery and Action Preparation are completed", () => {
+  assert.equal(resolveActPhase(true, null, true, true), "performing");
+});
+
+test("resolveActPhase never skips a phase: Preparation completed alone (Imagery not) still stays at 'imagery'", () => {
+  assert.equal(resolveActPhase(true, null, false, true), "imagery");
 });

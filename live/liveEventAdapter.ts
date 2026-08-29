@@ -145,6 +145,36 @@ export function applyAlternativeAction(session: ArcLiveState, text: string, dura
 }
 
 /**
+ * The Action Imagery screen's own Continue: only marks Imagery done,
+ * mirroring applyPlannedActionConfirmed -- never advances the ArcStage
+ * itself (still "act"; see arc/arcEngine.ts's resolveActPhase, which
+ * moves on to "preparation" once this is true).
+ */
+export function applyActionImageryCompleted(session: ArcLiveState): ArcLiveState {
+  return { ...session, actionImageryCompleted: true };
+}
+
+/**
+ * The Action Preparation screen's own Continue ("עכשיו בצע את הפעולה"):
+ * only marks Preparation done. Once true, resolveActPhase moves "act"
+ * to "performing" -- the actual timed Action -- and only then does the
+ * Action Timer (arc/actionTimer.ts) begin.
+ */
+export function applyActionPreparationCompleted(session: ArcLiveState): ArcLiveState {
+  return { ...session, actionPreparationCompleted: true };
+}
+
+/**
+ * The negative_action stage's explicit "begin" button: only marks the
+ * Negative Action Timer as started -- never advances the ArcStage
+ * itself (that stays "negative_action" until the trainee confirms
+ * after the timer actually completes, mirroring applyActionCompletion).
+ */
+export function applyNegativeActionStarted(session: ArcLiveState): ArcLiveState {
+  return { ...session, negativeActionStarted: true };
+}
+
+/**
  * When a proactive session lands on desired_state_check with no target
  * chosen yet and exactly one target is available, pick it automatically
  * instead of prompting for a choice with only one option. More than one

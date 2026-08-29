@@ -37,7 +37,10 @@ import { createInitialProgress } from "../program/progress.ts";
 import {
   advanceLiveSession,
   applyActionCompletion,
+  applyActionImageryCompleted,
+  applyActionPreparationCompleted,
   applyAlternativeAction,
+  applyNegativeActionStarted,
   applyPlannedActionConfirmed,
   applyScaleAnswer,
   applySensationAnswer,
@@ -74,6 +77,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
     successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
     ...overrides,
   };
 }
@@ -393,6 +397,45 @@ test("28. needsCurrentActionResolution resolves Focus and Discipline independent
   assert.equal(needsCurrentActionResolution(focusSession.plannedActionConfirmed, focusSession.selectedAction), false);
   assert.equal(needsCurrentActionResolution(disciplineSession.plannedActionConfirmed, disciplineSession.selectedAction), false);
   assert.notEqual(focusSession.selectedTarget, disciplineSession.selectedTarget);
+});
+
+// --- applyActionImageryCompleted / applyActionPreparationCompleted: the
+// "act" stage's Imagery/Preparation sub-phases each mark their own flag
+// done and nothing else -- neither ever advances the ArcStage itself
+// (that stays "act" until the real Action Timer completes).
+
+test("29. applyActionImageryCompleted marks Imagery done and touches nothing else", () => {
+  const before = createEmptyLiveState();
+  const after = applyActionImageryCompleted(before);
+  assert.equal(after.actionImageryCompleted, true);
+  assert.equal(after.actionPreparationCompleted, false, "Preparation is untouched");
+  assert.equal(after.currentArcStage, before.currentArcStage, "the ArcStage itself is never advanced by this call");
+});
+
+test("30. applyActionPreparationCompleted marks Preparation done and touches nothing else", () => {
+  const before = { ...createEmptyLiveState(), actionImageryCompleted: true };
+  const after = applyActionPreparationCompleted(before);
+  assert.equal(after.actionPreparationCompleted, true);
+  assert.equal(after.actionImageryCompleted, true, "Imagery's own flag stays as it was");
+  assert.equal(after.currentArcStage, before.currentArcStage);
+});
+
+test("31. a fresh session starts with both act-phase flags false -- Imagery/Preparation are never pre-completed", () => {
+  const state = createEmptyLiveState();
+  assert.equal(state.actionImageryCompleted, false);
+  assert.equal(state.actionPreparationCompleted, false);
+});
+
+test("32. applyNegativeActionStarted marks the Negative Action Timer started and touches nothing else", () => {
+  const before = createEmptyLiveState();
+  const after = applyNegativeActionStarted(before);
+  assert.equal(after.negativeActionStarted, true);
+  assert.equal(after.currentArcStage, before.currentArcStage, "the ArcStage itself is never advanced by this call");
+  assert.equal(after.realActionCompleted, before.realActionCompleted, "the Beneficial Action's own completion flag is untouched");
+});
+
+test("33. a fresh session starts with negativeActionStarted false -- the Negative Action Timer never auto-starts", () => {
+  assert.equal(createEmptyLiveState().negativeActionStarted, false);
 });
 
 // --- first stage sanity ---

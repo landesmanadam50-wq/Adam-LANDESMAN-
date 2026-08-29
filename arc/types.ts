@@ -20,6 +20,16 @@ export type ArcStage =
   | "encode"
   | "act"
   | "success_focus"
+  /**
+   * The trainee's own predefined interfering/negative behavior
+   * (habit, below), timed to the current program week's gradually
+   * reduced allowance -- see program/engine.ts's
+   * resolveNegativeActionDuration. Only reached when the habit layer
+   * is active and habit is configured (see arc/arcEngine.ts's
+   * needsNegativeAction); every other session goes straight from
+   * success_focus to complete exactly as before this stage existed.
+   */
+  | "negative_action"
   | "complete";
 
 export interface EncodingProfile {
@@ -107,6 +117,21 @@ export interface ArcBuildProfile {
   regulationTool: string | null;
   actionDuration: number | null;
   successFocusDuration: number | null;
+  /**
+   * The trainee's own configured base allowance (in minutes) for their
+   * predefined negative/interfering action (habit, above) -- the
+   * un-reduced starting amount, set once like actionDuration/
+   * successFocusDuration. The amount actually permitted in a given
+   * session is this base scaled down by the current program week's
+   * reduction factor -- see program/engine.ts's
+   * resolveNegativeActionDuration, which is the one place that scaling
+   * happens; this field itself is never reduced or rewritten week to
+   * week. null (the default for every existing profile) means no
+   * Negative Action Timer duration was ever configured, so the
+   * negative_action stage never gates on a timer -- consistent with
+   * how actionDuration/successFocusDuration already behave when unset.
+   */
+  negativeActionBaseDurationMinutes: number | null;
 }
 
 export interface ArcProgramProgress {
@@ -167,6 +192,31 @@ export interface ArcLiveState {
   selectedActionDuration: number | null;
   /** Set once the trainee confirms they'll perform the planned/mapped action as-is (the "כן" branch of the Action-choice screen) -- distinct from selectedAction being null, which alone would be ambiguous between "not yet asked" and "asked, planned action confirmed". */
   plannedActionConfirmed: boolean;
+  /**
+   * Session-only flags gating the "act" stage's Imagery and Preparation
+   * sub-phases -- see arc/arcEngine.ts's resolveActPhase, which stays at
+   * "imagery" until this is true, then "preparation" until that one is,
+   * then "performing" (the actual timed Action; see arc/actionTimer.ts).
+   * Both false by default; never persisted to ArcBuildProfile, and never
+   * read by resolveActionDuration or the Action Timer itself -- they only
+   * sequence which screen shows next within "act", the same ArcStage
+   * value throughout (no new ArcStage was added).
+   */
+  actionImageryCompleted: boolean;
+  actionPreparationCompleted: boolean;
+
+  /**
+   * Set once the trainee explicitly taps "begin" on the negative_action
+   * stage's predefined-action screen -- unlike the Beneficial Action
+   * Timer (which starts automatically once Action Preparation
+   * completes) and the Success Focus Timer (which starts automatically
+   * on entering that stage), the Negative Action Timer requires an
+   * explicit start action per spec. False by default; never reset back
+   * to false once true within a session (no way back, same
+   * one-directional shape as plannedActionConfirmed/
+   * actionImageryCompleted above).
+   */
+  negativeActionStarted: boolean;
 
   acceptanceNeeded: boolean | null;
   regulationReady: boolean | null;
@@ -198,6 +248,9 @@ export function createEmptyLiveState(): ArcLiveState {
     selectedAction: null,
     selectedActionDuration: null,
     plannedActionConfirmed: false,
+    actionImageryCompleted: false,
+    actionPreparationCompleted: false,
+    negativeActionStarted: false,
     acceptanceNeeded: null,
     regulationReady: null,
     regulationNeeded: false,

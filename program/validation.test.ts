@@ -75,3 +75,35 @@ test("a well-formed multi-week program with cumulative layers has no issues", ()
   };
   assert.deepEqual(validateProgramDefinition(program), []);
 });
+
+test("flags a negativeActionDurationScale outside (0, 1]", () => {
+  const tooHigh: ProgramDefinition = {
+    id: "broken",
+    totalWeeks: 1,
+    weeks: [{ week: 1, activeLayers: ["habit"], layersToBuild: ["habit"], negativeActionDurationScale: 1.5 }],
+  };
+  assert.ok(validateProgramDefinition(tooHigh).some((i) => i.includes("negativeActionDurationScale")));
+
+  const zero: ProgramDefinition = {
+    id: "broken",
+    totalWeeks: 1,
+    weeks: [{ week: 1, activeLayers: ["habit"], layersToBuild: ["habit"], negativeActionDurationScale: 0 }],
+  };
+  assert.ok(validateProgramDefinition(zero).some((i) => i.includes("negativeActionDurationScale")));
+});
+
+test("a valid negativeActionDurationScale (0, 1] and an undefined one are both fine", () => {
+  const withScale: ProgramDefinition = {
+    id: "fine",
+    totalWeeks: 1,
+    weeks: [{ week: 1, activeLayers: ["habit"], layersToBuild: ["habit"], negativeActionDurationScale: 0.5 }],
+  };
+  assert.deepEqual(validateProgramDefinition(withScale), []);
+
+  const withoutScale: ProgramDefinition = {
+    id: "fine",
+    totalWeeks: 1,
+    weeks: [{ week: 1, activeLayers: ["habit"], layersToBuild: ["habit"] }],
+  };
+  assert.deepEqual(validateProgramDefinition(withoutScale), []);
+});

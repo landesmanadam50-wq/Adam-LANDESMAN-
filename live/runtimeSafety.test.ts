@@ -53,6 +53,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
     successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
     ...overrides,
   };
 }
@@ -134,12 +135,15 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
   }
   assert.deepEqual(Object.keys(state).sort(), [
     "acceptanceNeeded",
+    "actionImageryCompleted",
+    "actionPreparationCompleted",
     "actionReached",
     "activeTools",
     "arcThoughtCompleted",
     "currentArcStage",
     "desiredStateRating",
     "loopIterationCount",
+    "negativeActionStarted",
     "plannedActionConfirmed",
     "presenceRating",
     "realActionCompleted",
@@ -402,12 +406,79 @@ test("a reactive_urge session, walked to 'act' through the real engine, that cho
   const nextAfterChoice = getNextArcStage(stage, state, p, activeLayers);
   assert.equal(nextAfterChoice.stage, "success_focus");
 
+  const imageryCopy = getStageCopy(stage, p, state, activeLayers);
+  assert.match(imageryCopy.body, /דמיין את עצמך מבצע עכשיו את 5 דקות תרגילים בבית\./, "Action Imagery uses the alternative currentAction");
+  assert.ok(!imageryCopy.body.includes("לצאת להליכה של 20 דקות"), "the original planned action is never imagined once an alternative is chosen");
+  assert.ok(!imageryCopy.body.includes("משך הפעולה"), "the Action Timer's duration is not named yet during Imagery -- it hasn't started");
+  assert.equal(containsInductionPattern(imageryCopy.body), false);
+
+  // Imagery -> Preparation -> the actual timed Action, same currentAction throughout.
+  state = { ...state, actionImageryCompleted: true };
+  const preparationCopy = getStageCopy(stage, p, state, activeLayers);
+  assert.ok(!preparationCopy.body.includes("דמיין"), "Action Preparation does not repeat the Imagery sentence");
+
+  state = { ...state, actionPreparationCompleted: true };
   const resolvedCopy = getStageCopy(stage, p, state, activeLayers);
-  assert.match(resolvedCopy.body, /דמיין את עצמך מבצע עכשיו את 5 דקות תרגילים בבית\./, "Action Imagery uses the alternative currentAction");
-  assert.ok(!resolvedCopy.body.includes("לצאת להליכה של 20 דקות"), "the original planned action is never imagined once an alternative is chosen");
+  assert.ok(!resolvedCopy.body.includes("דמיין"), "the actual Action screen no longer shows the Imagery sentence");
+  assert.match(resolvedCopy.body, /עכשיו הזמן: 5 דקות תרגילים בבית\./, "the actual Action names the resolved alternative currentAction");
   assert.match(resolvedCopy.body, /משך הפעולה: 5 דקות\./, "the Action Timer uses the alternative's own duration, not the BUILD one");
   assert.equal(containsInductionPattern(resolvedCopy.body), false);
 
   // The planned/BUILD action itself was never touched.
   assert.equal(p.beneficialAction, "לצאת להליכה של 20 דקות");
+});
+
+test("a reactive_urge session with the habit layer active, walked end to end through the real engine, follows Beneficial Action -> Success Focus -> Negative Action -> complete, never any other order", () => {
+  const p = profile({
+    habit: "גלילה ברשת", // the predefined negative/interfering action
+    beneficialAction: "לצאת להליכה של 20 דקות",
+    preventiveAction: null,
+  });
+  const activeLayers: DevelopmentLayer[] = ["habit"];
+  let state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_urge" };
+  let stage = getFirstArcStage();
+
+  const visitedStages: ArcStage[] = [];
+  let iterations = 0;
+  while (stage !== "complete" && iterations < 30) {
+    visitedStages.push(stage);
+    if (stage === "presence_check") state = { ...state, presenceRating: 8 };
+    if (stage === "sensation_check") state = { ...state, sensationIntensity: 2 };
+    if (stage === "act") {
+      // Resolve currentAction (the "כן" branch) and walk through
+      // Imagery/Preparation without stopping -- this test is about
+      // stage ORDER, not the act sub-phases (already covered above).
+      state = { ...state, plannedActionConfirmed: true, actionImageryCompleted: true, actionPreparationCompleted: true };
+    }
+    if (stage === "negative_action") {
+      state = { ...state, negativeActionStarted: true };
+    }
+    const next = getNextArcStage(stage, state, p, activeLayers);
+    stage = next.stage;
+    state = { ...state, loopIterationCount: next.loopIterationCount };
+    iterations++;
+  }
+  visitedStages.push(stage); // "complete"
+
+  const actIndex = visitedStages.indexOf("act");
+  const successFocusIndex = visitedStages.indexOf("success_focus");
+  const negativeActionIndex = visitedStages.indexOf("negative_action");
+  const completeIndex = visitedStages.indexOf("complete");
+
+  assert.ok(actIndex >= 0 && successFocusIndex >= 0 && negativeActionIndex >= 0 && completeIndex >= 0, "sanity: every stage in the sequence must actually be reached");
+  assert.ok(actIndex < successFocusIndex, "Beneficial Action (act) must come before Success Focus");
+  assert.ok(successFocusIndex < negativeActionIndex, "Success Focus must come before Negative Action");
+  assert.ok(negativeActionIndex < completeIndex, "Negative Action must come before complete");
+
+  // Explicitly rule out the forbidden orderings named in the spec.
+  assert.ok(!(negativeActionIndex < successFocusIndex), "must never produce Negative Action before Success Focus");
+  assert.ok(!(negativeActionIndex < actIndex), "must never produce Negative Action before Beneficial Action");
+});
+
+test("a session where the habit layer is never active skips negative_action entirely -- success_focus goes straight to complete, exactly as before this feature existed", () => {
+  const p = profile({ habit: "גלילה ברשת" }); // configured, but irrelevant -- habit layer never active this session
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
+  const next = getNextArcStage("success_focus", state, p, activeLayers);
+  assert.equal(next.stage, "complete");
 });

@@ -5,6 +5,7 @@ import { getStageCopy, getStageInputKind } from "./stageCopy.ts";
 import { createEmptyLiveState } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { containsInductionPattern } from "./instructions.ts";
+import { INSTRUCTION_TIMING } from "./instructionTiming.ts";
 
 function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
   return {
@@ -31,6 +32,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
     successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
     ...overrides,
   };
 }
@@ -75,16 +77,29 @@ test("act copy is specific to the routed layer's action", () => {
 // same per-target resolution encode already uses, so it can never mix
 // Focus's cue into a Discipline session or vice versa.
 
-test("act shows the current target's Body-Language cue before the action itself", () => {
+test("act carries the current target's Body-Language cue through Imagery, Preparation, and the actual Action, in that order", () => {
   const p = profile({
     beneficialAction: "לגשת ולפתוח שיחה",
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
   });
-  const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", plannedActionConfirmed: true }), ["state"]);
-  assert.match(copy.body, /כתפיים משוחררות/, "the Body-Language cue must carry over into the act screen");
-  const cueIndex = copy.body.indexOf("כתפיים משוחררות");
-  const actionIndex = copy.body.indexOf("עכשיו הזמן");
-  assert.ok(cueIndex >= 0 && actionIndex >= 0 && cueIndex < actionIndex, "the cue must appear before the action instruction (Action Preparation)");
+  const base = { triggerType: "reactive_emotion" as const, plannedActionConfirmed: true };
+
+  const imagery = getStageCopy("act", p, liveState(base), ["state"]);
+  assert.match(imagery.body, /כתפיים משוחררות/, "Action Imagery must carry the cue over from Encoding");
+
+  const preparation = getStageCopy("act", p, liveState({ ...base, actionImageryCompleted: true }), ["state"]);
+  assert.match(preparation.body, /כתפיים משוחררות/, "Action Preparation must repeat the same cue");
+
+  const performing = getStageCopy(
+    "act",
+    p,
+    liveState({ ...base, actionImageryCompleted: true, actionPreparationCompleted: true }),
+    ["state"]
+  );
+  assert.match(performing.body, /כתפיים משוחררות/, "the cue must still be visible during the actual timed Action");
+  const cueIndex = performing.body.indexOf("כתפיים משוחררות");
+  const actionIndex = performing.body.indexOf("עכשיו הזמן");
+  assert.ok(cueIndex >= 0 && actionIndex >= 0 && cueIndex < actionIndex, "the cue must appear before the action instruction");
 });
 
 test("act's Body-Language cue is a stable, pure function of the resolved target -- it stays identical across repeated calls, i.e. while a timer would be running", () => {
@@ -146,12 +161,22 @@ test("act never invents a Body-Language cue and never shows an empty placeholder
     stateEncoding: null,
     identityEncoding: null,
   });
-  const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_urge", plannedActionConfirmed: true }), ["habit"]);
-  assert.equal(
-    copy.body,
-    "דמיין את עצמך מבצע עכשיו את לגשת ולפתוח שיחה. עכשיו הזמן: לגשת ולפתוח שיחה.",
-    "no cue sentence anywhere, and Action Imagery has no body-language clause, when nothing is configured"
+  const base = { triggerType: "reactive_urge" as const, plannedActionConfirmed: true };
+
+  const imagery = getStageCopy("act", p, liveState(base), ["habit"]);
+  assert.equal(imagery.body, "דמיין את עצמך מבצע עכשיו את לגשת ולפתוח שיחה.", "no invented cue in Action Imagery");
+
+  const preparation = getStageCopy("act", p, liveState({ ...base, actionImageryCompleted: true }), ["habit"]);
+  assert.equal(preparation.body, "", "Action Preparation skips the Body-Language reminder cleanly when none is configured");
+  assert.deepEqual(preparation.segments, [], "no timed segment is invented either");
+
+  const performing = getStageCopy(
+    "act",
+    p,
+    liveState({ ...base, actionImageryCompleted: true, actionPreparationCompleted: true }),
+    ["habit"]
   );
+  assert.equal(performing.body, "עכשיו הזמן: לגשת ולפתוח שיחה.", "no cue sentence in the actual Action screen either");
 });
 
 // --- Action Imagery lives in the "act" stage, not Encoding: it
@@ -161,13 +186,22 @@ test("act never invents a Body-Language cue and never shows an empty placeholder
 // explicitly maintaining the SAME Body-Language Cue carried over from
 // Encoding, from this target's own map only.
 
-test("Action Imagery uses currentAction and appears before the actual-action instruction", () => {
+test("Action Imagery uses currentAction, and is a distinct sub-phase that precedes the actual-action instruction", () => {
   const p = profile({ beneficialAction: "לגשת ולפתוח שיחה" });
-  const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_urge", plannedActionConfirmed: true }), ["habit"]);
-  assert.match(copy.body, /דמיין את עצמך מבצע עכשיו את לגשת ולפתוח שיחה/, "Action Imagery must use currentAction");
-  const imageryIndex = copy.body.indexOf("דמיין");
-  const actionIndex = copy.body.indexOf("עכשיו הזמן");
-  assert.ok(imageryIndex >= 0 && actionIndex >= 0 && imageryIndex < actionIndex, "Action Imagery precedes the actual-action instruction");
+  const base = { triggerType: "reactive_urge" as const, plannedActionConfirmed: true };
+
+  const imagery = getStageCopy("act", p, liveState(base), ["habit"]);
+  assert.match(imagery.body, /דמיין את עצמך מבצע עכשיו את לגשת ולפתוח שיחה/, "Action Imagery must use currentAction");
+  assert.ok(!imagery.body.includes("עכשיו הזמן"), "Action Imagery does not yet contain the actual-action instruction");
+
+  const performing = getStageCopy(
+    "act",
+    p,
+    liveState({ ...base, actionImageryCompleted: true, actionPreparationCompleted: true }),
+    ["habit"]
+  );
+  assert.match(performing.body, /עכשיו הזמן: לגשת ולפתוח שיחה/, "the actual-action instruction is shown only once performing begins");
+  assert.ok(!performing.body.includes("דמיין"), "the actual Action screen no longer repeats the imagery sentence");
 });
 
 test("Action Imagery includes the current target's Body-Language Cue when configured, in the same sentence as the action", () => {
@@ -232,12 +266,18 @@ test("the same Body-Language Cue is used across Encoding, Action Imagery, and th
   const p = profile({
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
   });
-  const s = liveState({ triggerType: "reactive_emotion", plannedActionConfirmed: true });
-  const encodeCopy = getStageCopy("encode", p, s, ["state"]);
-  const actCopy = getStageCopy("act", p, s, ["state"]);
+  const base = { triggerType: "reactive_emotion" as const, plannedActionConfirmed: true };
+  const encodeCopy = getStageCopy("encode", p, liveState(base), ["state"]);
+  const imageryCopy = getStageCopy("act", p, liveState(base), ["state"]);
+  const preparationCopy = getStageCopy("act", p, liveState({ ...base, actionImageryCompleted: true }), ["state"]);
+
   assert.match(encodeCopy.body, /שמור על כתפיים משוחררות/, "Encoding activates the cue");
-  assert.match(actCopy.body, /בזמן הפעולה, שמור על שפת הגוף שבחרת: כתפיים משוחררות/, "the Action-Preparation reminder repeats the same cue");
-  assert.match(actCopy.body, /תוך שמירה על כתפיים משוחררות/, "Action Imagery maintains the same cue");
+  assert.match(imageryCopy.body, /תוך שמירה על כתפיים משוחררות/, "Action Imagery maintains the same cue");
+  assert.match(
+    preparationCopy.body,
+    /בזמן הפעולה, המשך לשמור על: כתפיים משוחררות/,
+    "the Action-Preparation reminder repeats the same cue"
+  );
 });
 
 // --- Action-choice: before currentAction is resolved (plannedActionConfirmed
@@ -268,11 +308,18 @@ test("the Action-choice screen never invents a planned action when none is confi
 });
 
 test("Action Timer: the resolved action duration is named once currentAction is resolved -- the alternative's own duration when set, else the BUILD-level actionDuration, never invented when neither is set", () => {
+  const performingFlags = { actionImageryCompleted: true, actionPreparationCompleted: true };
+
   const withAlternativeDuration = profile({ internalAction: "לצאת להליכה של 20 דקות", actionDuration: 20 });
   const alternativeCopy = getStageCopy(
     "act",
     withAlternativeDuration,
-    liveState({ triggerType: "reactive_emotion", selectedAction: "5 דקות תרגילים בבית", selectedActionDuration: 5 }),
+    liveState({
+      triggerType: "reactive_emotion",
+      selectedAction: "5 דקות תרגילים בבית",
+      selectedActionDuration: 5,
+      ...performingFlags,
+    }),
     ["state"]
   );
   assert.match(alternativeCopy.body, /משך הפעולה: 5 דקות\./, "uses the alternative's own duration, not the BUILD one");
@@ -281,7 +328,7 @@ test("Action Timer: the resolved action duration is named once currentAction is 
   const plannedCopy = getStageCopy(
     "act",
     withBuildDuration,
-    liveState({ triggerType: "reactive_emotion", plannedActionConfirmed: true }),
+    liveState({ triggerType: "reactive_emotion", plannedActionConfirmed: true, ...performingFlags }),
     ["state"]
   );
   assert.match(plannedCopy.body, /משך הפעולה: 20 דקות\./, "falls back to the BUILD-level actionDuration");
@@ -290,7 +337,7 @@ test("Action Timer: the resolved action duration is named once currentAction is 
   const noDurationCopy = getStageCopy(
     "act",
     withNoDuration,
-    liveState({ triggerType: "reactive_emotion", plannedActionConfirmed: true }),
+    liveState({ triggerType: "reactive_emotion", plannedActionConfirmed: true, ...performingFlags }),
     ["state"]
   );
   assert.ok(!noDurationCopy.body.includes("משך הפעולה"), "no invented duration when neither is set");
@@ -671,4 +718,173 @@ test("editing Focus's Body-Language cue in the underlying data never changes wha
   const disciplineCopyBefore = getStageCopy("encode", base, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
   const disciplineCopyAfter = getStageCopy("encode", focusEdited, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
   assert.equal(disciplineCopyBefore.body, disciplineCopyAfter.body, "changing Focus's cue must not change Discipline's resolved encode copy");
+});
+
+// --- Progressive timed-instruction segments (arc/instructionTiming.ts):
+// stage-specific configs, exact ordering, and which stages the timed-
+// reveal system does/doesn't apply to.
+
+test("stages the timed-reveal system doesn't apply to carry segments: null, unchanged immediate-Continue behavior", () => {
+  const p = profile();
+  const untimedStages: ArcStage[] = [
+    "trigger_selection",
+    "presence_check",
+    "arc_thought_presence_recheck",
+    "preventive_action_check",
+    "preventive_action",
+    "sensation_check",
+    "accept",
+    "reactive_transition_check",
+    "desired_state_check",
+    "success_focus",
+    "complete",
+  ];
+  for (const stage of untimedStages) {
+    const copy = getStageCopy(stage, p, liveState({ triggerType: "reactive_emotion" }), ["state", "identity", "habit"]);
+    assert.equal(copy.segments, null, `${stage} must not carry instruction segments`);
+  }
+});
+
+test("ARC Thought's three sub-stages each carry exactly one segment, matching their own configured duration", () => {
+  const p = profile();
+  const s = liveState();
+  const awareness = getStageCopy("arc_thought_awareness", p, s, ["state"]);
+  assert.equal(awareness.segments?.length, 1);
+  assert.equal(awareness.segments?.[0].durationSeconds, INSTRUCTION_TIMING.arcThoughtAwareness);
+  assert.equal(awareness.segments?.[0].text, awareness.body);
+
+  const combined = getStageCopy("arc_thought_combined_attention", p, s, ["state"]);
+  assert.equal(combined.segments?.length, 1);
+  assert.equal(combined.segments?.[0].durationSeconds, INSTRUCTION_TIMING.arcThoughtCombinedAttention);
+
+  const expand = getStageCopy("arc_thought_expand_presence", p, s, ["state"]);
+  assert.equal(expand.segments?.length, 1);
+  assert.equal(expand.segments?.[0].durationSeconds, INSTRUCTION_TIMING.arcThoughtExpandPresence);
+});
+
+test("Stay/Presence reveals the current-sensation segment first, then the natural-breath segment -- the exact spec example, 4s then 8s", () => {
+  const p = profile();
+  const copy = getStageCopy("stay", p, liveState(), ["state"]);
+  assert.equal(copy.segments?.length, 2);
+  assert.equal(copy.segments?.[0].text, "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה.");
+  assert.equal(copy.segments?.[0].durationSeconds, INSTRUCTION_TIMING.stayCurrentSensation);
+  assert.equal(copy.segments?.[1].text, "שים לב גם לנשימה כפי שהיא מתרחשת מעצמה.");
+  assert.equal(copy.segments?.[1].durationSeconds, INSTRUCTION_TIMING.stayNaturalBreath);
+});
+
+test("Stay/Presence's breath segment stays non-regulatory -- no slow/deepen/extend-exhale/rhythm-change wording, that stays exclusive to Regulation", () => {
+  const p = profile();
+  const copy = getStageCopy("stay", p, liveState(), ["state"]);
+  const breathText = copy.segments?.[1].text ?? "";
+  for (const regulatoryWord of ["האט", "העמק", "האריך", "שנה את הקצב", profile().regulationTool ?? "__none__"]) {
+    assert.ok(!breathText.includes(regulatoryWord), `Stay's breath segment must not contain regulatory wording: "${regulatoryWord}"`);
+  }
+});
+
+test("Regulation has its own single segment and duration, separate from Stay/Presence's", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8" });
+  const copy = getStageCopy("regulate", p, liveState(), ["state"]);
+  assert.equal(copy.segments?.length, 1);
+  assert.equal(copy.segments?.[0].durationSeconds, INSTRUCTION_TIMING.regulate);
+  assert.notEqual(INSTRUCTION_TIMING.regulate, INSTRUCTION_TIMING.stayCurrentSensation, "sanity: Regulation's timing config is its own, not reused from Stay");
+});
+
+test("Encoding preserves its exact 4-piece order (Updated Sensation -> Short Regulation Cue -> Body-Language -> Mantra) as four separate timed segments", () => {
+  const p = profile({
+    stateEncodingRegulationCue: "נשיפה רגועה",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני בטוח כאן" },
+  });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.equal(copy.segments?.length, 4);
+  assert.match(copy.segments![0].text, /שים לב לתחושה שלך עכשיו/);
+  assert.equal(copy.segments![0].durationSeconds, INSTRUCTION_TIMING.encodeUpdatedSensation);
+  assert.match(copy.segments![1].text, /נשיפה רגועה/);
+  assert.equal(copy.segments![1].durationSeconds, INSTRUCTION_TIMING.encodeShortRegulationCue);
+  assert.match(copy.segments![2].text, /כתפיים משוחררות/);
+  assert.equal(copy.segments![2].durationSeconds, INSTRUCTION_TIMING.encodeBodyLanguageCue);
+  assert.match(copy.segments![3].text, /אני בטוח כאן/);
+  assert.equal(copy.segments![3].durationSeconds, INSTRUCTION_TIMING.encodeIdentityMantra);
+  assert.equal(copy.body, copy.segments!.map((seg) => seg.text).join(" "), "body is exactly the joined segments, same text as before");
+});
+
+test("Encoding's fallback segment (nothing configured) is appended after the always-present sensation-notice segment, not an untimed instant screen", () => {
+  const p = profile({ stateEncoding: null, stateEncodingRegulationCue: null, regulationTool: null });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.equal(copy.segments?.length, 2, "the sensation-notice segment plus the fallback segment");
+  assert.equal(copy.segments?.[0].durationSeconds, INSTRUCTION_TIMING.encodeUpdatedSensation);
+  assert.equal(copy.segments?.[1].text, "קח רגע לקבע את התחושה החדשה.");
+  assert.equal(copy.segments?.[1].durationSeconds, INSTRUCTION_TIMING.encodeFallback);
+});
+
+test("Action Imagery and Action Preparation each carry their own configured duration, distinct from every instruction stage above", () => {
+  const p = profile({
+    beneficialAction: "לגשת ולפתוח שיחה",
+    stateEncoding: null,
+  });
+  const base = { triggerType: "reactive_urge" as const, plannedActionConfirmed: true };
+  const imagery = getStageCopy("act", p, liveState(base), ["habit"]);
+  assert.equal(imagery.segments?.length, 1);
+  assert.equal(imagery.segments?.[0].durationSeconds, INSTRUCTION_TIMING.actionImagery);
+
+  const p2 = profile({
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+  });
+  const preparation = getStageCopy(
+    "act",
+    p2,
+    liveState({ triggerType: "reactive_emotion", plannedActionConfirmed: true, actionImageryCompleted: true }),
+    ["state"]
+  );
+  assert.equal(preparation.segments?.length, 1);
+  assert.equal(preparation.segments?.[0].durationSeconds, INSTRUCTION_TIMING.actionPreparation);
+});
+
+test("the actual timed Action ('performing') carries segments: null -- it is governed by the separate Action Timer, never instruction segments", () => {
+  const p = profile({ beneficialAction: "לגשת ולפתוח שיחה" });
+  const performing = getStageCopy(
+    "act",
+    p,
+    liveState({ triggerType: "reactive_urge", plannedActionConfirmed: true, actionImageryCompleted: true, actionPreparationCompleted: true }),
+    ["habit"]
+  );
+  assert.equal(performing.segments, null);
+});
+
+test("timing entering a new stage never inherits another stage's segments -- each getStageCopy call is a pure function of its own stage argument", () => {
+  const p = profile();
+  const s = liveState();
+  const stay = getStageCopy("stay", p, s, ["state"]);
+  const regulate = getStageCopy("regulate", p, s, ["state"]);
+  assert.notDeepEqual(stay.segments, regulate.segments, "sanity: different stages produce different segment sets");
+  // Calling stay's copy again must reproduce the exact same segments --
+  // no shared mutable state leaking between stages.
+  const stayAgain = getStageCopy("stay", p, s, ["state"]);
+  assert.deepEqual(stay.segments, stayAgain.segments);
+});
+
+// --- negative_action: the trainee's own predefined interfering/negative
+// behavior (profile.habit), shown after Success Focus with an
+// explicit pre-start screen before the timer.
+
+test("negative_action names the predefined negative action before it's started", () => {
+  const p = profile({ habit: "גלילה ברשת" });
+  const copy = getStageCopy("negative_action", p, liveState(), ["habit"]);
+  assert.match(copy.body, /גלילה ברשת/, "must name the predefined negative action");
+  assert.equal(copy.segments, null);
+});
+
+test("negative_action never invents a negative action when none is configured", () => {
+  const p = profile({ habit: null });
+  const copy = getStageCopy("negative_action", p, liveState(), ["habit"]);
+  assert.ok(!copy.body.includes("null"), "must never leak a literal null into the copy");
+  assert.equal(copy.body, "לא הוגדרה פעולה שלילית.");
+});
+
+test("negative_action's copy changes once started, still naming the same action", () => {
+  const p = profile({ habit: "גלילה ברשת" });
+  const before = getStageCopy("negative_action", p, liveState({ negativeActionStarted: false }), ["habit"]);
+  const after = getStageCopy("negative_action", p, liveState({ negativeActionStarted: true }), ["habit"]);
+  assert.match(before.body, /גלילה ברשת/);
+  assert.match(after.body, /גלילה ברשת/);
+  assert.notEqual(before.body, after.body, "the pre-start and in-progress copy must differ");
 });
