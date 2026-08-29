@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { formatRemainingTime, getActionTimerStatus, getActionTimerStatusFromStartedAt } from "./actionTimer.ts";
+import { formatRemainingTime, generateTimerRunId, getActionTimerStatus, getActionTimerStatusFromStartedAt } from "./actionTimer.ts";
 
 test("null duration (never configured) resolves as immediately complete -- no forced wait, matching pre-existing behavior", () => {
   const status = getActionTimerStatus(null, 0);
@@ -103,4 +103,23 @@ test("getActionTimerStatusFromStartedAt matches getActionTimerStatus given the e
   const fromAnchor = getActionTimerStatusFromStartedAt(startedAt, 5, now);
   const fromElapsed = getActionTimerStatus(5, 90);
   assert.deepEqual(fromAnchor, fromElapsed);
+});
+
+// --- generateTimerRunId: distinguishes one timer run from another of
+// the SAME timerType, so a stale notification/reconciliation event
+// from an earlier run can never be mistaken for a newer one -- see
+// data/storage.ts's TimerRun doc.
+
+test("generateTimerRunId produces distinct ids across many calls", () => {
+  const ids = new Set<string>();
+  for (let i = 0; i < 500; i++) {
+    ids.add(generateTimerRunId());
+  }
+  assert.equal(ids.size, 500, "every generated run id must be unique across this batch");
+});
+
+test("generateTimerRunId returns a non-empty string", () => {
+  const id = generateTimerRunId();
+  assert.equal(typeof id, "string");
+  assert.ok(id.length > 0);
 });

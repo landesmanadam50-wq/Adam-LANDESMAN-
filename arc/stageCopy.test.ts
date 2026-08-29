@@ -32,6 +32,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
     successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
     ...overrides,
   };
 }
@@ -859,4 +860,31 @@ test("timing entering a new stage never inherits another stage's segments -- eac
   // no shared mutable state leaking between stages.
   const stayAgain = getStageCopy("stay", p, s, ["state"]);
   assert.deepEqual(stay.segments, stayAgain.segments);
+});
+
+// --- negative_action: the trainee's own predefined interfering/negative
+// behavior (profile.habit), shown after Success Focus with an
+// explicit pre-start screen before the timer.
+
+test("negative_action names the predefined negative action before it's started", () => {
+  const p = profile({ habit: "גלילה ברשת" });
+  const copy = getStageCopy("negative_action", p, liveState(), ["habit"]);
+  assert.match(copy.body, /גלילה ברשת/, "must name the predefined negative action");
+  assert.equal(copy.segments, null);
+});
+
+test("negative_action never invents a negative action when none is configured", () => {
+  const p = profile({ habit: null });
+  const copy = getStageCopy("negative_action", p, liveState(), ["habit"]);
+  assert.ok(!copy.body.includes("null"), "must never leak a literal null into the copy");
+  assert.equal(copy.body, "לא הוגדרה פעולה שלילית.");
+});
+
+test("negative_action's copy changes once started, still naming the same action", () => {
+  const p = profile({ habit: "גלילה ברשת" });
+  const before = getStageCopy("negative_action", p, liveState({ negativeActionStarted: false }), ["habit"]);
+  const after = getStageCopy("negative_action", p, liveState({ negativeActionStarted: true }), ["habit"]);
+  assert.match(before.body, /גלילה ברשת/);
+  assert.match(after.body, /גלילה ברשת/);
+  assert.notEqual(before.body, after.body, "the pre-start and in-progress copy must differ");
 });

@@ -53,6 +53,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
     successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
     ...overrides,
   };
 }
@@ -142,6 +143,7 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "currentArcStage",
     "desiredStateRating",
     "loopIterationCount",
+    "negativeActionStarted",
     "plannedActionConfirmed",
     "presenceRating",
     "realActionCompleted",
@@ -424,4 +426,59 @@ test("a reactive_urge session, walked to 'act' through the real engine, that cho
 
   // The planned/BUILD action itself was never touched.
   assert.equal(p.beneficialAction, "לצאת להליכה של 20 דקות");
+});
+
+test("a reactive_urge session with the habit layer active, walked end to end through the real engine, follows Beneficial Action -> Success Focus -> Negative Action -> complete, never any other order", () => {
+  const p = profile({
+    habit: "גלילה ברשת", // the predefined negative/interfering action
+    beneficialAction: "לצאת להליכה של 20 דקות",
+    preventiveAction: null,
+  });
+  const activeLayers: DevelopmentLayer[] = ["habit"];
+  let state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_urge" };
+  let stage = getFirstArcStage();
+
+  const visitedStages: ArcStage[] = [];
+  let iterations = 0;
+  while (stage !== "complete" && iterations < 30) {
+    visitedStages.push(stage);
+    if (stage === "presence_check") state = { ...state, presenceRating: 8 };
+    if (stage === "sensation_check") state = { ...state, sensationIntensity: 2 };
+    if (stage === "act") {
+      // Resolve currentAction (the "כן" branch) and walk through
+      // Imagery/Preparation without stopping -- this test is about
+      // stage ORDER, not the act sub-phases (already covered above).
+      state = { ...state, plannedActionConfirmed: true, actionImageryCompleted: true, actionPreparationCompleted: true };
+    }
+    if (stage === "negative_action") {
+      state = { ...state, negativeActionStarted: true };
+    }
+    const next = getNextArcStage(stage, state, p, activeLayers);
+    stage = next.stage;
+    state = { ...state, loopIterationCount: next.loopIterationCount };
+    iterations++;
+  }
+  visitedStages.push(stage); // "complete"
+
+  const actIndex = visitedStages.indexOf("act");
+  const successFocusIndex = visitedStages.indexOf("success_focus");
+  const negativeActionIndex = visitedStages.indexOf("negative_action");
+  const completeIndex = visitedStages.indexOf("complete");
+
+  assert.ok(actIndex >= 0 && successFocusIndex >= 0 && negativeActionIndex >= 0 && completeIndex >= 0, "sanity: every stage in the sequence must actually be reached");
+  assert.ok(actIndex < successFocusIndex, "Beneficial Action (act) must come before Success Focus");
+  assert.ok(successFocusIndex < negativeActionIndex, "Success Focus must come before Negative Action");
+  assert.ok(negativeActionIndex < completeIndex, "Negative Action must come before complete");
+
+  // Explicitly rule out the forbidden orderings named in the spec.
+  assert.ok(!(negativeActionIndex < successFocusIndex), "must never produce Negative Action before Success Focus");
+  assert.ok(!(negativeActionIndex < actIndex), "must never produce Negative Action before Beneficial Action");
+});
+
+test("a session where the habit layer is never active skips negative_action entirely -- success_focus goes straight to complete, exactly as before this feature existed", () => {
+  const p = profile({ habit: "גלילה ברשת" }); // configured, but irrelevant -- habit layer never active this session
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
+  const next = getNextArcStage("success_focus", state, p, activeLayers);
+  assert.equal(next.stage, "complete");
 });

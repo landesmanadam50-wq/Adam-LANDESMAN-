@@ -88,6 +88,7 @@ const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   encode: "info",
   act: "info",
   success_focus: "successFocus",
+  negative_action: "info",
   complete: "finish",
 };
 
@@ -463,6 +464,33 @@ export function getStageCopy(
 
     case "success_focus":
       return { title: "התמקדות בהצלחה", body: "כמה דקות נוספות המשכת מעבר לפעולה המקורית?", segments: null };
+
+    case "negative_action": {
+      // The trainee's own predefined interfering/negative behavior
+      // (profile.habit) -- never re-asked here, never a new action:
+      // this is the intentionally limited, already-mapped behavior the
+      // gradual-reduction program permits in controlled amounts. The
+      // permitted duration itself is resolved outside this pure
+      // function (see program/engine.ts's resolveNegativeActionDuration,
+      // which needs the current program week -- not available to
+      // getStageCopy's signature) and rendered by the screen component
+      // alongside this copy, the same separation "act"'s resolved
+      // action duration uses for its own timed screen.
+      if (!state.negativeActionStarted) {
+        return {
+          title: "פעולה שלילית מוגבלת",
+          body: profile.habit
+            ? `הפעולה השלילית שהוגדרה מראש: ${profile.habit}. מותר לך כמות מוגבלת ומוגדרת מראש, בהתאם לשבוע הנוכחי בתוכנית.`
+            : "לא הוגדרה פעולה שלילית.",
+          segments: null,
+        };
+      }
+      return {
+        title: "פעולה שלילית מוגבלת",
+        body: profile.habit ? `בצע את ${profile.habit} במשך הזמן המותר בלבד.` : "בצע את הפעולה המותרת בלבד, במשך הזמן שהוקצב.",
+        segments: null,
+      };
+    }
 
     case "complete":
       return { title: "סיום", body: "כל הכבוד על השלמת הסשן.", segments: null };

@@ -50,6 +50,12 @@ export function validateProgramDefinition(program: ProgramDefinition): string[] 
         issues.push(`${id} week ${week.week}: layersToBuild has "${layer}" but activeLayers does not`);
       }
     }
+    if (
+      week.negativeActionDurationScale !== undefined &&
+      (week.negativeActionDurationScale <= 0 || week.negativeActionDurationScale > 1)
+    ) {
+      issues.push(`${id} week ${week.week}: negativeActionDurationScale (${week.negativeActionDurationScale}) must be > 0 and <= 1`);
+    }
     for (const layer of previousActiveLayers) {
       if (!week.activeLayers.includes(layer)) {
         issues.push(

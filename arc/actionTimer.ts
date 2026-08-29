@@ -1,18 +1,23 @@
 /**
  * arc/actionTimer.ts
  *
- * The Action Timer: times the ACTUAL physical behavior once it
- * begins, as a distinct concept from instruction timing
- * (arc/instructionTiming.ts). It begins only when the "performing"
- * act sub-phase is reached -- never during Encoding, Action Imagery,
- * Action Preparation, or while a trainee is still choosing between
- * the planned action and a session-specific alternative
- * (arc/arcEngine.ts's resolveActPhase governs that ordering).
+ * The shared countdown engine behind all three of ARCHI's real timed
+ * activities: the Beneficial Action Timer ("act"'s "performing"
+ * sub-phase), the Success Focus / Success Coding Timer, and the
+ * Negative Action Timer (negative_action). Each one is a distinct,
+ * independently-persisted TimerRun (data/storage.ts) with its own
+ * timerType/runId, but every one of them is timed by these same two
+ * functions -- one shared "how much time is left" engine, three
+ * logically independent timers (see data/storage.ts's module doc for
+ * how their persisted state stays isolated).
  *
- * Deliberately a separate file/type from instructionTiming.ts's
- * status shape, per the requirement to keep instruction timing and
- * action timing explicit in both code and naming -- nothing here is
- * shared with, or derived from, any instruction segment's duration.
+ * This is action/behavior timing, a distinct concept from instruction
+ * timing (arc/instructionTiming.ts): the Beneficial Action Timer
+ * begins only once the "performing" act sub-phase is reached -- never
+ * during Encoding, Action Imagery, Action Preparation, or the
+ * Action-choice screen (arc/arcEngine.ts's resolveActPhase governs
+ * that ordering) -- and nothing here is shared with, or derived from,
+ * any instruction segment's duration.
  */
 
 export interface ActionTimerStatus {
@@ -68,10 +73,24 @@ export function getActionTimerStatusFromStartedAt(
   return getActionTimerStatus(durationMinutes, elapsedSeconds);
 }
 
-/** Formats whole seconds as "MM:SS" for the live remaining-time display during the actual timed Action. */
+/** Formats whole seconds as "MM:SS" for the live remaining-time display during any of the three timed activities. */
 export function formatRemainingTime(remainingSeconds: number): string {
   const totalSeconds = Math.max(0, Math.ceil(remainingSeconds));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+/**
+ * A fresh identifier for one specific timer run -- see
+ * data/storage.ts's TimerRun.runId. Its only job is telling two runs
+ * of the SAME timerType apart (e.g. a stale notification from an
+ * earlier Negative Action Timer run arriving after a newer one has
+ * already started): callers compare this against the run they expect
+ * before treating a notification/reconciliation event as theirs. Not
+ * cryptographically unique -- collision odds are astronomically low
+ * for a single device's session-scale usage, which is all this needs.
+ */
+export function generateTimerRunId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

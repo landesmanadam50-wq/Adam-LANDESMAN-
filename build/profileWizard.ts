@@ -508,5 +508,6 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     regulationTool: draft.regulationTool.trim(),
     actionDuration: null,
     successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
   };
 }

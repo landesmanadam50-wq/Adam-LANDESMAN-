@@ -10,15 +10,19 @@
  * rule. Those all live in arc/arcEngine.ts and arc/engine.ts.
  */
 
-import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { AppState, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
 import { getInstructionTimingStatus } from "../arc/instructionTiming.ts";
-import { formatRemainingTime, getActionTimerStatusFromStartedAt } from "../arc/actionTimer.ts";
-import { saveActiveActionTimer } from "../data/storage.ts";
+import { formatRemainingTime, generateTimerRunId, getActionTimerStatusFromStartedAt } from "../arc/actionTimer.ts";
+import type { ActionTimerStatus } from "../arc/actionTimer.ts";
+import { cancelScheduledNotification, scheduleTimerCompletionNotification } from "../data/notifications.ts";
+import { playTimerCompletionSound } from "../data/timerSound.ts";
+import { saveTimerRun } from "../data/storage.ts";
+import type { TimerRun, TimerType } from "../data/storage.ts";
 
 /**
  * Live elapsed-seconds clock, started fresh on mount (never on a prop
@@ -46,21 +50,114 @@ function useElapsedSeconds(): number {
  * A live Date.now() reading, ticked periodically -- unlike
  * useElapsedSeconds above, this reports an absolute timestamp rather
  * than time-since-mount, so it stays correct however the caller
- * anchors its own start time. This is what ActionScreen's Action Timer
- * uses (paired with a persisted actionStartedAt anchor -- see
+ * anchors its own start time. This is what every real timed activity's
+ * screen uses (paired with a persisted actionStartedAt anchor -- see
  * arc/actionTimer.ts's getActionTimerStatusFromStartedAt and
- * data/storage.ts's ActiveActionTimer): the real timed Action must
- * stay accurate across backgrounding, locking, navigating away and
- * back, or a full app close/reopen, none of which a mount-relative
- * clock alone can survive.
+ * data/storage.ts's TimerRun): the countdown must stay accurate across
+ * backgrounding, locking, navigating away and back, or a full app
+ * close/reopen, none of which a mount-relative clock alone can survive.
+ *
+ * React Native's own interval already resumes correctly after the JS
+ * thread was suspended (the very next tick recomputes fully from
+ * Date.now(), never from how many ticks were missed) -- the AppState
+ * listener here is a responsiveness refinement on top of that, not a
+ * correctness requirement: it forces an immediate refresh the instant
+ * the app becomes active again, instead of waiting up to one interval
+ * period (250ms) for the next natural tick.
  */
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(interval);
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        setNow(Date.now());
+      }
+    });
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
   }, []);
   return now;
+}
+
+/**
+ * Shared engine behind all three real timed activities (see
+ * data/storage.ts's TimerRun doc): captures an absolute
+ * actionStartedAt anchor once (lazily, on first render -- or reused
+ * from resumedRun when this screen is being restored rather than
+ * started fresh), persists that run immediately, schedules its one
+ * background completion notification, and -- exactly once, the first
+ * time the countdown reaches zero -- plays the shared completion sound,
+ * cancels the now-redundant scheduled notification, and marks the run
+ * completedAt. copy/durationMinutes are captured at mount and never
+ * re-read: they're stable for the run's whole lifetime by construction
+ * (the same currentAction/duration throughout "performing"; the same
+ * predefined negative action/duration throughout negative_action; the
+ * same Success Focus duration throughout success_focus).
+ *
+ * The completedRef guard is this hook's own idempotency guard for the
+ * sound/notification-cancel side effect specifically -- separate from,
+ * and in addition to, TimerRun.completedAt (the durable, cross-mount/
+ * cross-launch guard other reconciliation paths would check).
+ */
+function useTimerRun(
+  timerType: TimerType,
+  copy: ArcStageCopy,
+  durationMinutes: number | null,
+  resumedRun?: TimerRun | null
+): { status: ActionTimerStatus; actionStartedAt: string } {
+  const [runId] = useState(() => resumedRun?.runId ?? generateTimerRunId());
+  const [actionStartedAt] = useState(() => resumedRun?.actionStartedAt ?? new Date().toISOString());
+  const notificationIdRef = useRef<string | null>(resumedRun?.notificationId ?? null);
+  const completedRef = useRef(resumedRun?.completedAt !== null && resumedRun?.completedAt !== undefined);
+
+  useEffect(() => {
+    if (resumedRun) return; // Already persisted (and possibly already notified) by the original run -- never create a second run/notification for a resume.
+    const baseRun: TimerRun = {
+      timerType,
+      runId,
+      actionStartedAt,
+      durationMinutes,
+      copyTitle: copy.title,
+      copyBody: copy.body,
+      notificationId: null,
+      completedAt: null,
+    };
+    saveTimerRun(baseRun); // Persisted immediately, before the notification round-trip below resolves.
+    if (durationMinutes !== null) {
+      const endTime = new Date(new Date(actionStartedAt).getTime() + durationMinutes * 60_000);
+      scheduleTimerCompletionNotification({ timerType, runId, endTime, title: copy.title }).then((notificationId) => {
+        notificationIdRef.current = notificationId;
+        saveTimerRun({ ...baseRun, notificationId });
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const now = useNow();
+  const status = getActionTimerStatusFromStartedAt(actionStartedAt, durationMinutes, now);
+
+  useEffect(() => {
+    if (!status.complete || completedRef.current) return;
+    completedRef.current = true;
+    playTimerCompletionSound();
+    cancelScheduledNotification(notificationIdRef.current);
+    saveTimerRun({
+      timerType,
+      runId,
+      actionStartedAt,
+      durationMinutes,
+      copyTitle: copy.title,
+      copyBody: copy.body,
+      notificationId: notificationIdRef.current,
+      completedAt: new Date().toISOString(),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.complete]);
+
+  return { status, actionStartedAt };
 }
 
 const SCALE_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -539,40 +636,30 @@ export function ActionPreparationScreen({ copy, onContinue }: { copy: ArcStageCo
  * arc/actionTimer.ts), so "עשיתי את זה" stays enabled with no forced
  * wait, identical to this screen's behavior before this feature existed.
  *
- * The Action Timer is anchored to an absolute actionStartedAt timestamp,
- * not to this component's mount time: captured once (lazily, on first
- * render) and persisted immediately via data/storage.ts's
- * saveActiveActionTimer, so remaining/complete is always recomputed as
- * "now minus actionStartedAt" -- correct whether "now" arrives from a
- * live tick, after the JS thread was suspended while the app was
- * backgrounded or the phone was locked, or after live/LiveSessionScreen.tsx
- * resumes this same screen following a navigate-away, an app relaunch,
- * or any other remount. resumedStartedAt lets that resume path hand back
- * the ORIGINAL anchor instead of starting a new one.
+ * This is the Beneficial Action Timer (see data/storage.ts's TimerRun
+ * doc) -- timerType "beneficialAction". Timed via the shared
+ * useTimerRun hook: anchored to an absolute actionStartedAt timestamp,
+ * not to this component's mount time, so remaining/complete is always
+ * recomputed as "now minus actionStartedAt" -- correct whether "now"
+ * arrives from a live tick, after the JS thread was suspended while
+ * the app was backgrounded or the phone was locked, or after
+ * live/LiveSessionScreen.tsx resumes this same screen following a
+ * navigate-away, an app relaunch, or any other remount. resumedRun
+ * lets that resume path hand back the ORIGINAL run (anchor, runId,
+ * notification id, completion state) instead of starting a new one.
  */
 export function ActionScreen({
   copy,
   durationMinutes,
-  resumedStartedAt,
+  resumedRun,
   onCompleted,
 }: {
   copy: ArcStageCopy;
   durationMinutes: number | null;
-  resumedStartedAt?: string;
+  resumedRun?: TimerRun | null;
   onCompleted: () => void;
 }) {
-  const [actionStartedAt] = useState(() => resumedStartedAt ?? new Date().toISOString());
-  useEffect(() => {
-    // Written once, right when the actual Action begins (or re-affirmed,
-    // harmlessly, on a resume) -- copy/durationMinutes are stable for the
-    // rest of "performing" (see resolveActPhase's doc), so there is
-    // nothing later to react to here.
-    saveActiveActionTimer({ actionStartedAt, durationMinutes, copyTitle: copy.title, copyBody: copy.body });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const now = useNow();
-  const status = getActionTimerStatusFromStartedAt(actionStartedAt, durationMinutes, now);
+  const { status } = useTimerRun("beneficialAction", copy, durationMinutes, resumedRun);
   return (
     <View>
       <Title copy={copy} />
@@ -582,8 +669,24 @@ export function ActionScreen({
   );
 }
 
+/**
+ * Success Focus / Success Coding -- the same existing stage/data model,
+ * now extended with a timer (timerType "successCoding") rather than a
+ * new duplicate concept. Unlike the Negative Action Timer, this one
+ * starts automatically the moment the stage is entered (no explicit
+ * "begin" button), mirroring the Beneficial Action Timer's own
+ * auto-start once its preceding sub-phase completes. successFocusDuration
+ * === null (the default for every existing profile -- there is no
+ * BUILD UI for it yet, same as actionDuration before it) means the
+ * timer resolves as immediately complete, so this screen's existing
+ * psychological content -- the minutes-focused chip picker and
+ * reinforcement text -- is reached exactly as before this feature
+ * existed, with nothing new gating it.
+ */
 export function SuccessFocusScreen({
   copy,
+  durationMinutes,
+  resumedRun,
   minutesOptions,
   selectedMinutes,
   onSelectMinutes,
@@ -591,12 +694,25 @@ export function SuccessFocusScreen({
   onContinue,
 }: {
   copy: ArcStageCopy;
+  durationMinutes: number | null;
+  resumedRun?: TimerRun | null;
   minutesOptions: number[];
   selectedMinutes: number | null;
   onSelectMinutes: (minutes: number) => void;
   reinforcementText: string;
   onContinue: () => void;
 }) {
+  const { status } = useTimerRun("successCoding", copy, durationMinutes, resumedRun);
+
+  if (!status.complete) {
+    return (
+      <View>
+        <Title copy={copy} />
+        <Text style={styles.body}>{formatRemainingTime(status.remainingSeconds)}</Text>
+      </View>
+    );
+  }
+
   return (
     <View>
       <Title copy={copy} />
@@ -614,6 +730,67 @@ export function SuccessFocusScreen({
           <PrimaryButton label="המשך" onPress={onContinue} />
         </View>
       )}
+    </View>
+  );
+}
+
+/**
+ * The trainee's predefined negative/interfering action (copy.body
+ * already names it, from profile.habit -- never re-asked here), timed
+ * to a shrinking allowance the current program week permits (see
+ * program/engine.ts's resolveNegativeActionDuration). Unlike the
+ * Beneficial Action and Success Focus timers, this one requires an
+ * explicit "begin" tap before it starts -- state.negativeActionStarted
+ * (arc/types.ts) is what the caller uses to decide which of these two
+ * views to render (see live/ArcLiveRenderer.tsx's "negative_action"
+ * case); this component itself only ever renders the "started, timing"
+ * view, so its own useTimerRun call only ever happens once negativeAction
+ * Started is already true. timerType "negativeAction" -- its own
+ * independent persisted run, isolated from the other two timer types.
+ */
+export function NegativeActionScreen({
+  copy,
+  durationMinutes,
+  resumedRun,
+  onCompleted,
+}: {
+  copy: ArcStageCopy;
+  durationMinutes: number | null;
+  resumedRun?: TimerRun | null;
+  onCompleted: () => void;
+}) {
+  const { status } = useTimerRun("negativeAction", copy, durationMinutes, resumedRun);
+  return (
+    <View>
+      <Title copy={copy} />
+      {durationMinutes !== null && <Text style={styles.body}>{formatRemainingTime(status.remainingSeconds)}</Text>}
+      <PrimaryButton label="המשך" onPress={onCompleted} disabled={!status.complete} />
+    </View>
+  );
+}
+
+/**
+ * The negative_action stage's pre-start screen: shows the predefined
+ * negative action + its currently-permitted duration (already resolved
+ * by the caller -- see NegativeActionScreen's doc on why the duration
+ * itself isn't computed inside arc/stageCopy.ts) and a single explicit
+ * button to begin the timer -- required by spec, unlike the other two
+ * timers' auto-start.
+ */
+export function NegativeActionStartScreen({
+  copy,
+  durationMinutes,
+  onStart,
+}: {
+  copy: ArcStageCopy;
+  durationMinutes: number | null;
+  onStart: () => void;
+}) {
+  return (
+    <View>
+      <Title copy={copy} />
+      {durationMinutes !== null && <Text style={styles.body}>{`הזמן המותר: ${durationMinutes} דקות.`}</Text>}
+      <PrimaryButton label="התחל" onPress={onStart} />
     </View>
   );
 }

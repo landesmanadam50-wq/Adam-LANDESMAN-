@@ -40,6 +40,7 @@ import {
   applyActionImageryCompleted,
   applyActionPreparationCompleted,
   applyAlternativeAction,
+  applyNegativeActionStarted,
   applyPlannedActionConfirmed,
   applyScaleAnswer,
   applySensationAnswer,
@@ -76,6 +77,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
     successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
     ...overrides,
   };
 }
@@ -422,6 +424,18 @@ test("31. a fresh session starts with both act-phase flags false -- Imagery/Prep
   const state = createEmptyLiveState();
   assert.equal(state.actionImageryCompleted, false);
   assert.equal(state.actionPreparationCompleted, false);
+});
+
+test("32. applyNegativeActionStarted marks the Negative Action Timer started and touches nothing else", () => {
+  const before = createEmptyLiveState();
+  const after = applyNegativeActionStarted(before);
+  assert.equal(after.negativeActionStarted, true);
+  assert.equal(after.currentArcStage, before.currentArcStage, "the ArcStage itself is never advanced by this call");
+  assert.equal(after.realActionCompleted, before.realActionCompleted, "the Beneficial Action's own completion flag is untouched");
+});
+
+test("33. a fresh session starts with negativeActionStarted false -- the Negative Action Timer never auto-starts", () => {
+  assert.equal(createEmptyLiveState().negativeActionStarted, false);
 });
 
 // --- first stage sanity ---

@@ -49,7 +49,10 @@
  *            -> desired_state_check -> classified by getProactiveStage():
  *                 regulate -> regulate -> desired_state_check (re-check, capped)
  *                 encode   -> encode
- *     -> encode -> act -> success_focus -> complete
+ *     -> encode -> act -> success_focus
+ *          -> negative_action (only when needsNegativeAction: habit
+ *             layer active AND profile.habit configured) -> complete
+ *          -> complete (otherwise, unchanged)
  */
 
 import {
@@ -356,6 +359,24 @@ export function resolveActionDuration(selectedActionDuration: number | null, pro
 }
 
 // ---------------------------------------------------------------------------
+// Negative Action -- the predefined interfering/negative behavior being
+// gradually reduced, shown after Success Focus per the Beneficial
+// Action -> Success Focus -> Negative Action sequence
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the negative_action stage is relevant for this session at
+ * all: only when the habit layer is active AND the trainee has a
+ * predefined negative/interfering action configured (profile.habit).
+ * Every other session (habit layer never active this program, or
+ * simply not yet mapped) goes straight from success_focus to complete,
+ * exactly as it always has -- see getNextArcStage's "success_focus" case.
+ */
+export function needsNegativeAction(activeLayers: DevelopmentLayer[], profile: ArcBuildProfile): boolean {
+  return activeLayers.includes("habit") && profile.habit !== null;
+}
+
+// ---------------------------------------------------------------------------
 // Preventive action -- resolved per-target, surfaced before ARC Thought
 // ---------------------------------------------------------------------------
 
@@ -523,6 +544,13 @@ export function getNextArcStage(
     case "act":
       return result("success_focus", state.loopIterationCount);
     case "success_focus":
+      // Beneficial Action -> Success Focus -> Negative Action: only
+      // inserted when the habit layer is active and a predefined
+      // negative/interfering action is actually configured -- every
+      // other session continues straight to complete, exactly as
+      // before this stage existed. See needsNegativeAction.
+      return result(needsNegativeAction(activeLayers, profile) ? "negative_action" : "complete", state.loopIterationCount);
+    case "negative_action":
       return result("complete", state.loopIterationCount);
     case "complete":
       return result("complete", state.loopIterationCount);

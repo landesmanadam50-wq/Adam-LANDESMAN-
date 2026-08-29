@@ -18,14 +18,21 @@
  * confirmed real action -- an abandoned session never reaches that call.
  *
  * One narrow, explicit exception to "never resumes a stale session":
- * a real timed Action already in progress. data/storage.ts's
- * ActiveActionTimer durably anchors that one screen (actionStartedAt,
- * plus a snapshot of its exact display text) so the Action Timer itself
- * survives navigating away and back, the app backgrounding/locking, or
- * a full close/reopen -- see resumedAction below and
+ * a real timer already in progress -- the Beneficial Action Timer
+ * ("act"'s "performing" sub-phase), the Success Focus / Success Coding
+ * Timer, or the Negative Action Timer. Each is its own independently
+ * persisted data/storage.ts TimerRun (actionStartedAt, plus a snapshot
+ * of its exact display text), so any ONE of them surviving navigating
+ * away and back, the app backgrounding/locking, or a full close/reopen
+ * is a narrow, explicit exception to "session state is never
+ * persisted" -- see the three resumedXRun states below and
  * arc/actionTimer.ts's getActionTimerStatusFromStartedAt. Nothing else
  * about the session (ratings, encoding text, routing) is reconstructed
  * or persisted; every other stage still starts over exactly as before.
+ * At most one of the three timer types is ever actually running at a
+ * time (they're sequential, and each is cleared the moment its stage
+ * is left -- see commitAdvance), so finding one during resume is
+ * unambiguous.
  */
 
 import { useCallback, useState } from "react";
@@ -37,7 +44,7 @@ import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "
 import { createEmptyLiveState } from "../arc/types.ts";
 import { getFirstArcStage } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
-import type { ArcStageCopy } from "../arc/stageCopy.ts";
+import { getProgramDefinition, resolveNegativeActionDuration } from "../program/engine.ts";
 import {
   loadProfile,
   loadProgramProgress,
@@ -45,9 +52,10 @@ import {
   saveProgramProgress,
   appendSessionLogEntry,
   updateLastSessionLogEntryGratitude,
-  loadActiveActionTimer,
-  clearActiveActionTimer,
+  loadTimerRun,
+  clearTimerRun,
 } from "../data/storage.ts";
+import type { TimerRun } from "../data/storage.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
@@ -56,6 +64,7 @@ import {
   applyActionImageryCompleted,
   applyActionPreparationCompleted,
   applyAlternativeAction,
+  applyNegativeActionStarted,
   applyPlannedActionConfirmed,
   applyRegulationToolUsed,
   applyScaleAnswer,
@@ -70,15 +79,10 @@ import { getAvailableLiveTriggers } from "../arc/arcEngine.ts";
 import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
 import { ActionScreen } from "./screens.tsx";
 
-interface ResumedAction {
-  actionStartedAt: string;
-  durationMinutes: number | null;
-  copy: ArcStageCopy;
-}
-
 export default function LiveSessionScreen() {
   const [profile, setProfile] = useState<ArcBuildProfile | null>(null);
   const [activeLayers, setActiveLayers] = useState<DevelopmentLayer[]>([]);
+  const [currentProgramWeek, setCurrentProgramWeek] = useState(1);
   const [session, setSession] = useState<ArcLiveState>(() => createEmptyLiveState());
   const [stage, setStage] = useState<ArcStage>("trigger_selection");
   const [pendingSensationLocation, setPendingSensationLocation] = useState("");
@@ -89,7 +93,15 @@ export default function LiveSessionScreen() {
   const [successFocusMinutes, setSuccessFocusMinutes] = useState<number | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
   const [gratitudeText, setGratitudeText] = useState("");
-  const [resumedAction, setResumedAction] = useState<ResumedAction | null>(null);
+  // Resumed timer runs -- see this file's module doc. At most one is
+  // ever non-null at a time. resumedBeneficialActionRun bypasses the
+  // normal render pipeline entirely (below); the other two flow
+  // through the normal ArcLiveRenderer pipeline instead, since
+  // success_focus/negative_action's copy never depends on
+  // triggerType/selectedTarget/selectedAction the way "act"'s does.
+  const [resumedBeneficialActionRun, setResumedBeneficialActionRun] = useState<TimerRun | null>(null);
+  const [resumedSuccessCodingRun, setResumedSuccessCodingRun] = useState<TimerRun | null>(null);
+  const [resumedNegativeActionRun, setResumedNegativeActionRun] = useState<TimerRun | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -97,42 +109,80 @@ export default function LiveSessionScreen() {
       // loadProgramSelection() is loaded for completeness (per the LIVE
       // load contract) even though today's routing only needs
       // activeLayers, which loadProgramProgress() already derives from
-      // ProgramDefinition -- see program/engine.ts. loadActiveActionTimer()
-      // is the one exception to "always start fresh" -- see this file's
-      // module doc and ResumedAction above.
-      Promise.all([loadProfile(), loadProgramProgress(), loadProgramSelection(), loadActiveActionTimer()]).then(
-        ([loadedProfile, loadedProgress, , activeActionTimer]) => {
-          if (cancelled) return;
-          if (!loadedProfile || !loadedProgress) {
-            router.replace("/build");
-            return;
-          }
-          setProfile(loadedProfile);
-          setActiveLayers(loadedProgress.activeLayers);
-          setPendingSensationLocation("");
-          setPendingCustomSensationLocation("");
-          setPendingSensationLocationUnclear(false);
-          setPendingAlternativeAction("");
-          setPendingAlternativeActionDuration(null);
-          setSuccessFocusMinutes(null);
-          setGratitudeText("");
-
-          if (activeActionTimer) {
-            setResumedAction({
-              actionStartedAt: activeActionTimer.actionStartedAt,
-              durationMinutes: activeActionTimer.durationMinutes,
-              copy: { title: activeActionTimer.copyTitle, body: activeActionTimer.copyBody, segments: null },
-            });
-            setSessionStartedAt(activeActionTimer.actionStartedAt);
-            return;
-          }
-
-          setResumedAction(null);
-          setSession(createEmptyLiveState());
-          setStage(getFirstArcStage());
-          setSessionStartedAt(new Date().toISOString());
+      // ProgramDefinition -- see program/engine.ts. The three
+      // loadTimerRun() calls are the one exception to "always start
+      // fresh" -- see this file's module doc.
+      Promise.all([
+        loadProfile(),
+        loadProgramProgress(),
+        loadProgramSelection(),
+        loadTimerRun("beneficialAction"),
+        loadTimerRun("successCoding"),
+        loadTimerRun("negativeAction"),
+      ]).then(([loadedProfile, loadedProgress, , beneficialActionRun, successCodingRun, negativeActionRun]) => {
+        if (cancelled) return;
+        if (!loadedProfile || !loadedProgress) {
+          router.replace("/build");
+          return;
         }
-      );
+        setProfile(loadedProfile);
+        setActiveLayers(loadedProgress.activeLayers);
+        setCurrentProgramWeek(loadedProgress.currentProgramWeek);
+        setPendingSensationLocation("");
+        setPendingCustomSensationLocation("");
+        setPendingSensationLocationUnclear(false);
+        setPendingAlternativeAction("");
+        setPendingAlternativeActionDuration(null);
+        setSuccessFocusMinutes(null);
+        setGratitudeText("");
+
+        if (beneficialActionRun) {
+          setResumedBeneficialActionRun(beneficialActionRun);
+          setResumedSuccessCodingRun(null);
+          setResumedNegativeActionRun(null);
+          setSessionStartedAt(beneficialActionRun.actionStartedAt);
+          return;
+        }
+
+        if (successCodingRun) {
+          setResumedBeneficialActionRun(null);
+          setResumedSuccessCodingRun(successCodingRun);
+          setResumedNegativeActionRun(null);
+          setSessionStartedAt(successCodingRun.actionStartedAt);
+          // Rejoins the normal pipeline at success_focus, the same
+          // stage the unconditional act -> success_focus transition
+          // would have already reached. actionReached/realActionCompleted
+          // are asserted true because success_focus is only reachable
+          // after "act" genuinely completed -- Training Day credit
+          // stays correct if this resumed session goes on to complete.
+          setSession({ ...createEmptyLiveState(), currentArcStage: "success_focus", actionReached: true, realActionCompleted: true });
+          setStage("success_focus");
+          return;
+        }
+
+        if (negativeActionRun) {
+          setResumedBeneficialActionRun(null);
+          setResumedSuccessCodingRun(null);
+          setResumedNegativeActionRun(negativeActionRun);
+          setSessionStartedAt(negativeActionRun.actionStartedAt);
+          setSession({
+            ...createEmptyLiveState(),
+            currentArcStage: "negative_action",
+            negativeActionStarted: true,
+            actionReached: true,
+            realActionCompleted: true,
+          });
+          setStage("negative_action");
+          return;
+        }
+
+        setResumedBeneficialActionRun(null);
+        setResumedSuccessCodingRun(null);
+        setResumedNegativeActionRun(null);
+        setSession(createEmptyLiveState());
+        setStage(getFirstArcStage());
+        setSessionStartedAt(new Date().toISOString());
+      });
       return () => {
         cancelled = true;
       };
@@ -164,12 +214,15 @@ export default function LiveSessionScreen() {
   const commitAdvance = (patchedSession: ArcLiveState) => {
     if (!profile) return;
     const { session: nextSession, stage: nextStage } = advanceLiveSession(stage, patchedSession, profile, activeLayers);
-    if (stage === "act" && nextStage !== "act") {
-      // The only way out of "act" is the real Action actually completing
-      // (see arc/arcEngine.ts's unconditional act -> success_focus
-      // transition) -- the persisted anchor's job is done.
-      clearActiveActionTimer();
-    }
+    // Each timer's persisted run is cleared the moment its own stage is
+    // left -- the only way out of any of the three is its real activity
+    // actually completing (act -> success_focus, success_focus ->
+    // negative_action/complete, negative_action -> complete are all
+    // unconditional in arc/arcEngine.ts once reached). Never clears a
+    // DIFFERENT timer type's run.
+    if (stage === "act" && nextStage !== "act") clearTimerRun("beneficialAction");
+    if (stage === "success_focus" && nextStage !== "success_focus") clearTimerRun("successCoding");
+    if (stage === "negative_action" && nextStage !== "negative_action") clearTimerRun("negativeAction");
     setSession(nextSession);
     setStage(nextStage);
     setPendingSensationLocation("");
@@ -192,12 +245,16 @@ export default function LiveSessionScreen() {
     const trimmedGratitude = gratitudeText.trim();
     updateLastSessionLogEntryGratitude(trimmedGratitude.length > 0 ? trimmedGratitude : null);
 
-    // Defensive: by the time restart() is reachable the Action Timer's
-    // anchor should already be cleared (commitAdvance clears it the
-    // moment "act" is left), but never let a stale one leak into the
-    // next session regardless.
-    clearActiveActionTimer();
-    setResumedAction(null);
+    // Defensive: by the time restart() is reachable every timer's
+    // anchor should already be cleared (commitAdvance clears each one
+    // the moment its own stage is left), but never let a stale one
+    // leak into the next session regardless.
+    clearTimerRun("beneficialAction");
+    clearTimerRun("successCoding");
+    clearTimerRun("negativeAction");
+    setResumedBeneficialActionRun(null);
+    setResumedSuccessCodingRun(null);
+    setResumedNegativeActionRun(null);
     setSession(createEmptyLiveState());
     setStage(getFirstArcStage());
     setPendingSensationLocation("");
@@ -218,26 +275,27 @@ export default function LiveSessionScreen() {
     );
   }
 
-  // A real timed Action was already in progress when this screen
-  // (re)gained focus -- render it directly from the persisted anchor,
-  // bypassing the normal stage-routing pipeline entirely. There is no
-  // faithfully-reconstructed ArcLiveState to hand back into
+  // A real Beneficial Action Timer was already in progress when this
+  // screen (re)gained focus -- render it directly from the persisted
+  // run, bypassing the normal stage-routing pipeline entirely. There is
+  // no faithfully-reconstructed ArcLiveState to hand back into
   // getStageCopy/ArcLiveRenderer (triggerType, selectedTarget, and the
   // rest were never persisted, by design -- see this file's module
   // doc), so this uses the exact display snapshot instead, and only
   // rejoins the normal flow once the trainee actually completes it.
-  if (resumedAction) {
+  if (resumedBeneficialActionRun) {
+    const run = resumedBeneficialActionRun;
     return (
       <SafeAreaView style={styles.safeArea}>
-        <Stack.Screen options={{ title: `ARCHI LIVE — ${resumedAction.copy.title}` }} />
+        <Stack.Screen options={{ title: `ARCHI LIVE — ${run.copyTitle}` }} />
         <ScrollView contentContainerStyle={styles.content}>
           <ActionScreen
-            copy={resumedAction.copy}
-            durationMinutes={resumedAction.durationMinutes}
-            resumedStartedAt={resumedAction.actionStartedAt}
+            copy={{ title: run.copyTitle, body: run.copyBody, segments: null }}
+            durationMinutes={run.durationMinutes}
+            resumedRun={run}
             onCompleted={() => {
-              clearActiveActionTimer();
-              setResumedAction(null);
+              clearTimerRun("beneficialAction");
+              setResumedBeneficialActionRun(null);
               // Rejoins the normal flow at success_focus -- the same
               // stage the unconditional act -> success_focus transition
               // would have reached anyway (arc/arcEngine.ts). Neither
@@ -262,6 +320,11 @@ export default function LiveSessionScreen() {
 
   const copy = getStageCopy(stage, profile, session, activeLayers);
   const availableTriggers = getAvailableLiveTriggers(activeLayers);
+  const negativeActionDurationMinutes = resolveNegativeActionDuration(
+    currentProgramWeek,
+    getProgramDefinition(profile.programPath),
+    profile.negativeActionBaseDurationMinutes
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -323,6 +386,11 @@ export default function LiveSessionScreen() {
           onActionCompleted={() => commitAdvance(applyActionCompletion(session, true))}
           onSelectSuccessFocusMinutes={(minutes) => setSuccessFocusMinutes(minutes)}
           onSuccessFocusContinue={() => commitAdvance(session)}
+          resumedSuccessCodingRun={resumedSuccessCodingRun}
+          negativeActionDurationMinutes={negativeActionDurationMinutes}
+          onNegativeActionStart={() => setSession(applyNegativeActionStarted(session))}
+          onNegativeActionCompleted={() => commitAdvance(session)}
+          resumedNegativeActionRun={resumedNegativeActionRun}
           gratitudeText={gratitudeText}
           onChangeGratitudeText={setGratitudeText}
           onRestart={restart}

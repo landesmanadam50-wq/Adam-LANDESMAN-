@@ -165,6 +165,16 @@ export function applyActionPreparationCompleted(session: ArcLiveState): ArcLiveS
 }
 
 /**
+ * The negative_action stage's explicit "begin" button: only marks the
+ * Negative Action Timer as started -- never advances the ArcStage
+ * itself (that stays "negative_action" until the trainee confirms
+ * after the timer actually completes, mirroring applyActionCompletion).
+ */
+export function applyNegativeActionStarted(session: ArcLiveState): ArcLiveState {
+  return { ...session, negativeActionStarted: true };
+}
+
+/**
  * When a proactive session lands on desired_state_check with no target
  * chosen yet and exactly one target is available, pick it automatically
  * instead of prompting for a choice with only one option. More than one

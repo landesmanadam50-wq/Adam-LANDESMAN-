@@ -21,7 +21,6 @@ const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
 const PROGRAM_PROGRESS_KEY = "archi.programProgress.v2";
 const SESSION_LOG_KEY = "archi.sessionLog.v1";
 const PILOT_STARTED_AT_KEY = "archi.pilotStartedAt.v1";
-const ACTIVE_ACTION_TIMER_KEY = "archi.activeActionTimer.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -132,38 +131,66 @@ export async function getOrCreatePilotStartedAt(): Promise<string> {
 }
 
 /**
- * The one durable record for an in-progress timed Action -- deliberately
- * its own key, separate from both PROFILE_KEY (persistent BUILD data,
- * e.g. the planned action/duration -- never touched by this) and
+ * The shared timer-persistence model behind all three of ARCHI's real
+ * timed activities -- the Beneficial Action Timer ("act"'s "performing"
+ * sub-phase), the Success Focus / Success Coding Timer, and the
+ * Negative Action Timer. Each TimerType gets its OWN storage key
+ * (timerRunKey below), so the three timers can never read, overwrite,
+ * or complete one another -- starting a new Negative Action Timer run
+ * cannot touch a Beneficial Action run's record, even if one happened
+ * to still exist. This is deliberately its own storage category,
+ * separate from both PROFILE_KEY (persistent BUILD data -- e.g. the
+ * planned action/duration/base allowance -- never touched by this) and
  * ArcLiveState (session-only, never persisted -- see
- * live/LiveSessionScreen.tsx's module doc). This is a narrow, explicit
- * exception to "session state is never persisted": its only purpose is
- * letting the Action Timer survive navigating away from LIVE, the app
- * backgrounding/locking, or a full close/reopen, per arc/actionTimer.ts's
- * getActionTimerStatusFromStartedAt. actionStartedAt is the absolute
- * anchor everything is recomputed from; copyTitle/copyBody are a
- * snapshot of the exact "performing" screen text at the moment the
- * Action began, so resuming shows the same action/cue the trainee
- * actually started with rather than re-deriving it from a necessarily
- * incomplete reconstructed session.
+ * live/LiveSessionScreen.tsx's module doc): a narrow, explicit
+ * exception to "session state is never persisted," whose only purpose
+ * is letting a real timer survive navigating away from LIVE, the app
+ * backgrounding/locking, or a full close/reopen, per
+ * arc/actionTimer.ts's getActionTimerStatusFromStartedAt.
+ *
+ * actionStartedAt is the absolute anchor everything is recomputed
+ * from; copyTitle/copyBody are a snapshot of the exact screen text at
+ * the moment the timer began, so resuming shows the same action/cue
+ * the trainee actually started with rather than re-deriving it from a
+ * necessarily incomplete reconstructed session. runId distinguishes
+ * this specific timer run from any other (past or future) run of the
+ * same timerType -- e.g. so a stale notification from an earlier
+ * Negative Action Timer run can never be mistaken for completing a
+ * newer one. notificationId is the scheduled local notification this
+ * run owns (see data/notifications.ts), cancelled once completion is
+ * handled so it can never fire a redundant/delayed completion signal.
+ * completedAt is the idempotency guard: null until completion has
+ * actually been processed (sound played, notification cancelled) --
+ * once set, it is never processed a second time for this run.
  */
-export interface ActiveActionTimer {
+export type TimerType = "beneficialAction" | "successCoding" | "negativeAction";
+
+export interface TimerRun {
+  timerType: TimerType;
+  runId: string;
   actionStartedAt: string;
   durationMinutes: number | null;
   copyTitle: string;
   copyBody: string;
+  notificationId: string | null;
+  completedAt: string | null;
 }
 
-export async function loadActiveActionTimer(): Promise<ActiveActionTimer | null> {
-  const raw = await AsyncStorage.getItem(ACTIVE_ACTION_TIMER_KEY);
-  return raw ? (JSON.parse(raw) as ActiveActionTimer) : null;
+function timerRunKey(timerType: TimerType): string {
+  return `archi.timerRun.v1.${timerType}`;
 }
 
-export async function saveActiveActionTimer(timer: ActiveActionTimer): Promise<void> {
-  await AsyncStorage.setItem(ACTIVE_ACTION_TIMER_KEY, JSON.stringify(timer));
+export async function loadTimerRun(timerType: TimerType): Promise<TimerRun | null> {
+  const raw = await AsyncStorage.getItem(timerRunKey(timerType));
+  return raw ? (JSON.parse(raw) as TimerRun) : null;
 }
 
-/** Called once the timed Action is actually completed (or a brand-new session explicitly restarts) -- never on a routine LIVE-screen focus, which is exactly the event this record needs to survive. */
-export async function clearActiveActionTimer(): Promise<void> {
-  await AsyncStorage.removeItem(ACTIVE_ACTION_TIMER_KEY);
+/** Persists (or re-persists, e.g. once a notificationId or completedAt is resolved) this timer's current run -- always keyed by its own timerType, so this can never overwrite a different timer type's record. */
+export async function saveTimerRun(run: TimerRun): Promise<void> {
+  await AsyncStorage.setItem(timerRunKey(run.timerType), JSON.stringify(run));
+}
+
+/** Called once a timer's real activity is actually completed and acknowledged (or a brand-new session explicitly restarts) -- never on a routine LIVE-screen focus, which is exactly the event this record needs to survive. Only ever clears the ONE named timerType's record. */
+export async function clearTimerRun(timerType: TimerType): Promise<void> {
+  await AsyncStorage.removeItem(timerRunKey(timerType));
 }

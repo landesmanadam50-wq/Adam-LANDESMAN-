@@ -23,6 +23,7 @@ import {
   resolveActPhase,
 } from "../arc/arcEngine.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
+import type { TimerRun } from "../data/storage.ts";
 import {
   AcceptScreen,
   ActionChoiceScreen,
@@ -33,6 +34,8 @@ import {
   DesiredStateRatingScreen,
   EncodingScreen,
   InstructionScreen,
+  NegativeActionScreen,
+  NegativeActionStartScreen,
   PresenceRatingScreen,
   PreventiveActionCheckScreen,
   ProactiveTargetScreen,
@@ -87,6 +90,11 @@ export interface ArcLiveRendererProps {
   onActionCompleted: () => void;
   onSelectSuccessFocusMinutes: (minutes: number) => void;
   onSuccessFocusContinue: () => void;
+  resumedSuccessCodingRun: TimerRun | null;
+  negativeActionDurationMinutes: number | null;
+  onNegativeActionStart: () => void;
+  onNegativeActionCompleted: () => void;
+  resumedNegativeActionRun: TimerRun | null;
   gratitudeText: string;
   onChangeGratitudeText: (text: string) => void;
   onRestart: () => void;
@@ -222,13 +230,26 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       // Preparation never call, since the timer must never start before
       // this phase.
       const durationMinutes = resolveActionDuration(session.selectedActionDuration, profile);
+      // resumedRun is never passed here: a resumed Beneficial Action
+      // Timer bypasses ArcLiveRenderer entirely (see
+      // live/LiveSessionScreen.tsx's module doc) since reconstructing
+      // this specific copy's triggerType/selectedTarget/selectedAction
+      // with full fidelity isn't reliably possible -- the resume path
+      // renders ActionScreen directly, from the persisted copy snapshot.
       return <ActionScreen copy={copy} durationMinutes={durationMinutes} onCompleted={props.onActionCompleted} />;
     }
 
     case "success_focus":
+      // Unlike "act"'s Beneficial Action Timer, this stage's copy never
+      // depends on triggerType/selectedTarget/selectedAction -- so a
+      // resumed run can safely flow through the normal pipeline here
+      // (see live/LiveSessionScreen.tsx's resume handling), rather than
+      // needing its own bypass.
       return (
         <SuccessFocusScreen
           copy={copy}
+          durationMinutes={profile.successFocusDuration}
+          resumedRun={props.resumedSuccessCodingRun}
           minutesOptions={SUCCESS_FOCUS_MINUTES}
           selectedMinutes={props.successFocusMinutes}
           onSelectMinutes={props.onSelectSuccessFocusMinutes}
@@ -236,6 +257,35 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           onContinue={props.onSuccessFocusContinue}
         />
       );
+
+    case "negative_action": {
+      // The trainee's own predefined negative/interfering action
+      // (profile.habit, via copy) -- see arc/arcEngine.ts's
+      // needsNegativeAction for when this stage is even reached, and
+      // arc/types.ts's ArcLiveState.negativeActionStarted for why this
+      // stage (unlike Beneficial Action/Success Focus) needs an
+      // explicit "begin" screen: the Negative Action Timer never
+      // auto-starts. Same resume reasoning as success_focus: this
+      // stage's copy never depends on triggerType/selectedTarget/
+      // selectedAction, so a resumed run flows through normally.
+      if (!session.negativeActionStarted) {
+        return (
+          <NegativeActionStartScreen
+            copy={copy}
+            durationMinutes={props.negativeActionDurationMinutes}
+            onStart={props.onNegativeActionStart}
+          />
+        );
+      }
+      return (
+        <NegativeActionScreen
+          copy={copy}
+          durationMinutes={props.negativeActionDurationMinutes}
+          resumedRun={props.resumedNegativeActionRun}
+          onCompleted={props.onNegativeActionCompleted}
+        />
+      );
+    }
 
     case "complete":
       return (
