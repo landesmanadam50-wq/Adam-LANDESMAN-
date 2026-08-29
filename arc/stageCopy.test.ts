@@ -237,3 +237,90 @@ test("desired_state_check (Proactive) never requires an Interfering State to be 
   assert.ok(!copy.body.includes("ביקורת עצמית"));
   assert.equal(containsInductionPattern(copy.body), false);
 });
+
+// --- Encode resolves the Body-Language cue from the CURRENT selected
+// target's own ARC Map (Focus/state vs Discipline/identity), never the
+// other one's -- the second half of the BUILD-ARC multi-target bug:
+// LIVE must retrieve each target's own cue, and never invent one when
+// a target genuinely has none configured.
+
+function twoTargetProfile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
+  return profile({
+    supportiveState: "מיקוד", // Focus
+    desiredIdentity: "משמעת עצמית", // Discipline
+    stateEncoding: { target: "מיקוד", bodySensationCue: null, breathCue: null, bodyLanguageCue: "עיניים פקוחות וממוקדות", mantra: "אני ממוקד" },
+    identityEncoding: { target: "משמעת עצמית", bodySensationCue: null, breathCue: null, bodyLanguageCue: "שמור את הראש ישר ויציב", mantra: "אני ממושמע בפעולותיי" },
+    regulationTool: "כלי הוויסות",
+    ...overrides,
+  });
+}
+
+test("encode retrieves the Focus (state) Body-Language cue and mantra when the state target is active -- never Discipline's", () => {
+  const p = twoTargetProfile();
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "state" }), ["state", "identity"]);
+  assert.match(copy.body, /עיניים פקוחות וממוקדות/, "must resolve Focus's own body-language cue");
+  assert.match(copy.body, /אני ממוקד/, "must resolve Focus's own mantra");
+  assert.ok(!copy.body.includes("שמור את הראש ישר ויציב"), "must not leak Discipline's body-language cue");
+  assert.ok(!copy.body.includes("אני ממושמע בפעולותיי"), "must not leak Discipline's mantra");
+});
+
+test("encode retrieves the Discipline (identity) Body-Language cue and mantra when the identity target is active -- never Focus's", () => {
+  const p = twoTargetProfile();
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
+  assert.match(copy.body, /שמור את הראש ישר ויציב/, "must resolve Discipline's own body-language cue");
+  assert.match(copy.body, /אני ממושמע בפעולותיי/, "must resolve Discipline's own mantra");
+  assert.ok(!copy.body.includes("עיניים פקוחות וממוקדות"), "must not leak Focus's body-language cue");
+  assert.ok(!copy.body.includes("אני ממוקד"), "must not leak Focus's mantra");
+});
+
+test("encode's Body-Language cue appears before the matching Identity/Mantra, for either target", () => {
+  const p = twoTargetProfile();
+
+  const stateCopy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "state" }), ["state", "identity"]);
+  const stateCueIndex = stateCopy.body.indexOf("עיניים פקוחות וממוקדות");
+  const stateMantraIndex = stateCopy.body.indexOf("אני ממוקד");
+  assert.ok(stateCueIndex >= 0 && stateMantraIndex >= 0 && stateCueIndex < stateMantraIndex, "Focus: body-language cue must precede the mantra");
+
+  const identityCopy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
+  const identityCueIndex = identityCopy.body.indexOf("שמור את הראש ישר ויציב");
+  const identityMantraIndex = identityCopy.body.indexOf("אני ממושמע בפעולותיי");
+  assert.ok(
+    identityCueIndex >= 0 && identityMantraIndex >= 0 && identityCueIndex < identityMantraIndex,
+    "Discipline: body-language cue must precede the mantra"
+  );
+});
+
+test("encode preserves the full order for both targets: updated sensation -> maintain regulation -> body-language cue -> identity/mantra", () => {
+  const p = twoTargetProfile();
+  for (const selectedTarget of ["state", "identity"] as const) {
+    const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget }), ["state", "identity"]);
+    const sensationIndex = copy.body.indexOf("שים לב לתחושה שלך עכשיו");
+    const regulationIndex = copy.body.indexOf("המשך עם כלי הוויסות");
+    const cueIndex = selectedTarget === "state" ? copy.body.indexOf("עיניים פקוחות וממוקדות") : copy.body.indexOf("שמור את הראש ישר ויציב");
+    const mantraIndex = selectedTarget === "state" ? copy.body.indexOf("אני ממוקד") : copy.body.indexOf("אני ממושמע בפעולותיי");
+    assert.ok(sensationIndex === 0, `${selectedTarget}: sensation notice must come first`);
+    assert.ok(regulationIndex > sensationIndex, `${selectedTarget}: regulation must follow the sensation notice`);
+    assert.ok(cueIndex > regulationIndex, `${selectedTarget}: body-language cue must follow regulation`);
+    assert.ok(mantraIndex > cueIndex, `${selectedTarget}: identity/mantra must follow the body-language cue`);
+  }
+});
+
+test("Discipline (identity) with NO Body-Language cue configured falls back to a generic transition -- it never invents a specific cue, and never borrows Focus's", () => {
+  const p = twoTargetProfile({
+    identityEncoding: { target: "משמעת עצמית", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "אני ממושמע בפעולותיי" },
+  });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
+  assert.ok(!copy.body.includes("עיניים פקוחות וממוקדות"), "must not borrow Focus's body-language cue");
+  assert.ok(!copy.body.includes("שמור את"), "must not invent a specific body-language instruction that was never configured");
+  assert.match(copy.body, /אני ממושמע בפעולותיי/, "the configured mantra still comes through");
+});
+
+test("editing Focus's Body-Language cue in the underlying data never changes what Discipline's encode copy resolves, and vice versa", () => {
+  const base = twoTargetProfile();
+  const focusEdited = twoTargetProfile({
+    stateEncoding: { ...base.stateEncoding!, bodyLanguageCue: "כתפיים משוחררות" },
+  });
+  const disciplineCopyBefore = getStageCopy("encode", base, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
+  const disciplineCopyAfter = getStageCopy("encode", focusEdited, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
+  assert.equal(disciplineCopyBefore.body, disciplineCopyAfter.body, "changing Focus's cue must not change Discipline's resolved encode copy");
+});

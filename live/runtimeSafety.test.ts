@@ -224,6 +224,49 @@ test("a full reactive_emotion session, walked end to end through the real engine
   assert.ok(encodeCopy?.body.includes("כתפיים משוחררות"), "Encoding is where the Desired State's encoding cue is intentionally introduced");
 });
 
+test("a reactive_emotion session targeting the IDENTITY layer (Discipline), walked end to end through the real engine, resolves Discipline's own Body-Language cue and mantra -- never Focus's (state's)", () => {
+  // Two independently mapped targets on the same profile -- Focus
+  // (state) and Discipline (identity) -- exactly the BUILD-ARC
+  // multi-target scenario. This session explicitly targets identity
+  // (selectedTarget), the real per-target ARC Map bug's regression.
+  const p = profile({
+    supportiveState: "מיקוד", // Focus
+    desiredIdentity: "משמעת עצמית", // Discipline
+    stateEncoding: { target: "מיקוד", bodySensationCue: null, breathCue: null, bodyLanguageCue: "עיניים פקוחות וממוקדות", mantra: "אני ממוקד" },
+    identityEncoding: { target: "משמעת עצמית", bodySensationCue: null, breathCue: null, bodyLanguageCue: "שמור את הראש ישר ויציב", mantra: "אני ממושמע בפעולותיי" },
+  });
+  const activeLayers: DevelopmentLayer[] = ["state", "identity", "habit"];
+  let state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion", selectedTarget: "identity" };
+  let stage = getFirstArcStage();
+
+  let iterations = 0;
+  while (stage !== "encode" && iterations < 30) {
+    if (stage === "presence_check" || stage === "arc_thought_presence_recheck") {
+      state = { ...state, presenceRating: 3 };
+    }
+    if (stage === "sensation_check") {
+      state = { ...state, sensationLocation: "חזה", sensationIntensity: 5 }; // routes through regulate
+    }
+    const next = getNextArcStage(stage, state, p);
+    stage = next.stage;
+    state = { ...state, loopIterationCount: next.loopIterationCount };
+    iterations++;
+  }
+  assert.equal(stage, "encode", "sanity: the walk must actually reach encode");
+
+  // The exact call LiveSessionScreen.tsx makes.
+  const copy = getStageCopy(stage, p, state, activeLayers);
+  assert.match(copy.body, /שמור את הראש ישר ויציב/, "must resolve Discipline's own body-language cue via the real engine/selectedTarget path");
+  assert.match(copy.body, /אני ממושמע בפעולותיי/, "must resolve Discipline's own mantra");
+  assert.ok(!copy.body.includes("עיניים פקוחות וממוקדות"), "must not leak Focus's (state's) body-language cue");
+  assert.ok(!copy.body.includes("אני ממוקד"), "must not leak Focus's (state's) mantra");
+
+  const cueIndex = copy.body.indexOf("שמור את הראש ישר ויציב");
+  const mantraIndex = copy.body.indexOf("אני ממושמע בפעולותיי");
+  assert.ok(cueIndex >= 0 && mantraIndex >= 0 && cueIndex < mantraIndex, "Discipline's body-language cue must precede its mantra");
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
 test("a full proactive session, walked end to end through the real engine, consumes the mapped Desired State/Challenge Context and never requires or references an Interfering State", () => {
   const p = profile({
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
