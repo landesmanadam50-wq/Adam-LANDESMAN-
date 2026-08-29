@@ -26,8 +26,13 @@ import { Platform } from "react-native";
 import type { TimerType } from "./storage.ts";
 
 const ANDROID_CHANNEL_ID = "archi-timer-completions";
-/** Matches the sound file name after expo-notifications' config plugin (app.json) copies assets/sounds/timer-complete.wav into the native project. */
-const TIMER_COMPLETION_SOUND_FILE = "timer-complete.wav";
+/**
+ * Matches the sound file name after expo-notifications' config plugin
+ * (app.json) copies assets/sounds/timer_complete.wav into the native
+ * project. Underscore, not hyphen: Android resource names can't
+ * contain hyphens, and expo-notifications validates this at Prebuild.
+ */
+const TIMER_COMPLETION_SOUND_FILE = "timer_complete.wav";
 
 let handlerConfigured = false;
 

@@ -7,7 +7,7 @@
  * app is foregrounded -- see arc/actionTimer.ts and live/screens.tsx.
  * Deliberately its own tiny module, architecturally separate from any
  * future background music, meditation audio, instruction voice/TTS, or
- * ambient audio: this file only ever plays assets/sounds/timer-complete.wav,
+ * ambient audio: this file only ever plays assets/sounds/timer_complete.wav,
  * a single short chime, and nothing else.
  *
  * mixWithOthers + shouldPlayInBackground: false is deliberate -- this
@@ -26,7 +26,7 @@
 
 import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 
-const TIMER_COMPLETION_SOUND = require("../assets/sounds/timer-complete.wav");
+const TIMER_COMPLETION_SOUND = require("../assets/sounds/timer_complete.wav");
 
 let audioModeConfigured = false;
 
