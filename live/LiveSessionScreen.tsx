@@ -40,6 +40,8 @@ import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
   advanceLiveSession,
   applyActionCompletion,
+  applyActionImageryCompleted,
+  applyActionPreparationCompleted,
   applyAlternativeAction,
   applyPlannedActionConfirmed,
   applyRegulationToolUsed,
@@ -225,6 +227,8 @@ export default function LiveSessionScreen() {
             setPendingAlternativeAction("");
             setPendingAlternativeActionDuration(null);
           }}
+          onActionImageryContinue={() => setSession(applyActionImageryCompleted(session))}
+          onActionPreparationContinue={() => setSession(applyActionPreparationCompleted(session))}
           onActionCompleted={() => commitAdvance(applyActionCompletion(session, true))}
           onSelectSuccessFocusMinutes={(minutes) => setSuccessFocusMinutes(minutes)}
           onSuccessFocusContinue={() => commitAdvance(session)}

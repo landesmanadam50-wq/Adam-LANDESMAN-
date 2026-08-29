@@ -167,6 +167,18 @@ export interface ArcLiveState {
   selectedActionDuration: number | null;
   /** Set once the trainee confirms they'll perform the planned/mapped action as-is (the "כן" branch of the Action-choice screen) -- distinct from selectedAction being null, which alone would be ambiguous between "not yet asked" and "asked, planned action confirmed". */
   plannedActionConfirmed: boolean;
+  /**
+   * Session-only flags gating the "act" stage's Imagery and Preparation
+   * sub-phases -- see arc/arcEngine.ts's resolveActPhase, which stays at
+   * "imagery" until this is true, then "preparation" until that one is,
+   * then "performing" (the actual timed Action; see arc/actionTimer.ts).
+   * Both false by default; never persisted to ArcBuildProfile, and never
+   * read by resolveActionDuration or the Action Timer itself -- they only
+   * sequence which screen shows next within "act", the same ArcStage
+   * value throughout (no new ArcStage was added).
+   */
+  actionImageryCompleted: boolean;
+  actionPreparationCompleted: boolean;
 
   acceptanceNeeded: boolean | null;
   regulationReady: boolean | null;
@@ -198,6 +210,8 @@ export function createEmptyLiveState(): ArcLiveState {
     selectedAction: null,
     selectedActionDuration: null,
     plannedActionConfirmed: false,
+    actionImageryCompleted: false,
+    actionPreparationCompleted: false,
     acceptanceNeeded: null,
     regulationReady: null,
     regulationNeeded: false,

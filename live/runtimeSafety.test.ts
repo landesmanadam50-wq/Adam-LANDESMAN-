@@ -134,6 +134,8 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
   }
   assert.deepEqual(Object.keys(state).sort(), [
     "acceptanceNeeded",
+    "actionImageryCompleted",
+    "actionPreparationCompleted",
     "actionReached",
     "activeTools",
     "arcThoughtCompleted",
@@ -402,9 +404,21 @@ test("a reactive_urge session, walked to 'act' through the real engine, that cho
   const nextAfterChoice = getNextArcStage(stage, state, p, activeLayers);
   assert.equal(nextAfterChoice.stage, "success_focus");
 
+  const imageryCopy = getStageCopy(stage, p, state, activeLayers);
+  assert.match(imageryCopy.body, /דמיין את עצמך מבצע עכשיו את 5 דקות תרגילים בבית\./, "Action Imagery uses the alternative currentAction");
+  assert.ok(!imageryCopy.body.includes("לצאת להליכה של 20 דקות"), "the original planned action is never imagined once an alternative is chosen");
+  assert.ok(!imageryCopy.body.includes("משך הפעולה"), "the Action Timer's duration is not named yet during Imagery -- it hasn't started");
+  assert.equal(containsInductionPattern(imageryCopy.body), false);
+
+  // Imagery -> Preparation -> the actual timed Action, same currentAction throughout.
+  state = { ...state, actionImageryCompleted: true };
+  const preparationCopy = getStageCopy(stage, p, state, activeLayers);
+  assert.ok(!preparationCopy.body.includes("דמיין"), "Action Preparation does not repeat the Imagery sentence");
+
+  state = { ...state, actionPreparationCompleted: true };
   const resolvedCopy = getStageCopy(stage, p, state, activeLayers);
-  assert.match(resolvedCopy.body, /דמיין את עצמך מבצע עכשיו את 5 דקות תרגילים בבית\./, "Action Imagery uses the alternative currentAction");
-  assert.ok(!resolvedCopy.body.includes("לצאת להליכה של 20 דקות"), "the original planned action is never imagined once an alternative is chosen");
+  assert.ok(!resolvedCopy.body.includes("דמיין"), "the actual Action screen no longer shows the Imagery sentence");
+  assert.match(resolvedCopy.body, /עכשיו הזמן: 5 דקות תרגילים בבית\./, "the actual Action names the resolved alternative currentAction");
   assert.match(resolvedCopy.body, /משך הפעולה: 5 דקות\./, "the Action Timer uses the alternative's own duration, not the BUILD one");
   assert.equal(containsInductionPattern(resolvedCopy.body), false);
 

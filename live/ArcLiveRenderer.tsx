@@ -17,14 +17,17 @@ import { getStageCopy, getYesNoLabels } from "../arc/stageCopy.ts";
 import {
   getAvailableProactiveTargets,
   getAvailableReactiveExperiences,
-  needsCurrentActionResolution,
   needsProactiveTargetSelection,
   needsReactiveStateSelection,
+  resolveActionDuration,
+  resolveActPhase,
 } from "../arc/arcEngine.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
 import {
   AcceptScreen,
   ActionChoiceScreen,
+  ActionImageryScreen,
+  ActionPreparationScreen,
   ActionScreen,
   CompleteScreen,
   DesiredStateRatingScreen,
@@ -79,6 +82,8 @@ export interface ArcLiveRendererProps {
   onChangeAlternativeAction: (text: string) => void;
   onSelectAlternativeActionDuration: (minutes: number) => void;
   onSubmitAlternativeAction: () => void;
+  onActionImageryContinue: () => void;
+  onActionPreparationContinue: () => void;
   onActionCompleted: () => void;
   onSelectSuccessFocusMinutes: (minutes: number) => void;
   onSuccessFocusContinue: () => void;
@@ -119,7 +124,13 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
     case "arc_thought_combined_attention":
     case "arc_thought_expand_presence":
     case "preventive_action":
-      return <InstructionScreen copy={copy} onContinue={props.onGenericContinue} />;
+      // key={stage}: these four adjacent stages all render this same
+      // InstructionScreen component -- without a key that changes per
+      // stage, React would reuse the same instance across the
+      // transition and its internal elapsed-time clock (useElapsedSeconds,
+      // in live/screens.tsx) would keep running instead of resetting.
+      // See arc/instructionTiming.ts's module doc, #9/#12.
+      return <InstructionScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
     case "preventive_action_check":
       return <PreventiveActionCheckScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
@@ -144,7 +155,7 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
     }
 
     case "stay":
-      return <StayScreen copy={copy} onContinue={props.onGenericContinue} />;
+      return <StayScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
     case "accept":
       return <AcceptScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
@@ -153,7 +164,7 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       return <TransitionCheckScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
 
     case "regulate":
-      return <RegulationScreen copy={copy} onContinue={props.onRegulateContinue} />;
+      return <RegulationScreen key={stage} copy={copy} onContinue={props.onRegulateContinue} />;
 
     case "desired_state_check": {
       if (needsProactiveTargetSelection(session.triggerType, activeLayers, profile, session.selectedTarget)) {
@@ -164,14 +175,25 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
     }
 
     case "encode":
-      return <EncodingScreen copy={copy} onContinue={props.onGenericContinue} />;
+      return <EncodingScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
     case "act": {
-      // Action-choice interstitial: stays at "act" (same pattern as
-      // trigger_selection's reactive chooser / desired_state_check's
-      // proactive-target picker) while currentAction hasn't been
-      // resolved yet for this session -- see needsCurrentActionResolution.
-      if (needsCurrentActionResolution(session.plannedActionConfirmed, session.selectedAction)) {
+      // Which of the "act" stage's four sub-phases to show -- same
+      // "stay at this ArcStage, render a conditional interstitial"
+      // pattern as trigger_selection's reactive chooser /
+      // desired_state_check's proactive-target picker, extended to a
+      // fixed one-directional sequence. See arc/arcEngine.ts's
+      // resolveActPhase doc. Each sub-phase is a distinct component, so
+      // switching between them already remounts (resetting any timing
+      // state) with no explicit key needed here.
+      const actPhase = resolveActPhase(
+        session.plannedActionConfirmed,
+        session.selectedAction,
+        session.actionImageryCompleted,
+        session.actionPreparationCompleted
+      );
+
+      if (actPhase === "choice") {
         return (
           <ActionChoiceScreen
             copy={copy}
@@ -185,7 +207,22 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           />
         );
       }
-      return <ActionScreen copy={copy} onCompleted={props.onActionCompleted} />;
+
+      if (actPhase === "imagery") {
+        return <ActionImageryScreen copy={copy} onContinue={props.onActionImageryContinue} />;
+      }
+
+      if (actPhase === "preparation") {
+        return <ActionPreparationScreen copy={copy} onContinue={props.onActionPreparationContinue} />;
+      }
+
+      // actPhase === "performing": the actual timed Action. The Action
+      // Timer's duration is resolved independently of `copy` (which only
+      // carries display text) -- the same resolver Encoding/Imagery/
+      // Preparation never call, since the timer must never start before
+      // this phase.
+      const durationMinutes = resolveActionDuration(session.selectedActionDuration, profile);
+      return <ActionScreen copy={copy} durationMinutes={durationMinutes} onCompleted={props.onActionCompleted} />;
     }
 
     case "success_focus":

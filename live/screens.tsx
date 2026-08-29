@@ -10,12 +10,36 @@
  * rule. Those all live in arc/arcEngine.ts and arc/engine.ts.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
+import { getInstructionTimingStatus } from "../arc/instructionTiming.ts";
+import { formatRemainingTime, getActionTimerStatus } from "../arc/actionTimer.ts";
+
+/**
+ * Live elapsed-seconds clock, started fresh on mount (never on a prop
+ * change) -- pairing this with `key={...}` at the call site (see
+ * live/ArcLiveRenderer.tsx) is what makes "reset on entering a new
+ * timed screen" (#9, #12) hold: a remount is the reset, so there's no
+ * stale dwell time to carry over from whatever was shown before. Shared
+ * by both the instruction-timing screens (via TimedInstructionBody) and
+ * ActionScreen's separate Action Timer -- each call site gets its own
+ * independent clock instance, never a shared one.
+ */
+function useElapsedSeconds(): number {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    const startedAt = Date.now();
+    const interval = setInterval(() => {
+      setElapsedSeconds((Date.now() - startedAt) / 1000);
+    }, 250);
+    return () => clearInterval(interval);
+  }, []);
+  return elapsedSeconds;
+}
 
 const SCALE_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
@@ -40,11 +64,60 @@ function ScaleButtons({ onSelect }: { onSelect: (value: number) => void }) {
   );
 }
 
-function PrimaryButton({ label, onPress }: { label: string; onPress: () => void }) {
+function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
   return (
-    <Pressable style={[styles.button, styles.fullWidthButton]} onPress={onPress}>
+    <Pressable
+      style={[styles.button, styles.fullWidthButton, disabled && styles.buttonDisabled]}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
+    >
       <Text style={styles.buttonText}>{label}</Text>
     </Pressable>
+  );
+}
+
+/**
+ * Shared renderer for every progressive timed-instruction screen
+ * (the ARC Thought sub-stages, Stay/Presence, Regulation, Encoding,
+ * plus the "act" stage's Imagery and Preparation sub-phases): when
+ * copy.segments is null, behaves
+ * exactly like the old immediate-Continue InstructionScreen (unchanged
+ * backward-compatible fallback for every screen the timed-reveal system
+ * doesn't apply to); when segments are present, reveals them
+ * cumulatively via getInstructionTimingStatus and disables Continue
+ * until the full sequence's minimum practice time has elapsed (#4) --
+ * a visible countdown is intentionally not shown here, matching this
+ * app's existing plain-text-forward style (only the real Action Timer,
+ * in ActionScreen below, shows a live remaining-time readout).
+ */
+function TimedInstructionBody({
+  copy,
+  onContinue,
+  continueLabel = "המשך",
+}: {
+  copy: ArcStageCopy;
+  onContinue: () => void;
+  continueLabel?: string;
+}) {
+  const elapsedSeconds = useElapsedSeconds();
+
+  if (!copy.segments) {
+    return (
+      <View>
+        <Title copy={copy} />
+        <PrimaryButton label={continueLabel} onPress={onContinue} />
+      </View>
+    );
+  }
+
+  const status = getInstructionTimingStatus(copy.segments, elapsedSeconds);
+  const visibleText = status.visibleSegments.map((segment) => segment.text).join(" ");
+  return (
+    <View>
+      <Text style={styles.title}>{copy.title}</Text>
+      {visibleText.length > 0 && <Text style={styles.body}>{visibleText}</Text>}
+      <PrimaryButton label={continueLabel} onPress={onContinue} disabled={!status.complete} />
+    </View>
   );
 }
 
@@ -128,12 +201,7 @@ export function PresenceRatingScreen({ copy, onSelect }: { copy: ArcStageCopy; o
 }
 
 export function InstructionScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinue: () => void }) {
-  return (
-    <View>
-      <Title copy={copy} />
-      <PrimaryButton label="המשך" onPress={onContinue} />
-    </View>
-  );
+  return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
 }
 
 export function PreventiveActionCheckScreen({
@@ -245,12 +313,7 @@ export function SensationRatingScreen({
 }
 
 export function StayScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinue: () => void }) {
-  return (
-    <View>
-      <Title copy={copy} />
-      <PrimaryButton label="המשך" onPress={onContinue} />
-    </View>
-  );
+  return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
 }
 
 export function AcceptScreen({
@@ -288,12 +351,7 @@ export function TransitionCheckScreen({
 }
 
 export function RegulationScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinue: () => void }) {
-  return (
-    <View>
-      <Title copy={copy} />
-      <PrimaryButton label="המשך" onPress={onContinue} />
-    </View>
-  );
+  return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
 }
 
 export function ProactiveTargetScreen({
@@ -327,12 +385,7 @@ export function DesiredStateRatingScreen({ copy, onSelect }: { copy: ArcStageCop
 }
 
 export function EncodingScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinue: () => void }) {
-  return (
-    <View>
-      <Title copy={copy} />
-      <PrimaryButton label="המשך" onPress={onContinue} />
-    </View>
-  );
+  return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
 }
 
 const ALTERNATIVE_ACTION_VALIDATION_MESSAGE = "יש להזין פעולה חלופית ולבחור משך זמן לפני שממשיכים.";
@@ -428,11 +481,58 @@ export function ActionChoiceScreen({
   );
 }
 
-export function ActionScreen({ copy, onCompleted }: { copy: ArcStageCopy; onCompleted: () => void }) {
+/**
+ * Action Imagery: currentAction, imagined while maintaining the same
+ * Body-Language Cue carried over from Encoding -- copy.segments already
+ * contains that single, configured-duration segment (see
+ * arc/stageCopy.ts's "act" case). This is instruction-practice time
+ * only; the real Action Timer hasn't started (see ActionScreen below).
+ */
+export function ActionImageryScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinue: () => void }) {
+  return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
+}
+
+/**
+ * Action Preparation: a short reminder to carry the SAME Body-Language
+ * Cue into the real behavior -- skips cleanly (empty segments, no
+ * forced wait) when the current target has no cue configured, per
+ * arc/stageCopy.ts's "act" case. Continue reads "עכשיו בצע את הפעולה"
+ * here rather than the generic "המשך", since it's also the trigger
+ * into the actual timed Action -- the Action Timer only starts once
+ * this fires (see ActionScreen below; never during this screen itself).
+ */
+export function ActionPreparationScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinue: () => void }) {
+  return <TimedInstructionBody copy={copy} onContinue={onContinue} continueLabel="עכשיו בצע את הפעולה" />;
+}
+
+/**
+ * The actual timed Action -- reached only once Imagery and Preparation
+ * are both done (see arc/arcEngine.ts's resolveActPhase). durationMinutes
+ * is the resolved actionDuration for whichever action is currently
+ * active (the planned action's configured duration, or the alternative
+ * action's own session-specific one -- see arc/arcEngine.ts's
+ * resolveActionDuration), read independently of copy since ArcStageCopy
+ * only carries display text. null means no duration was ever configured
+ * -- the Action Timer resolves as immediately complete (see
+ * arc/actionTimer.ts), so "עשיתי את זה" stays enabled with no forced
+ * wait, identical to this screen's behavior before this feature existed.
+ */
+export function ActionScreen({
+  copy,
+  durationMinutes,
+  onCompleted,
+}: {
+  copy: ArcStageCopy;
+  durationMinutes: number | null;
+  onCompleted: () => void;
+}) {
+  const elapsedSeconds = useElapsedSeconds();
+  const status = getActionTimerStatus(durationMinutes, elapsedSeconds);
   return (
     <View>
       <Title copy={copy} />
-      <PrimaryButton label="עשיתי את זה" onPress={onCompleted} />
+      {durationMinutes !== null && <Text style={styles.body}>{formatRemainingTime(status.remainingSeconds)}</Text>}
+      <PrimaryButton label="עשיתי את זה" onPress={onCompleted} disabled={!status.complete} />
     </View>
   );
 }
@@ -567,6 +667,9 @@ const styles = StyleSheet.create({
   },
   fullWidthButton: {
     marginTop: 4,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
   },
   textInput: {
     borderWidth: 1,

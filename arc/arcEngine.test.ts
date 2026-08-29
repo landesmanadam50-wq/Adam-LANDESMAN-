@@ -10,6 +10,7 @@ import {
   getFirstArcStage,
   getNextArcStage,
   needsReactiveStateSelection,
+  resolveActPhase,
   resolveEncodingRegulationCue,
   resolveEncodingTarget,
   resolveLiveRoute,
@@ -574,4 +575,34 @@ test("resolveEncodingTarget: currentAction becomes the alternative action once s
   });
   assert.equal(resolved.actionLabel, "לעשות 5 דקות תרגילים בבית", "currentAction is the alternative");
   assert.equal(p.internalAction, "לצאת להליכה של 20 דקות", "the planned/BUILD action itself is untouched");
+});
+
+// --- resolveActPhase: the "act" stage's four sub-phases, in their
+// fixed, one-directional order -- see arc/instructionTiming.ts and
+// arc/actionTimer.ts for why Imagery/Preparation timing and the actual
+// Action Timer must stay explicitly separate concepts.
+
+test("resolveActPhase stays at 'choice' until currentAction is resolved", () => {
+  assert.equal(resolveActPhase(false, null, false, false), "choice");
+  assert.equal(resolveActPhase(false, null, true, true), "choice", "not yet resolved, even if the later flags are somehow set");
+});
+
+test("resolveActPhase moves to 'imagery' once currentAction is resolved (planned confirmed)", () => {
+  assert.equal(resolveActPhase(true, null, false, false), "imagery");
+});
+
+test("resolveActPhase moves to 'imagery' once currentAction is resolved (a valid alternative was entered)", () => {
+  assert.equal(resolveActPhase(false, "חלופה", false, false), "imagery");
+});
+
+test("resolveActPhase moves to 'preparation' only once Action Imagery is completed", () => {
+  assert.equal(resolveActPhase(true, null, true, false), "preparation");
+});
+
+test("resolveActPhase moves to 'performing' only once both Action Imagery and Action Preparation are completed", () => {
+  assert.equal(resolveActPhase(true, null, true, true), "performing");
+});
+
+test("resolveActPhase never skips a phase: Preparation completed alone (Imagery not) still stays at 'imagery'", () => {
+  assert.equal(resolveActPhase(true, null, false, true), "imagery");
 });

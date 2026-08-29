@@ -313,6 +313,36 @@ export function needsCurrentActionResolution(plannedActionConfirmed: boolean, se
   return !plannedActionConfirmed && selectedAction === null;
 }
 
+export type ActPhase = "choice" | "imagery" | "preparation" | "performing";
+
+/**
+ * Which of the "act" stage's four sub-phases to show, mirroring
+ * needsCurrentActionResolution's "stay at this ArcStage, render a
+ * conditional interstitial" pattern -- no new ArcStage was added for
+ * any of these. Order is fixed and one-directional (never a way back):
+ *
+ *   choice      -- currentAction not yet resolved (needsCurrentActionResolution).
+ *   imagery     -- currentAction resolved, Action Imagery not yet completed.
+ *   preparation -- Imagery completed, Action Preparation not yet completed.
+ *   performing  -- both completed: the actual timed Action (arc/actionTimer.ts)
+ *                  is the only thing left before "act" advances to "success_focus".
+ *
+ * The Action Timer never starts before "performing" is reached -- see
+ * arc/actionTimer.ts's module doc and live/screens.tsx's ActionScreen,
+ * which is the only screen that reads a duration for actual timing.
+ */
+export function resolveActPhase(
+  plannedActionConfirmed: boolean,
+  selectedAction: string | null,
+  actionImageryCompleted: boolean,
+  actionPreparationCompleted: boolean
+): ActPhase {
+  if (needsCurrentActionResolution(plannedActionConfirmed, selectedAction)) return "choice";
+  if (!actionImageryCompleted) return "imagery";
+  if (!actionPreparationCompleted) return "preparation";
+  return "performing";
+}
+
 /**
  * Resolves the action duration actually in effect for this session: a
  * session-specific alternative's own duration when one was set
