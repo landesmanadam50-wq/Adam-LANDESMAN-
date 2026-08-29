@@ -8,25 +8,36 @@
  * the same ArcBuildProfile, the same ProfileDraft shape, and the same
  * step-machinery pattern below (a fixed step order, a "should this
  * step show" gate, a "walk to the next visible step" function) --
- * just two different step-order arrays (GOAL_STEP_ORDER /
- * ARC_STEP_ORDER) and two different completeness checks
- * (isGoalDraftComplete / isArcDraftComplete) over that one shape.
+ * just different step-order arrays and completeness checks over that
+ * one shape.
  *
  * BUILD-GOAL defines the positive direction only -- Goal -> Desired
  * Habit -> Identity -> Desired State -- plus the needs-assessment
  * questions (needsState / needsIdentityImmediately / needsIdentity)
  * that feed program/selection.ts's resolveCurrentPreset (how
  * programPath gets assigned) and the general-purpose fields every
- * trainee needs regardless of which ARC Map ends up mapped
+ * trainee needs regardless of which ARC Map(s) end up mapped
  * (preventiveAction, regulationTool -- see the design note on
  * GOAL_STEP_ORDER below for why these stay in GOAL rather than ARC).
  *
- * BUILD-ARC creates the ARC Map around the Desired State BUILD-GOAL
- * already established: Challenge Context, Interfering State, and the
- * state-layer's Encoding cues (mantra + body-language). It is reached
- * separately, after BUILD-GOAL, and never re-asks the Desired State --
- * ARC_STEP_ORDER only ever edits the interferingState/challengeContext/
- * stateEncoding fields of the same profile GOAL already saved.
+ * BUILD-ARC creates an ARC Map around a Desired State BUILD-GOAL
+ * already established. A trainee can have UP TO TWO independently
+ * mappable targets -- the state layer's Desired State (supportiveState)
+ * and the identity layer's Desired Identity (desiredIdentity), e.g. a
+ * "Focus" state map and a separate "Discipline" identity map on an
+ * advanced_2_week (2-week) program where both layers are active
+ * together from week 1. STATE_ARC_STEP_ORDER and IDENTITY_ARC_STEP_ORDER
+ * are the same shape (Challenge Context -> Interfering State -> Encoding
+ * cues) over two parallel field sets on the one ProfileDraft --
+ * challengeContext/interferingState/stateMantra/stateBodyLanguageCue
+ * for state, identityChallengeContext/identityInterferingEmotion/
+ * identityMantra/identityBodyLanguageCue for identity -- never two
+ * copies of the same target, never a shared field two targets fight
+ * over. build/ArcMapScreen.tsx is responsible for offering a target
+ * picker whenever both are available, and for never discarding one
+ * target's fields while saving the other's (both live on the one
+ * `draft` object the whole screen session, so buildProfileFromDraft
+ * always writes both back, whichever one was just edited).
  *
  * identityAction was previously its own question ("מה הפעולה שמבטאת
  * את הזהות הזו?"), semantically duplicating beneficialAction ("מה
@@ -67,8 +78,6 @@ export type ProfileStep =
   | "needsIdentityImmediately"
   | "needsIdentityExplicit"
   | "desiredIdentity"
-  | "identityInterferingEmotion"
-  | "identityMantra"
   | "supportiveState"
   | "internalAction"
   | "preventiveActionAsk"
@@ -78,6 +87,10 @@ export type ProfileStep =
   | "interferingState"
   | "stateMantra"
   | "stateBodyLanguageCue"
+  | "identityChallengeContext"
+  | "identityInterferingEmotion"
+  | "identityMantra"
+  | "identityBodyLanguageCue"
   | "review";
 
 /**
@@ -88,9 +101,9 @@ export type ProfileStep =
  * (see the module doc): the engine uses regulationTool for every
  * "regulate" stage regardless of trigger, and preventiveAction
  * specifically for the reactive_habit route (arc/arcEngine.ts's
- * afterArcThought) -- neither is state-ARC-Map-exclusive, so a trainee
- * on a habit-only program (no state layer, never visits BUILD-ARC)
- * still needs to be able to set them.
+ * afterArcThought) -- neither is ARC-Map-exclusive, so a trainee on a
+ * habit-only program (no state or identity ARC Map, never visits
+ * BUILD-ARC) still needs to be able to set them.
  */
 export const GOAL_STEP_ORDER: ProfileStep[] = [
   "goal",
@@ -100,8 +113,6 @@ export const GOAL_STEP_ORDER: ProfileStep[] = [
   "needsIdentityImmediately",
   "needsIdentityExplicit",
   "desiredIdentity",
-  "identityInterferingEmotion",
-  "identityMantra",
   "supportiveState",
   "internalAction",
   "preventiveActionAsk",
@@ -110,13 +121,17 @@ export const GOAL_STEP_ORDER: ProfileStep[] = [
   "review",
 ];
 
-/**
- * BUILD-ARC's step order: Challenge Context -> Interfering State ->
- * Encoding cues (mantra, body-language) for the Desired State GOAL
- * already established. Never includes "supportiveState" itself --
- * BUILD-ARC references it, doesn't re-ask it.
- */
-export const ARC_STEP_ORDER: ProfileStep[] = ["challengeContext", "interferingState", "stateMantra", "stateBodyLanguageCue", "review"];
+/** BUILD-ARC's step order around the state layer's Desired State (supportiveState). Never re-asks supportiveState itself -- only references it. */
+export const STATE_ARC_STEP_ORDER: ProfileStep[] = ["challengeContext", "interferingState", "stateMantra", "stateBodyLanguageCue", "review"];
+
+/** BUILD-ARC's step order around the identity layer's Desired State (desiredIdentity) -- the second, independently editable ARC Map. Never re-asks desiredIdentity itself. */
+export const IDENTITY_ARC_STEP_ORDER: ProfileStep[] = [
+  "identityChallengeContext",
+  "identityInterferingEmotion",
+  "identityMantra",
+  "identityBodyLanguageCue",
+  "review",
+];
 
 export interface ProfileDraft {
   goal: string;
@@ -133,8 +148,10 @@ export interface ProfileDraft {
   stateBodyLanguageCue: string;
 
   desiredIdentity: string;
+  identityChallengeContext: string;
   identityInterferingEmotion: string;
   identityMantra: string;
+  identityBodyLanguageCue: string;
 
   habit: string;
   beneficialAction: string;
@@ -157,8 +174,10 @@ export function createEmptyDraft(): ProfileDraft {
     stateMantra: "",
     stateBodyLanguageCue: "",
     desiredIdentity: "",
+    identityChallengeContext: "",
     identityInterferingEmotion: "",
     identityMantra: "",
+    identityBodyLanguageCue: "",
     habit: "",
     beneficialAction: "",
     hasPreventiveAction: null,
@@ -196,8 +215,10 @@ export function draftFromProfileAndSelection(
     stateMantra: profile.stateEncoding?.mantra ?? "",
     stateBodyLanguageCue: profile.stateEncoding?.bodyLanguageCue ?? "",
     desiredIdentity: profile.desiredIdentity ?? "",
+    identityChallengeContext: profile.identityChallengeContext ?? "",
     identityInterferingEmotion: profile.identityInterferingEmotion ?? "",
     identityMantra: profile.identityEncoding?.mantra ?? "",
+    identityBodyLanguageCue: profile.identityEncoding?.bodyLanguageCue ?? "",
     habit: profile.habit ?? "",
     beneficialAction: profile.beneficialAction ?? "",
     hasPreventiveAction: profile.preventiveAction !== null,
@@ -225,8 +246,10 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
     case "stateBodyLanguageCue":
       return draft.needsState === true;
     case "desiredIdentity":
+    case "identityChallengeContext":
     case "identityInterferingEmotion":
     case "identityMantra":
+    case "identityBodyLanguageCue":
       return resolvesNeedsIdentity(draft);
     case "preventiveActionDescription":
       return draft.hasPreventiveAction === true;
@@ -260,7 +283,7 @@ export function getPreviousProfileStep(current: ProfileStep, draft: ProfileDraft
   return null;
 }
 
-/** BUILD-GOAL's own completeness check -- does not require any BUILD-ARC field (challengeContext/interferingState/stateMantra/stateBodyLanguageCue). */
+/** BUILD-GOAL's own completeness check -- does not require any BUILD-ARC field from either target's ARC Map. */
 export function isGoalDraftComplete(draft: ProfileDraft): boolean {
   if (draft.goal.trim().length === 0) return false;
   if (draft.needsState === null) return false;
@@ -274,7 +297,6 @@ export function isGoalDraftComplete(draft: ProfileDraft): boolean {
 
   if (resolvesNeedsIdentity(draft)) {
     if (draft.desiredIdentity.trim().length === 0) return false;
-    if (draft.identityInterferingEmotion.trim().length === 0) return false;
   }
 
   if (draft.habit.trim().length === 0) return false;
@@ -286,17 +308,25 @@ export function isGoalDraftComplete(draft: ProfileDraft): boolean {
 }
 
 /**
- * BUILD-ARC's own completeness check -- only meaningful once a Desired
- * State is active (needsState); vacuously complete otherwise, since
- * there's nothing to map. Requires Challenge Context and Interfering
- * State (the two recognition fields LIVE actually consumes); the
- * Encoding cues (stateMantra/stateBodyLanguageCue) stay optional, same
- * as mantras always have been.
+ * The state layer's ARC Map completeness check -- only meaningful once
+ * its Desired State is active (needsState); vacuously complete
+ * otherwise, since there's nothing to map. Requires Challenge Context
+ * and Interfering State (the two recognition fields LIVE actually
+ * consumes); the Encoding cues (stateMantra/stateBodyLanguageCue) stay
+ * optional, same as mantras always have been.
  */
-export function isArcDraftComplete(draft: ProfileDraft): boolean {
+export function isStateArcDraftComplete(draft: ProfileDraft): boolean {
   if (draft.needsState !== true) return true;
   if (draft.challengeContext.trim().length === 0) return false;
   if (draft.interferingState.trim().length === 0) return false;
+  return true;
+}
+
+/** The identity layer's own ARC Map completeness check -- parallel to isStateArcDraftComplete, independent of it (a trainee can complete one without the other). */
+export function isIdentityArcDraftComplete(draft: ProfileDraft): boolean {
+  if (!resolvesNeedsIdentity(draft)) return true;
+  if (draft.identityChallengeContext.trim().length === 0) return false;
+  if (draft.identityInterferingEmotion.trim().length === 0) return false;
   return true;
 }
 
@@ -332,15 +362,16 @@ export function selectionFromDraft(draft: ProfileDraft): ArcProgramSelection {
 }
 
 /**
- * Builds the full ArcBuildProfile from the full draft. Called by both
- * BUILD-GOAL's finish() (draft has only GOAL fields filled on a fresh
- * profile) and BUILD-ARC's finish() (draft was loaded from an already-
- * saved profile via draftFromProfileAndSelection, so GOAL's fields are
- * already present and pass through unchanged -- BUILD-ARC's screen
- * only ever lets the user edit the ARC_STEP_ORDER fields). Guarded by
- * isGoalDraftComplete only: BUILD-ARC fields being unfilled (a fresh
- * profile that hasn't visited BUILD-ARC yet) is expected and valid,
- * not an error.
+ * Builds the full ArcBuildProfile from the full draft. Called by
+ * BUILD-GOAL's finish() and by BUILD-ARC's finish() for EITHER target
+ * -- in every case the draft was loaded once (draftFromProfileAndSelection)
+ * and carries both ARC Maps' current fields together, so writing the
+ * full profile back here never discards the target that wasn't just
+ * edited: editing the state ("Focus") map leaves identityChallengeContext/
+ * identityInterferingEmotion/identityEncoding exactly as loaded, and
+ * vice versa. Guarded by isGoalDraftComplete only: either ARC Map
+ * being unfilled (never visited yet, or only one target mapped so far)
+ * is expected and valid, not an error.
  */
 export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
   if (!isGoalDraftComplete(draft) || draft.needsState === null) {
@@ -355,6 +386,7 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
   });
 
   const supportiveState = draft.needsState ? draft.supportiveState.trim() : null;
+  const desiredIdentity = needsIdentity ? draft.desiredIdentity.trim() : null;
 
   return {
     programPath,
@@ -366,18 +398,19 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     goal: draft.goal.trim(),
 
     // null (not "") until BUILD-ARC actually maps something -- a fresh
-    // BUILD-GOAL-only save has no ARC Map yet, which is expected and
-    // valid (LIVE's recognition preamble and Encoding both already
-    // treat a null/empty value as "nothing mapped").
+    // BUILD-GOAL-only save has no ARC Map yet for either target, which
+    // is expected and valid (LIVE's recognition preamble and Encoding
+    // both already treat a null/empty value as "nothing mapped").
     interferingState: draft.needsState && draft.interferingState.trim() ? draft.interferingState.trim() : null,
     supportiveState,
     challengeContext: draft.needsState && draft.challengeContext.trim() ? draft.challengeContext.trim() : null,
     stateEncoding: draft.needsState && supportiveState ? buildEncodingProfile(supportiveState, draft.stateMantra, draft.stateBodyLanguageCue) : null,
     internalAction: draft.needsState ? draft.internalAction.trim() : null,
 
-    desiredIdentity: needsIdentity ? draft.desiredIdentity.trim() : null,
-    identityInterferingEmotion: needsIdentity ? draft.identityInterferingEmotion.trim() : null,
-    identityEncoding: needsIdentity ? buildEncodingProfile(draft.desiredIdentity.trim(), draft.identityMantra, "") : null,
+    desiredIdentity,
+    identityChallengeContext: needsIdentity && draft.identityChallengeContext.trim() ? draft.identityChallengeContext.trim() : null,
+    identityInterferingEmotion: needsIdentity && draft.identityInterferingEmotion.trim() ? draft.identityInterferingEmotion.trim() : null,
+    identityEncoding: needsIdentity && desiredIdentity ? buildEncodingProfile(desiredIdentity, draft.identityMantra, draft.identityBodyLanguageCue) : null,
     // No longer its own question (see module doc): the identity layer's
     // action is the same Desired Habit as the habit layer's, not asked
     // twice.

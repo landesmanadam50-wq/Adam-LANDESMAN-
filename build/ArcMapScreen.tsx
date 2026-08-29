@@ -11,45 +11,97 @@ import {
   getFirstProfileStep,
   getNextProfileStep,
   getPreviousProfileStep,
-  isArcDraftComplete,
-  ARC_STEP_ORDER,
+  isIdentityArcDraftComplete,
+  isStateArcDraftComplete,
+  resolvesNeedsIdentity,
+  IDENTITY_ARC_STEP_ORDER,
+  STATE_ARC_STEP_ORDER,
   type ProfileDraft,
   type ProfileStep,
 } from "./profileWizard.ts";
 
-const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
+type ArcTarget = "state" | "identity";
+
+const STATE_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   challengeContext: "באילו מצבים המצב הרצוי הזה במיוחד רלוונטי? (הקשר האתגר)",
   interferingState: "מה נוטה להפריע למצב הרצוי הזה?",
   stateMantra: "יש לך מנטרה למצב הזה? (רשות)",
   stateBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך במצב הזה? (רשות, למשל כתפיים משוחררות)",
   review: "סיכום מפת ARC",
 };
-
-const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
+const STATE_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   challengeContext: "challengeContext",
   interferingState: "interferingState",
   stateMantra: "stateMantra",
   stateBodyLanguageCue: "stateBodyLanguageCue",
 };
+const STATE_OPTIONAL_STEPS: ProfileStep[] = ["stateMantra", "stateBodyLanguageCue"];
 
-const OPTIONAL_TEXT_STEPS: ProfileStep[] = ["stateMantra", "stateBodyLanguageCue"];
+const IDENTITY_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
+  identityChallengeContext: "באילו מצבים הזהות הרצויה הזו במיוחד רלוונטית? (הקשר האתגר)",
+  identityInterferingEmotion: "מה נוטה להפריע לזהות הזו?",
+  identityMantra: "יש לך מנטרה לזהות הזו? (רשות)",
+  identityBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך בזהות הזו? (רשות)",
+  review: "סיכום מפת ARC",
+};
+const IDENTITY_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
+  identityChallengeContext: "identityChallengeContext",
+  identityInterferingEmotion: "identityInterferingEmotion",
+  identityMantra: "identityMantra",
+  identityBodyLanguageCue: "identityBodyLanguageCue",
+};
+const IDENTITY_OPTIONAL_STEPS: ProfileStep[] = ["identityMantra", "identityBodyLanguageCue"];
 
-type ScreenStatus = "loading" | "noProfile" | "noDesiredState" | "ready";
+function stepOrderFor(target: ArcTarget): ProfileStep[] {
+  return target === "state" ? STATE_ARC_STEP_ORDER : IDENTITY_ARC_STEP_ORDER;
+}
+function stepTitlesFor(target: ArcTarget): Partial<Record<ProfileStep, string>> {
+  return target === "state" ? STATE_STEP_TITLES : IDENTITY_STEP_TITLES;
+}
+function textStepFieldsFor(target: ArcTarget): Partial<Record<ProfileStep, keyof ProfileDraft>> {
+  return target === "state" ? STATE_TEXT_STEP_FIELDS : IDENTITY_TEXT_STEP_FIELDS;
+}
+function optionalStepsFor(target: ArcTarget): ProfileStep[] {
+  return target === "state" ? STATE_OPTIONAL_STEPS : IDENTITY_OPTIONAL_STEPS;
+}
+function isCompleteFor(target: ArcTarget, draft: ProfileDraft): boolean {
+  return target === "state" ? isStateArcDraftComplete(draft) : isIdentityArcDraftComplete(draft);
+}
+function labelFor(target: ArcTarget, draft: ProfileDraft): string {
+  return target === "state" ? draft.supportiveState : draft.desiredIdentity;
+}
+
+type ScreenStatus = "loading" | "noProfile" | "noDesiredState" | "picking" | "editing";
 
 /**
- * BUILD-ARC: creates the ARC Map around the Desired State BUILD-GOAL
- * (build/ProfileBuilderScreen.tsx, route /build) already established --
- * Challenge Context -> Interfering State -> Encoding cues. Never asks
- * for the Desired State itself; only references it (read-only,
- * `draft.supportiveState`). Reached separately, after BUILD-GOAL, from
- * Home. Saves back onto the SAME profile BUILD-GOAL created -- not a
- * second profile, not a second source of truth -- and never touches
- * program selection/progress (that's BUILD-GOAL's job).
+ * BUILD-ARC: creates the ARC Map(s) around the Desired State(s)
+ * BUILD-GOAL (build/ProfileBuilderScreen.tsx, route /build) already
+ * established -- Challenge Context -> Interfering State -> Encoding
+ * cues. Never asks for a Desired State itself; only references it.
+ *
+ * A trainee can have up to two independently mappable targets: the
+ * state layer's Desired State (supportiveState, e.g. "Focus") and the
+ * identity layer's Desired Identity (desiredIdentity, e.g.
+ * "Discipline") -- both active together on an advanced_2_week program
+ * from week 1, for instance. When both exist, this screen shows a
+ * target picker first; editing one target's ARC Map never touches the
+ * other's fields (see buildProfileFromDraft's doc). When only one
+ * target exists, the picker is skipped and that target is edited
+ * directly -- "automatic" selection, but the other target (if it
+ * exists) is always still reachable via the "target" screen state,
+ * never hidden once mapped.
+ *
+ * Reached separately, after BUILD-GOAL, from Home. Saves back onto the
+ * SAME profile BUILD-GOAL created -- not a second profile, not a
+ * second source of truth -- and never touches program selection/
+ * progress (that's BUILD-GOAL's job).
  */
 export default function ArcMapScreen() {
   const [status, setStatus] = useState<ScreenStatus>("loading");
   const [draft, setDraft] = useState<ProfileDraft>(createEmptyDraft());
-  const [step, setStep] = useState<ProfileStep>("challengeContext");
+  const [availableTargets, setAvailableTargets] = useState<ArcTarget[]>([]);
+  const [target, setTarget] = useState<ArcTarget | null>(null);
+  const [step, setStep] = useState<ProfileStep>("review");
 
   useEffect(() => {
     let cancelled = false;
@@ -60,33 +112,65 @@ export default function ArcMapScreen() {
         return;
       }
       const loadedDraft = draftFromProfileAndSelection(existing, selection);
-      if (loadedDraft.needsState !== true || !loadedDraft.supportiveState) {
+      const targets: ArcTarget[] = [];
+      if (loadedDraft.needsState === true && loadedDraft.supportiveState) targets.push("state");
+      if (resolvesNeedsIdentity(loadedDraft) && loadedDraft.desiredIdentity) targets.push("identity");
+
+      if (targets.length === 0) {
         setStatus("noDesiredState");
         return;
       }
       setDraft(loadedDraft);
-      setStep(getFirstProfileStep(loadedDraft, ARC_STEP_ORDER));
-      setStatus("ready");
+      setAvailableTargets(targets);
+      if (targets.length === 1) {
+        selectTarget(targets[0], loadedDraft);
+      } else {
+        setStatus("picking");
+      }
     });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const goNext = useCallback((nextDraft: ProfileDraft) => {
-    setDraft(nextDraft);
-    setStep((current) => getNextProfileStep(current, nextDraft, ARC_STEP_ORDER));
-  }, []);
+  function selectTarget(nextTarget: ArcTarget, currentDraft: ProfileDraft) {
+    setTarget(nextTarget);
+    setStep(getFirstProfileStep(currentDraft, stepOrderFor(nextTarget)));
+    setStatus("editing");
+  }
+
+  const goNext = useCallback(
+    (nextDraft: ProfileDraft) => {
+      if (!target) return;
+      setDraft(nextDraft);
+      setStep((current) => getNextProfileStep(current, nextDraft, stepOrderFor(target)));
+    },
+    [target]
+  );
 
   const goBack = useCallback(() => {
-    setStep((current) => getPreviousProfileStep(current, draft, ARC_STEP_ORDER) ?? current);
-  }, [draft]);
+    if (!target) return;
+    setStep((current) => getPreviousProfileStep(current, draft, stepOrderFor(target)) ?? current);
+  }, [draft, target]);
 
   const finish = useCallback(async () => {
     const profile = buildProfileFromDraft(draft);
     await saveProfile(profile);
-    router.back();
   }, [draft]);
+
+  const finishAndExit = useCallback(async () => {
+    await finish();
+    router.back();
+  }, [finish]);
+
+  const finishAndSwitchTarget = useCallback(
+    async (otherTarget: ArcTarget) => {
+      await finish();
+      selectTarget(otherTarget, draft);
+    },
+    [finish, draft]
+  );
 
   if (status === "loading") {
     return (
@@ -116,7 +200,7 @@ export default function ArcMapScreen() {
         <View style={styles.content}>
           <Text style={styles.title}>אין מצב רצוי פעיל</Text>
           <Text style={styles.body}>
-            מפת ARC זמינה כשיש מצב רצוי שהוגדר בבניית המטרה. אפשר לחזור לשם ולהוסיף מצב רצוי, או להמשיך בלעדיו.
+            מפת ARC זמינה כשיש מצב רצוי או זהות רצויה שהוגדרו בבניית המטרה. אפשר לחזור לשם ולהוסיף, או להמשיך בלעדיהם.
           </Text>
           <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.replace("/build")}>
             <Text style={styles.buttonText}>לבניית מטרה</Text>
@@ -126,14 +210,34 @@ export default function ArcMapScreen() {
     );
   }
 
-  const textField = TEXT_STEP_FIELDS[step];
-  const isOptionalTextStep = OPTIONAL_TEXT_STEPS.includes(step);
+  if (status === "picking") {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.content}>
+          <Text style={styles.title}>באיזו מפת ARC תרצה לעבוד?</Text>
+          <Text style={styles.body}>יש לך יותר ממטרה רצויה אחת -- לכל אחת מפת ARC נפרדת ובלתי תלויה.</Text>
+          {availableTargets.map((t) => (
+            <Pressable key={t} style={[styles.button, styles.fullWidthButton]} onPress={() => selectTarget(t, draft)}>
+              <Text style={styles.buttonText}>{labelFor(t, draft)}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // status === "editing" -- target is guaranteed non-null here.
+  const activeTarget = target as ArcTarget;
+  const otherTarget = availableTargets.find((t) => t !== activeTarget) ?? null;
+  const textField = textStepFieldsFor(activeTarget)[step];
+  const isOptionalTextStep = optionalStepsFor(activeTarget).includes(step);
+  const firstStep = stepOrderFor(activeTarget)[0];
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.eyebrow}>{`מפת ARC סביב: ${draft.supportiveState}`}</Text>
-        <Text style={styles.title}>{STEP_TITLES[step]}</Text>
+        <Text style={styles.eyebrow}>{`מפת ARC סביב: ${labelFor(activeTarget, draft)}`}</Text>
+        <Text style={styles.title}>{stepTitlesFor(activeTarget)[step]}</Text>
 
         {textField && (
           <View>
@@ -156,18 +260,42 @@ export default function ArcMapScreen() {
 
         {step === "review" && (
           <View>
-            <Text style={styles.body}>{`מצב רצוי: ${draft.supportiveState}`}</Text>
-            <Text style={styles.body}>{`נוטה להפריע: ${draft.interferingState}`}</Text>
-            <Text style={styles.body}>{`הקשר אתגר: ${draft.challengeContext}`}</Text>
-            {draft.stateBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.stateBodyLanguageCue}`}</Text>}
-            {draft.stateMantra && <Text style={styles.body}>{`מנטרה: ${draft.stateMantra}`}</Text>}
-            <Pressable style={[styles.button, styles.fullWidthButton]} disabled={!isArcDraftComplete(draft)} onPress={finish}>
-              <Text style={styles.buttonText}>שמור מפת ARC</Text>
+            <Text style={styles.body}>{`מטרה: ${labelFor(activeTarget, draft)}`}</Text>
+            {activeTarget === "state" ? (
+              <>
+                <Text style={styles.body}>{`נוטה להפריע: ${draft.interferingState}`}</Text>
+                <Text style={styles.body}>{`הקשר אתגר: ${draft.challengeContext}`}</Text>
+                {draft.stateBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.stateBodyLanguageCue}`}</Text>}
+                {draft.stateMantra && <Text style={styles.body}>{`מנטרה: ${draft.stateMantra}`}</Text>}
+              </>
+            ) : (
+              <>
+                <Text style={styles.body}>{`נוטה להפריע: ${draft.identityInterferingEmotion}`}</Text>
+                <Text style={styles.body}>{`הקשר אתגר: ${draft.identityChallengeContext}`}</Text>
+                {draft.identityBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.identityBodyLanguageCue}`}</Text>}
+                {draft.identityMantra && <Text style={styles.body}>{`מנטרה: ${draft.identityMantra}`}</Text>}
+              </>
+            )}
+            <Pressable
+              style={[styles.button, styles.fullWidthButton]}
+              disabled={!isCompleteFor(activeTarget, draft)}
+              onPress={otherTarget ? () => finishAndSwitchTarget(otherTarget) : finishAndExit}
+            >
+              <Text style={styles.buttonText}>{otherTarget ? `שמור ועבור למפת ${labelFor(otherTarget, draft)}` : "שמור מפת ARC"}</Text>
             </Pressable>
+            {otherTarget && (
+              <Pressable
+                style={styles.backButton}
+                disabled={!isCompleteFor(activeTarget, draft)}
+                onPress={finishAndExit}
+              >
+                <Text style={styles.backButtonText}>שמור וסיים</Text>
+              </Pressable>
+            )}
           </View>
         )}
 
-        {step !== "challengeContext" && (
+        {step !== firstStep && (
           <Pressable style={styles.backButton} onPress={goBack}>
             <Text style={styles.backButtonText}>חזור</Text>
           </Pressable>
