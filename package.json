@@ -6,6 +6,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "babel-preset-expo": "~57.0.0",
     "expo": "~57.0.18",
+    "expo-asset": "~57.0.15",
     "expo-audio": "~57.0.4",
     "expo-constants": "~57.0.14",
     "expo-linking": "~57.0.8",
@@ -21,7 +22,6 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
-    "eas-cli": "^22.4.0",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
     "typescript": "~6.0.3"

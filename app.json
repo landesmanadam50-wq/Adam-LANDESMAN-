@@ -32,9 +32,12 @@
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "sounds": ["./assets/sounds/timer_complete.wav"]
+          "sounds": [
+            "./assets/sounds/timer_complete.wav"
+          ]
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "extra": {
       "eas": {
