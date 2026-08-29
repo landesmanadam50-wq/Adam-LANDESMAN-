@@ -47,6 +47,44 @@ export function applySensationAnswer(session: ArcLiveState, location: string | n
   return { ...session, sensationLocation: location, sensationIntensity: intensity };
 }
 
+/**
+ * Explicit, safe sentinel for "the trainee doesn't know where in the
+ * body the sensation is" -- reuses the existing sensationLocation
+ * field (string | null) rather than adding a new one, so ArcLiveState's
+ * shape is untouched. Never confused with sensationLocation being null
+ * (not yet answered): this is only ever written once the trainee has
+ * explicitly chosen "לא ברור לי איפה".
+ */
+export const SENSATION_LOCATION_UNCLEAR = "לא ברור לי איפה";
+
+/**
+ * Body Sensation Check requires ONE explicit location response --
+ * a preset chip, free text, or the explicit "I don't know where"
+ * option -- before continuing, so the trainee is never forced to
+ * invent a location, but also never silently skips past the question.
+ * Pure so it can gate the UI (live/screens.tsx's SensationRatingScreen)
+ * without a rendering harness to test it.
+ */
+export function hasSensationLocationResponse(preset: string, custom: string, unclear: boolean): boolean {
+  return preset.trim().length > 0 || custom.trim().length > 0 || unclear;
+}
+
+/**
+ * Resolves the trainee's three possible ways of answering into the one
+ * sensationLocation value ArcLiveState already has. Free text wins over
+ * a preset chip if somehow both are set (shouldn't happen -- the UI
+ * clears one when the other is picked); "unclear" is stored explicitly
+ * via SENSATION_LOCATION_UNCLEAR rather than guessed at or left
+ * ambiguous with "not yet answered" (null).
+ */
+export function resolveSensationLocation(preset: string, custom: string, unclear: boolean): string | null {
+  if (unclear) return SENSATION_LOCATION_UNCLEAR;
+  const trimmedCustom = custom.trim();
+  if (trimmedCustom.length > 0) return trimmedCustom;
+  if (preset.length > 0) return preset;
+  return null;
+}
+
 export function applyYesNoAnswer(stage: ArcStage, session: ArcLiveState, yes: boolean): ArcLiveState {
   switch (stage) {
     case "accept":

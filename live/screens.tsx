@@ -10,10 +10,12 @@
  * rule. Those all live in arc/arcEngine.ts and arc/engine.ts.
  */
 
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
+import { hasSensationLocationResponse } from "./liveEventAdapter.ts";
 
 const SCALE_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
@@ -151,38 +153,93 @@ export function PreventiveActionCheckScreen({
   );
 }
 
+const SENSATION_LOCATION_VALIDATION_MESSAGE = "בחר איפה התחושה מורגשת בגוף, כתוב מיקום אחר, או בחר 'לא ברור לי איפה'.";
+
+/**
+ * Body Sensation Check: when showLocationPicker is true (first entry,
+ * non-habit route -- see live/ArcLiveRenderer.tsx), a body-location
+ * response is required before intensity can be submitted, but the
+ * trainee is never forced to invent one -- a preset chip, free text, or
+ * the explicit "לא ברור לי איפה" all count. Intensity stays a fully
+ * separate 1-10 scale, never merged into the location answer. On a
+ * re-check or the habit route, no location UI is shown at all (existing
+ * behavior, unchanged) so nothing is required there either.
+ */
 export function SensationRatingScreen({
   copy,
   showLocationPicker,
   locations,
   selectedLocation,
+  customLocation,
+  locationUnclear,
   onSelectLocation,
+  onChangeCustomLocation,
+  onSelectLocationUnclear,
   onSelectIntensity,
 }: {
   copy: ArcStageCopy;
   showLocationPicker: boolean;
   locations: string[];
   selectedLocation: string;
+  customLocation: string;
+  locationUnclear: boolean;
   onSelectLocation: (location: string) => void;
+  onChangeCustomLocation: (text: string) => void;
+  onSelectLocationUnclear: () => void;
   onSelectIntensity: (value: number) => void;
 }) {
+  const [showValidation, setShowValidation] = useState(false);
+
+  function handleIntensity(value: number) {
+    if (showLocationPicker && !hasSensationLocationResponse(selectedLocation, customLocation, locationUnclear)) {
+      setShowValidation(true);
+      return;
+    }
+    onSelectIntensity(value);
+  }
+
   return (
     <View>
       <Title copy={copy} />
       {showLocationPicker && (
-        <View style={styles.chipRow}>
-          {locations.map((location) => (
+        <View>
+          <View style={styles.chipRow}>
+            {locations.map((location) => (
+              <Pressable
+                key={location}
+                style={[styles.chip, selectedLocation === location && styles.chipSelected]}
+                onPress={() => {
+                  setShowValidation(false);
+                  onSelectLocation(location);
+                }}
+              >
+                <Text style={styles.buttonText}>{location}</Text>
+              </Pressable>
+            ))}
             <Pressable
-              key={location}
-              style={[styles.chip, selectedLocation === location && styles.chipSelected]}
-              onPress={() => onSelectLocation(location)}
+              style={[styles.chip, locationUnclear && styles.chipSelected]}
+              onPress={() => {
+                setShowValidation(false);
+                onSelectLocationUnclear();
+              }}
             >
-              <Text style={styles.buttonText}>{location}</Text>
+              <Text style={styles.buttonText}>לא ברור לי איפה</Text>
             </Pressable>
-          ))}
+          </View>
+          <TextInput
+            style={styles.textInput}
+            value={customLocation}
+            onChangeText={(text) => {
+              setShowValidation(false);
+              onChangeCustomLocation(text);
+            }}
+            placeholder="מיקום אחר בגוף"
+            textAlign="right"
+          />
+          {showValidation && <Text style={styles.validationText}>{SENSATION_LOCATION_VALIDATION_MESSAGE}</Text>}
         </View>
       )}
-      <ScaleButtons onSelect={onSelectIntensity} />
+      <ScaleButtons onSelect={handleIntensity} />
     </View>
   );
 }
@@ -427,6 +484,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     fontSize: 16,
     textAlignVertical: "top",
+  },
+  validationText: {
+    fontSize: 14,
+    textAlign: "right",
+    color: "#c0392b",
+    marginBottom: 16,
   },
   buttonText: {
     color: "#fff",

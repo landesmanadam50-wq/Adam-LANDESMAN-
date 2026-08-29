@@ -56,10 +56,14 @@ export interface ArcLiveRendererProps {
   activeLayers: DevelopmentLayer[];
   availableTriggers: TriggerType[];
   pendingSensationLocation: string;
+  pendingCustomSensationLocation: string;
+  pendingSensationLocationUnclear: boolean;
   successFocusMinutes: number | null;
   onSelectTrigger: (trigger: TriggerType) => void;
   onScaleAnswer: (value: number) => void;
   onSelectSensationLocation: (location: string) => void;
+  onChangeCustomSensationLocation: (text: string) => void;
+  onSelectSensationLocationUnclear: () => void;
   onSubmitSensationIntensity: (value: number) => void;
   onYesNoAnswer: (yes: boolean) => void;
   onSelectTarget: (target: DevelopmentLayer) => void;
@@ -120,7 +124,11 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           showLocationPicker={!isHabitSensation && !isRecheck}
           locations={BODY_LOCATIONS}
           selectedLocation={props.pendingSensationLocation}
+          customLocation={props.pendingCustomSensationLocation}
+          locationUnclear={props.pendingSensationLocationUnclear}
           onSelectLocation={props.onSelectSensationLocation}
+          onChangeCustomLocation={props.onChangeCustomSensationLocation}
+          onSelectLocationUnclear={props.onSelectSensationLocationUnclear}
           onSelectIntensity={props.onSubmitSensationIntensity}
         />
       );
