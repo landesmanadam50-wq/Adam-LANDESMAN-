@@ -140,20 +140,22 @@ test("first STATE ARC step is challengeContext; first IDENTITY ARC step is ident
   assert.equal(getFirstProfileStep(filledTwoWeekDraft(), IDENTITY_ARC_STEP_ORDER), "identityChallengeContext");
 });
 
-test("STATE_ARC_STEP_ORDER walks challengeContext -> interferingState -> statePreventiveAction -> stateMantra -> stateBodyLanguageCue -> review", () => {
+test("STATE_ARC_STEP_ORDER walks challengeContext -> interferingState -> statePreventiveAction -> stateEncodingRegulationCueAsk -> stateMantra -> stateBodyLanguageCue -> review, skipping the short-cue text step when 'use same cue' (or nothing) was chosen", () => {
   const draft = filledStateOnlyDraft();
   assert.equal(getNextProfileStep("challengeContext", draft, STATE_ARC_STEP_ORDER), "interferingState");
   assert.equal(getNextProfileStep("interferingState", draft, STATE_ARC_STEP_ORDER), "statePreventiveAction");
-  assert.equal(getNextProfileStep("statePreventiveAction", draft, STATE_ARC_STEP_ORDER), "stateMantra");
+  assert.equal(getNextProfileStep("statePreventiveAction", draft, STATE_ARC_STEP_ORDER), "stateEncodingRegulationCueAsk");
+  assert.equal(getNextProfileStep("stateEncodingRegulationCueAsk", draft, STATE_ARC_STEP_ORDER), "stateMantra");
   assert.equal(getNextProfileStep("stateMantra", draft, STATE_ARC_STEP_ORDER), "stateBodyLanguageCue");
   assert.equal(getNextProfileStep("stateBodyLanguageCue", draft, STATE_ARC_STEP_ORDER), "review");
 });
 
-test("IDENTITY_ARC_STEP_ORDER walks identityChallengeContext -> identityInterferingEmotion -> identityPreventiveAction -> identityMantra -> identityBodyLanguageCue -> review, independently of STATE_ARC_STEP_ORDER", () => {
+test("IDENTITY_ARC_STEP_ORDER walks identityChallengeContext -> identityInterferingEmotion -> identityPreventiveAction -> identityEncodingRegulationCueAsk -> identityMantra -> identityBodyLanguageCue -> review, independently of STATE_ARC_STEP_ORDER", () => {
   const draft = filledTwoWeekDraft();
   assert.equal(getNextProfileStep("identityChallengeContext", draft, IDENTITY_ARC_STEP_ORDER), "identityInterferingEmotion");
   assert.equal(getNextProfileStep("identityInterferingEmotion", draft, IDENTITY_ARC_STEP_ORDER), "identityPreventiveAction");
-  assert.equal(getNextProfileStep("identityPreventiveAction", draft, IDENTITY_ARC_STEP_ORDER), "identityMantra");
+  assert.equal(getNextProfileStep("identityPreventiveAction", draft, IDENTITY_ARC_STEP_ORDER), "identityEncodingRegulationCueAsk");
+  assert.equal(getNextProfileStep("identityEncodingRegulationCueAsk", draft, IDENTITY_ARC_STEP_ORDER), "identityMantra");
   assert.equal(getNextProfileStep("identityMantra", draft, IDENTITY_ARC_STEP_ORDER), "identityBodyLanguageCue");
   assert.equal(getNextProfileStep("identityBodyLanguageCue", draft, IDENTITY_ARC_STEP_ORDER), "review");
 });
@@ -304,6 +306,21 @@ test("a profile that predates identityChallengeContext (old data) still loads sa
   delete (legacyProfile as { identityChallengeContext?: unknown }).identityChallengeContext;
   const migrated = draftFromProfileAndSelection(legacyProfile, selection);
   assert.equal(migrated.identityChallengeContext, "", "missing identityChallengeContext on old data defaults to empty, not a crash");
+});
+
+test("a profile stored before the Short Encoding Regulation Cue fields existed loads safely -- defaults to empty text and an undecided (not 'B') choice, rather than crashing", () => {
+  const draft = filledTwoWeekDraft();
+  const profile = buildProfileFromDraft(draft);
+  const selection = selectionFromDraft(draft);
+
+  const legacyProfile = { ...profile } as typeof profile;
+  delete (legacyProfile as { stateEncodingRegulationCue?: unknown }).stateEncodingRegulationCue;
+  delete (legacyProfile as { identityEncodingRegulationCue?: unknown }).identityEncodingRegulationCue;
+  const migrated = draftFromProfileAndSelection(legacyProfile, selection);
+  assert.equal(migrated.stateEncodingRegulationCue, "");
+  assert.equal(migrated.identityEncodingRegulationCue, "");
+  assert.equal(migrated.stateWantsShortEncodingRegulationCue, null, "never presumed 'A' (same cue) for a trainee who never saw this step");
+  assert.equal(migrated.identityWantsShortEncodingRegulationCue, null);
   assert.equal(migrated.identityInterferingEmotion, draft.identityInterferingEmotion, "the sibling field, which did exist on old data, is unaffected");
 });
 

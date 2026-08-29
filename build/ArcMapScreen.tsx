@@ -26,6 +26,8 @@ const STATE_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   challengeContext: "באילו מצבים המצב הרצוי הזה במיוחד רלוונטי? (הקשר האתגר)",
   interferingState: "מה נוטה להפריע למצב הרצוי הזה?",
   statePreventiveAction: "יש פעולה מונעת שיכולה לעזור לפני שזה קורה? (רשות)",
+  stateEncodingRegulationCueAsk: "באיזה כלי ויסות קצר תרצה להמשיך בזמן הקידוד?",
+  stateEncodingRegulationCue: "מהו כלי הוויסות הקצר לקידוד?",
   stateMantra: "יש לך מנטרה למצב הזה? (רשות)",
   stateBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך במצב הזה? (רשות, למשל כתפיים משוחררות)",
   review: "סיכום מפת ARC",
@@ -34,15 +36,21 @@ const STATE_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> =
   challengeContext: "challengeContext",
   interferingState: "interferingState",
   statePreventiveAction: "statePreventiveAction",
+  stateEncodingRegulationCue: "stateEncodingRegulationCue",
   stateMantra: "stateMantra",
   stateBodyLanguageCue: "stateBodyLanguageCue",
 };
-const STATE_OPTIONAL_STEPS: ProfileStep[] = ["statePreventiveAction", "stateMantra", "stateBodyLanguageCue"];
+const STATE_ASK_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
+  stateEncodingRegulationCueAsk: "stateWantsShortEncodingRegulationCue",
+};
+const STATE_OPTIONAL_STEPS: ProfileStep[] = ["statePreventiveAction", "stateEncodingRegulationCue", "stateMantra", "stateBodyLanguageCue"];
 
 const IDENTITY_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   identityChallengeContext: "באילו מצבים הזהות הרצויה הזו במיוחד רלוונטית? (הקשר האתגר)",
   identityInterferingEmotion: "מה נוטה להפריע לזהות הזו?",
   identityPreventiveAction: "יש פעולה מונעת שיכולה לעזור לפני שזה קורה? (רשות)",
+  identityEncodingRegulationCueAsk: "באיזה כלי ויסות קצר תרצה להמשיך בזמן הקידוד?",
+  identityEncodingRegulationCue: "מהו כלי הוויסות הקצר לקידוד?",
   identityMantra: "יש לך מנטרה לזהות הזו? (רשות)",
   identityBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך בזהות הזו? (רשות)",
   review: "סיכום מפת ARC",
@@ -51,10 +59,19 @@ const IDENTITY_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>
   identityChallengeContext: "identityChallengeContext",
   identityInterferingEmotion: "identityInterferingEmotion",
   identityPreventiveAction: "identityPreventiveAction",
+  identityEncodingRegulationCue: "identityEncodingRegulationCue",
   identityMantra: "identityMantra",
   identityBodyLanguageCue: "identityBodyLanguageCue",
 };
-const IDENTITY_OPTIONAL_STEPS: ProfileStep[] = ["identityPreventiveAction", "identityMantra", "identityBodyLanguageCue"];
+const IDENTITY_ASK_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
+  identityEncodingRegulationCueAsk: "identityWantsShortEncodingRegulationCue",
+};
+const IDENTITY_OPTIONAL_STEPS: ProfileStep[] = [
+  "identityPreventiveAction",
+  "identityEncodingRegulationCue",
+  "identityMantra",
+  "identityBodyLanguageCue",
+];
 
 function stepOrderFor(target: ArcTarget): ProfileStep[] {
   return target === "state" ? STATE_ARC_STEP_ORDER : IDENTITY_ARC_STEP_ORDER;
@@ -64,6 +81,10 @@ function stepTitlesFor(target: ArcTarget): Partial<Record<ProfileStep, string>> 
 }
 function textStepFieldsFor(target: ArcTarget): Partial<Record<ProfileStep, keyof ProfileDraft>> {
   return target === "state" ? STATE_TEXT_STEP_FIELDS : IDENTITY_TEXT_STEP_FIELDS;
+}
+/** The A/B "same cue" vs "shorter cue for Encoding" chooser steps -- map to the draft's boolean choice field, distinct from textStepFieldsFor's plain text fields. */
+function askStepFieldsFor(target: ArcTarget): Partial<Record<ProfileStep, keyof ProfileDraft>> {
+  return target === "state" ? STATE_ASK_STEP_FIELDS : IDENTITY_ASK_STEP_FIELDS;
 }
 function optionalStepsFor(target: ArcTarget): ProfileStep[] {
   return target === "state" ? STATE_OPTIONAL_STEPS : IDENTITY_OPTIONAL_STEPS;
@@ -234,6 +255,7 @@ export default function ArcMapScreen() {
   const activeTarget = target as ArcTarget;
   const otherTarget = availableTargets.find((t) => t !== activeTarget) ?? null;
   const textField = textStepFieldsFor(activeTarget)[step];
+  const askField = askStepFieldsFor(activeTarget)[step];
   const isOptionalTextStep = optionalStepsFor(activeTarget).includes(step);
   const firstStep = stepOrderFor(activeTarget)[0];
 
@@ -262,6 +284,17 @@ export default function ArcMapScreen() {
           </View>
         )}
 
+        {askField && (
+          <View>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => goNext({ ...draft, [askField]: false })}>
+              <Text style={styles.buttonText}>השתמש באותו כלי ויסות</Text>
+            </Pressable>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => goNext({ ...draft, [askField]: true })}>
+              <Text style={styles.buttonText}>בחר כלי ויסות קצר לקידוד</Text>
+            </Pressable>
+          </View>
+        )}
+
         {step === "review" && (
           <View>
             <Text style={styles.body}>{`מטרה: ${labelFor(activeTarget, draft)}`}</Text>
@@ -270,6 +303,9 @@ export default function ArcMapScreen() {
                 <Text style={styles.body}>{`נוטה להפריע: ${draft.interferingState}`}</Text>
                 <Text style={styles.body}>{`הקשר אתגר: ${draft.challengeContext}`}</Text>
                 {draft.statePreventiveAction && <Text style={styles.body}>{`פעולה מונעת: ${draft.statePreventiveAction}`}</Text>}
+                {draft.stateWantsShortEncodingRegulationCue === true && draft.stateEncodingRegulationCue && (
+                  <Text style={styles.body}>{`כלי ויסות קצר לקידוד: ${draft.stateEncodingRegulationCue}`}</Text>
+                )}
                 {draft.stateBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.stateBodyLanguageCue}`}</Text>}
                 {draft.stateMantra && <Text style={styles.body}>{`מנטרה: ${draft.stateMantra}`}</Text>}
               </>
@@ -278,6 +314,9 @@ export default function ArcMapScreen() {
                 <Text style={styles.body}>{`נוטה להפריע: ${draft.identityInterferingEmotion}`}</Text>
                 <Text style={styles.body}>{`הקשר אתגר: ${draft.identityChallengeContext}`}</Text>
                 {draft.identityPreventiveAction && <Text style={styles.body}>{`פעולה מונעת: ${draft.identityPreventiveAction}`}</Text>}
+                {draft.identityWantsShortEncodingRegulationCue === true && draft.identityEncodingRegulationCue && (
+                  <Text style={styles.body}>{`כלי ויסות קצר לקידוד: ${draft.identityEncodingRegulationCue}`}</Text>
+                )}
                 {draft.identityBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.identityBodyLanguageCue}`}</Text>}
                 {draft.identityMantra && <Text style={styles.body}>{`מנטרה: ${draft.identityMantra}`}</Text>}
               </>

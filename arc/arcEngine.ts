@@ -297,6 +297,34 @@ export function resolveTargetPreventiveAction(layer: DevelopmentLayer, profile: 
   }
 }
 
+// ---------------------------------------------------------------------------
+// Encoding regulation -- a lightweight per-target carry-over anchor,
+// distinct from the Full Regulation Cue used during Regulation itself
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves the lightweight Short Encoding Regulation Cue for the
+ * CURRENT target -- never one global field, never mixed between
+ * targets (parallel to resolveTargetPreventiveAction): state gets
+ * stateEncodingRegulationCue, identity gets identityEncodingRegulationCue.
+ * Falls back to the Full Regulation Cue (profile.regulationTool) when
+ * the target has none of its own configured -- this is also exactly
+ * what every profile stored before this field existed resolves to, so
+ * their Encoding copy is unchanged. The habit layer has no short cue
+ * of its own: a habit-targeted Encoding session always used
+ * regulationTool directly, unchanged.
+ */
+export function resolveEncodingRegulationCue(layer: DevelopmentLayer, profile: ArcBuildProfile): string | null {
+  switch (layer) {
+    case "state":
+      return profile.stateEncodingRegulationCue ?? profile.regulationTool;
+    case "identity":
+      return profile.identityEncodingRegulationCue ?? profile.regulationTool;
+    case "habit":
+      return profile.regulationTool;
+  }
+}
+
 /** preventive_action_check if the resolved target has one configured, else straight to presence_check. Reactive only -- see the trigger_selection case; proactive is unaffected (unchanged: desired_state_check first, per "Preserve Proactive Separation"). */
 function afterReactiveTargetResolved(layer: DevelopmentLayer, profile: ArcBuildProfile): ArcStage {
   return resolveTargetPreventiveAction(layer, profile) !== null ? "preventive_action_check" : "presence_check";

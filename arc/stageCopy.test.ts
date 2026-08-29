@@ -14,6 +14,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     interferingState: "פחד",
     challengeContext: "אחרי טעות",
     statePreventiveAction: null,
+    stateEncodingRegulationCue: null,
     supportiveState: "חמלה",
     stateEncoding: null,
     internalAction: "סריקת גוף",
@@ -21,6 +22,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityChallengeContext: null,
     identityInterferingEmotion: null,
     identityPreventiveAction: null,
+    identityEncodingRegulationCue: null,
     identityEncoding: null,
     identityAction: null,
     habit: null,
@@ -217,6 +219,50 @@ test("regulate never claims the sensation has improved, and never references the
   assert.ok(!/רגוע יותר|טוב יותר|הצלחת/.test(copy.body));
 });
 
+test("regulate always uses the Full Regulation Cue, never the Short Encoding Regulation Cue, even when both are configured", () => {
+  const p = profile({ regulationTool: "הרפיית כתפיים + נשיפה איטית", stateEncodingRegulationCue: "נשיפה רגועה" });
+  const copy = getStageCopy("regulate", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /הרפיית כתפיים \+ נשיפה איטית/, "Regulation must use the Full Regulation Cue");
+  assert.ok(!copy.body.includes("נשיפה רגועה"), "Regulation must never use the shorter Encoding-only cue");
+});
+
+test("encode uses the Short Encoding Regulation Cue when configured, not the Full Regulation Cue's own text", () => {
+  const p = profile({
+    regulationTool: "הרפיית כתפיים + נשיפה איטית",
+    stateEncodingRegulationCue: "נשיפה רגועה",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+  });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /המשך עם נשיפה רגועה/, "Encoding must continue with the short cue");
+  assert.ok(!copy.body.includes("הרפיית כתפיים + נשיפה איטית"), "Encoding must not use the longer Full Regulation Cue text when a short one is configured");
+});
+
+test("the Short Encoding Regulation Cue appears before the Body-Language cue and the Mantra", () => {
+  const p = profile({
+    stateEncodingRegulationCue: "נשיפה רגועה",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני חומל" },
+  });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  const regulationIndex = copy.body.indexOf("נשיפה רגועה");
+  const cueIndex = copy.body.indexOf("כתפיים משוחררות");
+  const mantraIndex = copy.body.indexOf("אני חומל");
+  assert.ok(regulationIndex >= 0 && cueIndex >= 0 && mantraIndex >= 0);
+  assert.ok(regulationIndex < cueIndex, "the Short Encoding Regulation Cue must precede the Body-Language cue");
+  assert.ok(cueIndex < mantraIndex, "the Body-Language cue must precede the Mantra");
+});
+
+test("no cue is invented in Encoding when neither a Short Encoding Regulation Cue nor a Full Regulation Cue is configured", () => {
+  const p = profile({
+    regulationTool: null,
+    stateEncodingRegulationCue: null,
+    stateEncoding: null,
+    internalAction: null,
+    beneficialAction: null,
+  });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(!copy.body.includes("המשך עם"), "no regulation-continuity line when nothing at all is configured");
+});
+
 test("encode continues the regulation tool and notices the sensation again -- neutrally -- before the encoding cue", () => {
   const p = profile({
     regulationTool: "נשימה 4-7-8",
@@ -376,6 +422,21 @@ test("encode preserves the full order for both targets: updated sensation -> mai
     assert.ok(cueIndex > regulationIndex, `${selectedTarget}: body-language cue must follow regulation`);
     assert.ok(mantraIndex > cueIndex, `${selectedTarget}: identity/mantra must follow the body-language cue`);
   }
+});
+
+test("Focus and Discipline can have different Short Encoding Regulation Cues, and each target's own is used, never the other's", () => {
+  const p = twoTargetProfile({
+    stateEncodingRegulationCue: "נשיפה רגועה", // Focus's own short cue
+    identityEncodingRegulationCue: "כתפיים רפויות", // Discipline's own short cue
+  });
+
+  const stateCopy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "state" }), ["state", "identity"]);
+  assert.match(stateCopy.body, /המשך עם נשיפה רגועה/, "Focus's session must use Focus's own short cue");
+  assert.ok(!stateCopy.body.includes("כתפיים רפויות"), "must not leak Discipline's short cue into Focus's session");
+
+  const identityCopy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
+  assert.match(identityCopy.body, /המשך עם כתפיים רפויות/, "Discipline's session must use Discipline's own short cue");
+  assert.ok(!identityCopy.body.includes("נשיפה רגועה"), "must not leak Focus's short cue into Discipline's session");
 });
 
 test("Discipline (identity) with NO Body-Language cue configured falls back to a generic transition -- it never invents a specific cue, and never borrows Focus's", () => {

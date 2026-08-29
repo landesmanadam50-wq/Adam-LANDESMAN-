@@ -8,6 +8,7 @@ import {
   getFirstArcStage,
   getNextArcStage,
   needsReactiveStateSelection,
+  resolveEncodingRegulationCue,
   resolveEncodingTarget,
   resolveLiveRoute,
   resolveTargetPreventiveAction,
@@ -26,6 +27,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     interferingState: "פחד",
     challengeContext: null,
     statePreventiveAction: null,
+    stateEncodingRegulationCue: null,
     supportiveState: "חמלה",
     stateEncoding: null,
     internalAction: "סריקת גוף",
@@ -33,6 +35,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityChallengeContext: null,
     identityInterferingEmotion: null,
     identityPreventiveAction: null,
+    identityEncodingRegulationCue: null,
     identityEncoding: null,
     identityAction: null,
     habit: "גלילה ברשת",
@@ -369,6 +372,49 @@ test("state, identity, and habit Preventive Actions never leak into each other, 
   assert.equal(resolveTargetPreventiveAction("state", p), "פעולה מונעת של מיקוד");
   assert.equal(resolveTargetPreventiveAction("identity", p), "פעולה מונעת של משמעת");
   assert.equal(resolveTargetPreventiveAction("habit", p), "פעולה מונעת של הרגל");
+});
+
+// ---------------------------------------------------------------------------
+// Encoding regulation -- a lightweight per-target Short Encoding
+// Regulation Cue, distinct from the Full Regulation Cue used during
+// Regulation itself
+// ---------------------------------------------------------------------------
+
+test("an ARC Map can store both a Full Regulation Cue and its own Short Encoding Regulation Cue", () => {
+  const p = profile({ regulationTool: "הרפיית כתפיים + נשיפה איטית", stateEncodingRegulationCue: "נשיפה רגועה" });
+  assert.equal(p.regulationTool, "הרפיית כתפיים + נשיפה איטית", "the Full Regulation Cue is stored");
+  assert.equal(resolveEncodingRegulationCue("state", p), "נשיפה רגועה", "the target's own Short Encoding Regulation Cue is stored separately");
+});
+
+test("Focus and Discipline can have different Short Encoding Regulation Cues, never mixed", () => {
+  const p = profile({ stateEncodingRegulationCue: "נשיפה רגועה", identityEncodingRegulationCue: "כתפיים רפויות" });
+  assert.equal(resolveEncodingRegulationCue("state", p), "נשיפה רגועה");
+  assert.equal(resolveEncodingRegulationCue("identity", p), "כתפיים רפויות");
+});
+
+test("selecting 'use the same cue during Encoding' (no separate short cue configured) correctly reuses the Full Regulation Cue", () => {
+  const p = profile({ regulationTool: "כלי הוויסות המלא", stateEncodingRegulationCue: null, identityEncodingRegulationCue: null });
+  assert.equal(resolveEncodingRegulationCue("state", p), "כלי הוויסות המלא");
+  assert.equal(resolveEncodingRegulationCue("identity", p), "כלי הוויסות המלא");
+});
+
+test("resolveEncodingRegulationCue never invents a cue when neither a short cue nor a Full Regulation Cue is configured", () => {
+  const p = profile({ regulationTool: null, stateEncodingRegulationCue: null, identityEncodingRegulationCue: null });
+  assert.equal(resolveEncodingRegulationCue("state", p), null);
+  assert.equal(resolveEncodingRegulationCue("identity", p), null);
+});
+
+test("resolveEncodingRegulationCue for habit always uses the Full Regulation Cue directly -- habit has no short cue of its own", () => {
+  const p = profile({ regulationTool: "כלי הוויסות המלא" });
+  assert.equal(resolveEncodingRegulationCue("habit", p), "כלי הוויסות המלא");
+});
+
+test("a profile stored before this field existed resolves exactly like 'use the same cue' -- existing stored users remain backwards compatible", () => {
+  const legacyProfile = { ...profile({ regulationTool: "נשימה 4-7-8" }) } as ArcBuildProfile;
+  delete (legacyProfile as { stateEncodingRegulationCue?: unknown }).stateEncodingRegulationCue;
+  delete (legacyProfile as { identityEncodingRegulationCue?: unknown }).identityEncodingRegulationCue;
+  assert.equal(resolveEncodingRegulationCue("state", legacyProfile), "נשימה 4-7-8");
+  assert.equal(resolveEncodingRegulationCue("identity", legacyProfile), "נשימה 4-7-8");
 });
 
 // ---------------------------------------------------------------------------
