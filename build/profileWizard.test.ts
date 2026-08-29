@@ -140,18 +140,20 @@ test("first STATE ARC step is challengeContext; first IDENTITY ARC step is ident
   assert.equal(getFirstProfileStep(filledTwoWeekDraft(), IDENTITY_ARC_STEP_ORDER), "identityChallengeContext");
 });
 
-test("STATE_ARC_STEP_ORDER walks challengeContext -> interferingState -> stateMantra -> stateBodyLanguageCue -> review", () => {
+test("STATE_ARC_STEP_ORDER walks challengeContext -> interferingState -> statePreventiveAction -> stateMantra -> stateBodyLanguageCue -> review", () => {
   const draft = filledStateOnlyDraft();
   assert.equal(getNextProfileStep("challengeContext", draft, STATE_ARC_STEP_ORDER), "interferingState");
-  assert.equal(getNextProfileStep("interferingState", draft, STATE_ARC_STEP_ORDER), "stateMantra");
+  assert.equal(getNextProfileStep("interferingState", draft, STATE_ARC_STEP_ORDER), "statePreventiveAction");
+  assert.equal(getNextProfileStep("statePreventiveAction", draft, STATE_ARC_STEP_ORDER), "stateMantra");
   assert.equal(getNextProfileStep("stateMantra", draft, STATE_ARC_STEP_ORDER), "stateBodyLanguageCue");
   assert.equal(getNextProfileStep("stateBodyLanguageCue", draft, STATE_ARC_STEP_ORDER), "review");
 });
 
-test("IDENTITY_ARC_STEP_ORDER walks identityChallengeContext -> identityInterferingEmotion -> identityMantra -> identityBodyLanguageCue -> review, independently of STATE_ARC_STEP_ORDER", () => {
+test("IDENTITY_ARC_STEP_ORDER walks identityChallengeContext -> identityInterferingEmotion -> identityPreventiveAction -> identityMantra -> identityBodyLanguageCue -> review, independently of STATE_ARC_STEP_ORDER", () => {
   const draft = filledTwoWeekDraft();
   assert.equal(getNextProfileStep("identityChallengeContext", draft, IDENTITY_ARC_STEP_ORDER), "identityInterferingEmotion");
-  assert.equal(getNextProfileStep("identityInterferingEmotion", draft, IDENTITY_ARC_STEP_ORDER), "identityMantra");
+  assert.equal(getNextProfileStep("identityInterferingEmotion", draft, IDENTITY_ARC_STEP_ORDER), "identityPreventiveAction");
+  assert.equal(getNextProfileStep("identityPreventiveAction", draft, IDENTITY_ARC_STEP_ORDER), "identityMantra");
   assert.equal(getNextProfileStep("identityMantra", draft, IDENTITY_ARC_STEP_ORDER), "identityBodyLanguageCue");
   assert.equal(getNextProfileStep("identityBodyLanguageCue", draft, IDENTITY_ARC_STEP_ORDER), "review");
 });

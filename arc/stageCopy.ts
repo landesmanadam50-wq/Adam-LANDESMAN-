@@ -10,7 +10,7 @@
  */
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
-import { resolveEncodingTarget } from "./arcEngine.ts";
+import { needsReactiveStateSelection, resolveEncodingTarget, resolveTargetPreventiveAction } from "./arcEngine.ts";
 import {
   getAwarenessInstruction,
   getCombinedAttentionInstruction,
@@ -105,6 +105,13 @@ export function getStageCopy(
 ): ArcStageCopy {
   switch (stage) {
     case "trigger_selection":
+      // Recognition-only chooser copy when 2+ mapped reactive experiences
+      // are available (see arc/arcEngine.ts's needsReactiveStateSelection)
+      // -- asks which already-present mapped experience the trainee
+      // recognizes, never to generate/imagine/strengthen/recall one.
+      if (needsReactiveStateSelection(state.triggerType, activeLayers, profile, state.selectedTarget)) {
+        return { title: "מה כבר נמצא עכשיו?", body: "בחר את מה שהכי מתאים לרגע הזה." };
+      }
       return { title: "מה מביא אותך לכאן?", body: "בחר את מה שהכי מתאים לרגע הזה." };
 
     case "presence_check": {
@@ -130,14 +137,32 @@ export function getStageCopy(
     case "arc_thought_presence_recheck":
       return { title: "בדיקת נוכחות חוזרת", body: "אחרי ההרחבה — עד כמה אתה נוכח עכשיו, בסולם 1 עד 10?" };
 
-    case "preventive_action_check":
+    case "preventive_action_check": {
+      // Resolved from the CURRENT target's own map -- never a single
+      // global field, never mixed between targets. See
+      // arc/arcEngine.ts's resolveTargetPreventiveAction.
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: state.triggerType,
+        selectedTarget: state.selectedTarget,
+        buildProfile: profile,
+      });
+      const preventiveAction = resolveTargetPreventiveAction(layer, profile);
       return {
         title: "פעולה מונעת",
-        body: profile.preventiveAction ? `יש לך פעולה מונעת מוגדרת: ${profile.preventiveAction}. לבצע אותה עכשיו?` : "",
+        body: preventiveAction ? `יש לך פעולה מונעת מוגדרת: ${preventiveAction}. לבצע אותה עכשיו?` : "",
       };
+    }
 
-    case "preventive_action":
-      return { title: "פעולה מונעת", body: profile.preventiveAction ?? "" };
+    case "preventive_action": {
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: state.triggerType,
+        selectedTarget: state.selectedTarget,
+        buildProfile: profile,
+      });
+      return { title: "פעולה מונעת", body: resolveTargetPreventiveAction(layer, profile) ?? "" };
+    }
 
     case "sensation_check":
       if (state.sensationLocation !== null || state.sensationIntensity !== null) {
@@ -156,8 +181,14 @@ export function getStageCopy(
       // exactly as it is. Regulation (and its tool) begins only at the
       // "regulate" stage -- naming a regulation tool here would mix
       // the two, which the Awareness/Regulation instruction layer must
-      // keep separate.
-      return { title: "הישאר עם זה", body: "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה." };
+      // keep separate. The breath line is deliberately *awareness* of
+      // breath as it happens on its own, never an instruction to
+      // change/slow/deepen/extend it -- that's Regulation's job, not
+      // Stay/Presence's.
+      return {
+        title: "הישאר עם זה",
+        body: "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה. שים לב גם לנשימה כפי שהיא מתרחשת מעצמה.",
+      };
 
     case "accept":
       return { title: "קבלה", body: "האם אתה מוכן לקבל את התחושה הזו כמו שהיא, בלי להילחם בה?" };
@@ -207,7 +238,7 @@ export function getStageCopy(
     }
 
     case "encode": {
-      const { encoding } = resolveEncodingTarget({
+      const { encoding, actionLabel } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
         selectedTarget: state.selectedTarget,
@@ -221,7 +252,8 @@ export function getStageCopy(
       // Encoding Cue (Encoding doesn't drop Regulation, and doesn't
       // re-list every Regulation mechanism, just this one continuity
       // anchor), then (3) Identity/Mantra -- intentionally activated
-      // only here, never earlier.
+      // only here, never earlier -- then (4) Action Imagery, of the
+      // DESIRED action only (see below), still before the "act" stage.
       const parts: string[] = ["שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה."];
 
       const maintain: string[] = [];
@@ -241,21 +273,43 @@ export function getStageCopy(
         parts.push(`חזור לעצמך: "${encoding.mantra}".`);
       }
 
-      if (parts.length === 1) {
+      if (maintain.length === 0 && !encoding?.mantra) {
         parts.push("קח רגע לקבע את התחושה החדשה.");
       }
+
+      // Action Imagery: strictly of the desired, beneficial action
+      // (actionLabel only ever sources from positive action fields --
+      // beneficialAction/internalAction/identityAction, never
+      // interferingState/identityInterferingEmotion) -- never the
+      // Interfering State, craving, distraction, or any other difficult
+      // state. See arc/instructions.ts's containsInductionPattern.
+      parts.push(
+        actionLabel ? `דמיין את עצמך מבצע עכשיו את ${actionLabel}.` : "דמיין את עצמך מבצע עכשיו את הפעולה שבחרת."
+      );
 
       return { title: "קיבוע", body: parts.join(" ") };
     }
 
     case "act": {
-      const { actionLabel } = resolveEncodingTarget({
+      // The selected Body-Language cue carries over from Encoding into
+      // Action Preparation, and stays displayed for the whole time this
+      // screen is up (i.e. "during the action") -- same resolution as
+      // encode's, from the same current target's own map, so it can
+      // never mix Focus's cue into a Discipline-targeted session or vice
+      // versa. Omitted entirely (never invented, never an empty
+      // placeholder) when the current target has none configured.
+      const { actionLabel, encoding } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
         selectedTarget: state.selectedTarget,
         buildProfile: profile,
       });
-      return { title: "פעולה", body: actionLabel ? `עכשיו הזמן: ${actionLabel}.` : "עכשיו הזמן לפעולה." };
+      const parts: string[] = [];
+      if (encoding?.bodyLanguageCue) {
+        parts.push(`בזמן הפעולה, שמור על שפת הגוף שבחרת: ${encoding.bodyLanguageCue}.`);
+      }
+      parts.push(actionLabel ? `עכשיו הזמן: ${actionLabel}.` : "עכשיו הזמן לפעולה.");
+      return { title: "פעולה", body: parts.join(" ") };
     }
 
     case "success_focus":

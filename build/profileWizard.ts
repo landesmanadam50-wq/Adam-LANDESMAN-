@@ -85,10 +85,12 @@ export type ProfileStep =
   | "regulationTool"
   | "challengeContext"
   | "interferingState"
+  | "statePreventiveAction"
   | "stateMantra"
   | "stateBodyLanguageCue"
   | "identityChallengeContext"
   | "identityInterferingEmotion"
+  | "identityPreventiveAction"
   | "identityMantra"
   | "identityBodyLanguageCue"
   | "review";
@@ -121,13 +123,30 @@ export const GOAL_STEP_ORDER: ProfileStep[] = [
   "review",
 ];
 
-/** BUILD-ARC's step order around the state layer's Desired State (supportiveState). Never re-asks supportiveState itself -- only references it. */
-export const STATE_ARC_STEP_ORDER: ProfileStep[] = ["challengeContext", "interferingState", "stateMantra", "stateBodyLanguageCue", "review"];
+/**
+ * BUILD-ARC's step order around the state layer's Desired State
+ * (supportiveState). Never re-asks supportiveState itself -- only
+ * references it. statePreventiveAction sits right after the recognition
+ * fields (Challenge Context / Interfering State) and before the
+ * Encoding cues -- it's this target's own Preventive Action, surfaced
+ * by LIVE before ARC Thought (see arc/arcEngine.ts's
+ * resolveTargetPreventiveAction), never mixed with the identity
+ * layer's or the habit layer's.
+ */
+export const STATE_ARC_STEP_ORDER: ProfileStep[] = [
+  "challengeContext",
+  "interferingState",
+  "statePreventiveAction",
+  "stateMantra",
+  "stateBodyLanguageCue",
+  "review",
+];
 
-/** BUILD-ARC's step order around the identity layer's Desired State (desiredIdentity) -- the second, independently editable ARC Map. Never re-asks desiredIdentity itself. */
+/** BUILD-ARC's step order around the identity layer's Desired State (desiredIdentity) -- the second, independently editable ARC Map. Never re-asks desiredIdentity itself. identityPreventiveAction is parallel to statePreventiveAction above -- this target's own Preventive Action, never mixed with the state layer's. */
 export const IDENTITY_ARC_STEP_ORDER: ProfileStep[] = [
   "identityChallengeContext",
   "identityInterferingEmotion",
+  "identityPreventiveAction",
   "identityMantra",
   "identityBodyLanguageCue",
   "review",
@@ -144,12 +163,14 @@ export interface ProfileDraft {
   interferingState: string;
   challengeContext: string;
   internalAction: string;
+  statePreventiveAction: string;
   stateMantra: string;
   stateBodyLanguageCue: string;
 
   desiredIdentity: string;
   identityChallengeContext: string;
   identityInterferingEmotion: string;
+  identityPreventiveAction: string;
   identityMantra: string;
   identityBodyLanguageCue: string;
 
@@ -171,11 +192,13 @@ export function createEmptyDraft(): ProfileDraft {
     interferingState: "",
     challengeContext: "",
     internalAction: "",
+    statePreventiveAction: "",
     stateMantra: "",
     stateBodyLanguageCue: "",
     desiredIdentity: "",
     identityChallengeContext: "",
     identityInterferingEmotion: "",
+    identityPreventiveAction: "",
     identityMantra: "",
     identityBodyLanguageCue: "",
     habit: "",
@@ -212,11 +235,13 @@ export function draftFromProfileAndSelection(
     interferingState: profile.interferingState ?? "",
     challengeContext: profile.challengeContext ?? "",
     internalAction: profile.internalAction ?? "",
+    statePreventiveAction: profile.statePreventiveAction ?? "",
     stateMantra: profile.stateEncoding?.mantra ?? "",
     stateBodyLanguageCue: profile.stateEncoding?.bodyLanguageCue ?? "",
     desiredIdentity: profile.desiredIdentity ?? "",
     identityChallengeContext: profile.identityChallengeContext ?? "",
     identityInterferingEmotion: profile.identityInterferingEmotion ?? "",
+    identityPreventiveAction: profile.identityPreventiveAction ?? "",
     identityMantra: profile.identityEncoding?.mantra ?? "",
     identityBodyLanguageCue: profile.identityEncoding?.bodyLanguageCue ?? "",
     habit: profile.habit ?? "",
@@ -242,12 +267,14 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
     case "internalAction":
     case "challengeContext":
     case "interferingState":
+    case "statePreventiveAction":
     case "stateMantra":
     case "stateBodyLanguageCue":
       return draft.needsState === true;
     case "desiredIdentity":
     case "identityChallengeContext":
     case "identityInterferingEmotion":
+    case "identityPreventiveAction":
     case "identityMantra":
     case "identityBodyLanguageCue":
       return resolvesNeedsIdentity(draft);
@@ -404,12 +431,14 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     interferingState: draft.needsState && draft.interferingState.trim() ? draft.interferingState.trim() : null,
     supportiveState,
     challengeContext: draft.needsState && draft.challengeContext.trim() ? draft.challengeContext.trim() : null,
+    statePreventiveAction: draft.needsState && draft.statePreventiveAction.trim() ? draft.statePreventiveAction.trim() : null,
     stateEncoding: draft.needsState && supportiveState ? buildEncodingProfile(supportiveState, draft.stateMantra, draft.stateBodyLanguageCue) : null,
     internalAction: draft.needsState ? draft.internalAction.trim() : null,
 
     desiredIdentity,
     identityChallengeContext: needsIdentity && draft.identityChallengeContext.trim() ? draft.identityChallengeContext.trim() : null,
     identityInterferingEmotion: needsIdentity && draft.identityInterferingEmotion.trim() ? draft.identityInterferingEmotion.trim() : null,
+    identityPreventiveAction: needsIdentity && draft.identityPreventiveAction.trim() ? draft.identityPreventiveAction.trim() : null,
     identityEncoding: needsIdentity && desiredIdentity ? buildEncodingProfile(desiredIdentity, draft.identityMantra, draft.identityBodyLanguageCue) : null,
     // No longer its own question (see module doc): the identity layer's
     // action is the same Desired Habit as the habit layer's, not asked

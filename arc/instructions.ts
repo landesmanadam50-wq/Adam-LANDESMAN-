@@ -37,7 +37,14 @@ export const INDUCTION_PATTERN_DENYLIST: RegExp[] = [
   /תזכור/,
   /^זכור /,
   / זכור /,
-  /דמיין/,
+  // "imagine" is banned EXCEPT the one sanctioned Action Imagery phrasing
+  // ("imagine yourself performing [the desired action]", arc/stageCopy.ts's
+  // encode case) -- actionLabel there only ever sources from positive
+  // action fields (beneficialAction/internalAction/identityAction), never
+  // interferingState, so that specific phrasing can never evoke a
+  // difficult state. Any other "imagine" usage -- e.g. imagining a
+  // feeling/craving/distraction -- still trips this pattern.
+  /דמיין(?! את עצמך מבצע)/,
   /תחזק את/,
   // "hold/keep X in awareness/mind/the head" -- covers "בתודעה"/"בראש"
   // in addition to "במודעות".

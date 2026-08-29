@@ -25,6 +25,7 @@ type ArcTarget = "state" | "identity";
 const STATE_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   challengeContext: "באילו מצבים המצב הרצוי הזה במיוחד רלוונטי? (הקשר האתגר)",
   interferingState: "מה נוטה להפריע למצב הרצוי הזה?",
+  statePreventiveAction: "יש פעולה מונעת שיכולה לעזור לפני שזה קורה? (רשות)",
   stateMantra: "יש לך מנטרה למצב הזה? (רשות)",
   stateBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך במצב הזה? (רשות, למשל כתפיים משוחררות)",
   review: "סיכום מפת ARC",
@@ -32,14 +33,16 @@ const STATE_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
 const STATE_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   challengeContext: "challengeContext",
   interferingState: "interferingState",
+  statePreventiveAction: "statePreventiveAction",
   stateMantra: "stateMantra",
   stateBodyLanguageCue: "stateBodyLanguageCue",
 };
-const STATE_OPTIONAL_STEPS: ProfileStep[] = ["stateMantra", "stateBodyLanguageCue"];
+const STATE_OPTIONAL_STEPS: ProfileStep[] = ["statePreventiveAction", "stateMantra", "stateBodyLanguageCue"];
 
 const IDENTITY_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   identityChallengeContext: "באילו מצבים הזהות הרצויה הזו במיוחד רלוונטית? (הקשר האתגר)",
   identityInterferingEmotion: "מה נוטה להפריע לזהות הזו?",
+  identityPreventiveAction: "יש פעולה מונעת שיכולה לעזור לפני שזה קורה? (רשות)",
   identityMantra: "יש לך מנטרה לזהות הזו? (רשות)",
   identityBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך בזהות הזו? (רשות)",
   review: "סיכום מפת ARC",
@@ -47,10 +50,11 @@ const IDENTITY_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
 const IDENTITY_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   identityChallengeContext: "identityChallengeContext",
   identityInterferingEmotion: "identityInterferingEmotion",
+  identityPreventiveAction: "identityPreventiveAction",
   identityMantra: "identityMantra",
   identityBodyLanguageCue: "identityBodyLanguageCue",
 };
-const IDENTITY_OPTIONAL_STEPS: ProfileStep[] = ["identityMantra", "identityBodyLanguageCue"];
+const IDENTITY_OPTIONAL_STEPS: ProfileStep[] = ["identityPreventiveAction", "identityMantra", "identityBodyLanguageCue"];
 
 function stepOrderFor(target: ArcTarget): ProfileStep[] {
   return target === "state" ? STATE_ARC_STEP_ORDER : IDENTITY_ARC_STEP_ORDER;
@@ -265,6 +269,7 @@ export default function ArcMapScreen() {
               <>
                 <Text style={styles.body}>{`נוטה להפריע: ${draft.interferingState}`}</Text>
                 <Text style={styles.body}>{`הקשר אתגר: ${draft.challengeContext}`}</Text>
+                {draft.statePreventiveAction && <Text style={styles.body}>{`פעולה מונעת: ${draft.statePreventiveAction}`}</Text>}
                 {draft.stateBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.stateBodyLanguageCue}`}</Text>}
                 {draft.stateMantra && <Text style={styles.body}>{`מנטרה: ${draft.stateMantra}`}</Text>}
               </>
@@ -272,6 +277,7 @@ export default function ArcMapScreen() {
               <>
                 <Text style={styles.body}>{`נוטה להפריע: ${draft.identityInterferingEmotion}`}</Text>
                 <Text style={styles.body}>{`הקשר אתגר: ${draft.identityChallengeContext}`}</Text>
+                {draft.identityPreventiveAction && <Text style={styles.body}>{`פעולה מונעת: ${draft.identityPreventiveAction}`}</Text>}
                 {draft.identityBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.identityBodyLanguageCue}`}</Text>}
                 {draft.identityMantra && <Text style={styles.body}>{`מנטרה: ${draft.identityMantra}`}</Text>}
               </>

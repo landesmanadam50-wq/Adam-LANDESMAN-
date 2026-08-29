@@ -13,12 +13,14 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     goal: "להגיב לעצמי בצורה בונה יותר",
     interferingState: "פחד",
     challengeContext: "אחרי טעות",
+    statePreventiveAction: null,
     supportiveState: "חמלה",
     stateEncoding: null,
     internalAction: "סריקת גוף",
     desiredIdentity: null,
     identityChallengeContext: null,
     identityInterferingEmotion: null,
+    identityPreventiveAction: null,
     identityEncoding: null,
     identityAction: null,
     habit: null,
@@ -64,6 +66,66 @@ test("act copy is specific to the routed layer's action", () => {
   const p = profile({ beneficialAction: "לגשת ולפתוח שיחה" });
   const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_urge" }), ["habit"]);
   assert.ok(copy.body.includes("לגשת ולפתוח שיחה"));
+});
+
+// --- act carries the current target's Body-Language cue over from
+// Encoding into Action Preparation / the timed Action screen -- the
+// same per-target resolution encode already uses, so it can never mix
+// Focus's cue into a Discipline session or vice versa.
+
+test("act shows the current target's Body-Language cue before the action itself", () => {
+  const p = profile({
+    beneficialAction: "לגשת ולפתוח שיחה",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+  });
+  const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /כתפיים משוחררות/, "the Body-Language cue must carry over into the act screen");
+  const cueIndex = copy.body.indexOf("כתפיים משוחררות");
+  const actionIndex = copy.body.indexOf("עכשיו הזמן");
+  assert.ok(cueIndex >= 0 && actionIndex >= 0 && cueIndex < actionIndex, "the cue must appear before the action instruction (Action Preparation)");
+});
+
+test("act's Body-Language cue is a stable, pure function of the resolved target -- it stays identical across repeated calls, i.e. while a timer would be running", () => {
+  const p = profile({
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+  });
+  const s = liveState({ triggerType: "reactive_emotion" });
+  const first = getStageCopy("act", p, s, ["state"]);
+  const second = getStageCopy("act", p, s, ["state"]);
+  const third = getStageCopy("act", p, s, ["state"]);
+  assert.equal(first.body, second.body);
+  assert.equal(second.body, third.body);
+  assert.match(third.body, /כתפיים משוחררות/, "the cue must still be present on every re-render during the action");
+});
+
+test("act's Body-Language cue comes from the current target/map -- Focus's cue for a state-targeted session, Discipline's for an identity-targeted session", () => {
+  const p = twoTargetProfile();
+
+  const stateAct = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "state" }), ["state", "identity"]);
+  assert.match(stateAct.body, /עיניים פקוחות וממוקדות/, "must resolve Focus's own body-language cue");
+
+  const identityAct = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
+  assert.match(identityAct.body, /שמור את הראש ישר ויציב/, "must resolve Discipline's own body-language cue");
+});
+
+test("act never mixes Focus's and Discipline's Body-Language cues, in either direction", () => {
+  const p = twoTargetProfile();
+
+  const stateAct = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "state" }), ["state", "identity"]);
+  assert.ok(!stateAct.body.includes("שמור את הראש ישר ויציב"), "a Focus-targeted act screen must not leak Discipline's cue");
+
+  const identityAct = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
+  assert.ok(!identityAct.body.includes("עיניים פקוחות וממוקדות"), "a Discipline-targeted act screen must not leak Focus's cue");
+});
+
+test("act never invents a Body-Language cue and never shows an empty placeholder when none is configured for the current target", () => {
+  const p = profile({
+    beneficialAction: "לגשת ולפתוח שיחה",
+    stateEncoding: null,
+    identityEncoding: null,
+  });
+  const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_urge" }), ["habit"]);
+  assert.equal(copy.body, "עכשיו הזמן: לגשת ולפתוח שיחה.", "no cue sentence, and no dangling/empty placeholder, when nothing is configured");
 });
 
 test("sensation_check copy differs for habit (urge intensity) vs state/identity (body + intensity) on first entry", () => {
@@ -188,18 +250,29 @@ test("encode never references the mapped Interfering State, even though it's ava
   assert.equal(containsInductionPattern(copy.body), false);
 });
 
-test("encode with no regulation tool configured still works, with a neutral sensation notice and no dangling reference to a tool", () => {
+test("encode with no regulation tool configured still works, with a neutral sensation notice, no dangling reference to a tool, and a trailing Action Imagery sentence", () => {
   const p = profile({ regulationTool: null, stateEncoding: null });
   const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
-  assert.equal(copy.body, "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה. קח רגע לקבע את התחושה החדשה.");
+  assert.equal(
+    copy.body,
+    "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה. קח רגע לקבע את התחושה החדשה. דמיין את עצמך מבצע עכשיו את סריקת גוף."
+  );
 });
 
 test("stay is Awareness-adjacent -- it must never name the regulation tool, since Regulation begins only at the regulate stage", () => {
   const p = profile({ regulationTool: "נשימה 4-7-8" });
   const copy = getStageCopy("stay", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
   assert.ok(!copy.body.includes("נשימה 4-7-8"), "stay must not reference the regulation tool");
-  assert.ok(!/נשימה|נשוף|הרפ/.test(copy.body), "stay must not contain breathing/relaxation regulation language");
   assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("stay includes natural breath awareness, but never an instruction to regulate the breath -- that belongs only to Regulation", () => {
+  const copy = getStageCopy("stay", profile(), liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /שים לב גם לנשימה כפי שהיא מתרחשת מעצמה/, "must include natural breath awareness");
+  assert.ok(
+    !/האט|העמק|הארך|שנה את הקצב|נשוף לאט|נשימת בטן/.test(copy.body),
+    "must never instruct intentional breath regulation (slow/deepen/extend/change rhythm/abdomen-breathe)"
+  );
 });
 
 test("stay never changes copy based on regulationTool -- it's identical with or without one configured", () => {

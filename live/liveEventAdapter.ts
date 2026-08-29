@@ -17,7 +17,13 @@
  * a React rendering harness -- see live/liveEventAdapter.test.ts.
  */
 
-import { getAvailableProactiveTargets, getNextArcStage, needsProactiveTargetSelection } from "../arc/arcEngine.ts";
+import {
+  getAvailableProactiveTargets,
+  getAvailableReactiveExperiences,
+  getNextArcStage,
+  needsProactiveTargetSelection,
+  needsReactiveStateSelection,
+} from "../arc/arcEngine.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, TriggerType } from "../arc/types.ts";
 
 export function applyTriggerSelection(session: ArcLiveState, triggerType: TriggerType): ArcLiveState {
@@ -88,6 +94,32 @@ function autoSelectSingleProactiveTarget(
   return session;
 }
 
+/**
+ * When a reactive_emotion session is sitting at trigger_selection with no
+ * target chosen yet and exactly one reactive experience is mapped, resolve
+ * it automatically instead of showing a one-option chooser. More than one
+ * available experience is left null -- the renderer shows the chooser for
+ * that case (see needsReactiveStateSelection). Must run BEFORE
+ * getNextArcStage, unlike autoSelectSingleProactiveTarget: trigger_selection
+ * itself decides where to route next based on selectedTarget, so the target
+ * has to already be resolved by the time the engine looks at it.
+ */
+function autoSelectSingleReactiveExperience(
+  session: ArcLiveState,
+  currentStage: ArcStage,
+  activeLayers: DevelopmentLayer[],
+  profile: ArcBuildProfile
+): ArcLiveState {
+  if (currentStage !== "trigger_selection" || session.triggerType !== "reactive_emotion" || session.selectedTarget !== null) {
+    return session;
+  }
+  const experiences = getAvailableReactiveExperiences(activeLayers, profile);
+  if (experiences.length === 1) {
+    return { ...session, selectedTarget: experiences[0].layer };
+  }
+  return session;
+}
+
 export interface AdvanceResult {
   session: ArcLiveState;
   stage: ArcStage;
@@ -96,9 +128,9 @@ export interface AdvanceResult {
 /**
  * The single integration point: apply the engine's decision for what
  * comes after `currentStage` to `session`, fold in the actionReached
- * flag and any auto-selected proactive target, and return the result.
- * Call this after an applyXxx function above has already shaped the raw
- * answer into `session`.
+ * flag and any auto-selected proactive/reactive target, and return the
+ * result. Call this after an applyXxx function above has already shaped
+ * the raw answer into `session`.
  */
 export function advanceLiveSession(
   currentStage: ArcStage,
@@ -106,15 +138,16 @@ export function advanceLiveSession(
   profile: ArcBuildProfile,
   activeLayers: DevelopmentLayer[]
 ): AdvanceResult {
-  const outcome = getNextArcStage(currentStage, session, profile);
+  const resolvedSession = autoSelectSingleReactiveExperience(session, currentStage, activeLayers, profile);
+  const outcome = getNextArcStage(currentStage, resolvedSession, profile, activeLayers);
   let nextSession: ArcLiveState = {
-    ...session,
+    ...resolvedSession,
     currentArcStage: outcome.stage,
     loopIterationCount: outcome.loopIterationCount,
-    actionReached: session.actionReached || outcome.stage === "act",
+    actionReached: resolvedSession.actionReached || outcome.stage === "act",
   };
   nextSession = autoSelectSingleProactiveTarget(nextSession, outcome.stage, activeLayers, profile);
   return { session: nextSession, stage: outcome.stage };
 }
 
-export { needsProactiveTargetSelection, getAvailableProactiveTargets };
+export { needsProactiveTargetSelection, getAvailableProactiveTargets, needsReactiveStateSelection, getAvailableReactiveExperiences };

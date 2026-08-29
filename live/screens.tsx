@@ -10,10 +10,10 @@
  * rule. Those all live in arc/arcEngine.ts and arc/engine.ts.
  */
 
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
-import type { ProactiveTarget } from "../arc/arcEngine.ts";
+import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 
 const SCALE_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
@@ -77,6 +77,38 @@ export function TriggerSelectScreen({
         {availableTriggers.map((value) => (
           <Pressable key={value} style={styles.chip} onPress={() => onSelect(value)}>
             <Text style={styles.buttonText}>{labels[value]}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Explicit recognition chooser for which already-present mapped
+ * experience (#4, #5, #6) the trainee recognizes -- e.g. "פיזור" vs
+ * "תשוקה" -- generated from BUILD-ARC's own mappings via
+ * getAvailableReactiveExperiences, never a hardcoded permanent list.
+ * Mirrors ProactiveTargetScreen's shape exactly: recognition-only, no
+ * copy here ever asks the trainee to generate/imagine/strengthen/recall
+ * a state in order to feel it.
+ */
+export function ReactiveStateSelectScreen({
+  copy,
+  experiences,
+  onSelect,
+}: {
+  copy: ArcStageCopy;
+  experiences: ReactiveExperience[];
+  onSelect: (target: DevelopmentLayer) => void;
+}) {
+  return (
+    <View>
+      <Title copy={copy} />
+      <View style={styles.chipRow}>
+        {experiences.map((experience) => (
+          <Pressable key={experience.layer} style={styles.chip} onPress={() => onSelect(experience.layer)}>
+            <Text style={styles.buttonText}>{experience.label}</Text>
           </Pressable>
         ))}
       </View>
@@ -291,10 +323,38 @@ export function SuccessFocusScreen({
   );
 }
 
-export function CompleteScreen({ copy, onRestart }: { copy: ArcStageCopy; onRestart: () => void }) {
+/**
+ * Reinforcement's completion screen, extended with an optional written
+ * Gratitude entry -- reuses this same existing completion/storage flow
+ * rather than a standalone gratitude architecture (see
+ * data/storage.ts's updateLastSessionLogEntryGratitude). The text field
+ * is entirely optional: onRestart always fires, whatever gratitudeText
+ * currently holds (including empty), and LiveSessionScreen.tsx decides
+ * whether that's worth persisting.
+ */
+export function CompleteScreen({
+  copy,
+  gratitudeText,
+  onChangeGratitudeText,
+  onRestart,
+}: {
+  copy: ArcStageCopy;
+  gratitudeText: string;
+  onChangeGratitudeText: (text: string) => void;
+  onRestart: () => void;
+}) {
   return (
     <View>
       <Title copy={copy} />
+      <Text style={styles.body}>על מה אתה מוקיר תודה עכשיו?</Text>
+      <TextInput
+        style={styles.textInput}
+        value={gratitudeText}
+        onChangeText={onChangeGratitudeText}
+        placeholder="אפשר להשאיר ריק"
+        multiline
+        textAlign="right"
+      />
       <PrimaryButton label="סשן חדש" onPress={onRestart} />
     </View>
   );
@@ -357,6 +417,16 @@ const styles = StyleSheet.create({
   },
   fullWidthButton: {
     marginTop: 4,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 60,
+    marginBottom: 16,
+    fontSize: 16,
+    textAlignVertical: "top",
   },
   buttonText: {
     color: "#fff",
