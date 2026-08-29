@@ -67,6 +67,8 @@ export interface ArcBuildProfile {
   internalAction: string | null;
 
   desiredIdentity: string | null;
+  /** The identity layer's own ARC Map, parallel to challengeContext/interferingState above -- a second, independently editable ARC Map around a second Desired State (desiredIdentity), not a duplicate of the state layer's. */
+  identityChallengeContext: string | null;
   identityInterferingEmotion: string | null;
   identityEncoding: EncodingProfile | null;
   identityAction: string | null;

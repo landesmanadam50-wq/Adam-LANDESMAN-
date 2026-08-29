@@ -26,6 +26,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     stateEncoding: null,
     internalAction: null,
     desiredIdentity: null,
+    identityChallengeContext: null,
     identityInterferingEmotion: null,
     identityEncoding: null,
     identityAction: null,
