@@ -14,7 +14,12 @@
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy } from "../arc/stageCopy.ts";
 import { getStageCopy, getYesNoLabels } from "../arc/stageCopy.ts";
-import { getAvailableProactiveTargets, needsProactiveTargetSelection } from "../arc/arcEngine.ts";
+import {
+  getAvailableProactiveTargets,
+  getAvailableReactiveExperiences,
+  needsProactiveTargetSelection,
+  needsReactiveStateSelection,
+} from "../arc/arcEngine.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
 import {
   AcceptScreen,
@@ -26,6 +31,7 @@ import {
   PresenceRatingScreen,
   PreventiveActionCheckScreen,
   ProactiveTargetScreen,
+  ReactiveStateSelectScreen,
   RegulationScreen,
   SensationRatingScreen,
   StayScreen,
@@ -57,11 +63,14 @@ export interface ArcLiveRendererProps {
   onSubmitSensationIntensity: (value: number) => void;
   onYesNoAnswer: (yes: boolean) => void;
   onSelectTarget: (target: DevelopmentLayer) => void;
+  onSelectReactiveExperience: (target: DevelopmentLayer) => void;
   onGenericContinue: () => void;
   onRegulateContinue: () => void;
   onActionCompleted: () => void;
   onSelectSuccessFocusMinutes: (minutes: number) => void;
   onSuccessFocusContinue: () => void;
+  gratitudeText: string;
+  onChangeGratitudeText: (text: string) => void;
   onRestart: () => void;
 }
 
@@ -70,7 +79,15 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
   const copy: ArcStageCopy = getStageCopy(stage, profile, session, activeLayers);
 
   switch (stage) {
-    case "trigger_selection":
+    case "trigger_selection": {
+      // Reactive recognition chooser: stays at trigger_selection (same
+      // interstitial pattern as desired_state_check's proactive-target
+      // picker below) while 2+ mapped reactive experiences exist and
+      // none is chosen yet -- see needsReactiveStateSelection.
+      if (needsReactiveStateSelection(session.triggerType, activeLayers, profile, session.selectedTarget)) {
+        const experiences = getAvailableReactiveExperiences(activeLayers, profile);
+        return <ReactiveStateSelectScreen copy={copy} experiences={experiences} onSelect={props.onSelectReactiveExperience} />;
+      }
       return (
         <TriggerSelectScreen
           copy={copy}
@@ -79,6 +96,7 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           onSelect={props.onSelectTrigger}
         />
       );
+    }
 
     case "presence_check":
     case "arc_thought_presence_recheck":
@@ -147,6 +165,13 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       );
 
     case "complete":
-      return <CompleteScreen copy={copy} onRestart={props.onRestart} />;
+      return (
+        <CompleteScreen
+          copy={copy}
+          gratitudeText={props.gratitudeText}
+          onChangeGratitudeText={props.onChangeGratitudeText}
+          onRestart={props.onRestart}
+        />
+      );
   }
 }

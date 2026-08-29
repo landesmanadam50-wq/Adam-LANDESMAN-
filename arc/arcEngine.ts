@@ -14,7 +14,20 @@
  *
  * ArcStage sequencing, end to end:
  *
- *   trigger_selection -> presence_check
+ *   trigger_selection
+ *     -> (reactive_emotion with 2+ mapped reactive experiences only:
+ *        stays at trigger_selection, rendered as the "what's already
+ *        present?" chooser -- see needsReactiveStateSelection -- until
+ *        selectedTarget is set)
+ *     -> target resolved (reactive_urge: always "habit"; reactive_emotion:
+ *        selectedTarget, or the one mapped experience if exactly one, or
+ *        inferLayerFromTrigger's existing inference if none are mapped;
+ *        proactive: resolved later, unchanged)
+ *     -> (preventive_action_check -> preventive_action, only when that
+ *        target's own Preventive Action is configured -- see
+ *        resolveTargetPreventiveAction; never a global one, never before
+ *        the target itself is resolved)
+ *     -> presence_check
  *     -> (ARC Thought, gated purely on presenceRating -- see
  *        shouldRunArcThought; triggerType/activeLayers never affect
  *        whether it runs, only where it returns to afterward) x4,
@@ -23,8 +36,6 @@
  *        stays low, then force-continuing regardless
  *     -> routed by resolveLiveRoute(triggerType, activeLayers):
  *          reactive_state_identity / reactive_habit
- *            -> (preventive_action_check -> preventive_action, only for
- *               reactive_habit AND only if profile.preventiveAction is set)
  *            -> sensation_check -> classified by getReactiveStage(intensity):
  *                 stay    -> stay -> accept -> sensation_check (re-check)
  *                 transit -> reactive_transition_check
@@ -154,6 +165,57 @@ export function needsProactiveTargetSelection(
   return getAvailableProactiveTargets(activeLayers, profile).length > 1;
 }
 
+export interface ReactiveExperience {
+  layer: DevelopmentLayer;
+  label: string;
+}
+
+/**
+ * Which mapped "already present" reactive experiences can be offered
+ * as explicit recognition choices (#4, #5, #6) -- e.g. "Distraction"
+ * (state) vs "Craving" (identity). Deliberately reuses interferingState
+ * (state)/identityInterferingEmotion (identity) as the labels rather
+ * than a separate schema: each already correlates 1:1 with its own
+ * full ARC Map (challengeContext/preventiveAction/regulationTool/
+ * encoding all keyed to the same state vs identity field split), so no
+ * new "mappedReactiveExperience -> positiveTargetType -> positiveTargetId"
+ * structure is needed -- see arc/types.ts's ArcBuildProfile doc. Habit
+ * is deliberately excluded: reactive_urge's target is always
+ * unambiguous ("habit"), so it never needs a chooser.
+ */
+export function getAvailableReactiveExperiences(
+  activeLayers: DevelopmentLayer[],
+  profile: ArcBuildProfile
+): ReactiveExperience[] {
+  const experiences: ReactiveExperience[] = [];
+  if (activeLayers.includes("state") && profile.interferingState) {
+    experiences.push({ layer: "state", label: profile.interferingState });
+  }
+  if (activeLayers.includes("identity") && profile.identityInterferingEmotion) {
+    experiences.push({ layer: "identity", label: profile.identityInterferingEmotion });
+  }
+  return experiences;
+}
+
+/**
+ * Whether the UI needs to ask which already-present mapped experience
+ * the trainee recognizes, mirroring needsProactiveTargetSelection --
+ * only for reactive_emotion, only when 2+ mapped experiences exist and
+ * none is chosen yet. Recognition-only (#4): this never asks the
+ * trainee to generate, imagine, or strengthen anything -- it only
+ * identifies which already-mapped label matches what's already present,
+ * exactly like presence_check's recognition preamble.
+ */
+export function needsReactiveStateSelection(
+  triggerType: TriggerType | null,
+  activeLayers: DevelopmentLayer[],
+  profile: ArcBuildProfile,
+  selectedTarget: DevelopmentLayer | null
+): boolean {
+  if (triggerType !== "reactive_emotion" || selectedTarget !== null) return false;
+  return getAvailableReactiveExperiences(activeLayers, profile).length > 1;
+}
+
 // ---------------------------------------------------------------------------
 // Encoding target resolution (#7) -- the one place this decision is made
 // ---------------------------------------------------------------------------
@@ -215,32 +277,72 @@ function inferLayerFromTrigger(
 }
 
 // ---------------------------------------------------------------------------
-// Preventive action (#12)
+// Preventive action -- resolved per-target, surfaced before ARC Thought
 // ---------------------------------------------------------------------------
 
-function afterArcThought(state: ArcLiveState, profile: ArcBuildProfile): ArcStage {
-  if (state.triggerType === null) return "sensation_check";
-  const route = getRouteAfterPresence(state.triggerType);
-  if (route === "proactive") return "desired_state_check";
-  if (route === "reactive_habit" && profile.preventiveAction !== null) {
-    return "preventive_action_check";
+/**
+ * Resolves Preventive Action from the CURRENT target's own map -- never
+ * one global field, never mixed between targets (#3, #14, #15): state
+ * gets statePreventiveAction, identity gets identityPreventiveAction,
+ * habit keeps the original preventiveAction field it always used.
+ */
+export function resolveTargetPreventiveAction(layer: DevelopmentLayer, profile: ArcBuildProfile): string | null {
+  switch (layer) {
+    case "state":
+      return profile.statePreventiveAction;
+    case "identity":
+      return profile.identityPreventiveAction;
+    case "habit":
+      return profile.preventiveAction;
   }
-  return "sensation_check";
+}
+
+/** preventive_action_check if the resolved target has one configured, else straight to presence_check. Reactive only -- see the trigger_selection case; proactive is unaffected (unchanged: desired_state_check first, per "Preserve Proactive Separation"). */
+function afterReactiveTargetResolved(layer: DevelopmentLayer, profile: ArcBuildProfile): ArcStage {
+  return resolveTargetPreventiveAction(layer, profile) !== null ? "preventive_action_check" : "presence_check";
+}
+
+function afterArcThought(triggerType: TriggerType | null): ArcStage {
+  if (triggerType === null) return "sensation_check";
+  return getRouteAfterPresence(triggerType) === "proactive" ? "desired_state_check" : "sensation_check";
 }
 
 // ---------------------------------------------------------------------------
 // The sequencer (#8, #9, #10, #11)
 // ---------------------------------------------------------------------------
 
-export function getNextArcStage(current: ArcStage, state: ArcLiveState, profile: ArcBuildProfile): ArcStageResult {
+export function getNextArcStage(
+  current: ArcStage,
+  state: ArcLiveState,
+  profile: ArcBuildProfile,
+  activeLayers: DevelopmentLayer[]
+): ArcStageResult {
   switch (current) {
-    case "trigger_selection":
+    case "trigger_selection": {
+      if (state.triggerType === null) return result(current, state.loopIterationCount);
+
+      if (state.triggerType === "reactive_urge") {
+        return result(afterReactiveTargetResolved("habit", profile), state.loopIterationCount);
+      }
+
+      if (state.triggerType === "reactive_emotion") {
+        // Stays at trigger_selection -- rendered as the "what's already
+        // present?" chooser -- until a target is resolved (#4, #16).
+        if (needsReactiveStateSelection(state.triggerType, activeLayers, profile, state.selectedTarget)) {
+          return result(current, state.loopIterationCount);
+        }
+        const layer = state.selectedTarget ?? inferLayerFromTrigger(state.triggerType, activeLayers, profile);
+        return result(afterReactiveTargetResolved(layer, profile), state.loopIterationCount);
+      }
+
+      // proactive -- unaffected by this change, per "Preserve Proactive Separation".
       return result("presence_check", state.loopIterationCount);
+    }
 
     case "presence_check":
       if (state.presenceRating === null) return result(current, state.loopIterationCount);
       return result(
-        shouldRunArcThought(state.presenceRating) ? "arc_thought_awareness" : afterArcThought(state, profile),
+        shouldRunArcThought(state.presenceRating) ? "arc_thought_awareness" : afterArcThought(state.triggerType),
         state.loopIterationCount
       );
 
@@ -254,20 +356,24 @@ export function getNextArcStage(current: ArcStage, state: ArcLiveState, profile:
     case "arc_thought_presence_recheck": {
       if (state.presenceRating === null) return result(current, state.loopIterationCount);
       if (!shouldRunArcThought(state.presenceRating)) {
-        return result(afterArcThought(state, profile), state.loopIterationCount);
+        return result(afterArcThought(state.triggerType), state.loopIterationCount);
       }
       // Presence is still low. Loop back to re-expand rather than
       // restarting the whole ARC Thought sequence, up to the safety cap.
       if (loopCapped(state.loopIterationCount)) {
-        return result(afterArcThought(state, profile), state.loopIterationCount);
+        return result(afterArcThought(state.triggerType), state.loopIterationCount);
       }
       return result("arc_thought_expand_presence", state.loopIterationCount + 1);
     }
 
+    // Reached only before ARC Thought now (from trigger_selection, once
+    // the target is resolved) -- both branches continue into
+    // presence_check, never back to sensation_check (that ordering is
+    // now obsolete; see the module doc).
     case "preventive_action_check":
-      return result(state.wantsPreventiveAction === true ? "preventive_action" : "sensation_check", state.loopIterationCount);
+      return result(state.wantsPreventiveAction === true ? "preventive_action" : "presence_check", state.loopIterationCount);
     case "preventive_action":
-      return result("sensation_check", state.loopIterationCount);
+      return result("presence_check", state.loopIterationCount);
 
     case "sensation_check": {
       if (state.sensationIntensity === null) return result(current, state.loopIterationCount);

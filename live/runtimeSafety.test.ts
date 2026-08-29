@@ -36,11 +36,13 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     interferingState: "ביקורת עצמית",
     supportiveState: "חמלה",
     challengeContext: "אחרי טעות",
+    statePreventiveAction: null,
     stateEncoding: null,
     internalAction: "סריקת גוף",
     desiredIdentity: "אדם רגוע ובוטח",
     identityChallengeContext: null,
     identityInterferingEmotion: null,
+    identityPreventiveAction: null,
     identityEncoding: null,
     identityAction: null,
     habit: "לבדוק את הטלפון בכל הפסקה",
@@ -54,7 +56,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
 }
 
 /** Walks a real session from getFirstArcStage, through low presence, into arc_thought_awareness -- exactly as LiveSessionScreen.tsx does via getFirstArcStage/getNextArcStage. */
-function walkToArcThoughtAwareness(p: ArcBuildProfile): { stage: ArcStage; state: ArcLiveState } {
+function walkToArcThoughtAwareness(p: ArcBuildProfile, activeLayers: DevelopmentLayer[]): { stage: ArcStage; state: ArcLiveState } {
   let state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
   let stage = getFirstArcStage();
 
@@ -63,7 +65,7 @@ function walkToArcThoughtAwareness(p: ArcBuildProfile): { stage: ArcStage; state
     if (stage === "presence_check") {
       state = { ...state, presenceRating: 3 }; // low -- must enter ARC Thought
     }
-    const next = getNextArcStage(stage, state, p);
+    const next = getNextArcStage(stage, state, p, activeLayers);
     stage = next.stage;
     state = { ...state, loopIterationCount: next.loopIterationCount };
     iterations++;
@@ -78,7 +80,7 @@ const LAYER_CONFIGS: DevelopmentLayer[][] = [["state"], ["identity"], ["habit"],
 for (const activeLayers of LAYER_CONFIGS) {
   test(`runtime path (activeLayers=${activeLayers.join("+")}): every ARC Thought screen's real getStageCopy() output is safe, walked from getFirstArcStage`, () => {
     const p = profile();
-    let { stage, state } = walkToArcThoughtAwareness(p);
+    let { stage, state } = walkToArcThoughtAwareness(p, activeLayers);
 
     for (const expectedStage of ARC_THOUGHT_STAGES) {
       assert.equal(stage, expectedStage);
@@ -87,7 +89,7 @@ for (const activeLayers of LAYER_CONFIGS) {
       assert.equal(containsInductionPattern(copy.body), false, `${activeLayers}/${stage} produced unsafe copy: "${copy.body}"`);
       assert.ok(!copy.body.includes(p.interferingState ?? " "), `${activeLayers}/${stage} leaked interferingState into ARC Thought copy`);
       assert.ok(!copy.body.includes(p.supportiveState ?? " "), `${activeLayers}/${stage} leaked supportiveState (Desired State) into ARC Thought copy`);
-      const next = getNextArcStage(stage, state, p);
+      const next = getNextArcStage(stage, state, p, activeLayers);
       stage = next.stage;
       state = { ...state, loopIterationCount: next.loopIterationCount };
     }
@@ -96,8 +98,8 @@ for (const activeLayers of LAYER_CONFIGS) {
 
 test("the real awareness/combined-attention/expand-presence copy, reached via the real engine walk, matches the corrected instruction text exactly", () => {
   const p = profile();
-  let { stage, state } = walkToArcThoughtAwareness(p);
   const activeLayers: DevelopmentLayer[] = ["state", "identity", "habit"];
+  let { stage, state } = walkToArcThoughtAwareness(p, activeLayers);
 
   const expected: Partial<Record<ArcStage, string>> = {
     arc_thought_awareness: "שים לב למה שכבר נמצא עכשיו בתודעה ובגוף שלך.",
@@ -109,7 +111,7 @@ test("the real awareness/combined-attention/expand-presence copy, reached via th
   for (const expectedStage of ARC_THOUGHT_STAGES) {
     const copy = getStageCopy(stage, p, state, activeLayers);
     assert.equal(copy.body, expected[expectedStage], `${expectedStage} body must be exactly the corrected instruction`);
-    const next = getNextArcStage(stage, state, p);
+    const next = getNextArcStage(stage, state, p, activeLayers);
     stage = next.stage;
     state = { ...state, loopIterationCount: next.loopIterationCount };
   }
@@ -154,8 +156,8 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
 test("ambient sound appears as a passive anchor in the real Combined Attention/Expand Presence copy, for every activeLayers config and never trips the audit", () => {
   for (const activeLayers of LAYER_CONFIGS) {
     const p = profile();
-    let { stage, state } = walkToArcThoughtAwareness(p);
-    let next = getNextArcStage(stage, state, p); // -> arc_thought_combined_attention
+    let { stage, state } = walkToArcThoughtAwareness(p, activeLayers);
+    let next = getNextArcStage(stage, state, p, activeLayers); // -> arc_thought_combined_attention
     stage = next.stage;
     state = { ...state, loopIterationCount: next.loopIterationCount };
 
@@ -163,7 +165,7 @@ test("ambient sound appears as a passive anchor in the real Combined Attention/E
     assert.match(combinedAttentionCopy.body, /לצלילים מסביב/, `${activeLayers}: Combined Attention must mention ambient sound as an anchor`);
     assert.equal(containsInductionPattern(combinedAttentionCopy.body), false);
 
-    next = getNextArcStage(stage, state, p); // -> arc_thought_expand_presence
+    next = getNextArcStage(stage, state, p, activeLayers); // -> arc_thought_expand_presence
     stage = next.stage;
     state = { ...state, loopIterationCount: next.loopIterationCount };
     const expansionCopy = getStageCopy(stage, p, state, activeLayers);
@@ -199,7 +201,7 @@ test("a full reactive_emotion session, walked end to end through the real engine
     visited.push({ stage, body: copy.body });
     assert.equal(containsInductionPattern(copy.body), false, `${stage} produced unsafe copy: "${copy.body}"`);
 
-    const next = getNextArcStage(stage, state, p);
+    const next = getNextArcStage(stage, state, p, activeLayers);
     stage = next.stage;
     state = { ...state, loopIterationCount: next.loopIterationCount };
     iterations++;
@@ -247,7 +249,7 @@ test("a reactive_emotion session targeting the IDENTITY layer (Discipline), walk
     if (stage === "sensation_check") {
       state = { ...state, sensationLocation: "חזה", sensationIntensity: 5 }; // routes through regulate
     }
-    const next = getNextArcStage(stage, state, p);
+    const next = getNextArcStage(stage, state, p, activeLayers);
     stage = next.stage;
     state = { ...state, loopIterationCount: next.loopIterationCount };
     iterations++;
@@ -292,7 +294,7 @@ test("a full proactive session, walked end to end through the real engine, consu
     // that's a reactive_emotion-only mechanism (see getRecognitionPreamble).
     assert.ok(!copy.body.includes(p.interferingState ?? " "), `${stage} must not reference the Interfering State in a proactive session: "${copy.body}"`);
 
-    const next = getNextArcStage(stage, state, p);
+    const next = getNextArcStage(stage, state, p, activeLayers);
     stage = next.stage;
     state = { ...state, loopIterationCount: next.loopIterationCount };
     iterations++;
@@ -311,6 +313,7 @@ test("a full proactive session, walked end to end through the real engine, consu
 });
 
 test("ARC Thought is presence-gated only -- reached the same way regardless of trigger type (no alternate route around the safety check)", () => {
+  const activeLayers: DevelopmentLayer[] = ["state", "identity", "habit"];
   for (const triggerType of ["reactive_emotion", "reactive_urge", "proactive"] as const) {
     const p = profile();
     let state: ArcLiveState = { ...createEmptyLiveState(), triggerType };
@@ -320,7 +323,7 @@ test("ARC Thought is presence-gated only -- reached the same way regardless of t
       if (stage === "presence_check") {
         state = { ...state, presenceRating: 3 };
       }
-      const next = getNextArcStage(stage, state, p);
+      const next = getNextArcStage(stage, state, p, activeLayers);
       stage = next.stage;
       state = { ...state, loopIterationCount: next.loopIterationCount };
       iterations++;

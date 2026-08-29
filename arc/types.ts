@@ -63,6 +63,8 @@ export interface ArcBuildProfile {
   /** The Desired State (BUILD-GOAL's last step) -- distinct from, and never combined with, interferingState. Intentionally activated only at Encoding. */
   supportiveState: string | null;
   challengeContext: string | null;
+  /** The state layer's own Preventive Action -- resolved for a session targeting "state", never mixed with identityPreventiveAction/preventiveAction (habit's). See arc/arcEngine.ts's resolveTargetPreventiveAction. */
+  statePreventiveAction: string | null;
   stateEncoding: EncodingProfile | null;
   internalAction: string | null;
 
@@ -70,11 +72,14 @@ export interface ArcBuildProfile {
   /** The identity layer's own ARC Map, parallel to challengeContext/interferingState above -- a second, independently editable ARC Map around a second Desired State (desiredIdentity), not a duplicate of the state layer's. */
   identityChallengeContext: string | null;
   identityInterferingEmotion: string | null;
+  /** The identity layer's own Preventive Action, parallel to statePreventiveAction -- never mixed with it or with habit's preventiveAction. */
+  identityPreventiveAction: string | null;
   identityEncoding: EncodingProfile | null;
   identityAction: string | null;
 
   habit: string | null;
   beneficialAction: string | null;
+  /** The habit layer's own Preventive Action, resolved for a session targeting "habit" (reactive_urge). Parallel to statePreventiveAction/identityPreventiveAction -- see arc/arcEngine.ts's resolveTargetPreventiveAction. */
   preventiveAction: string | null;
 
   regulationTool: string | null;
@@ -104,12 +109,17 @@ export interface ArcProgramProgress {
 export interface ArcLiveState {
   triggerType: TriggerType | null;
   /**
-   * Which DevelopmentLayer's encoding/action this proactive session targets,
-   * set explicitly once (auto-picked when only one target is available, or
-   * chosen by the trainee when more than one is) rather than left for
-   * resolveEncodingTarget() to infer blind -- see arc/arcEngine.ts's
-   * needsProactiveTargetSelection(). Always null for reactive sessions,
-   * where the target is unambiguous from triggerType/activeLayers.
+   * Which DevelopmentLayer's encoding/action/Preventive Action this
+   * session targets, set explicitly once (auto-picked when only one
+   * target is available, or chosen by the trainee when more than one
+   * is) rather than left for resolveEncodingTarget() to infer blind --
+   * see arc/arcEngine.ts's needsProactiveTargetSelection() (proactive)
+   * and needsReactiveStateSelection() (reactive_emotion, recognizing
+   * which already-present mapped experience -- e.g. "Distraction" vs
+   * "Craving" -- interferes with which positive target). Left null for
+   * reactive_urge (unambiguous: always "habit") and for reactive_emotion/
+   * proactive sessions with 0-1 available targets, where inference
+   * alone is already deterministic and consistent.
    */
   selectedTarget: DevelopmentLayer | null;
 

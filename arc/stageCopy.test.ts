@@ -13,12 +13,14 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     goal: "להגיב לעצמי בצורה בונה יותר",
     interferingState: "פחד",
     challengeContext: "אחרי טעות",
+    statePreventiveAction: null,
     supportiveState: "חמלה",
     stateEncoding: null,
     internalAction: "סריקת גוף",
     desiredIdentity: null,
     identityChallengeContext: null,
     identityInterferingEmotion: null,
+    identityPreventiveAction: null,
     identityEncoding: null,
     identityAction: null,
     habit: null,
@@ -188,18 +190,29 @@ test("encode never references the mapped Interfering State, even though it's ava
   assert.equal(containsInductionPattern(copy.body), false);
 });
 
-test("encode with no regulation tool configured still works, with a neutral sensation notice and no dangling reference to a tool", () => {
+test("encode with no regulation tool configured still works, with a neutral sensation notice, no dangling reference to a tool, and a trailing Action Imagery sentence", () => {
   const p = profile({ regulationTool: null, stateEncoding: null });
   const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
-  assert.equal(copy.body, "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה. קח רגע לקבע את התחושה החדשה.");
+  assert.equal(
+    copy.body,
+    "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה. קח רגע לקבע את התחושה החדשה. דמיין את עצמך מבצע עכשיו את סריקת גוף."
+  );
 });
 
 test("stay is Awareness-adjacent -- it must never name the regulation tool, since Regulation begins only at the regulate stage", () => {
   const p = profile({ regulationTool: "נשימה 4-7-8" });
   const copy = getStageCopy("stay", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
   assert.ok(!copy.body.includes("נשימה 4-7-8"), "stay must not reference the regulation tool");
-  assert.ok(!/נשימה|נשוף|הרפ/.test(copy.body), "stay must not contain breathing/relaxation regulation language");
   assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("stay includes natural breath awareness, but never an instruction to regulate the breath -- that belongs only to Regulation", () => {
+  const copy = getStageCopy("stay", profile(), liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /שים לב גם לנשימה כפי שהיא מתרחשת מעצמה/, "must include natural breath awareness");
+  assert.ok(
+    !/האט|העמק|הארך|שנה את הקצב|נשוף לאט|נשימת בטן/.test(copy.body),
+    "must never instruct intentional breath regulation (slow/deepen/extend/change rhythm/abdomen-breathe)"
+  );
 });
 
 test("stay never changes copy based on regulationTool -- it's identical with or without one configured", () => {

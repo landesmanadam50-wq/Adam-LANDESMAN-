@@ -16,4 +16,6 @@ export interface SessionLogEntry {
   success: boolean;
   /** Used the InterferingAction window in the LIVE flow. */
   fall: boolean;
+  /** Optional written Gratitude entry from Reinforcement's completion screen -- null/omitted when the trainee left it blank. */
+  gratitude?: string | null;
 }

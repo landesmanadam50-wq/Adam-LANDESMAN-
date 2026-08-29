@@ -22,12 +22,14 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     goal: null,
     interferingState: null,
     challengeContext: null,
+    statePreventiveAction: null,
     supportiveState: null,
     stateEncoding: null,
     internalAction: null,
     desiredIdentity: null,
     identityChallengeContext: null,
     identityInterferingEmotion: null,
+    identityPreventiveAction: null,
     identityEncoding: null,
     identityAction: null,
     habit: null,
@@ -51,6 +53,7 @@ test("STATE ONLY: reactive_urge is not offered, and routing to it is refused", (
 });
 
 test("STATE ONLY: a full reactive_emotion session walks through to completion without any habit data", () => {
+  const activeLayers: DevelopmentLayer[] = ["state"];
   const p = profile({
     interferingState: "פחד",
     supportiveState: "חמלה",
@@ -60,19 +63,19 @@ test("STATE ONLY: a full reactive_emotion session walks through to completion wi
   let s = state({ triggerType: "reactive_emotion", presenceRating: 8 });
   let stage = getFirstArcStage();
 
-  stage = getNextArcStage(stage, s, p).stage; // trigger_selection -> presence_check
+  stage = getNextArcStage(stage, s, p, activeLayers).stage; // trigger_selection -> presence_check (only one mapped experience)
   assert.equal(stage, "presence_check");
-  stage = getNextArcStage(stage, s, p).stage; // presence_check -> sensation_check (high presence, no ARC Thought)
+  stage = getNextArcStage(stage, s, p, activeLayers).stage; // presence_check -> sensation_check (high presence, no ARC Thought)
   assert.equal(stage, "sensation_check");
 
   s = { ...s, sensationIntensity: 2 };
-  stage = getNextArcStage(stage, s, p).stage; // low intensity -> encode
+  stage = getNextArcStage(stage, s, p, activeLayers).stage; // low intensity -> encode
   assert.equal(stage, "encode");
-  stage = getNextArcStage(stage, s, p).stage;
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "act");
-  stage = getNextArcStage(stage, s, p).stage;
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "success_focus");
-  stage = getNextArcStage(stage, s, p).stage;
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "complete");
 });
 
@@ -85,7 +88,7 @@ test("STATE + HABIT: identity is never required to reach completion on either ro
   // habit route
   const s = state({ triggerType: "reactive_urge", presenceRating: 8, sensationIntensity: 2 });
   assert.equal(resolveLiveRoute("reactive_urge", activeLayers), "reactive_habit");
-  const stage: ArcStage = getNextArcStage("sensation_check", s, p).stage;
+  const stage: ArcStage = getNextArcStage("sensation_check", s, p, activeLayers).stage;
   assert.equal(stage, "encode", "no identity data needed to reach encode on the habit route");
 });
 
@@ -100,9 +103,9 @@ test("IDENTITY ONLY: proactive routes to the identity target without any state o
   assert.equal(resolveLiveRoute("proactive", activeLayers), "proactive");
 
   let s = state({ triggerType: "proactive", presenceRating: 8, desiredStateRating: 7 });
-  let stage = getNextArcStage("presence_check", s, p).stage;
+  let stage = getNextArcStage("presence_check", s, p, activeLayers).stage;
   assert.equal(stage, "desired_state_check");
-  stage = getNextArcStage(stage, s, p).stage;
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "encode", "high desired-state rating goes straight to encode without touching state/habit");
 });
 
@@ -114,22 +117,22 @@ test("HABIT ONLY: presence, ARC Thought, staying, and regulation all still work 
   assert.equal(getAvailableLiveTriggers(activeLayers).includes("reactive_emotion"), true);
 
   let s = state({ triggerType: "reactive_emotion", presenceRating: 3 }); // low presence -> ARC Thought
-  let stage = getNextArcStage("presence_check", s, p).stage;
+  let stage = getNextArcStage("presence_check", s, p, activeLayers).stage;
   assert.equal(stage, "arc_thought_awareness");
-  stage = getNextArcStage(stage, s, p).stage;
-  stage = getNextArcStage(stage, s, p).stage;
-  stage = getNextArcStage(stage, s, p).stage;
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "arc_thought_presence_recheck");
 
   // Presence recovers -> routes onward to sensation_check (no state layer needed).
   s = { ...s, presenceRating: 8 };
-  stage = getNextArcStage(stage, s, p).stage;
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "sensation_check");
 
   // High intensity -> stay/regulate flow still works.
   s = { ...s, sensationIntensity: 9 };
-  stage = getNextArcStage(stage, s, p).stage;
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "stay");
-  stage = getNextArcStage(stage, s, p).stage;
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "accept");
 });

@@ -27,7 +27,14 @@ import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "
 import { createEmptyLiveState } from "../arc/types.ts";
 import { getFirstArcStage } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
-import { loadProfile, loadProgramProgress, loadProgramSelection, saveProgramProgress, appendSessionLogEntry } from "../data/storage.ts";
+import {
+  loadProfile,
+  loadProgramProgress,
+  loadProgramSelection,
+  saveProgramProgress,
+  appendSessionLogEntry,
+  updateLastSessionLogEntryGratitude,
+} from "../data/storage.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
@@ -51,6 +58,7 @@ export default function LiveSessionScreen() {
   const [pendingSensationLocation, setPendingSensationLocation] = useState("");
   const [successFocusMinutes, setSuccessFocusMinutes] = useState<number | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
+  const [gratitudeText, setGratitudeText] = useState("");
 
   useFocusEffect(
     useCallback(() => {
@@ -72,6 +80,7 @@ export default function LiveSessionScreen() {
         setPendingSensationLocation("");
         setSuccessFocusMinutes(null);
         setSessionStartedAt(new Date().toISOString());
+        setGratitudeText("");
       });
       return () => {
         cancelled = true;
@@ -114,11 +123,20 @@ export default function LiveSessionScreen() {
   };
 
   const restart = () => {
+    // Reinforcement's optional Gratitude entry (#10): attached to the
+    // just-finalized session log entry here, decoupled from
+    // finalizeSession() itself so a completed session is always logged
+    // immediately on reaching "complete" -- never lost if the trainee
+    // navigates away before typing anything.
+    const trimmedGratitude = gratitudeText.trim();
+    updateLastSessionLogEntryGratitude(trimmedGratitude.length > 0 ? trimmedGratitude : null);
+
     setSession(createEmptyLiveState());
     setStage(getFirstArcStage());
     setPendingSensationLocation("");
     setSuccessFocusMinutes(null);
     setSessionStartedAt(new Date().toISOString());
+    setGratitudeText("");
   };
 
   if (!profile) {
@@ -154,11 +172,14 @@ export default function LiveSessionScreen() {
           }}
           onYesNoAnswer={(yes) => commitAdvance(applyYesNoAnswer(stage, session, yes))}
           onSelectTarget={(target) => setSession(applyTargetSelection(session, target))}
+          onSelectReactiveExperience={(target) => commitAdvance(applyTargetSelection(session, target))}
           onGenericContinue={() => commitAdvance(session)}
           onRegulateContinue={() => commitAdvance(applyRegulationToolUsed(session, profile.regulationTool))}
           onActionCompleted={() => commitAdvance(applyActionCompletion(session, true))}
           onSelectSuccessFocusMinutes={(minutes) => setSuccessFocusMinutes(minutes)}
           onSuccessFocusContinue={() => commitAdvance(session)}
+          gratitudeText={gratitudeText}
+          onChangeGratitudeText={setGratitudeText}
           onRestart={restart}
         />
       </ScrollView>

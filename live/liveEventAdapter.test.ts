@@ -31,6 +31,7 @@ import {
   applyActionCompletion,
   applyScaleAnswer,
   applySensationAnswer,
+  applyTargetSelection,
   applyTriggerSelection,
 } from "./liveEventAdapter.ts";
 
@@ -41,12 +42,14 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     goal: null,
     interferingState: null,
     challengeContext: null,
+    statePreventiveAction: null,
     supportiveState: null,
     stateEncoding: null,
     internalAction: null,
     desiredIdentity: null,
     identityChallengeContext: null,
     identityInterferingEmotion: null,
+    identityPreventiveAction: null,
     identityEncoding: null,
     identityAction: null,
     habit: null,
@@ -230,6 +233,38 @@ test("14. Two qualifying LIVE completions on the same local date cap at one Trai
   progress = recordValidLiveCompletion({ progress, reachedAct: true, actionCompleted: true, localDate: "2026-01-05" });
   assert.equal(progress.trainingDatesThisWeek.length, 1);
   assert.equal(progress.liveSessionCount, 2, "both sessions are counted, only one day is credited");
+});
+
+// --- 15/16: Reactive recognition chooser (#4, #5, #6, #16) -- the adapter
+// auto-resolves a single mapped experience, and stays at trigger_selection
+// when 2+ are mapped until one is explicitly picked ---
+
+test("15. A single mapped Reactive experience is auto-resolved at trigger_selection, without asking the chooser", () => {
+  const p = profile({ interferingState: "פיזור", supportiveState: "מיקוד" });
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session = applyTriggerSelection(createEmptyLiveState(), "reactive_emotion");
+  const outcome = step("trigger_selection", session, p, activeLayers);
+  assert.equal(outcome.session.selectedTarget, "state", "the one mapped experience is auto-selected");
+  assert.equal(outcome.stage, "presence_check");
+});
+
+test("16. Two mapped Reactive experiences stay at trigger_selection until one is explicitly chosen, then resolve deterministically -- Craving never resolves to Focus's state map", () => {
+  const p = profile({
+    interferingState: "פיזור",
+    supportiveState: "מיקוד",
+    identityInterferingEmotion: "תשוקה",
+    desiredIdentity: "משמעת",
+  });
+  const activeLayers: DevelopmentLayer[] = ["state", "identity"];
+  const session = applyTriggerSelection(createEmptyLiveState(), "reactive_emotion");
+  const stayed = step("trigger_selection", session, p, activeLayers);
+  assert.equal(stayed.stage, "trigger_selection", "must show the chooser rather than guessing");
+  assert.equal(stayed.session.selectedTarget, null);
+
+  const craving = applyTargetSelection(stayed.session, "identity");
+  const resolved = step("trigger_selection", craving, p, activeLayers);
+  assert.equal(resolved.stage, "presence_check");
+  assert.equal(resolved.session.selectedTarget, "identity", "Craving resolves to the identity (Discipline) target, never state");
 });
 
 // --- first stage sanity ---

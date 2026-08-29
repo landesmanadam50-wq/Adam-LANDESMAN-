@@ -97,6 +97,22 @@ export async function appendSessionLogEntry(entry: SessionLogEntry): Promise<voi
 }
 
 /**
+ * Attaches an optional Gratitude note to the most recently logged
+ * session -- called after appendSessionLogEntry() already logged the
+ * session itself (so a completed session is never left unlogged just
+ * because the trainee is still on the Gratitude screen), once the
+ * trainee submits (or explicitly leaves blank) the Gratitude entry.
+ * A no-op if the log is empty (defensive; shouldn't happen in practice
+ * since this is only ever called right after appendSessionLogEntry).
+ */
+export async function updateLastSessionLogEntryGratitude(gratitude: string | null): Promise<void> {
+  const existing = await loadSessionLog();
+  if (existing.length === 0) return;
+  existing[existing.length - 1] = { ...existing[existing.length - 1], gratitude };
+  await AsyncStorage.setItem(SESSION_LOG_KEY, JSON.stringify(existing));
+}
+
+/**
  * The trainee's pilot clock starts the first time this is called (normally
  * right after BUILD saves their profile) and never moves after that --
  * editing the profile later doesn't reset it. Idempotent, so it's also
