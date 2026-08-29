@@ -15,7 +15,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
-import { hasSensationLocationResponse } from "./liveEventAdapter.ts";
+import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
 
 const SCALE_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
@@ -331,6 +331,99 @@ export function EncodingScreen({ copy, onContinue }: { copy: ArcStageCopy; onCon
     <View>
       <Title copy={copy} />
       <PrimaryButton label="המשך" onPress={onContinue} />
+    </View>
+  );
+}
+
+const ALTERNATIVE_ACTION_VALIDATION_MESSAGE = "יש להזין פעולה חלופית ולבחור משך זמן לפני שממשיכים.";
+
+/**
+ * The Action-choice screen: shows the planned/mapped action (via copy,
+ * resolved WITHOUT any selectedAction override) then "can I perform it
+ * now?". "לא" reveals a free-text alternative-action field plus a
+ * duration picker on the SAME screen, gated identically to
+ * SensationRatingScreen's location requirement -- the trainee cannot
+ * continue without both a non-empty alternative action and a chosen
+ * duration, and nothing here ever silently falls back to the planned
+ * action. Neither branch starts any timer itself; it only resolves
+ * currentAction (see arc/arcEngine.ts's needsCurrentActionResolution),
+ * after which "act" re-renders as the normal ActionScreen below.
+ */
+export function ActionChoiceScreen({
+  copy,
+  alternativeText,
+  alternativeDuration,
+  durationOptions,
+  onConfirmPlanned,
+  onChangeAlternativeText,
+  onSelectAlternativeDuration,
+  onSubmitAlternative,
+}: {
+  copy: ArcStageCopy;
+  alternativeText: string;
+  alternativeDuration: number | null;
+  durationOptions: number[];
+  onConfirmPlanned: () => void;
+  onChangeAlternativeText: (text: string) => void;
+  onSelectAlternativeDuration: (minutes: number) => void;
+  onSubmitAlternative: () => void;
+}) {
+  const [showAlternativeForm, setShowAlternativeForm] = useState(false);
+  const [showValidation, setShowValidation] = useState(false);
+
+  function handleSubmit() {
+    if (!hasValidAlternativeAction(alternativeText, alternativeDuration)) {
+      setShowValidation(true);
+      return;
+    }
+    onSubmitAlternative();
+  }
+
+  return (
+    <View>
+      <Title copy={copy} />
+      {!showAlternativeForm ? (
+        <View>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={onConfirmPlanned}>
+            <Text style={styles.buttonText}>אני יכול לבצע אותה עכשיו</Text>
+          </Pressable>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setShowAlternativeForm(true)}>
+            <Text style={styles.buttonText}>אני לא יכול לבצע אותה עכשיו</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View>
+          <Text style={styles.body}>מה אתה כן יכול לעשות עכשיו?</Text>
+          <TextInput
+            style={styles.textInput}
+            value={alternativeText}
+            onChangeText={(text) => {
+              setShowValidation(false);
+              onChangeAlternativeText(text);
+            }}
+            textAlign="right"
+            autoFocus
+          />
+          <View style={styles.chipRow}>
+            {durationOptions.map((minutes) => (
+              <Pressable
+                key={minutes}
+                style={[styles.chip, alternativeDuration === minutes && styles.chipSelected]}
+                onPress={() => {
+                  setShowValidation(false);
+                  onSelectAlternativeDuration(minutes);
+                }}
+              >
+                <Text style={styles.buttonText}>{minutes} דק'</Text>
+              </Pressable>
+            ))}
+          </View>
+          {showValidation && <Text style={styles.validationText}>{ALTERNATIVE_ACTION_VALIDATION_MESSAGE}</Text>}
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleSubmit}>
+            <Text style={styles.buttonText}>המשך</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }

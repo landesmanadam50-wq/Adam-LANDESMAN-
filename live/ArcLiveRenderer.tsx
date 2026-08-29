@@ -17,12 +17,14 @@ import { getStageCopy, getYesNoLabels } from "../arc/stageCopy.ts";
 import {
   getAvailableProactiveTargets,
   getAvailableReactiveExperiences,
+  needsCurrentActionResolution,
   needsProactiveTargetSelection,
   needsReactiveStateSelection,
 } from "../arc/arcEngine.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
 import {
   AcceptScreen,
+  ActionChoiceScreen,
   ActionScreen,
   CompleteScreen,
   DesiredStateRatingScreen,
@@ -42,6 +44,7 @@ import {
 
 const BODY_LOCATIONS = ["חזה", "בטן", "גרון", "כתפיים", "ראש"];
 const SUCCESS_FOCUS_MINUTES = [0, 5, 10, 15, 20];
+const ALTERNATIVE_ACTION_DURATION_MINUTES = [5, 10, 15, 20, 30];
 
 const TRIGGER_LABELS: Record<TriggerType, string> = {
   reactive_emotion: "אני מרגיש משהו שמפריע לי",
@@ -70,6 +73,12 @@ export interface ArcLiveRendererProps {
   onSelectReactiveExperience: (target: DevelopmentLayer) => void;
   onGenericContinue: () => void;
   onRegulateContinue: () => void;
+  pendingAlternativeAction: string;
+  pendingAlternativeActionDuration: number | null;
+  onConfirmPlannedAction: () => void;
+  onChangeAlternativeAction: (text: string) => void;
+  onSelectAlternativeActionDuration: (minutes: number) => void;
+  onSubmitAlternativeAction: () => void;
   onActionCompleted: () => void;
   onSelectSuccessFocusMinutes: (minutes: number) => void;
   onSuccessFocusContinue: () => void;
@@ -157,8 +166,27 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
     case "encode":
       return <EncodingScreen copy={copy} onContinue={props.onGenericContinue} />;
 
-    case "act":
+    case "act": {
+      // Action-choice interstitial: stays at "act" (same pattern as
+      // trigger_selection's reactive chooser / desired_state_check's
+      // proactive-target picker) while currentAction hasn't been
+      // resolved yet for this session -- see needsCurrentActionResolution.
+      if (needsCurrentActionResolution(session.plannedActionConfirmed, session.selectedAction)) {
+        return (
+          <ActionChoiceScreen
+            copy={copy}
+            alternativeText={props.pendingAlternativeAction}
+            alternativeDuration={props.pendingAlternativeActionDuration}
+            durationOptions={ALTERNATIVE_ACTION_DURATION_MINUTES}
+            onConfirmPlanned={props.onConfirmPlannedAction}
+            onChangeAlternativeText={props.onChangeAlternativeAction}
+            onSelectAlternativeDuration={props.onSelectAlternativeActionDuration}
+            onSubmitAlternative={props.onSubmitAlternativeAction}
+          />
+        );
+      }
       return <ActionScreen copy={copy} onCompleted={props.onActionCompleted} />;
+    }
 
     case "success_focus":
       return (

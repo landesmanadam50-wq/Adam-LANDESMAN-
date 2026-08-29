@@ -11,7 +11,9 @@
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import {
+  needsCurrentActionResolution,
   needsReactiveStateSelection,
+  resolveActionDuration,
   resolveEncodingRegulationCue,
   resolveEncodingTarget,
   resolveTargetPreventiveAction,
@@ -303,6 +305,25 @@ export function getStageCopy(
     }
 
     case "act": {
+      // Before currentAction is resolved, "act" shows the Action-choice
+      // screen instead: the planned/mapped action + "can I perform it
+      // now?" -- see arc/arcEngine.ts's needsCurrentActionResolution.
+      // Deliberately resolved WITHOUT the selectedAction override here
+      // (it's still null at this point by construction), so this always
+      // names the true planned action, never a stale/alternative one.
+      if (needsCurrentActionResolution(state.plannedActionConfirmed, state.selectedAction)) {
+        const { actionLabel: plannedAction } = resolveEncodingTarget({
+          activeLayers,
+          triggerType: state.triggerType,
+          selectedTarget: state.selectedTarget,
+          buildProfile: profile,
+        });
+        return {
+          title: "פעולה",
+          body: plannedAction ? `הפעולה שתכננת: ${plannedAction}.` : "האם תוכל לבצע את הפעולה שתכננת עכשיו?",
+        };
+      }
+
       // The selected Body-Language cue carries over from Encoding into
       // Action Preparation, and stays displayed for the whole time this
       // screen is up (i.e. "during the action") -- same resolution as
@@ -343,6 +364,16 @@ export function getStageCopy(
       parts.push(bodyLanguageCue ? `${imagine}, תוך שמירה על ${bodyLanguageCue}.` : `${imagine}.`);
 
       parts.push(currentAction ? `עכשיו הזמן: ${currentAction}.` : "עכשיו הזמן לפעולה.");
+
+      // The resolved action duration -- the alternative action's own
+      // session-specific duration when one was chosen, else the
+      // BUILD-level actionDuration -- named explicitly right before the
+      // timed Action begins. Never invented: omitted when neither is set.
+      const duration = resolveActionDuration(state.selectedActionDuration, profile);
+      if (duration !== null) {
+        parts.push(`משך הפעולה: ${duration} דקות.`);
+      }
+
       return { title: "פעולה", body: parts.join(" ") };
     }
 

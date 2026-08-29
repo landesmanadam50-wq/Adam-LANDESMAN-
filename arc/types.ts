@@ -152,7 +152,21 @@ export interface ArcLiveState {
 
   selectedState: string | null;
   selectedIdentity: string | null;
+  /**
+   * A session-specific alternative action, set only on the "act"
+   * stage's Action-choice screen when the trainee can't perform their
+   * planned/mapped action right now -- never the persisted BUILD
+   * action itself (that stays in ArcBuildProfile, untouched). See
+   * arc/arcEngine.ts's needsCurrentActionResolution/resolveEncodingTarget.
+   * Null both before the choice is made AND when the trainee confirms
+   * they CAN perform the planned action (see plannedActionConfirmed,
+   * which distinguishes that case from "not yet asked").
+   */
   selectedAction: string | null;
+  /** Paired with selectedAction: the alternative action's own session-specific duration, resolved by arc/arcEngine.ts's resolveActionDuration. Never overwrites ArcBuildProfile.actionDuration. */
+  selectedActionDuration: number | null;
+  /** Set once the trainee confirms they'll perform the planned/mapped action as-is (the "כן" branch of the Action-choice screen) -- distinct from selectedAction being null, which alone would be ambiguous between "not yet asked" and "asked, planned action confirmed". */
+  plannedActionConfirmed: boolean;
 
   acceptanceNeeded: boolean | null;
   regulationReady: boolean | null;
@@ -182,6 +196,8 @@ export function createEmptyLiveState(): ArcLiveState {
     selectedState: null,
     selectedIdentity: null,
     selectedAction: null,
+    selectedActionDuration: null,
+    plannedActionConfirmed: false,
     acceptanceNeeded: null,
     regulationReady: null,
     regulationNeeded: false,

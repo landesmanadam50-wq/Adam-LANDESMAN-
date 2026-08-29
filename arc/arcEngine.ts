@@ -294,6 +294,38 @@ function inferLayerFromTrigger(
 }
 
 // ---------------------------------------------------------------------------
+// Action choice -- planned action vs. a session-specific alternative
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the "act" stage needs to show the Action-choice screen
+ * (planned action + "can I perform it now?") before the normal
+ * Action-Preparation/Imagery/timed-action screen -- mirrors
+ * needsProactiveTargetSelection/needsReactiveStateSelection's "stay at
+ * this stage, render a conditional interstitial" pattern, so no new
+ * ArcStage is needed. True only until the trainee has resolved
+ * currentAction for this session: either by confirming the planned
+ * action (plannedActionConfirmed), or by entering a valid alternative
+ * (selectedAction set). Once resolved, this returns false for the rest
+ * of the session -- there's no way back to re-ask.
+ */
+export function needsCurrentActionResolution(plannedActionConfirmed: boolean, selectedAction: string | null): boolean {
+  return !plannedActionConfirmed && selectedAction === null;
+}
+
+/**
+ * Resolves the action duration actually in effect for this session: a
+ * session-specific alternative's own duration when one was set
+ * (paired with ArcLiveState.selectedAction), else the BUILD-level
+ * actionDuration -- parallel to resolveEncodingRegulationCue's
+ * per-target-then-global fallback shape. Never invents a duration:
+ * null when neither is set.
+ */
+export function resolveActionDuration(selectedActionDuration: number | null, profile: ArcBuildProfile): number | null {
+  return selectedActionDuration ?? profile.actionDuration;
+}
+
+// ---------------------------------------------------------------------------
 // Preventive action -- resolved per-target, surfaced before ARC Thought
 // ---------------------------------------------------------------------------
 

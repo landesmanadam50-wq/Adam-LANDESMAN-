@@ -112,6 +112,39 @@ export function applyActionCompletion(session: ArcLiveState, completed: boolean)
 }
 
 /**
+ * The Action-choice screen's "כן" branch: the trainee confirms they'll
+ * perform the planned/mapped action as-is. Never touches selectedAction
+ * -- leaving it null means resolveEncodingTarget resolves the real
+ * planned action, not an override -- see arc/arcEngine.ts's
+ * needsCurrentActionResolution.
+ */
+export function applyPlannedActionConfirmed(session: ArcLiveState): ArcLiveState {
+  return { ...session, plannedActionConfirmed: true };
+}
+
+/**
+ * The Action-choice screen's "לא" branch requires both a non-empty
+ * alternative action AND a selected duration before the trainee can
+ * continue -- never silently falls back to the planned action. Pure so
+ * it can gate the UI (live/screens.tsx's ActionChoiceScreen) without a
+ * rendering harness to test it.
+ */
+export function hasValidAlternativeAction(text: string, durationMinutes: number | null): boolean {
+  return text.trim().length > 0 && durationMinutes !== null;
+}
+
+/**
+ * Records a session-specific alternative action (and its own duration)
+ * once validated -- only ever affects this LIVE session's ArcLiveState,
+ * never the persisted BUILD action (ArcBuildProfile.internalAction/
+ * identityAction/beneficialAction, untouched). See arc/arcEngine.ts's
+ * resolveEncodingTarget (currentAction) and resolveActionDuration.
+ */
+export function applyAlternativeAction(session: ArcLiveState, text: string, durationMinutes: number | null): ArcLiveState {
+  return { ...session, selectedAction: text.trim(), selectedActionDuration: durationMinutes };
+}
+
+/**
  * When a proactive session lands on desired_state_check with no target
  * chosen yet and exactly one target is available, pick it automatically
  * instead of prompting for a choice with only one option. More than one

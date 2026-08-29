@@ -40,12 +40,15 @@ import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
   advanceLiveSession,
   applyActionCompletion,
+  applyAlternativeAction,
+  applyPlannedActionConfirmed,
   applyRegulationToolUsed,
   applyScaleAnswer,
   applySensationAnswer,
   applyTargetSelection,
   applyTriggerSelection,
   applyYesNoAnswer,
+  hasValidAlternativeAction,
   resolveSensationLocation,
 } from "./liveEventAdapter.ts";
 import { getAvailableLiveTriggers } from "../arc/arcEngine.ts";
@@ -59,6 +62,8 @@ export default function LiveSessionScreen() {
   const [pendingSensationLocation, setPendingSensationLocation] = useState("");
   const [pendingCustomSensationLocation, setPendingCustomSensationLocation] = useState("");
   const [pendingSensationLocationUnclear, setPendingSensationLocationUnclear] = useState(false);
+  const [pendingAlternativeAction, setPendingAlternativeAction] = useState("");
+  const [pendingAlternativeActionDuration, setPendingAlternativeActionDuration] = useState<number | null>(null);
   const [successFocusMinutes, setSuccessFocusMinutes] = useState<number | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
   const [gratitudeText, setGratitudeText] = useState("");
@@ -83,6 +88,8 @@ export default function LiveSessionScreen() {
         setPendingSensationLocation("");
         setPendingCustomSensationLocation("");
         setPendingSensationLocationUnclear(false);
+        setPendingAlternativeAction("");
+        setPendingAlternativeActionDuration(null);
         setSuccessFocusMinutes(null);
         setSessionStartedAt(new Date().toISOString());
         setGratitudeText("");
@@ -123,6 +130,8 @@ export default function LiveSessionScreen() {
     setPendingSensationLocation("");
     setPendingCustomSensationLocation("");
     setPendingSensationLocationUnclear(false);
+    setPendingAlternativeAction("");
+    setPendingAlternativeActionDuration(null);
     setSuccessFocusMinutes(null);
     if (nextStage === "complete") {
       finalizeSession(nextSession);
@@ -143,6 +152,8 @@ export default function LiveSessionScreen() {
     setPendingSensationLocation("");
     setPendingCustomSensationLocation("");
     setPendingSensationLocationUnclear(false);
+    setPendingAlternativeAction("");
+    setPendingAlternativeActionDuration(null);
     setSuccessFocusMinutes(null);
     setSessionStartedAt(new Date().toISOString());
     setGratitudeText("");
@@ -203,6 +214,17 @@ export default function LiveSessionScreen() {
           onSelectReactiveExperience={(target) => commitAdvance(applyTargetSelection(session, target))}
           onGenericContinue={() => commitAdvance(session)}
           onRegulateContinue={() => commitAdvance(applyRegulationToolUsed(session, profile.regulationTool))}
+          pendingAlternativeAction={pendingAlternativeAction}
+          pendingAlternativeActionDuration={pendingAlternativeActionDuration}
+          onConfirmPlannedAction={() => setSession(applyPlannedActionConfirmed(session))}
+          onChangeAlternativeAction={(text) => setPendingAlternativeAction(text)}
+          onSelectAlternativeActionDuration={(minutes) => setPendingAlternativeActionDuration(minutes)}
+          onSubmitAlternativeAction={() => {
+            if (!hasValidAlternativeAction(pendingAlternativeAction, pendingAlternativeActionDuration)) return;
+            setSession(applyAlternativeAction(session, pendingAlternativeAction, pendingAlternativeActionDuration));
+            setPendingAlternativeAction("");
+            setPendingAlternativeActionDuration(null);
+          }}
           onActionCompleted={() => commitAdvance(applyActionCompletion(session, true))}
           onSelectSuccessFocusMinutes={(minutes) => setSuccessFocusMinutes(minutes)}
           onSuccessFocusContinue={() => commitAdvance(session)}
