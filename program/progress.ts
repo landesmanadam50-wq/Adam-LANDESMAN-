@@ -2,6 +2,7 @@ import { TRAINING_CONFIG } from "./config.ts";
 import { addCalendarDays, daysBetweenCalendarDates } from "./dateUtils.ts";
 import { getProgramDefinition, getCurrentWeekDefinition, getNextWeekDefinition, hasNextProgramWeek } from "./engine.ts";
 import type { ArcProgramProgress } from "../arc/types.ts";
+import type { ArcProgramSelection } from "./programTypes.ts";
 
 /**
  * Opens a new training window when there isn't one, or when localDate
@@ -107,6 +108,42 @@ export function createInitialProgress(programPath: string): ArcProgramProgress {
     lastCompletedWeek: null,
     liveSessionCount: 0,
   };
+}
+
+/**
+ * Reconciles a persisted ArcProgramProgress against the trainee's
+ * current ArcProgramSelection (program/selection.ts's real source of
+ * truth for what program they should be on). A stored progress record
+ * left over from before the current program was selected/restored --
+ * e.g. from an earlier build or test -- can carry a programPath that
+ * no longer matches the trainee's actual current selection, and would
+ * otherwise keep silently running (or, if its programPath isn't even
+ * recognized anymore, get discarded with no replacement -- see
+ * data/storage.ts's loadProgramProgress) instead of the program
+ * they're actually supposed to be on.
+ *
+ * Only replaced when it has recorded literally no real activity yet
+ * (no completed weeks, no training days logged this week, no LIVE
+ * sessions) -- a record with any real activity is always returned
+ * unchanged, so this can never discard genuinely earned progress.
+ * LiveSessionScreen.tsx and StatsScreen.tsx both call this instead of
+ * using loadProgramProgress()'s result directly, and persist the
+ * result back when it differs so the resync sticks.
+ */
+export function reconcileProgramProgress(
+  progress: ArcProgramProgress | null,
+  selection: ArcProgramSelection | null
+): ArcProgramProgress | null {
+  if (!selection) return progress;
+  if (!progress) return createInitialProgress(selection.programPath);
+
+  if (progress.programPath === selection.programPath) return progress;
+
+  const hasRealActivity =
+    progress.completedProgramWeeks > 0 || progress.trainingDatesThisWeek.length > 0 || progress.liveSessionCount > 0;
+  if (hasRealActivity) return progress;
+
+  return createInitialProgress(selection.programPath);
 }
 
 export interface ArcWeekStatus {

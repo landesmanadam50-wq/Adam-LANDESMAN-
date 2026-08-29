@@ -28,7 +28,7 @@ import { createEmptyLiveState } from "../arc/types.ts";
 import { getFirstArcStage } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
 import { loadProfile, loadProgramProgress, loadProgramSelection, saveProgramProgress, appendSessionLogEntry } from "../data/storage.ts";
-import { recordValidLiveCompletion } from "../program/progress.ts";
+import { recordValidLiveCompletion, reconcileProgramProgress } from "../program/progress.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
   advanceLiveSession,
@@ -55,24 +55,31 @@ export default function LiveSessionScreen() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      // loadProgramSelection() is loaded for completeness (per the LIVE
-      // load contract) even though today's routing only needs
-      // activeLayers, which loadProgramProgress() already derives from
-      // ProgramDefinition -- see program/engine.ts.
-      Promise.all([loadProfile(), loadProgramProgress(), loadProgramSelection()]).then(([loadedProfile, loadedProgress]) => {
-        if (cancelled) return;
-        if (!loadedProfile || !loadedProgress) {
-          router.replace("/build");
-          return;
+      Promise.all([loadProfile(), loadProgramProgress(), loadProgramSelection()]).then(
+        ([loadedProfile, storedProgress, selection]) => {
+          if (cancelled) return;
+          // A stored ArcProgramProgress can be stale relative to the
+          // trainee's current ArcProgramSelection (e.g. left over from
+          // before the current program was restored) -- reconcile
+          // before trusting it for routing, and persist the resync so
+          // it sticks. See program/progress.ts's reconcileProgramProgress.
+          const loadedProgress = reconcileProgramProgress(storedProgress, selection);
+          if (!loadedProfile || !loadedProgress) {
+            router.replace("/build");
+            return;
+          }
+          if (loadedProgress !== storedProgress) {
+            saveProgramProgress(loadedProgress);
+          }
+          setProfile(loadedProfile);
+          setActiveLayers(loadedProgress.activeLayers);
+          setSession(createEmptyLiveState());
+          setStage(getFirstArcStage());
+          setPendingSensationLocation("");
+          setSuccessFocusMinutes(null);
+          setSessionStartedAt(new Date().toISOString());
         }
-        setProfile(loadedProfile);
-        setActiveLayers(loadedProgress.activeLayers);
-        setSession(createEmptyLiveState());
-        setStage(getFirstArcStage());
-        setPendingSensationLocation("");
-        setSuccessFocusMinutes(null);
-        setSessionStartedAt(new Date().toISOString());
-      });
+      );
       return () => {
         cancelled = true;
       };
