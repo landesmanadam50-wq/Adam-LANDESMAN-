@@ -47,7 +47,12 @@ export default function Home() {
             </Link>
             <Link href="/build" asChild>
               <Pressable style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>ערוך פרופיל</Text>
+                <Text style={styles.secondaryButtonText}>ערוך מטרה (BUILD-GOAL)</Text>
+              </Pressable>
+            </Link>
+            <Link href="/build-arc" asChild>
+              <Pressable style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>מפת ARC (BUILD-ARC)</Text>
               </Pressable>
             </Link>
           </>

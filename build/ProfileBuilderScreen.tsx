@@ -20,28 +20,25 @@ import {
   getFirstProfileStep,
   getNextProfileStep,
   getPreviousProfileStep,
-  isDraftComplete,
+  isGoalDraftComplete,
   selectionFromDraft,
+  GOAL_STEP_ORDER,
   type ProfileDraft,
   type ProfileStep,
 } from "./profileWizard.ts";
 
-const STEP_TITLES: Record<ProfileStep, string> = {
+const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   goal: "מה תרצה להשיג? (לאן אתה רוצה להתקדם)",
+  habit: "מה ההרגל שתרצה לעבוד עליו?",
+  beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע במקומו? (ההרגל הרצוי)",
   needsState: "האם יש מצב פנימי (כמו רוגע, ביטחון או חמלה) שתרצה לפתח ולחזק?",
   needsIdentityImmediately: "לעבוד גם על זהות מקבילה כבר מההתחלה?",
   needsIdentityExplicit: "האם יש זהות שתרצה לפתח?",
-  supportiveState: "מה המצב הרצוי שתרצה לחוש יותר?",
-  interferingState: "מה נוטה להפריע למצב הרצוי הזה?",
-  challengeContext: "באילו מצבים זה קורה בדרך כלל?",
-  internalAction: "מה הפעולה הפנימית שלך? (למשל סריקת גוף)",
-  stateMantra: "יש לך מנטרה למצב הזה? (רשות)",
   desiredIdentity: "מה הזהות הרצויה?",
   identityInterferingEmotion: "מה הרגש שמפריע לזהות הזו?",
-  identityAction: "מה הפעולה שמבטאת את הזהות הזו?",
   identityMantra: "יש לך מנטרה לזהות הזו? (רשות)",
-  habit: "מה ההרגל שתרצה לעבוד עליו?",
-  beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע במקומו?",
+  supportiveState: "מה המצב הרצוי שתרצה לחוש יותר?",
+  internalAction: "מה הפעולה הפנימית שלך? (למשל סריקת גוף)",
   preventiveActionAsk: "יש לך פעולה מונעת מוגדרת מראש?",
   preventiveActionDescription: "תאר את הפעולה המונעת",
   regulationTool: "מה כלי הוויסות שלך? (למשל נשימה 4-7-8)",
@@ -50,22 +47,18 @@ const STEP_TITLES: Record<ProfileStep, string> = {
 
 const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   goal: "goal",
-  supportiveState: "supportiveState",
-  interferingState: "interferingState",
-  challengeContext: "challengeContext",
-  internalAction: "internalAction",
-  stateMantra: "stateMantra",
-  desiredIdentity: "desiredIdentity",
-  identityInterferingEmotion: "identityInterferingEmotion",
-  identityAction: "identityAction",
-  identityMantra: "identityMantra",
   habit: "habit",
   beneficialAction: "beneficialAction",
+  desiredIdentity: "desiredIdentity",
+  identityInterferingEmotion: "identityInterferingEmotion",
+  identityMantra: "identityMantra",
+  supportiveState: "supportiveState",
+  internalAction: "internalAction",
   preventiveActionDescription: "preventiveActionDescription",
   regulationTool: "regulationTool",
 };
 
-const OPTIONAL_TEXT_STEPS: ProfileStep[] = ["stateMantra", "identityMantra"];
+const OPTIONAL_TEXT_STEPS: ProfileStep[] = ["identityMantra"];
 
 const YESNO_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   needsState: "needsState",
@@ -74,10 +67,19 @@ const YESNO_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   preventiveActionAsk: "hasPreventiveAction",
 };
 
+/**
+ * BUILD-GOAL: the positive direction only -- Goal -> Desired Habit ->
+ * Identity -> Desired State, plus the needs assessment and the
+ * general-purpose preventiveAction/regulationTool fields (see
+ * profileWizard.ts's module doc for why those stay here rather than
+ * in BUILD-ARC). Ends after Desired State; never asks Challenge
+ * Context or Interfering State -- that's build/ArcMapScreen.tsx
+ * (route /build-arc), reached separately, after this screen.
+ */
 export default function ProfileBuilderScreen() {
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<ProfileDraft>(createEmptyDraft());
-  const [step, setStep] = useState<ProfileStep>("needsState");
+  const [step, setStep] = useState<ProfileStep>("goal");
 
   useEffect(() => {
     let cancelled = false;
@@ -85,7 +87,7 @@ export default function ProfileBuilderScreen() {
       if (cancelled) return;
       const initialDraft = existing ? draftFromProfileAndSelection(existing, selection) : createEmptyDraft();
       setDraft(initialDraft);
-      setStep(getFirstProfileStep(initialDraft));
+      setStep(getFirstProfileStep(initialDraft, GOAL_STEP_ORDER));
       setLoading(false);
     });
     return () => {
@@ -95,11 +97,11 @@ export default function ProfileBuilderScreen() {
 
   const goNext = useCallback((nextDraft: ProfileDraft) => {
     setDraft(nextDraft);
-    setStep((current) => getNextProfileStep(current, nextDraft));
+    setStep((current) => getNextProfileStep(current, nextDraft, GOAL_STEP_ORDER));
   }, []);
 
   const goBack = useCallback(() => {
-    setStep((current) => getPreviousProfileStep(current, draft) ?? current);
+    setStep((current) => getPreviousProfileStep(current, draft, GOAL_STEP_ORDER) ?? current);
   }, [draft]);
 
   const finish = useCallback(async () => {
@@ -170,18 +172,20 @@ export default function ProfileBuilderScreen() {
         {step === "review" && (
           <View>
             <Text style={styles.body}>{`מטרה: ${draft.goal}`}</Text>
-            <Text style={styles.body}>{`הרגל: ${draft.habit}`}</Text>
-            <Text style={styles.body}>{`פעולה מיטיבה: ${draft.beneficialAction}`}</Text>
-            <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
+            <Text style={styles.body}>{`הרגל רצוי: ${draft.habit} → ${draft.beneficialAction}`}</Text>
             {draft.needsState && <Text style={styles.body}>{`מצב רצוי: ${draft.supportiveState}`}</Text>}
-            {draft.needsState && <Text style={styles.body}>{`נוטה להפריע: ${draft.interferingState} (${draft.challengeContext})`}</Text>}
-            <Pressable style={[styles.button, styles.fullWidthButton]} disabled={!isDraftComplete(draft)} onPress={finish}>
-              <Text style={styles.buttonText}>שמור והתחל</Text>
+            {resolvesNeedsIdentityText(draft) && <Text style={styles.body}>{`זהות רצויה: ${draft.desiredIdentity}`}</Text>}
+            <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
+            <Pressable style={[styles.button, styles.fullWidthButton]} disabled={!isGoalDraftComplete(draft)} onPress={finish}>
+              <Text style={styles.buttonText}>שמור והמשך</Text>
             </Pressable>
+            {draft.needsState && (
+              <Text style={styles.hint}>לאחר השמירה תוכל להשלים את מפת ה-ARC (מצב מפריע, הקשר אתגר) במסך "בניית מפת ARC".</Text>
+            )}
           </View>
         )}
 
-        {step !== "needsState" && (
+        {step !== "goal" && (
           <Pressable style={styles.backButton} onPress={goBack}>
             <Text style={styles.backButtonText}>חזור</Text>
           </Pressable>
@@ -189,6 +193,10 @@ export default function ProfileBuilderScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function resolvesNeedsIdentityText(draft: ProfileDraft): boolean {
+  return draft.needsState === true ? true : draft.needsIdentityExplicit === true;
 }
 
 const styles = StyleSheet.create({
@@ -211,6 +219,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: "right",
     marginBottom: 8,
+  },
+  hint: {
+    fontSize: 13,
+    textAlign: "right",
+    color: "#777",
+    marginTop: 12,
   },
   buttonRow: {
     flexDirection: "row",

@@ -223,6 +223,49 @@ test("a full reactive_emotion session, walked end to end through the real engine
   assert.ok(encodeCopy?.body.includes("כתפיים משוחררות"), "Encoding is where the Desired State's encoding cue is intentionally introduced");
 });
 
+test("a full proactive session, walked end to end through the real engine, consumes the mapped Desired State/Challenge Context and never requires or references an Interfering State", () => {
+  const p = profile({
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+  });
+  const activeLayers: DevelopmentLayer[] = ["state", "identity", "habit"];
+  let state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "proactive", selectedTarget: "state" };
+  let stage = getFirstArcStage();
+
+  const visited: { stage: ArcStage; body: string }[] = [];
+  let iterations = 0;
+  while (stage !== "complete" && iterations < 30) {
+    if (stage === "presence_check" || stage === "arc_thought_presence_recheck") {
+      state = { ...state, presenceRating: 3 }; // forces the ARC Thought path here too
+    }
+    if (stage === "desired_state_check") {
+      state = { ...state, desiredStateRating: 8 }; // >= regulationThreshold (5, per arc/config.ts) -> routes straight to encode
+    }
+
+    const copy = getStageCopy(stage, p, state, activeLayers);
+    visited.push({ stage, body: copy.body });
+    assert.equal(containsInductionPattern(copy.body), false, `${stage} produced unsafe copy: "${copy.body}"`);
+    // Proactive never requires or shows Interfering State recognition --
+    // that's a reactive_emotion-only mechanism (see getRecognitionPreamble).
+    assert.ok(!copy.body.includes(p.interferingState ?? " "), `${stage} must not reference the Interfering State in a proactive session: "${copy.body}"`);
+
+    const next = getNextArcStage(stage, state, p);
+    stage = next.stage;
+    state = { ...state, loopIterationCount: next.loopIterationCount };
+    iterations++;
+  }
+
+  assert.ok(visited.some((v) => v.stage === "desired_state_check"), "sanity: the walk must actually reach desired_state_check");
+  assert.ok(visited.some((v) => v.stage === "encode"), "sanity: the walk must actually reach encode");
+  assert.ok(!visited.some((v) => v.stage === "sensation_check"), "proactive never routes through the reactive sensation_check stage");
+
+  const desiredStateCopy = visited.find((v) => v.stage === "desired_state_check");
+  assert.match(desiredStateCopy!.body, /המטרה: חמלה/, "must name the mapped Desired State -- consuming the mapped data, not a generic question");
+  assert.match(desiredStateCopy!.body, /אחרי טעות/, "must reference the mapped Challenge Context for a state-targeted proactive session");
+
+  const encodeCopy = visited.find((v) => v.stage === "encode");
+  assert.ok(encodeCopy?.body.includes("כתפיים משוחררות"), "Encoding still intentionally introduces the Desired State's encoding cue in proactive sessions");
+});
+
 test("ARC Thought is presence-gated only -- reached the same way regardless of trigger type (no alternate route around the safety check)", () => {
   for (const triggerType of ["reactive_emotion", "reactive_urge", "proactive"] as const) {
     const p = profile();
