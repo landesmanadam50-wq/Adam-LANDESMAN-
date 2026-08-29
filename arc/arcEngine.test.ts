@@ -5,6 +5,8 @@ import {
   getAvailableLiveTriggers,
   getAvailableProactiveTargets,
   getAvailableReactiveExperiences,
+  needsCurrentActionResolution,
+  resolveActionDuration,
   getFirstArcStage,
   getNextArcStage,
   needsReactiveStateSelection,
@@ -527,4 +529,49 @@ test("the tail is a fixed line: encode -> act -> success_focus -> complete", () 
 
 test("complete is terminal", () => {
   assert.equal(getNextArcStage("complete", state(), profile(), ALL_LAYERS).stage, "complete");
+});
+
+// ---------------------------------------------------------------------------
+// Action choice -- planned action vs. a session-specific alternative
+// ---------------------------------------------------------------------------
+
+test("needsCurrentActionResolution is true until the trainee has confirmed the planned action or entered a valid alternative", () => {
+  assert.equal(needsCurrentActionResolution(false, null), true, "not yet asked");
+  assert.equal(needsCurrentActionResolution(true, null), false, "planned action confirmed (\"כן\")");
+  assert.equal(needsCurrentActionResolution(false, "5 דקות תרגילים בבית"), false, "a valid alternative was entered (\"לא\")");
+});
+
+test("getNextArcStage's act -> success_focus transition is unconditional, regardless of the Action-choice state -- routing itself is untouched by this feature", () => {
+  const p = profile();
+  assert.equal(getNextArcStage("act", state({ plannedActionConfirmed: false, selectedAction: null }), p, ALL_LAYERS).stage, "success_focus");
+  assert.equal(getNextArcStage("act", state({ plannedActionConfirmed: true }), p, ALL_LAYERS).stage, "success_focus");
+  assert.equal(getNextArcStage("act", state({ selectedAction: "חלופה" }), p, ALL_LAYERS).stage, "success_focus");
+});
+
+test("resolveActionDuration uses the alternative action's own session-specific duration when set", () => {
+  const p = profile({ actionDuration: 20 });
+  assert.equal(resolveActionDuration(5, p), 5);
+});
+
+test("resolveActionDuration falls back to the BUILD-level actionDuration when no session-specific duration was set", () => {
+  const p = profile({ actionDuration: 20 });
+  assert.equal(resolveActionDuration(null, p), 20);
+});
+
+test("resolveActionDuration never invents a duration when neither is set", () => {
+  const p = profile({ actionDuration: null });
+  assert.equal(resolveActionDuration(null, p), null);
+});
+
+test("resolveEncodingTarget: currentAction becomes the alternative action once selectedAction is set, and the planned BUILD action itself is never mutated", () => {
+  const p = profile({ internalAction: "לצאת להליכה של 20 דקות" });
+  const resolved = resolveEncodingTarget({
+    activeLayers: ["state"],
+    triggerType: "reactive_emotion",
+    selectedTarget: "state",
+    buildProfile: p,
+    selectedAction: "לעשות 5 דקות תרגילים בבית",
+  });
+  assert.equal(resolved.actionLabel, "לעשות 5 דקות תרגילים בבית", "currentAction is the alternative");
+  assert.equal(p.internalAction, "לצאת להליכה של 20 דקות", "the planned/BUILD action itself is untouched");
 });

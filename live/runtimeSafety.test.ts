@@ -140,11 +140,13 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "currentArcStage",
     "desiredStateRating",
     "loopIterationCount",
+    "plannedActionConfirmed",
     "presenceRating",
     "realActionCompleted",
     "regulationNeeded",
     "regulationReady",
     "selectedAction",
+    "selectedActionDuration",
     "selectedIdentity",
     "selectedState",
     "selectedTarget",
@@ -198,6 +200,13 @@ test("a full reactive_emotion session, walked end to end through the real engine
     if (stage === "accept") {
       state = { ...state, acceptanceNeeded: false };
     }
+    if (stage === "act") {
+      // Simulates confirming the planned action (the "כן" branch of the
+      // Action-choice screen) -- getNextArcStage's act->success_focus
+      // transition is unconditional either way, so this only affects
+      // which sub-copy getStageCopy renders for this one visit.
+      state = { ...state, plannedActionConfirmed: true };
+    }
 
     const copy = getStageCopy(stage, p, state, activeLayers);
     visited.push({ stage, body: copy.body });
@@ -226,6 +235,10 @@ test("a full reactive_emotion session, walked end to end through the real engine
 
   const encodeCopy = visited.find((v) => v.stage === "encode");
   assert.ok(encodeCopy?.body.includes("כתפיים משוחררות"), "Encoding is where the Desired State's encoding cue is intentionally introduced");
+
+  const actCopy = visited.find((v) => v.stage === "act");
+  assert.ok(actCopy?.body.includes("כתפיים משוחררות"), "the act stage's Action Preparation reminder and Action Imagery still carry the same Body-Language Cue, via the real engine walk");
+  assert.match(actCopy!.body, /דמיין את עצמך מבצע עכשיו את .*, תוך שמירה על כתפיים משוחררות\./, "Action Imagery names both the resolved action and the same cue");
 });
 
 test("a reactive_emotion session targeting the IDENTITY layer (Discipline), walked end to end through the real engine, resolves Discipline's own Body-Language cue and mantra -- never Focus's (state's)", () => {
@@ -269,6 +282,21 @@ test("a reactive_emotion session targeting the IDENTITY layer (Discipline), walk
   const mantraIndex = copy.body.indexOf("אני ממושמע בפעולותיי");
   assert.ok(cueIndex >= 0 && mantraIndex >= 0 && cueIndex < mantraIndex, "Discipline's body-language cue must precede its mantra");
   assert.equal(containsInductionPattern(copy.body), false);
+
+  // Continue the same real walk one more step, into "act" -- Action
+  // Imagery there must carry the SAME Discipline cue forward, never
+  // Focus's, via the real engine/selectedTarget path (not just a
+  // hand-built ArcLiveState).
+  const next = getNextArcStage(stage, state, p, activeLayers);
+  stage = next.stage;
+  state = { ...state, loopIterationCount: next.loopIterationCount };
+  assert.equal(stage, "act", "sanity: the walk must continue from encode into act");
+  state = { ...state, plannedActionConfirmed: true }; // simulates confirming the planned action ("כן")
+
+  const actCopy = getStageCopy(stage, p, state, activeLayers);
+  assert.match(actCopy.body, /תוך שמירה על שמור את הראש ישר ויציב/, "Action Imagery must carry Discipline's own cue, via the real engine walk");
+  assert.ok(!actCopy.body.includes("עיניים פקוחות וממוקדות"), "must not leak Focus's cue into Discipline's Action Imagery");
+  assert.equal(containsInductionPattern(actCopy.body), false);
 });
 
 test("a full proactive session, walked end to end through the real engine, consumes the mapped Desired State/Challenge Context and never requires or references an Interfering State", () => {
@@ -332,4 +360,54 @@ test("ARC Thought is presence-gated only -- reached the same way regardless of t
     }
     assert.equal(stage, "arc_thought_awareness", `triggerType ${triggerType} must not have an alternate route around ARC Thought`);
   }
+});
+
+test("a reactive_urge session, walked to 'act' through the real engine, that chooses a session-specific alternative action never leaks the original planned action, and uses the alternative's own duration -- routing stays the same fixed act -> success_focus line", () => {
+  const p = profile({
+    habit: "גלילה ברשת",
+    beneficialAction: "לצאת להליכה של 20 דקות", // the planned/BUILD action
+    preventiveAction: null,
+    actionDuration: 20,
+  });
+  const activeLayers: DevelopmentLayer[] = ["habit"];
+  let state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_urge" };
+  let stage = getFirstArcStage();
+
+  let iterations = 0;
+  while (stage !== "act" && iterations < 30) {
+    if (stage === "presence_check") {
+      state = { ...state, presenceRating: 8 }; // high presence -- skip ARC Thought
+    }
+    if (stage === "sensation_check") {
+      state = { ...state, sensationIntensity: 2 }; // low intensity -> straight to encode
+    }
+    const next = getNextArcStage(stage, state, p, activeLayers);
+    stage = next.stage;
+    state = { ...state, loopIterationCount: next.loopIterationCount };
+    iterations++;
+  }
+  assert.equal(stage, "act", "sanity: the walk must actually reach act");
+
+  // Before any choice: shows the planned action, not Action Imagery/Preparation.
+  const choiceCopy = getStageCopy(stage, p, state, activeLayers);
+  assert.match(choiceCopy.body, /הפעולה שתכננת: לצאת להליכה של 20 דקות\./);
+  assert.ok(!choiceCopy.body.includes("דמיין"), "no Action Imagery before the choice is resolved");
+
+  // Simulates the "לא" branch: a valid session-specific alternative,
+  // with its own duration, entered on the same Action-choice screen.
+  state = { ...state, selectedAction: "5 דקות תרגילים בבית", selectedActionDuration: 5 };
+
+  // Routing is unaffected: the engine's act -> success_focus transition
+  // is unconditional either way (see arc/arcEngine.test.ts).
+  const nextAfterChoice = getNextArcStage(stage, state, p, activeLayers);
+  assert.equal(nextAfterChoice.stage, "success_focus");
+
+  const resolvedCopy = getStageCopy(stage, p, state, activeLayers);
+  assert.match(resolvedCopy.body, /דמיין את עצמך מבצע עכשיו את 5 דקות תרגילים בבית\./, "Action Imagery uses the alternative currentAction");
+  assert.ok(!resolvedCopy.body.includes("לצאת להליכה של 20 דקות"), "the original planned action is never imagined once an alternative is chosen");
+  assert.match(resolvedCopy.body, /משך הפעולה: 5 דקות\./, "the Action Timer uses the alternative's own duration, not the BUILD one");
+  assert.equal(containsInductionPattern(resolvedCopy.body), false);
+
+  // The planned/BUILD action itself was never touched.
+  assert.equal(p.beneficialAction, "לצאת להליכה של 20 דקות");
 });

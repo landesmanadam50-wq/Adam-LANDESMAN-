@@ -223,6 +223,17 @@ export function needsReactiveStateSelection(
 export interface EncodingResolution {
   layer: DevelopmentLayer;
   encoding: EncodingProfile | null;
+  /**
+   * The currentAction for this session -- the BUILD-mapped action for
+   * the resolved layer, UNLESS the session recorded its own
+   * session-specific action (input.selectedAction, from
+   * ArcLiveState.selectedAction: set when the trainee's planned/mapped
+   * action can't be performed right now and they entered an
+   * alternative one instead), in which case that alternative wins.
+   * Action Imagery and the "act" stage both read this single field, so
+   * they can never diverge onto two different actions within the same
+   * session.
+   */
   actionLabel: string | null;
 }
 
@@ -242,17 +253,23 @@ export function resolveEncodingTarget(input: {
   triggerType: TriggerType | null;
   selectedTarget: DevelopmentLayer | null;
   buildProfile: ArcBuildProfile;
+  /** ArcLiveState.selectedAction -- a session-specific alternative action, when the trainee's mapped action can't be performed right now. Overrides the resolved layer's mapped action when set; omitted/null leaves the mapped action as-is (existing behavior, unchanged). */
+  selectedAction?: string | null;
 }): EncodingResolution {
   const layer = input.selectedTarget ?? inferLayerFromTrigger(input.triggerType, input.activeLayers, input.buildProfile);
 
-  switch (layer) {
-    case "habit":
-      return { layer: "habit", encoding: null, actionLabel: input.buildProfile.beneficialAction };
-    case "identity":
-      return { layer: "identity", encoding: input.buildProfile.identityEncoding, actionLabel: input.buildProfile.identityAction };
-    case "state":
-      return { layer: "state", encoding: input.buildProfile.stateEncoding, actionLabel: input.buildProfile.internalAction };
-  }
+  const resolved: EncodingResolution = (() => {
+    switch (layer) {
+      case "habit":
+        return { layer: "habit" as const, encoding: null, actionLabel: input.buildProfile.beneficialAction };
+      case "identity":
+        return { layer: "identity" as const, encoding: input.buildProfile.identityEncoding, actionLabel: input.buildProfile.identityAction };
+      case "state":
+        return { layer: "state" as const, encoding: input.buildProfile.stateEncoding, actionLabel: input.buildProfile.internalAction };
+    }
+  })();
+
+  return input.selectedAction ? { ...resolved, actionLabel: input.selectedAction } : resolved;
 }
 
 function inferLayerFromTrigger(
@@ -274,6 +291,38 @@ function inferLayerFromTrigger(
     if (available[layer]) return layer;
   }
   return "state"; // nothing configured yet -- caller shows generic copy
+}
+
+// ---------------------------------------------------------------------------
+// Action choice -- planned action vs. a session-specific alternative
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the "act" stage needs to show the Action-choice screen
+ * (planned action + "can I perform it now?") before the normal
+ * Action-Preparation/Imagery/timed-action screen -- mirrors
+ * needsProactiveTargetSelection/needsReactiveStateSelection's "stay at
+ * this stage, render a conditional interstitial" pattern, so no new
+ * ArcStage is needed. True only until the trainee has resolved
+ * currentAction for this session: either by confirming the planned
+ * action (plannedActionConfirmed), or by entering a valid alternative
+ * (selectedAction set). Once resolved, this returns false for the rest
+ * of the session -- there's no way back to re-ask.
+ */
+export function needsCurrentActionResolution(plannedActionConfirmed: boolean, selectedAction: string | null): boolean {
+  return !plannedActionConfirmed && selectedAction === null;
+}
+
+/**
+ * Resolves the action duration actually in effect for this session: a
+ * session-specific alternative's own duration when one was set
+ * (paired with ArcLiveState.selectedAction), else the BUILD-level
+ * actionDuration -- parallel to resolveEncodingRegulationCue's
+ * per-target-then-global fallback shape. Never invents a duration:
+ * null when neither is set.
+ */
+export function resolveActionDuration(selectedActionDuration: number | null, profile: ArcBuildProfile): number | null {
+  return selectedActionDuration ?? profile.actionDuration;
 }
 
 // ---------------------------------------------------------------------------

@@ -21,7 +21,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getAvailableLiveTriggers, getAvailableProactiveTargets, getFirstArcStage, resolveLiveRoute } from "../arc/arcEngine.ts";
+import {
+  getAvailableLiveTriggers,
+  getAvailableProactiveTargets,
+  getFirstArcStage,
+  needsCurrentActionResolution,
+  resolveActionDuration,
+  resolveEncodingTarget,
+  resolveLiveRoute,
+} from "../arc/arcEngine.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
@@ -29,11 +37,14 @@ import { createInitialProgress } from "../program/progress.ts";
 import {
   advanceLiveSession,
   applyActionCompletion,
+  applyAlternativeAction,
+  applyPlannedActionConfirmed,
   applyScaleAnswer,
   applySensationAnswer,
   applyTargetSelection,
   applyTriggerSelection,
   hasSensationLocationResponse,
+  hasValidAlternativeAction,
   resolveSensationLocation,
   SENSATION_LOCATION_UNCLEAR,
 } from "./liveEventAdapter.ts";
@@ -320,6 +331,68 @@ test("22. ArcLiveState's shape is unchanged -- Body Sensation Check reuses the e
   assert.equal(state.sensationLocation, null);
   assert.ok(!("bodyLocationUnclear" in state), "\"unclear\" is encoded inside sensationLocation itself, not a new field");
   assert.ok(!("customSensationLocation" in state), "custom text is resolved into sensationLocation before it ever reaches ArcLiveState");
+});
+
+// --- 23-29: Action-choice ("can I perform the planned action now?") --
+// applyPlannedActionConfirmed ("כן"), applyAlternativeAction ("לא", once
+// validated), and the required non-empty-text + selected-duration
+// validation, all as pure adapter functions.
+
+test("23. Choosing 'כן' confirms the planned action without touching selectedAction -- currentAction stays the mapped/planned one", () => {
+  const confirmed = applyPlannedActionConfirmed(createEmptyLiveState());
+  assert.equal(confirmed.plannedActionConfirmed, true);
+  assert.equal(confirmed.selectedAction, null, "no override -- the resolved action stays the planned/mapped one");
+});
+
+test("24. hasValidAlternativeAction requires both non-empty text and a selected duration -- 'לא' never silently falls back to the planned action", () => {
+  assert.equal(hasValidAlternativeAction("", null), false, "neither given");
+  assert.equal(hasValidAlternativeAction("5 דקות תרגילים בבית", null), false, "text without a duration");
+  assert.equal(hasValidAlternativeAction("", 10), false, "duration without text");
+  assert.equal(hasValidAlternativeAction("   ", 10), false, "whitespace-only text doesn't count");
+  assert.equal(hasValidAlternativeAction("5 דקות תרגילים בבית", 10), true, "both given -- valid");
+});
+
+test("25. A valid alternative action and its duration can be selected/configured, and together become currentAction/the resolved duration", () => {
+  const p = profile({ internalAction: "לצאת להליכה של 20 דקות", actionDuration: 20 });
+  const withAlternative = applyAlternativeAction(createEmptyLiveState(), "5 דקות תרגילים בבית", 5);
+  assert.equal(withAlternative.selectedAction, "5 דקות תרגילים בבית");
+  assert.equal(withAlternative.selectedActionDuration, 5);
+
+  const resolved = resolveEncodingTarget({
+    activeLayers: ["state"],
+    triggerType: "reactive_emotion",
+    selectedTarget: "state",
+    buildProfile: p,
+    selectedAction: withAlternative.selectedAction,
+  });
+  assert.equal(resolved.actionLabel, "5 דקות תרגילים בבית", "currentAction is the alternative action");
+  assert.equal(resolveActionDuration(withAlternative.selectedActionDuration, p), 5, "the alternative's own duration is used, not the BUILD one");
+});
+
+test("26. applyAlternativeAction trims the entered text", () => {
+  const withAlternative = applyAlternativeAction(createEmptyLiveState(), "  5 דקות תרגילים בבית  ", 5);
+  assert.equal(withAlternative.selectedAction, "5 דקות תרגילים בבית");
+});
+
+test("27. Choosing an alternative action never mutates the persisted BUILD/planned action -- it only ever affects this LIVE session's ArcLiveState", () => {
+  const p = profile({ internalAction: "לצאת להליכה של 20 דקות", actionDuration: 20 });
+  const before = { ...p };
+  applyAlternativeAction(createEmptyLiveState(), "5 דקות תרגילים בבית", 5);
+  applyPlannedActionConfirmed(createEmptyLiveState());
+  assert.deepEqual(p, before, "the profile object is never mutated by either Action-choice branch");
+});
+
+test("28. needsCurrentActionResolution resolves Focus and Discipline independently -- confirming/choosing an alternative for one target's session never implicitly resolves the other", () => {
+  // Each LIVE session targets exactly one DevelopmentLayer at a time
+  // (selectedTarget), so plannedActionConfirmed/selectedAction are
+  // inherently scoped to that one session/target -- there is no shared
+  // global state a Focus session's choice could leak into a Discipline
+  // session through.
+  const focusSession = applyPlannedActionConfirmed(applyTargetSelection(createEmptyLiveState(), "state"));
+  const disciplineSession = applyAlternativeAction(applyTargetSelection(createEmptyLiveState(), "identity"), "לשבת זקוף ולנשום", 10);
+  assert.equal(needsCurrentActionResolution(focusSession.plannedActionConfirmed, focusSession.selectedAction), false);
+  assert.equal(needsCurrentActionResolution(disciplineSession.plannedActionConfirmed, disciplineSession.selectedAction), false);
+  assert.notEqual(focusSession.selectedTarget, disciplineSession.selectedTarget);
 });
 
 // --- first stage sanity ---

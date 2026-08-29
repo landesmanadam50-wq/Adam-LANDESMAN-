@@ -11,7 +11,9 @@
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import {
+  needsCurrentActionResolution,
   needsReactiveStateSelection,
+  resolveActionDuration,
   resolveEncodingRegulationCue,
   resolveEncodingTarget,
   resolveTargetPreventiveAction,
@@ -250,7 +252,7 @@ export function getStageCopy(
     }
 
     case "encode": {
-      const { layer, encoding, actionLabel } = resolveEncodingTarget({
+      const { layer, encoding } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
         selectedTarget: state.selectedTarget,
@@ -265,9 +267,10 @@ export function getStageCopy(
       // process/instructions used at the "regulate" stage, just one
       // short carry-over, to avoid overloading attention here -- then
       // (3) the Body-Language Encoding Cue, then (4) Identity/Mantra --
-      // intentionally activated only here, never earlier -- then (5)
-      // Action Imagery, of the DESIRED action only (see below), still
-      // before the "act" stage.
+      // intentionally activated only here, never earlier. Action
+      // Imagery is deliberately NOT here -- it lives in the "act" stage
+      // instead, where the currentAction it imagines is actually
+      // resolved (see that case's doc).
       const parts: string[] = ["שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה."];
       let hasContinuityContent = false;
 
@@ -298,20 +301,29 @@ export function getStageCopy(
         parts.push("קח רגע לקבע את התחושה החדשה.");
       }
 
-      // Action Imagery: strictly of the desired, beneficial action
-      // (actionLabel only ever sources from positive action fields --
-      // beneficialAction/internalAction/identityAction, never
-      // interferingState/identityInterferingEmotion) -- never the
-      // Interfering State, craving, distraction, or any other difficult
-      // state. See arc/instructions.ts's containsInductionPattern.
-      parts.push(
-        actionLabel ? `דמיין את עצמך מבצע עכשיו את ${actionLabel}.` : "דמיין את עצמך מבצע עכשיו את הפעולה שבחרת."
-      );
-
       return { title: "קיבוע", body: parts.join(" ") };
     }
 
     case "act": {
+      // Before currentAction is resolved, "act" shows the Action-choice
+      // screen instead: the planned/mapped action + "can I perform it
+      // now?" -- see arc/arcEngine.ts's needsCurrentActionResolution.
+      // Deliberately resolved WITHOUT the selectedAction override here
+      // (it's still null at this point by construction), so this always
+      // names the true planned action, never a stale/alternative one.
+      if (needsCurrentActionResolution(state.plannedActionConfirmed, state.selectedAction)) {
+        const { actionLabel: plannedAction } = resolveEncodingTarget({
+          activeLayers,
+          triggerType: state.triggerType,
+          selectedTarget: state.selectedTarget,
+          buildProfile: profile,
+        });
+        return {
+          title: "פעולה",
+          body: plannedAction ? `הפעולה שתכננת: ${plannedAction}.` : "האם תוכל לבצע את הפעולה שתכננת עכשיו?",
+        };
+      }
+
       // The selected Body-Language cue carries over from Encoding into
       // Action Preparation, and stays displayed for the whole time this
       // screen is up (i.e. "during the action") -- same resolution as
@@ -319,17 +331,49 @@ export function getStageCopy(
       // never mix Focus's cue into a Discipline-targeted session or vice
       // versa. Omitted entirely (never invented, never an empty
       // placeholder) when the current target has none configured.
-      const { actionLabel, encoding } = resolveEncodingTarget({
+      //
+      // selectedAction (ArcLiveState) resolves currentAction: the
+      // trainee's mapped action, unless they entered a session-specific
+      // alternative because the mapped one couldn't be performed right
+      // now -- see arc/arcEngine.ts's EncodingResolution doc. Action
+      // Imagery below always follows whichever one that resolves to.
+      const { actionLabel: currentAction, encoding } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
         selectedTarget: state.selectedTarget,
         buildProfile: profile,
+        selectedAction: state.selectedAction,
       });
+      const bodyLanguageCue = encoding?.bodyLanguageCue ?? null;
+
       const parts: string[] = [];
-      if (encoding?.bodyLanguageCue) {
-        parts.push(`בזמן הפעולה, שמור על שפת הגוף שבחרת: ${encoding.bodyLanguageCue}.`);
+      if (bodyLanguageCue) {
+        parts.push(`בזמן הפעולה, שמור על שפת הגוף שבחרת: ${bodyLanguageCue}.`);
       }
-      parts.push(actionLabel ? `עכשיו הזמן: ${actionLabel}.` : "עכשיו הזמן לפעולה.");
+
+      // Action Imagery: strictly of currentAction (only ever sources
+      // from positive action fields -- beneficialAction/internalAction/
+      // identityAction, or the trainee's own alternative -- never
+      // interferingState/identityInterferingEmotion) -- never the
+      // Interfering State, craving, distraction, or any other difficult
+      // state. See arc/instructions.ts's containsInductionPattern.
+      // Carries the SAME Body-Language Cue forward from Encoding, from
+      // this target's own map only, when one is configured -- never
+      // invented, never an empty placeholder when there isn't one.
+      const imagine = currentAction ? `דמיין את עצמך מבצע עכשיו את ${currentAction}` : "דמיין את עצמך מבצע עכשיו את הפעולה שבחרת";
+      parts.push(bodyLanguageCue ? `${imagine}, תוך שמירה על ${bodyLanguageCue}.` : `${imagine}.`);
+
+      parts.push(currentAction ? `עכשיו הזמן: ${currentAction}.` : "עכשיו הזמן לפעולה.");
+
+      // The resolved action duration -- the alternative action's own
+      // session-specific duration when one was chosen, else the
+      // BUILD-level actionDuration -- named explicitly right before the
+      // timed Action begins. Never invented: omitted when neither is set.
+      const duration = resolveActionDuration(state.selectedActionDuration, profile);
+      if (duration !== null) {
+        parts.push(`משך הפעולה: ${duration} דקות.`);
+      }
+
       return { title: "פעולה", body: parts.join(" ") };
     }
 
