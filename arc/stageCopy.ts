@@ -10,7 +10,12 @@
  */
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
-import { needsReactiveStateSelection, resolveEncodingTarget, resolveTargetPreventiveAction } from "./arcEngine.ts";
+import {
+  needsReactiveStateSelection,
+  resolveEncodingRegulationCue,
+  resolveEncodingTarget,
+  resolveTargetPreventiveAction,
+} from "./arcEngine.ts";
 import {
   getAwarenessInstruction,
   getCombinedAttentionInstruction,
@@ -245,7 +250,7 @@ export function getStageCopy(
     }
 
     case "encode": {
-      const { encoding, actionLabel } = resolveEncodingTarget({
+      const { layer, encoding, actionLabel } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
         selectedTarget: state.selectedTarget,
@@ -254,33 +259,42 @@ export function getStageCopy(
 
       // Final Encoding order: (1) notice the updated sensation --
       // neutrally, no assumption it improved, a large change/small
-      // change/no obvious change are all valid -- then (2) maintain
-      // the lightweight Regulation Cue together with the Body-Language
-      // Encoding Cue (Encoding doesn't drop Regulation, and doesn't
-      // re-list every Regulation mechanism, just this one continuity
-      // anchor), then (3) Identity/Mantra -- intentionally activated
-      // only here, never earlier -- then (4) Action Imagery, of the
-      // DESIRED action only (see below), still before the "act" stage.
+      // change/no obvious change are all valid -- then (2) the Short
+      // Encoding Regulation Cue, this target's own lightweight
+      // continuity anchor -- deliberately NOT the full Regulation
+      // process/instructions used at the "regulate" stage, just one
+      // short carry-over, to avoid overloading attention here -- then
+      // (3) the Body-Language Encoding Cue, then (4) Identity/Mantra --
+      // intentionally activated only here, never earlier -- then (5)
+      // Action Imagery, of the DESIRED action only (see below), still
+      // before the "act" stage.
       const parts: string[] = ["שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה."];
+      let hasContinuityContent = false;
 
-      const maintain: string[] = [];
-      if (profile.regulationTool) maintain.push(`המשך עם ${profile.regulationTool}`);
+      const regulationCue = resolveEncodingRegulationCue(layer, profile);
+      if (regulationCue) {
+        parts.push(`המשך עם ${regulationCue}.`);
+        hasContinuityContent = true;
+      }
+
       if (encoding?.bodyLanguageCue) {
-        maintain.push(`שמור על ${encoding.bodyLanguageCue}`);
+        parts.push(`שמור על ${encoding.bodyLanguageCue}.`);
+        hasContinuityContent = true;
       } else if (!encoding?.mantra && encoding?.target) {
         // No explicit body-language cue and no mantra either -- fall
         // back to a generic body-language transition toward the
-        // Desired State, independent of whether a regulation tool is
+        // Desired State, independent of whether a regulation cue is
         // also being maintained.
-        maintain.push(`עבור לשפת הגוף של ${encoding.target}`);
+        parts.push(`עבור לשפת הגוף של ${encoding.target}.`);
+        hasContinuityContent = true;
       }
-      if (maintain.length > 0) parts.push(`${maintain.join(", ו")}.`);
 
       if (encoding?.mantra) {
         parts.push(`חזור לעצמך: "${encoding.mantra}".`);
+        hasContinuityContent = true;
       }
 
-      if (maintain.length === 0 && !encoding?.mantra) {
+      if (!hasContinuityContent) {
         parts.push("קח רגע לקבע את התחושה החדשה.");
       }
 

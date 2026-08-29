@@ -86,11 +86,15 @@ export type ProfileStep =
   | "challengeContext"
   | "interferingState"
   | "statePreventiveAction"
+  | "stateEncodingRegulationCueAsk"
+  | "stateEncodingRegulationCue"
   | "stateMantra"
   | "stateBodyLanguageCue"
   | "identityChallengeContext"
   | "identityInterferingEmotion"
   | "identityPreventiveAction"
+  | "identityEncodingRegulationCueAsk"
+  | "identityEncodingRegulationCue"
   | "identityMantra"
   | "identityBodyLanguageCue"
   | "review";
@@ -131,22 +135,30 @@ export const GOAL_STEP_ORDER: ProfileStep[] = [
  * Encoding cues -- it's this target's own Preventive Action, surfaced
  * by LIVE before ARC Thought (see arc/arcEngine.ts's
  * resolveTargetPreventiveAction), never mixed with the identity
- * layer's or the habit layer's.
+ * layer's or the habit layer's. stateEncodingRegulationCueAsk/Cue offer
+ * this target's own lightweight Short Encoding Regulation Cue --
+ * distinct from the Full Regulation Cue (GOAL_STEP_ORDER's
+ * regulationTool, used during Regulation itself) -- see arc/arcEngine.ts's
+ * resolveEncodingRegulationCue.
  */
 export const STATE_ARC_STEP_ORDER: ProfileStep[] = [
   "challengeContext",
   "interferingState",
   "statePreventiveAction",
+  "stateEncodingRegulationCueAsk",
+  "stateEncodingRegulationCue",
   "stateMantra",
   "stateBodyLanguageCue",
   "review",
 ];
 
-/** BUILD-ARC's step order around the identity layer's Desired State (desiredIdentity) -- the second, independently editable ARC Map. Never re-asks desiredIdentity itself. identityPreventiveAction is parallel to statePreventiveAction above -- this target's own Preventive Action, never mixed with the state layer's. */
+/** BUILD-ARC's step order around the identity layer's Desired State (desiredIdentity) -- the second, independently editable ARC Map. Never re-asks desiredIdentity itself. identityPreventiveAction/identityEncodingRegulationCueAsk/Cue are parallel to the state layer's own -- never mixed with it. */
 export const IDENTITY_ARC_STEP_ORDER: ProfileStep[] = [
   "identityChallengeContext",
   "identityInterferingEmotion",
   "identityPreventiveAction",
+  "identityEncodingRegulationCueAsk",
+  "identityEncodingRegulationCue",
   "identityMantra",
   "identityBodyLanguageCue",
   "review",
@@ -164,6 +176,9 @@ export interface ProfileDraft {
   challengeContext: string;
   internalAction: string;
   statePreventiveAction: string;
+  /** null = not yet decided this BUILD session; true = "choose a shorter cue for Encoding" (B); false = "use the same cue during Encoding" (A). Draft-only -- never persisted itself, only its downstream effect on stateEncodingRegulationCue is. */
+  stateWantsShortEncodingRegulationCue: boolean | null;
+  stateEncodingRegulationCue: string;
   stateMantra: string;
   stateBodyLanguageCue: string;
 
@@ -171,6 +186,9 @@ export interface ProfileDraft {
   identityChallengeContext: string;
   identityInterferingEmotion: string;
   identityPreventiveAction: string;
+  /** Parallel to stateWantsShortEncodingRegulationCue -- never mixed with it. */
+  identityWantsShortEncodingRegulationCue: boolean | null;
+  identityEncodingRegulationCue: string;
   identityMantra: string;
   identityBodyLanguageCue: string;
 
@@ -193,12 +211,16 @@ export function createEmptyDraft(): ProfileDraft {
     challengeContext: "",
     internalAction: "",
     statePreventiveAction: "",
+    stateWantsShortEncodingRegulationCue: null,
+    stateEncodingRegulationCue: "",
     stateMantra: "",
     stateBodyLanguageCue: "",
     desiredIdentity: "",
     identityChallengeContext: "",
     identityInterferingEmotion: "",
     identityPreventiveAction: "",
+    identityWantsShortEncodingRegulationCue: null,
+    identityEncodingRegulationCue: "",
     identityMantra: "",
     identityBodyLanguageCue: "",
     habit: "",
@@ -236,12 +258,26 @@ export function draftFromProfileAndSelection(
     challengeContext: profile.challengeContext ?? "",
     internalAction: profile.internalAction ?? "",
     statePreventiveAction: profile.statePreventiveAction ?? "",
+    // A stored short cue means the trainee previously chose "B" (a
+    // shorter cue) -- default the choice back to that so re-editing
+    // doesn't silently discard it. Left undecided (null, not "A"/false)
+    // when nothing is stored: a legacy profile never saw this step at
+    // all, so it's presented neutrally rather than presuming an answer.
+    // Truthy check, not just "!== null": a profile stored before this
+    // field existed has it missing entirely (undefined, not null) once
+    // JSON.parse'd, and undefined !== null is true -- which would
+    // wrongly presume "B" (a shorter cue) was chosen for a trainee who
+    // never saw this step at all.
+    stateWantsShortEncodingRegulationCue: profile.stateEncodingRegulationCue ? true : null,
+    stateEncodingRegulationCue: profile.stateEncodingRegulationCue ?? "",
     stateMantra: profile.stateEncoding?.mantra ?? "",
     stateBodyLanguageCue: profile.stateEncoding?.bodyLanguageCue ?? "",
     desiredIdentity: profile.desiredIdentity ?? "",
     identityChallengeContext: profile.identityChallengeContext ?? "",
     identityInterferingEmotion: profile.identityInterferingEmotion ?? "",
     identityPreventiveAction: profile.identityPreventiveAction ?? "",
+    identityWantsShortEncodingRegulationCue: profile.identityEncodingRegulationCue ? true : null,
+    identityEncodingRegulationCue: profile.identityEncodingRegulationCue ?? "",
     identityMantra: profile.identityEncoding?.mantra ?? "",
     identityBodyLanguageCue: profile.identityEncoding?.bodyLanguageCue ?? "",
     habit: profile.habit ?? "",
@@ -268,16 +304,22 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
     case "challengeContext":
     case "interferingState":
     case "statePreventiveAction":
+    case "stateEncodingRegulationCueAsk":
     case "stateMantra":
     case "stateBodyLanguageCue":
       return draft.needsState === true;
+    case "stateEncodingRegulationCue":
+      return draft.needsState === true && draft.stateWantsShortEncodingRegulationCue === true;
     case "desiredIdentity":
     case "identityChallengeContext":
     case "identityInterferingEmotion":
     case "identityPreventiveAction":
+    case "identityEncodingRegulationCueAsk":
     case "identityMantra":
     case "identityBodyLanguageCue":
       return resolvesNeedsIdentity(draft);
+    case "identityEncodingRegulationCue":
+      return resolvesNeedsIdentity(draft) && draft.identityWantsShortEncodingRegulationCue === true;
     case "preventiveActionDescription":
       return draft.hasPreventiveAction === true;
     default:
@@ -432,6 +474,16 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     supportiveState,
     challengeContext: draft.needsState && draft.challengeContext.trim() ? draft.challengeContext.trim() : null,
     statePreventiveAction: draft.needsState && draft.statePreventiveAction.trim() ? draft.statePreventiveAction.trim() : null,
+    // Only persisted when the trainee explicitly chose "B" (a shorter
+    // cue) AND actually typed one -- choosing "A", leaving it blank, or
+    // never visiting this step at all all collapse to the same null,
+    // which resolveEncodingRegulationCue then falls back to the Full
+    // Regulation Cue (regulationTool) for, exactly like before this
+    // field existed (see arc/types.ts's doc on this field).
+    stateEncodingRegulationCue:
+      draft.needsState && draft.stateWantsShortEncodingRegulationCue === true && draft.stateEncodingRegulationCue.trim()
+        ? draft.stateEncodingRegulationCue.trim()
+        : null,
     stateEncoding: draft.needsState && supportiveState ? buildEncodingProfile(supportiveState, draft.stateMantra, draft.stateBodyLanguageCue) : null,
     internalAction: draft.needsState ? draft.internalAction.trim() : null,
 
@@ -439,6 +491,10 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     identityChallengeContext: needsIdentity && draft.identityChallengeContext.trim() ? draft.identityChallengeContext.trim() : null,
     identityInterferingEmotion: needsIdentity && draft.identityInterferingEmotion.trim() ? draft.identityInterferingEmotion.trim() : null,
     identityPreventiveAction: needsIdentity && draft.identityPreventiveAction.trim() ? draft.identityPreventiveAction.trim() : null,
+    identityEncodingRegulationCue:
+      needsIdentity && draft.identityWantsShortEncodingRegulationCue === true && draft.identityEncodingRegulationCue.trim()
+        ? draft.identityEncodingRegulationCue.trim()
+        : null,
     identityEncoding: needsIdentity && desiredIdentity ? buildEncodingProfile(desiredIdentity, draft.identityMantra, draft.identityBodyLanguageCue) : null,
     // No longer its own question (see module doc): the identity layer's
     // action is the same Desired Habit as the habit layer's, not asked

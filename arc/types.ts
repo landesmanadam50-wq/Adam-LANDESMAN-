@@ -65,6 +65,18 @@ export interface ArcBuildProfile {
   challengeContext: string | null;
   /** The state layer's own Preventive Action -- resolved for a session targeting "state", never mixed with identityPreventiveAction/preventiveAction (habit's). See arc/arcEngine.ts's resolveTargetPreventiveAction. */
   statePreventiveAction: string | null;
+  /**
+   * The state layer's own lightweight regulation anchor that continues
+   * during Encoding -- deliberately shorter than the Full Regulation
+   * Cue (regulationTool, further down) used during the Regulation
+   * stage itself, to avoid overloading attention there. Null means no
+   * separate short cue was configured (either never asked, or the
+   * trainee chose "use the same cue during Encoding"): resolveEncodingRegulationCue
+   * (arc/arcEngine.ts) then falls back to regulationTool, so a profile
+   * stored before this field existed behaves exactly as it did before.
+   * Never mixed with identityEncodingRegulationCue.
+   */
+  stateEncodingRegulationCue: string | null;
   stateEncoding: EncodingProfile | null;
   internalAction: string | null;
 
@@ -74,6 +86,8 @@ export interface ArcBuildProfile {
   identityInterferingEmotion: string | null;
   /** The identity layer's own Preventive Action, parallel to statePreventiveAction -- never mixed with it or with habit's preventiveAction. */
   identityPreventiveAction: string | null;
+  /** The identity layer's own lightweight Encoding regulation anchor, parallel to stateEncodingRegulationCue -- never mixed with it. The habit layer has no equivalent of its own: a habit-targeted Encoding session always uses regulationTool directly, unchanged. */
+  identityEncodingRegulationCue: string | null;
   identityEncoding: EncodingProfile | null;
   identityAction: string | null;
 
@@ -82,6 +96,14 @@ export interface ArcBuildProfile {
   /** The habit layer's own Preventive Action, resolved for a session targeting "habit" (reactive_urge). Parallel to statePreventiveAction/identityPreventiveAction -- see arc/arcEngine.ts's resolveTargetPreventiveAction. */
   preventiveAction: string | null;
 
+  /**
+   * The Full Regulation Cue -- the main regulation tool/process used
+   * during the Regulation stage itself, global across every target
+   * (unlike statePreventiveAction/identityPreventiveAction, this one
+   * isn't split per ARC Map). Also the fallback Encoding uses for any
+   * target with no stateEncodingRegulationCue/identityEncodingRegulationCue
+   * of its own -- see arc/arcEngine.ts's resolveEncodingRegulationCue.
+   */
   regulationTool: string | null;
   actionDuration: number | null;
   successFocusDuration: number | null;
