@@ -21,6 +21,7 @@ const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
 const PROGRAM_PROGRESS_KEY = "archi.programProgress.v2";
 const SESSION_LOG_KEY = "archi.sessionLog.v1";
 const PILOT_STARTED_AT_KEY = "archi.pilotStartedAt.v1";
+const ACTIVE_ACTION_TIMER_KEY = "archi.activeActionTimer.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -128,4 +129,41 @@ export async function getOrCreatePilotStartedAt(): Promise<string> {
   const now = new Date().toISOString();
   await AsyncStorage.setItem(PILOT_STARTED_AT_KEY, now);
   return now;
+}
+
+/**
+ * The one durable record for an in-progress timed Action -- deliberately
+ * its own key, separate from both PROFILE_KEY (persistent BUILD data,
+ * e.g. the planned action/duration -- never touched by this) and
+ * ArcLiveState (session-only, never persisted -- see
+ * live/LiveSessionScreen.tsx's module doc). This is a narrow, explicit
+ * exception to "session state is never persisted": its only purpose is
+ * letting the Action Timer survive navigating away from LIVE, the app
+ * backgrounding/locking, or a full close/reopen, per arc/actionTimer.ts's
+ * getActionTimerStatusFromStartedAt. actionStartedAt is the absolute
+ * anchor everything is recomputed from; copyTitle/copyBody are a
+ * snapshot of the exact "performing" screen text at the moment the
+ * Action began, so resuming shows the same action/cue the trainee
+ * actually started with rather than re-deriving it from a necessarily
+ * incomplete reconstructed session.
+ */
+export interface ActiveActionTimer {
+  actionStartedAt: string;
+  durationMinutes: number | null;
+  copyTitle: string;
+  copyBody: string;
+}
+
+export async function loadActiveActionTimer(): Promise<ActiveActionTimer | null> {
+  const raw = await AsyncStorage.getItem(ACTIVE_ACTION_TIMER_KEY);
+  return raw ? (JSON.parse(raw) as ActiveActionTimer) : null;
+}
+
+export async function saveActiveActionTimer(timer: ActiveActionTimer): Promise<void> {
+  await AsyncStorage.setItem(ACTIVE_ACTION_TIMER_KEY, JSON.stringify(timer));
+}
+
+/** Called once the timed Action is actually completed (or a brand-new session explicitly restarts) -- never on a routine LIVE-screen focus, which is exactly the event this record needs to survive. */
+export async function clearActiveActionTimer(): Promise<void> {
+  await AsyncStorage.removeItem(ACTIVE_ACTION_TIMER_KEY);
 }

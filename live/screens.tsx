@@ -17,7 +17,8 @@ import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
 import { getInstructionTimingStatus } from "../arc/instructionTiming.ts";
-import { formatRemainingTime, getActionTimerStatus } from "../arc/actionTimer.ts";
+import { formatRemainingTime, getActionTimerStatusFromStartedAt } from "../arc/actionTimer.ts";
+import { saveActiveActionTimer } from "../data/storage.ts";
 
 /**
  * Live elapsed-seconds clock, started fresh on mount (never on a prop
@@ -39,6 +40,27 @@ function useElapsedSeconds(): number {
     return () => clearInterval(interval);
   }, []);
   return elapsedSeconds;
+}
+
+/**
+ * A live Date.now() reading, ticked periodically -- unlike
+ * useElapsedSeconds above, this reports an absolute timestamp rather
+ * than time-since-mount, so it stays correct however the caller
+ * anchors its own start time. This is what ActionScreen's Action Timer
+ * uses (paired with a persisted actionStartedAt anchor -- see
+ * arc/actionTimer.ts's getActionTimerStatusFromStartedAt and
+ * data/storage.ts's ActiveActionTimer): the real timed Action must
+ * stay accurate across backgrounding, locking, navigating away and
+ * back, or a full app close/reopen, none of which a mount-relative
+ * clock alone can survive.
+ */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(interval);
+  }, []);
+  return now;
 }
 
 const SCALE_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -516,18 +538,41 @@ export function ActionPreparationScreen({ copy, onContinue }: { copy: ArcStageCo
  * -- the Action Timer resolves as immediately complete (see
  * arc/actionTimer.ts), so "עשיתי את זה" stays enabled with no forced
  * wait, identical to this screen's behavior before this feature existed.
+ *
+ * The Action Timer is anchored to an absolute actionStartedAt timestamp,
+ * not to this component's mount time: captured once (lazily, on first
+ * render) and persisted immediately via data/storage.ts's
+ * saveActiveActionTimer, so remaining/complete is always recomputed as
+ * "now minus actionStartedAt" -- correct whether "now" arrives from a
+ * live tick, after the JS thread was suspended while the app was
+ * backgrounded or the phone was locked, or after live/LiveSessionScreen.tsx
+ * resumes this same screen following a navigate-away, an app relaunch,
+ * or any other remount. resumedStartedAt lets that resume path hand back
+ * the ORIGINAL anchor instead of starting a new one.
  */
 export function ActionScreen({
   copy,
   durationMinutes,
+  resumedStartedAt,
   onCompleted,
 }: {
   copy: ArcStageCopy;
   durationMinutes: number | null;
+  resumedStartedAt?: string;
   onCompleted: () => void;
 }) {
-  const elapsedSeconds = useElapsedSeconds();
-  const status = getActionTimerStatus(durationMinutes, elapsedSeconds);
+  const [actionStartedAt] = useState(() => resumedStartedAt ?? new Date().toISOString());
+  useEffect(() => {
+    // Written once, right when the actual Action begins (or re-affirmed,
+    // harmlessly, on a resume) -- copy/durationMinutes are stable for the
+    // rest of "performing" (see resolveActPhase's doc), so there is
+    // nothing later to react to here.
+    saveActiveActionTimer({ actionStartedAt, durationMinutes, copyTitle: copy.title, copyBody: copy.body });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const now = useNow();
+  const status = getActionTimerStatusFromStartedAt(actionStartedAt, durationMinutes, now);
   return (
     <View>
       <Title copy={copy} />

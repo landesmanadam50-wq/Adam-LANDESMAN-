@@ -44,6 +44,30 @@ export function getActionTimerStatus(durationMinutes: number | null, elapsedSeco
   return { remainingSeconds, complete: elapsedSeconds >= totalSeconds };
 }
 
+/**
+ * Absolute-time entry point: converts an absolute actionStartedAt
+ * anchor (an ISO timestamp, captured once when the actual Action
+ * began) into elapsed seconds against `now`, then delegates to
+ * getActionTimerStatus. This -- not a running interval counting ticks
+ * -- is what the live screen (live/screens.tsx's ActionScreen) actually
+ * calls: as long as actionStartedAt was captured once and persisted
+ * somewhere durable (see data/storage.ts's ActiveActionTimer), the
+ * correct remaining/complete state can always be recomputed from a
+ * fresh Date.now() read, with no dependency on how many interval ticks
+ * fired, whether the JS thread was suspended (backgrounded/locked) in
+ * between, or whether the component/app was ever remounted or
+ * relaunched. `now` defaults to Date.now() but takes an explicit value
+ * for deterministic testing.
+ */
+export function getActionTimerStatusFromStartedAt(
+  actionStartedAt: string,
+  durationMinutes: number | null,
+  now: number = Date.now()
+): ActionTimerStatus {
+  const elapsedSeconds = Math.max(0, (now - new Date(actionStartedAt).getTime()) / 1000);
+  return getActionTimerStatus(durationMinutes, elapsedSeconds);
+}
+
 /** Formats whole seconds as "MM:SS" for the live remaining-time display during the actual timed Action. */
 export function formatRemainingTime(remainingSeconds: number): string {
   const totalSeconds = Math.max(0, Math.ceil(remainingSeconds));

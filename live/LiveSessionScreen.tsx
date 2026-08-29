@@ -16,6 +16,16 @@
  * a stale one. Training Day credit is only ever granted from
  * recordValidLiveCompletion() when a session reaches "complete" with a
  * confirmed real action -- an abandoned session never reaches that call.
+ *
+ * One narrow, explicit exception to "never resumes a stale session":
+ * a real timed Action already in progress. data/storage.ts's
+ * ActiveActionTimer durably anchors that one screen (actionStartedAt,
+ * plus a snapshot of its exact display text) so the Action Timer itself
+ * survives navigating away and back, the app backgrounding/locking, or
+ * a full close/reopen -- see resumedAction below and
+ * arc/actionTimer.ts's getActionTimerStatusFromStartedAt. Nothing else
+ * about the session (ratings, encoding text, routing) is reconstructed
+ * or persisted; every other stage still starts over exactly as before.
  */
 
 import { useCallback, useState } from "react";
@@ -27,6 +37,7 @@ import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "
 import { createEmptyLiveState } from "../arc/types.ts";
 import { getFirstArcStage } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
+import type { ArcStageCopy } from "../arc/stageCopy.ts";
 import {
   loadProfile,
   loadProgramProgress,
@@ -34,6 +45,8 @@ import {
   saveProgramProgress,
   appendSessionLogEntry,
   updateLastSessionLogEntryGratitude,
+  loadActiveActionTimer,
+  clearActiveActionTimer,
 } from "../data/storage.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
@@ -55,6 +68,13 @@ import {
 } from "./liveEventAdapter.ts";
 import { getAvailableLiveTriggers } from "../arc/arcEngine.ts";
 import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
+import { ActionScreen } from "./screens.tsx";
+
+interface ResumedAction {
+  actionStartedAt: string;
+  durationMinutes: number | null;
+  copy: ArcStageCopy;
+}
 
 export default function LiveSessionScreen() {
   const [profile, setProfile] = useState<ArcBuildProfile | null>(null);
@@ -69,6 +89,7 @@ export default function LiveSessionScreen() {
   const [successFocusMinutes, setSuccessFocusMinutes] = useState<number | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
   const [gratitudeText, setGratitudeText] = useState("");
+  const [resumedAction, setResumedAction] = useState<ResumedAction | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -76,26 +97,42 @@ export default function LiveSessionScreen() {
       // loadProgramSelection() is loaded for completeness (per the LIVE
       // load contract) even though today's routing only needs
       // activeLayers, which loadProgramProgress() already derives from
-      // ProgramDefinition -- see program/engine.ts.
-      Promise.all([loadProfile(), loadProgramProgress(), loadProgramSelection()]).then(([loadedProfile, loadedProgress]) => {
-        if (cancelled) return;
-        if (!loadedProfile || !loadedProgress) {
-          router.replace("/build");
-          return;
+      // ProgramDefinition -- see program/engine.ts. loadActiveActionTimer()
+      // is the one exception to "always start fresh" -- see this file's
+      // module doc and ResumedAction above.
+      Promise.all([loadProfile(), loadProgramProgress(), loadProgramSelection(), loadActiveActionTimer()]).then(
+        ([loadedProfile, loadedProgress, , activeActionTimer]) => {
+          if (cancelled) return;
+          if (!loadedProfile || !loadedProgress) {
+            router.replace("/build");
+            return;
+          }
+          setProfile(loadedProfile);
+          setActiveLayers(loadedProgress.activeLayers);
+          setPendingSensationLocation("");
+          setPendingCustomSensationLocation("");
+          setPendingSensationLocationUnclear(false);
+          setPendingAlternativeAction("");
+          setPendingAlternativeActionDuration(null);
+          setSuccessFocusMinutes(null);
+          setGratitudeText("");
+
+          if (activeActionTimer) {
+            setResumedAction({
+              actionStartedAt: activeActionTimer.actionStartedAt,
+              durationMinutes: activeActionTimer.durationMinutes,
+              copy: { title: activeActionTimer.copyTitle, body: activeActionTimer.copyBody, segments: null },
+            });
+            setSessionStartedAt(activeActionTimer.actionStartedAt);
+            return;
+          }
+
+          setResumedAction(null);
+          setSession(createEmptyLiveState());
+          setStage(getFirstArcStage());
+          setSessionStartedAt(new Date().toISOString());
         }
-        setProfile(loadedProfile);
-        setActiveLayers(loadedProgress.activeLayers);
-        setSession(createEmptyLiveState());
-        setStage(getFirstArcStage());
-        setPendingSensationLocation("");
-        setPendingCustomSensationLocation("");
-        setPendingSensationLocationUnclear(false);
-        setPendingAlternativeAction("");
-        setPendingAlternativeActionDuration(null);
-        setSuccessFocusMinutes(null);
-        setSessionStartedAt(new Date().toISOString());
-        setGratitudeText("");
-      });
+      );
       return () => {
         cancelled = true;
       };
@@ -127,6 +164,12 @@ export default function LiveSessionScreen() {
   const commitAdvance = (patchedSession: ArcLiveState) => {
     if (!profile) return;
     const { session: nextSession, stage: nextStage } = advanceLiveSession(stage, patchedSession, profile, activeLayers);
+    if (stage === "act" && nextStage !== "act") {
+      // The only way out of "act" is the real Action actually completing
+      // (see arc/arcEngine.ts's unconditional act -> success_focus
+      // transition) -- the persisted anchor's job is done.
+      clearActiveActionTimer();
+    }
     setSession(nextSession);
     setStage(nextStage);
     setPendingSensationLocation("");
@@ -149,6 +192,12 @@ export default function LiveSessionScreen() {
     const trimmedGratitude = gratitudeText.trim();
     updateLastSessionLogEntryGratitude(trimmedGratitude.length > 0 ? trimmedGratitude : null);
 
+    // Defensive: by the time restart() is reachable the Action Timer's
+    // anchor should already be cleared (commitAdvance clears it the
+    // moment "act" is left), but never let a stale one leak into the
+    // next session regardless.
+    clearActiveActionTimer();
+    setResumedAction(null);
     setSession(createEmptyLiveState());
     setStage(getFirstArcStage());
     setPendingSensationLocation("");
@@ -165,6 +214,48 @@ export default function LiveSessionScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <Stack.Screen options={{ title: "ARCHI LIVE" }} />
+      </SafeAreaView>
+    );
+  }
+
+  // A real timed Action was already in progress when this screen
+  // (re)gained focus -- render it directly from the persisted anchor,
+  // bypassing the normal stage-routing pipeline entirely. There is no
+  // faithfully-reconstructed ArcLiveState to hand back into
+  // getStageCopy/ArcLiveRenderer (triggerType, selectedTarget, and the
+  // rest were never persisted, by design -- see this file's module
+  // doc), so this uses the exact display snapshot instead, and only
+  // rejoins the normal flow once the trainee actually completes it.
+  if (resumedAction) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: `ARCHI LIVE — ${resumedAction.copy.title}` }} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <ActionScreen
+            copy={resumedAction.copy}
+            durationMinutes={resumedAction.durationMinutes}
+            resumedStartedAt={resumedAction.actionStartedAt}
+            onCompleted={() => {
+              clearActiveActionTimer();
+              setResumedAction(null);
+              // Rejoins the normal flow at success_focus -- the same
+              // stage the unconditional act -> success_focus transition
+              // would have reached anyway (arc/arcEngine.ts). Neither
+              // success_focus's nor complete's copy depends on
+              // triggerType/selectedTarget/selectedAction, so this
+              // minimal reconstruction is enough to finish the session
+              // correctly (Training Day credit included) without ever
+              // having persisted the rest of ArcLiveState.
+              setSession({
+                ...createEmptyLiveState(),
+                currentArcStage: "success_focus",
+                actionReached: true,
+                realActionCompleted: true,
+              });
+              setStage("success_focus");
+            }}
+          />
+        </ScrollView>
       </SafeAreaView>
     );
   }
