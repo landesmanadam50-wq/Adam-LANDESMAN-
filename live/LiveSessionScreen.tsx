@@ -46,6 +46,7 @@ import {
   applyTargetSelection,
   applyTriggerSelection,
   applyYesNoAnswer,
+  resolveSensationLocation,
 } from "./liveEventAdapter.ts";
 import { getAvailableLiveTriggers } from "../arc/arcEngine.ts";
 import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
@@ -56,6 +57,8 @@ export default function LiveSessionScreen() {
   const [session, setSession] = useState<ArcLiveState>(() => createEmptyLiveState());
   const [stage, setStage] = useState<ArcStage>("trigger_selection");
   const [pendingSensationLocation, setPendingSensationLocation] = useState("");
+  const [pendingCustomSensationLocation, setPendingCustomSensationLocation] = useState("");
+  const [pendingSensationLocationUnclear, setPendingSensationLocationUnclear] = useState(false);
   const [successFocusMinutes, setSuccessFocusMinutes] = useState<number | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
   const [gratitudeText, setGratitudeText] = useState("");
@@ -78,6 +81,8 @@ export default function LiveSessionScreen() {
         setSession(createEmptyLiveState());
         setStage(getFirstArcStage());
         setPendingSensationLocation("");
+        setPendingCustomSensationLocation("");
+        setPendingSensationLocationUnclear(false);
         setSuccessFocusMinutes(null);
         setSessionStartedAt(new Date().toISOString());
         setGratitudeText("");
@@ -116,6 +121,8 @@ export default function LiveSessionScreen() {
     setSession(nextSession);
     setStage(nextStage);
     setPendingSensationLocation("");
+    setPendingCustomSensationLocation("");
+    setPendingSensationLocationUnclear(false);
     setSuccessFocusMinutes(null);
     if (nextStage === "complete") {
       finalizeSession(nextSession);
@@ -134,6 +141,8 @@ export default function LiveSessionScreen() {
     setSession(createEmptyLiveState());
     setStage(getFirstArcStage());
     setPendingSensationLocation("");
+    setPendingCustomSensationLocation("");
+    setPendingSensationLocationUnclear(false);
     setSuccessFocusMinutes(null);
     setSessionStartedAt(new Date().toISOString());
     setGratitudeText("");
@@ -161,13 +170,32 @@ export default function LiveSessionScreen() {
           activeLayers={activeLayers}
           availableTriggers={availableTriggers}
           pendingSensationLocation={pendingSensationLocation}
+          pendingCustomSensationLocation={pendingCustomSensationLocation}
+          pendingSensationLocationUnclear={pendingSensationLocationUnclear}
           successFocusMinutes={successFocusMinutes}
           onSelectTrigger={(trigger) => commitAdvance(applyTriggerSelection(session, trigger))}
           onScaleAnswer={(value) => commitAdvance(applyScaleAnswer(stage, session, value))}
-          onSelectSensationLocation={(location) => setPendingSensationLocation(location)}
+          onSelectSensationLocation={(location) => {
+            setPendingSensationLocation(location);
+            setPendingCustomSensationLocation("");
+            setPendingSensationLocationUnclear(false);
+          }}
+          onChangeCustomSensationLocation={(text) => {
+            setPendingCustomSensationLocation(text);
+            setPendingSensationLocation("");
+            setPendingSensationLocationUnclear(false);
+          }}
+          onSelectSensationLocationUnclear={() => {
+            setPendingSensationLocationUnclear(true);
+            setPendingSensationLocation("");
+            setPendingCustomSensationLocation("");
+          }}
           onSubmitSensationIntensity={(value) => {
             const isHabitSensation = session.triggerType === "reactive_urge";
-            const location = isHabitSensation ? null : pendingSensationLocation || session.sensationLocation;
+            const location = isHabitSensation
+              ? null
+              : (resolveSensationLocation(pendingSensationLocation, pendingCustomSensationLocation, pendingSensationLocationUnclear) ??
+                session.sensationLocation);
             commitAdvance(applySensationAnswer(session, location, value));
           }}
           onYesNoAnswer={(yes) => commitAdvance(applyYesNoAnswer(stage, session, yes))}

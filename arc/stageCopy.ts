@@ -173,7 +173,14 @@ export function getStageCopy(
         body:
           state.triggerType === "reactive_urge"
             ? "מה עוצמת הדחף, בסולם 1 עד 10?"
-            : "היכן בגוף אתה מרגיש את זה, ומה העוצמה בסולם 1 עד 10?",
+            // Deliberately conditional ("אם אתה מבחין") rather than
+            // presuming a location is obvious -- a body-location answer
+            // is required before continuing (see live/screens.tsx's
+            // SensationRatingScreen), but the trainee is never pushed to
+            // invent one: a preset, free text, or "לא ברור לי איפה" all
+            // count. Intensity stays a separate question/sentence, never
+            // merged into the location answer itself.
+            : "אם אתה מבחין בתחושה בגוף, איפה היא מורגשת הכי הרבה? מה העוצמה, בסולם 1 עד 10?",
       };
 
     case "stay":

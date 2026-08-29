@@ -33,6 +33,9 @@ import {
   applySensationAnswer,
   applyTargetSelection,
   applyTriggerSelection,
+  hasSensationLocationResponse,
+  resolveSensationLocation,
+  SENSATION_LOCATION_UNCLEAR,
 } from "./liveEventAdapter.ts";
 
 function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
@@ -265,6 +268,56 @@ test("16. Two mapped Reactive experiences stay at trigger_selection until one is
   const resolved = step("trigger_selection", craving, p, activeLayers);
   assert.equal(resolved.stage, "presence_check");
   assert.equal(resolved.session.selectedTarget, "identity", "Craving resolves to the identity (Discipline) target, never state");
+});
+
+// --- 17-22: Body Sensation Check now requires an explicit location
+// response (preset chip / custom free text / "לא ברור לי איפה") before
+// intensity can be submitted, without ever forcing the trainee to
+// invent a location -- resolveSensationLocation/hasSensationLocationResponse
+// are the pure functions live/screens.tsx's SensationRatingScreen gates
+// on, since this project has no React rendering harness to test the
+// screen itself directly. ---
+
+test("17. An existing preset body location resolves as-is", () => {
+  assert.equal(resolveSensationLocation("חזה", "", false), "חזה");
+});
+
+test("18. A custom free-text body location resolves as-is, trimmed", () => {
+  assert.equal(resolveSensationLocation("", "  מתחת לצלעות  ", false), "מתחת לצלעות");
+});
+
+test("19. 'לא ברור לי איפה' resolves to the explicit SENSATION_LOCATION_UNCLEAR sentinel, never confused with 'not yet answered' (null)", () => {
+  assert.equal(resolveSensationLocation("", "", true), SENSATION_LOCATION_UNCLEAR);
+  assert.notEqual(SENSATION_LOCATION_UNCLEAR, null);
+});
+
+test("20. The trainee cannot continue with no body-location response: hasSensationLocationResponse is false, and resolveSensationLocation yields null, when nothing is given", () => {
+  assert.equal(hasSensationLocationResponse("", "", false), false);
+  assert.equal(resolveSensationLocation("", "", false), null);
+});
+
+test("20b. hasSensationLocationResponse is true for any of the three valid responses, and whitespace-only text still doesn't count as an answer", () => {
+  assert.equal(hasSensationLocationResponse("חזה", "", false), true, "preset selected");
+  assert.equal(hasSensationLocationResponse("", "כתף שמאל", false), true, "custom text entered");
+  assert.equal(hasSensationLocationResponse("", "", true), true, "\"לא ברור לי איפה\" selected");
+  assert.equal(hasSensationLocationResponse("   ", "   ", false), false, "whitespace-only text is not a real answer");
+});
+
+test("21. Intensity stays fully independent of the body-location response -- applySensationAnswer stores whatever intensity is given regardless of which (or no) location resolved", () => {
+  const withPreset = applySensationAnswer(createEmptyLiveState(), resolveSensationLocation("חזה", "", false), 7);
+  assert.equal(withPreset.sensationLocation, "חזה");
+  assert.equal(withPreset.sensationIntensity, 7);
+
+  const withUnclear = applySensationAnswer(createEmptyLiveState(), resolveSensationLocation("", "", true), 3);
+  assert.equal(withUnclear.sensationLocation, SENSATION_LOCATION_UNCLEAR);
+  assert.equal(withUnclear.sensationIntensity, 3, "intensity is stored the same way regardless of the location value");
+});
+
+test("22. ArcLiveState's shape is unchanged -- Body Sensation Check reuses the existing sensationLocation field rather than adding new session-state fields, so existing stored/serialized session shapes stay backwards compatible", () => {
+  const state = createEmptyLiveState();
+  assert.equal(state.sensationLocation, null);
+  assert.ok(!("bodyLocationUnclear" in state), "\"unclear\" is encoded inside sensationLocation itself, not a new field");
+  assert.ok(!("customSensationLocation" in state), "custom text is resolved into sensationLocation before it ever reaches ArcLiveState");
 });
 
 // --- first stage sanity ---
