@@ -65,24 +65,45 @@ const ENCODING_BASE_SECONDS = {
   fallback: 4,
 } as const;
 
-/** Timing-update task: every individual Encoding step's duration increases by exactly +7s over its previous duration -- never applied to any non-Encoding stage. */
+/** Timing-update task: every individual Encoding step's duration increases by exactly +7s over its previous duration -- never applied to any non-Encoding stage. Preserved as-is by the later UX/timing update below, which layers its own increase on top rather than replacing this one. */
 const ENCODING_DURATION_INCREASE_SECONDS = 7;
 
+/**
+ * UX/timing-update task: every LIVE experiential protocol stage's
+ * guided-practice duration gets an additional +15s on top of whatever
+ * it was already configured to (Encoding's own separate +7s per-step
+ * increase above stays fully intact -- this layers on top of it, not
+ * instead of it). One central constant, applied uniformly to every
+ * entry below, rather than a bespoke per-screen value -- so this stays
+ * config-driven the same way the Encoding increase was.
+ *
+ * Deliberately a SEPARATE constant from INLINE_RATING_REVEAL_DELAY_SECONDS
+ * below, even though both happen to be 15s today: this one extends a
+ * stage's own guided-practice time; that one is an unrelated concept --
+ * the delay before an inline rating reveals once practice is already
+ * done. Never applied to the real Action Timer (Beneficial Action /
+ * Success Focus / Negative Action -- arc/actionTimer.ts, program/engine.ts)
+ * or to scheduled reminders/standalone action durations -- none of
+ * those are configured here; this table only ever governs instruction-
+ * practice time.
+ */
+const EXPERIENTIAL_TIME_INCREASE_SECONDS = 15;
+
 export const INSTRUCTION_TIMING = {
-  arcThoughtAwareness: 5,
-  arcThoughtCombinedAttention: 5,
-  arcThoughtExpandPresence: 5,
-  stayCurrentSensation: 4,
-  stayNaturalBreath: 8,
-  regulate: 10,
-  encodeUpdatedSensation: ENCODING_BASE_SECONDS.updatedSensation + ENCODING_DURATION_INCREASE_SECONDS,
-  encodeShortRegulationCue: ENCODING_BASE_SECONDS.shortRegulationCue + ENCODING_DURATION_INCREASE_SECONDS,
-  encodeBodyLanguageCue: ENCODING_BASE_SECONDS.bodyLanguageCue + ENCODING_DURATION_INCREASE_SECONDS,
-  encodeIdentityMantra: ENCODING_BASE_SECONDS.identityMantra + ENCODING_DURATION_INCREASE_SECONDS,
+  arcThoughtAwareness: 5 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  arcThoughtCombinedAttention: 5 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  arcThoughtExpandPresence: 5 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  stayCurrentSensation: 4 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  stayNaturalBreath: 8 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  regulate: 10 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  encodeUpdatedSensation: ENCODING_BASE_SECONDS.updatedSensation + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  encodeShortRegulationCue: ENCODING_BASE_SECONDS.shortRegulationCue + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  encodeBodyLanguageCue: ENCODING_BASE_SECONDS.bodyLanguageCue + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  encodeIdentityMantra: ENCODING_BASE_SECONDS.identityMantra + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
   /** The generic "take a moment" fallback line, only shown when nothing else in Encoding was configured for this target. */
-  encodeFallback: ENCODING_BASE_SECONDS.fallback + ENCODING_DURATION_INCREASE_SECONDS,
-  actionImagery: 5,
-  actionPreparation: 4,
+  encodeFallback: ENCODING_BASE_SECONDS.fallback + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  actionImagery: 5 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  actionPreparation: 4 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
 } as const;
 
 /**

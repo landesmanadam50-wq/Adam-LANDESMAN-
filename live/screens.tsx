@@ -11,12 +11,13 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { AppState, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Animated, AppState, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
 import { getInstructionTimingStatus, INLINE_RATING_REVEAL_DELAY_SECONDS } from "../arc/instructionTiming.ts";
+import type { InstructionSegment } from "../arc/instructionTiming.ts";
 import { formatRemainingTime, generateTimerRunId, getActionTimerStatusFromStartedAt } from "../arc/actionTimer.ts";
 import type { ActionTimerStatus } from "../arc/actionTimer.ts";
 import { cancelScheduledNotification, scheduleTimerCompletionNotification } from "../data/notifications.ts";
@@ -171,6 +172,52 @@ function Title({ copy }: { copy: ArcStageCopy }) {
   );
 }
 
+/**
+ * One already-revealed instruction line. Animates in exactly once, the
+ * moment it mounts (a soft fade + a very small upward move -- #2's
+ * "gently ADDED underneath") and then holds still: nothing here ever
+ * re-triggers the animation or changes this line's own size/style once
+ * it's shown, since nothing about this component's props/state changes
+ * again after mount.
+ */
+function RevealedLine({ text }: { text: string }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(8)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <Animated.Text style={[styles.body, { opacity, transform: [{ translateY }] }]}>{text}</Animated.Text>;
+}
+
+/**
+ * Renders every already-revealed instruction segment as its OWN
+ * separate, visually stable line -- the instruction is gradually
+ * CONSTRUCTED on the page (#2), rather than the old behavior of joining
+ * every visible segment's text into one paragraph that visibly
+ * reflowed/grew each time a new segment appeared. A segment's React key
+ * is its own stable position within `segments` -- getInstructionTimingStatus's
+ * visibleSegments is always a cumulative, growing PREFIX of the same
+ * underlying array (a segment, once revealed, is never removed or
+ * reordered -- see that function's own doc) -- so a line already on
+ * screen always keeps the exact same key/element identity as more
+ * segments are appended after it: React never remounts, resizes, or
+ * re-animates it; only the newly appended segment mounts fresh and
+ * plays RevealedLine's entrance animation. Empty-text segments (the
+ * inline-rating reveal-delay placeholder appended in arc/stageCopy.ts)
+ * render nothing, exactly like the old join-based text did.
+ */
+function RevealedInstructionLines({ segments }: { segments: InstructionSegment[] }) {
+  return (
+    <>
+      {segments.map((segment, index) => (segment.text.length > 0 ? <RevealedLine key={index} text={segment.text} /> : null))}
+    </>
+  );
+}
+
 function ScaleButtons({ onSelect }: { onSelect: (value: number) => void }) {
   return (
     <View style={styles.scaleRow}>
@@ -230,11 +277,10 @@ function TimedInstructionBody({
   }
 
   const status = getInstructionTimingStatus(copy.segments, elapsedSeconds);
-  const visibleText = status.visibleSegments.map((segment) => segment.text).join(" ");
   return (
     <View>
       <Text style={styles.title}>{copy.title}</Text>
-      {visibleText.length > 0 && <Text style={styles.body}>{visibleText}</Text>}
+      <RevealedInstructionLines segments={status.visibleSegments} />
       <PrimaryButton label={continueLabel} onPress={onContinue} disabled={!status.complete} />
     </View>
   );
@@ -345,14 +391,10 @@ export function PresenceExperienceScreen({
 }) {
   const elapsedSeconds = useElapsedSeconds();
   const status = getInstructionTimingStatus(copy.segments ?? [], elapsedSeconds);
-  const visibleText = status.visibleSegments
-    .map((segment) => segment.text)
-    .filter((text) => text.length > 0)
-    .join(" ");
   return (
     <View>
       <Text style={styles.title}>{copy.title}</Text>
-      {visibleText.length > 0 && <Text style={styles.body}>{visibleText}</Text>}
+      <RevealedInstructionLines segments={status.visibleSegments} />
       {status.complete && (
         <View>
           <Title copy={ratingCopy} />
@@ -605,14 +647,10 @@ export function RegulationScreen({
 }) {
   const elapsedSeconds = useElapsedSeconds();
   const status = getInstructionTimingStatus(copy.segments ?? [], elapsedSeconds);
-  const visibleText = status.visibleSegments
-    .map((segment) => segment.text)
-    .filter((text) => text.length > 0)
-    .join(" ");
   return (
     <View>
       <Text style={styles.title}>{copy.title}</Text>
-      {visibleText.length > 0 && <Text style={styles.body}>{visibleText}</Text>}
+      <RevealedInstructionLines segments={status.visibleSegments} />
       {status.complete &&
         (ratingCopy ? (
           <View>

@@ -66,9 +66,10 @@ test("an empty segments array is trivially complete from t=0, with nothing to sh
 // exactly +7s over its previous (4s) duration -- never applied to any
 // non-Encoding stage's timing.
 
-test("every Encoding step's duration is exactly 7 seconds more than its previous 4-second duration", () => {
+test("every Encoding step's duration is its previous 4-second duration plus exactly +7s (preserved, unreplaced) plus the later +15s UX/timing-update increase on top", () => {
   const PREVIOUS_ENCODING_SECONDS = 4;
   const ENCODING_INCREASE_SECONDS = 7;
+  const EXPERIENTIAL_TIME_INCREASE_SECONDS = 15;
   for (const key of [
     "encodeUpdatedSensation",
     "encodeShortRegulationCue",
@@ -78,22 +79,45 @@ test("every Encoding step's duration is exactly 7 seconds more than its previous
   ] as const) {
     assert.equal(
       INSTRUCTION_TIMING[key],
-      PREVIOUS_ENCODING_SECONDS + ENCODING_INCREASE_SECONDS,
-      `${key} must be its previous ${PREVIOUS_ENCODING_SECONDS}s duration plus exactly ${ENCODING_INCREASE_SECONDS}s, not a value that replaced it`
+      PREVIOUS_ENCODING_SECONDS + ENCODING_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+      `${key} must be its previous ${PREVIOUS_ENCODING_SECONDS}s duration plus the preserved +${ENCODING_INCREASE_SECONDS}s plus the +${EXPERIENTIAL_TIME_INCREASE_SECONDS}s UX/timing update, not a value that replaced either increase`
     );
-    assert.equal(INSTRUCTION_TIMING[key], 11);
+    assert.equal(INSTRUCTION_TIMING[key], 26);
   }
 });
 
-test("no non-Encoding stage's duration was touched by the Encoding +7s increase", () => {
-  assert.equal(INSTRUCTION_TIMING.arcThoughtAwareness, 5);
-  assert.equal(INSTRUCTION_TIMING.arcThoughtCombinedAttention, 5);
-  assert.equal(INSTRUCTION_TIMING.arcThoughtExpandPresence, 5);
-  assert.equal(INSTRUCTION_TIMING.stayCurrentSensation, 4);
-  assert.equal(INSTRUCTION_TIMING.stayNaturalBreath, 8);
-  assert.equal(INSTRUCTION_TIMING.regulate, 10);
-  assert.equal(INSTRUCTION_TIMING.actionImagery, 5);
-  assert.equal(INSTRUCTION_TIMING.actionPreparation, 4);
+test("every LIVE experiential protocol stage's duration -- Encoding included -- carries the +15s UX/timing-update increase on top of what it was already configured to; the real Action Timer isn't part of this table at all", () => {
+  const EXPERIENTIAL_TIME_INCREASE_SECONDS = 15;
+  const previousValues: Record<string, number> = {
+    arcThoughtAwareness: 5,
+    arcThoughtCombinedAttention: 5,
+    arcThoughtExpandPresence: 5,
+    stayCurrentSensation: 4,
+    stayNaturalBreath: 8,
+    regulate: 10,
+    actionImagery: 5,
+    actionPreparation: 4,
+  };
+  for (const [key, previousValue] of Object.entries(previousValues)) {
+    assert.equal(
+      INSTRUCTION_TIMING[key as keyof typeof INSTRUCTION_TIMING],
+      previousValue + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+      `${key} must be its previous ${previousValue}s duration plus exactly +${EXPERIENTIAL_TIME_INCREASE_SECONDS}s`
+    );
+  }
+  // The real Action Timer (Beneficial Action / Success Focus / Negative
+  // Action) is governed entirely by arc/actionTimer.ts and
+  // program/engine.ts's resolveNegativeActionDuration -- neither reads
+  // from, nor is configured in, this INSTRUCTION_TIMING table at all,
+  // so there is nothing here that could have picked up this increase by
+  // mistake.
+  assert.ok(!("actionDuration" in INSTRUCTION_TIMING));
+  assert.ok(!("successFocusDuration" in INSTRUCTION_TIMING));
+  assert.ok(!("negativeActionDuration" in INSTRUCTION_TIMING));
+});
+
+test("the inline-rating reveal delay is a distinct, unaffected constant from the +15s experiential-time increase -- still exactly 15s, never itself increased", () => {
+  assert.equal(INLINE_RATING_REVEAL_DELAY_SECONDS, 15);
 });
 
 // --- Timing-update task: the inline-rating reveal gate. The merged
@@ -147,4 +171,63 @@ test("different stages can use entirely different segment counts and durations w
   );
   assert.equal(arcThought.complete, true, "a 5s single-segment stage completes at t=5");
   assert.equal(encoding.complete, false, "a 16s four-segment stage is nowhere near complete at t=5");
+});
+
+// --- UX/timing-update task: progressive text accumulation. live/screens.tsx's
+// RevealedInstructionLines renders each visibleSegments entry as its OWN
+// line, keyed by its position in that array. That's only correct --
+// previous lines never resize, replace, or replay their entrance
+// animation as a new one is appended -- if visibleSegments is always a
+// STABLE, GROWING PREFIX of the same underlying segments as elapsed
+// time increases: an already-revealed segment must keep the exact same
+// array position and the exact same object identity forever, never
+// reordered, replaced, or dropped. These tests pin that invariant
+// explicitly against a real multi-segment stage's own copy/timing (not
+// just a synthetic example), since it's what the whole "gradually
+// constructed page" UX depends on -- this project has no React
+// rendering harness to test the animation/mount behavior itself
+// directly (node --test, not Jest/RTL).
+
+test("visibleSegments is always a stable, growing prefix as elapsed time increases -- an already-revealed segment keeps the exact same array position and object identity forever, never reordered or replaced", () => {
+  const segments: InstructionSegment[] = [
+    { text: "line one", durationSeconds: 4 },
+    { text: "line two", durationSeconds: 8 },
+    { text: "line three", durationSeconds: 6 },
+  ];
+
+  const atT0 = getInstructionTimingStatus(segments, 0).visibleSegments;
+  const atT4 = getInstructionTimingStatus(segments, 4).visibleSegments;
+  const atT12 = getInstructionTimingStatus(segments, 12).visibleSegments;
+  const atT100 = getInstructionTimingStatus(segments, 100).visibleSegments;
+
+  assert.deepEqual(atT0.map((s) => s.text), ["line one"]);
+  assert.deepEqual(atT4.map((s) => s.text), ["line one", "line two"]);
+  assert.deepEqual(atT12.map((s) => s.text), ["line one", "line two", "line three"]);
+  assert.deepEqual(atT100.map((s) => s.text), ["line one", "line two", "line three"], "never grows beyond the real segment count");
+
+  // Not just equal text -- the SAME object reference, at the SAME index,
+  // at every later time point (this is what makes key={index} safe: a
+  // previously-mounted RevealedLine's key never points at a different
+  // segment later).
+  assert.equal(atT4[0], atT0[0], "segment 0 is the identical object once revealed, unaffected by segment 1 joining");
+  assert.equal(atT12[0], atT0[0]);
+  assert.equal(atT12[1], atT4[1], "segment 1 is the identical object once revealed, unaffected by segment 2 joining");
+});
+
+test("progressive reveal works identically against a real multi-segment stage's own production copy (Stay, now 19s+23s after the +15s UX/timing update) -- confirming the growing-prefix guarantee holds for actual LIVE content, not just a synthetic example", () => {
+  const stayText1 = "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה.";
+  const stayText2 = "שים לב גם לנשימה כפי שהיא מתרחשת מעצמה.";
+  const segments: InstructionSegment[] = [
+    { text: stayText1, durationSeconds: INSTRUCTION_TIMING.stayCurrentSensation },
+    { text: stayText2, durationSeconds: INSTRUCTION_TIMING.stayNaturalBreath },
+  ];
+  assert.equal(INSTRUCTION_TIMING.stayCurrentSensation, 19, "sanity: base 4s + the +15s UX/timing-update increase");
+  assert.equal(INSTRUCTION_TIMING.stayNaturalBreath, 23, "sanity: base 8s + the +15s UX/timing-update increase");
+
+  const beforeBreathJoins = getInstructionTimingStatus(segments, INSTRUCTION_TIMING.stayCurrentSensation - 0.1);
+  assert.deepEqual(beforeBreathJoins.visibleSegments.map((s) => s.text), [stayText1], "only the first line is up, one tick before the second joins");
+
+  const afterBreathJoins = getInstructionTimingStatus(segments, INSTRUCTION_TIMING.stayCurrentSensation);
+  assert.deepEqual(afterBreathJoins.visibleSegments.map((s) => s.text), [stayText1, stayText2], "the second line joins underneath -- the first line's text is unchanged, not replaced");
+  assert.equal(afterBreathJoins.visibleSegments[0], beforeBreathJoins.visibleSegments[0], "the first line stays the identical object once the second joins it");
 });
