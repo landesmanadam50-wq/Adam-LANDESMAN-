@@ -148,20 +148,33 @@ export function applyAlternativeAction(session: ArcLiveState, text: string, dura
  * The Action Imagery screen's own Continue: only marks Imagery done,
  * mirroring applyPlannedActionConfirmed -- never advances the ArcStage
  * itself (still "act"; see arc/arcEngine.ts's resolveActPhase, which
- * moves on to "preparation" once this is true).
+ * moves straight on to "performing" once this is true -- the standalone
+ * Action Preparation sub-phase that used to sit in between is removed).
  */
 export function applyActionImageryCompleted(session: ArcLiveState): ArcLiveState {
   return { ...session, actionImageryCompleted: true };
 }
 
 /**
- * The Action Preparation screen's own Continue ("עכשיו בצע את הפעולה"):
- * only marks Preparation done. Once true, resolveActPhase moves "act"
- * to "performing" -- the actual timed Action -- and only then does the
- * Action Timer (arc/actionTimer.ts) begin.
+ * The Beneficial Action Timer's own live, in-session duration choice
+ * (5-10 minutes, live/screens.tsx's BeneficialActionDurationChoiceScreen)
+ * -- never advances the ArcStage itself (still "act"; see
+ * arc/arcEngine.ts's resolveActionDuration, which now prefers this
+ * value over ArcBuildProfile.actionDuration on the planned-action path).
  */
-export function applyActionPreparationCompleted(session: ArcLiveState): ArcLiveState {
-  return { ...session, actionPreparationCompleted: true };
+export function applyBeneficialActionDurationSelected(session: ArcLiveState, minutes: number): ArcLiveState {
+  return { ...session, beneficialActionDurationMinutes: minutes };
+}
+
+/**
+ * The Success Focus stage's own now/later choice
+ * (live/screens.tsx's SuccessFocusChoiceScreen) -- never advances the
+ * ArcStage itself (still "success_focus"); only decides which of that
+ * stage's sub-views renders next (the existing timer/chip-picker flow,
+ * or the deferral picker).
+ */
+export function applySuccessFocusChoice(session: ArcLiveState, choice: "now" | "later"): ArcLiveState {
+  return { ...session, successFocusChoice: choice };
 }
 
 /**

@@ -96,7 +96,6 @@ test("every LIVE experiential protocol stage's duration -- Encoding included -- 
     stayNaturalBreath: 8,
     regulate: 10,
     actionImagery: 5,
-    actionPreparation: 4,
   };
   for (const [key, previousValue] of Object.entries(previousValues)) {
     assert.equal(

@@ -3,8 +3,8 @@
  *
  * The progressive timed-instruction-reveal system: for "info"-kind LIVE
  * screens (ARC Thought's three sub-stages, Stay/Presence, Regulation,
- * Encoding, and the Action section's Imagery/Preparation sub-phases),
- * a stage's instruction text is split into one or more ordered
+ * Encoding, and the Action section's Imagery sub-phase), a stage's
+ * instruction text is split into one or more ordered
  * InstructionSegments, each with its own minimum practice duration.
  * Segments reveal cumulatively (segment 2 appears once segment 1's
  * window elapses; nothing already shown ever disappears), and the
@@ -103,7 +103,6 @@ export const INSTRUCTION_TIMING = {
   /** The generic "take a moment" fallback line, only shown when nothing else in Encoding was configured for this target. */
   encodeFallback: ENCODING_BASE_SECONDS.fallback + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
   actionImagery: 5 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-  actionPreparation: 4 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
 } as const;
 
 /**
@@ -139,11 +138,10 @@ export interface InstructionTimingStatus {
  * 8s segment: segment 1 is visible from t=0, segment 2 joins it at
  * t=4, and complete becomes true at t=12 (4+8), never before.
  *
- * An empty segments array is trivially complete from t=0 -- this is
- * how arc/stageCopy.ts's Action Preparation "skip the Body-Language
- * reminder cleanly when none is configured" (no invented content, no
- * forced wait) falls out of the same general mechanism, with no
- * special-casing needed by any caller.
+ * An empty segments array is trivially complete from t=0 -- lets any
+ * caller with genuinely nothing to say for a given screen (no invented
+ * content, no forced wait) fall out of this same general mechanism,
+ * with no special-casing needed here.
  */
 export function getInstructionTimingStatus(segments: InstructionSegment[], elapsedSeconds: number): InstructionTimingStatus {
   const totalDurationSeconds = segments.reduce((sum, segment) => sum + segment.durationSeconds, 0);

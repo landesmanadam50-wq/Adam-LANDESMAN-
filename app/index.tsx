@@ -4,6 +4,60 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { loadProfile } from "../data/storage.ts";
+import { DEFERRAL_OPTIONS, scheduleDeferredReminder } from "../data/reminders.ts";
+import type { DeferralOption } from "../data/reminders.ts";
+
+/**
+ * Reminder/timer-update task (#5): scheduling a future ARC session
+ * reminder, independently of any LIVE session in progress -- reuses
+ * the exact same chip-picker/scheduling mechanism as deferred Focus
+ * Success (data/reminders.ts's scheduleDeferredReminder, kind "arc"),
+ * so there is only ever one reminder-scheduling system, not two.
+ * arcRequested is always true for this kind (a future ARC reminder is,
+ * by construction, "with ARC") -- see data/storage.ts's PendingReminder.
+ */
+function ScheduleArcReminder() {
+  const [open, setOpen] = useState(false);
+  const [confirmedOption, setConfirmedOption] = useState<DeferralOption | null>(null);
+
+  if (!open) {
+    return (
+      <Pressable style={styles.secondaryButton} onPress={() => setOpen(true)}>
+        <Text style={styles.secondaryButtonText}>קבע תזכורת ARC עתידית</Text>
+      </Pressable>
+    );
+  }
+
+  if (confirmedOption) {
+    return <Text style={styles.confirmationText}>{`תזכורת נקבעה: ${confirmedOption.label}.`}</Text>;
+  }
+
+  return (
+    <View style={styles.reminderPicker}>
+      <Text style={styles.reminderPickerLabel}>מתי תרצה לקבל תזכורת לסשן ARC?</Text>
+      <View style={styles.chipRow}>
+        {DEFERRAL_OPTIONS.map((option) => (
+          <Pressable
+            key={option.id}
+            style={styles.chip}
+            onPress={() => {
+              scheduleDeferredReminder({
+                kind: "arc",
+                option,
+                arcRequested: true,
+                title: "ARCHI",
+                body: "זמן לסשן ARC.",
+              });
+              setConfirmedOption(option);
+            }}
+          >
+            <Text style={styles.secondaryButtonText}>{option.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 export default function Home() {
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
@@ -55,6 +109,7 @@ export default function Home() {
                 <Text style={styles.secondaryButtonText}>מפת ARC (BUILD-ARC)</Text>
               </Pressable>
             </Link>
+            <ScheduleArcReminder />
           </>
         )}
       </View>
@@ -96,5 +151,30 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: "#0a7ea4",
     fontSize: 15,
+  },
+  reminderPicker: {
+    alignItems: "center",
+    gap: 8,
+  },
+  reminderPickerLabel: {
+    fontSize: 15,
+    textAlign: "center",
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 8,
+  },
+  chip: {
+    backgroundColor: "#E6F4FE",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  confirmationText: {
+    fontSize: 15,
+    textAlign: "center",
+    color: "#0a7ea4",
   },
 });

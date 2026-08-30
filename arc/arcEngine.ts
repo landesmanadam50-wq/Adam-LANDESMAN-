@@ -316,19 +316,28 @@ export function needsCurrentActionResolution(plannedActionConfirmed: boolean, se
   return !plannedActionConfirmed && selectedAction === null;
 }
 
-export type ActPhase = "choice" | "imagery" | "preparation" | "performing";
+export type ActPhase = "choice" | "imagery" | "performing";
 
 /**
- * Which of the "act" stage's four sub-phases to show, mirroring
+ * Which of the "act" stage's three sub-phases to show, mirroring
  * needsCurrentActionResolution's "stay at this ArcStage, render a
  * conditional interstitial" pattern -- no new ArcStage was added for
  * any of these. Order is fixed and one-directional (never a way back):
  *
  *   choice      -- currentAction not yet resolved (needsCurrentActionResolution).
  *   imagery     -- currentAction resolved, Action Imagery not yet completed.
- *   preparation -- Imagery completed, Action Preparation not yet completed.
- *   performing  -- both completed: the actual timed Action (arc/actionTimer.ts)
+ *   performing  -- Imagery completed: the actual timed Action (arc/actionTimer.ts)
  *                  is the only thing left before "act" advances to "success_focus".
+ *
+ * LIVE-flow-update task: the standalone Action Preparation sub-phase
+ * (which used to sit between imagery and performing, only ever
+ * repeating the SAME Body-Language Cue Action Imagery had just shown)
+ * is removed -- Imagery now goes directly to Performing. Its useful
+ * "carry this into the real action" reminder was folded into
+ * Encoding's own body-language segment instead (see
+ * arc/stageCopy.ts's "encode" case) rather than lost. This is the ONE
+ * explicitly allowed change to "act"'s progression; every other
+ * ordering here is unchanged.
  *
  * The Action Timer never starts before "performing" is reached -- see
  * arc/actionTimer.ts's module doc and live/screens.tsx's ActionScreen,
@@ -337,25 +346,34 @@ export type ActPhase = "choice" | "imagery" | "preparation" | "performing";
 export function resolveActPhase(
   plannedActionConfirmed: boolean,
   selectedAction: string | null,
-  actionImageryCompleted: boolean,
-  actionPreparationCompleted: boolean
+  actionImageryCompleted: boolean
 ): ActPhase {
   if (needsCurrentActionResolution(plannedActionConfirmed, selectedAction)) return "choice";
   if (!actionImageryCompleted) return "imagery";
-  if (!actionPreparationCompleted) return "preparation";
   return "performing";
 }
 
 /**
- * Resolves the action duration actually in effect for this session: a
- * session-specific alternative's own duration when one was set
- * (paired with ArcLiveState.selectedAction), else the BUILD-level
- * actionDuration -- parallel to resolveEncodingRegulationCue's
- * per-target-then-global fallback shape. Never invents a duration:
- * null when neither is set.
+ * Resolves the action duration actually in effect for this session, in
+ * priority order: (1) a session-specific alternative's own duration
+ * (paired with ArcLiveState.selectedAction, from the Action-choice
+ * screen's "לא" branch -- unchanged), (2) the trainee's own live,
+ * in-session choice for the Beneficial Action Timer specifically
+ * (ArcLiveState.beneficialActionDurationMinutes, 5-10 minutes -- see
+ * live/screens.tsx's BeneficialActionDurationChoiceScreen; only ever
+ * set on the PLANNED-action path, never the alternative one, which
+ * already has its own duration via (1)), (3) the BUILD-level
+ * actionDuration as a last-resort fallback (kept for callers that
+ * never go through the live picker, e.g. a resumed run rendered
+ * directly from its persisted TimerRun snapshot). Never invents a
+ * duration: null when none of the three is set.
  */
-export function resolveActionDuration(selectedActionDuration: number | null, profile: ArcBuildProfile): number | null {
-  return selectedActionDuration ?? profile.actionDuration;
+export function resolveActionDuration(
+  selectedActionDuration: number | null,
+  profile: ArcBuildProfile,
+  beneficialActionDurationMinutes: number | null = null
+): number | null {
+  return selectedActionDuration ?? beneficialActionDurationMinutes ?? profile.actionDuration;
 }
 
 // ---------------------------------------------------------------------------

@@ -41,13 +41,14 @@ import {
   advanceLiveSession,
   applyActionCompletion,
   applyActionImageryCompleted,
-  applyActionPreparationCompleted,
   applyAlternativeAction,
+  applyBeneficialActionDurationSelected,
   applyNegativeActionStarted,
   applyPlannedActionConfirmed,
   applyRegulationToolUsed,
   applyScaleAnswer,
   applySensationAnswer,
+  applySuccessFocusChoice,
   applyTargetSelection,
   applyTriggerSelection,
   applyYesNoAnswer,
@@ -404,31 +405,32 @@ test("28. needsCurrentActionResolution resolves Focus and Discipline independent
   assert.notEqual(focusSession.selectedTarget, disciplineSession.selectedTarget);
 });
 
-// --- applyActionImageryCompleted / applyActionPreparationCompleted: the
-// "act" stage's Imagery/Preparation sub-phases each mark their own flag
-// done and nothing else -- neither ever advances the ArcStage itself
-// (that stays "act" until the real Action Timer completes).
+// --- applyActionImageryCompleted: the "act" stage's Imagery sub-phase
+// marks its own flag done and nothing else -- never advances the
+// ArcStage itself (that stays "act" until the real Action Timer
+// completes). LIVE-flow-update task: the standalone Action Preparation
+// sub-phase this section used to also test is removed -- Imagery now
+// goes straight to Performing.
 
 test("29. applyActionImageryCompleted marks Imagery done and touches nothing else", () => {
   const before = createEmptyLiveState();
   const after = applyActionImageryCompleted(before);
   assert.equal(after.actionImageryCompleted, true);
-  assert.equal(after.actionPreparationCompleted, false, "Preparation is untouched");
   assert.equal(after.currentArcStage, before.currentArcStage, "the ArcStage itself is never advanced by this call");
 });
 
-test("30. applyActionPreparationCompleted marks Preparation done and touches nothing else", () => {
+test("29b. applyBeneficialActionDurationSelected records the live duration choice and touches nothing else", () => {
   const before = { ...createEmptyLiveState(), actionImageryCompleted: true };
-  const after = applyActionPreparationCompleted(before);
-  assert.equal(after.actionPreparationCompleted, true);
+  const after = applyBeneficialActionDurationSelected(before, 7);
+  assert.equal(after.beneficialActionDurationMinutes, 7);
   assert.equal(after.actionImageryCompleted, true, "Imagery's own flag stays as it was");
-  assert.equal(after.currentArcStage, before.currentArcStage);
+  assert.equal(after.currentArcStage, before.currentArcStage, "the ArcStage itself is never advanced by this call");
 });
 
-test("31. a fresh session starts with both act-phase flags false -- Imagery/Preparation are never pre-completed", () => {
+test("31. a fresh session starts with the act-phase flag false and no live Beneficial Action duration chosen -- Imagery is never pre-completed", () => {
   const state = createEmptyLiveState();
   assert.equal(state.actionImageryCompleted, false);
-  assert.equal(state.actionPreparationCompleted, false);
+  assert.equal(state.beneficialActionDurationMinutes, null);
 });
 
 test("32. applyNegativeActionStarted marks the Negative Action Timer started and touches nothing else", () => {
@@ -1003,4 +1005,69 @@ test("stored rating values and progression are unaffected by the concise-questio
   );
   assert.equal(intensityResult.session.sensationIntensity, 3);
   assert.equal(intensityResult.session.sensationLocation, "חזה", "location preserved, never re-asked");
+});
+
+// --- Reminder/timer-update task: Beneficial Action's live duration
+// choice (5-10 minutes, live/screens.tsx's BeneficialActionDurationChoiceScreen)
+// and Success Focus's now/later choice
+// (live/screens.tsx's SuccessFocusChoiceScreen). Neither ever changes
+// which ArcStage the session is on, or the engine's own transition
+// rules for that stage -- both are purely which SCREEN renders next
+// within the SAME stage, mirroring the established
+// resolveActPhase/needsProactiveTargetSelection "conditional
+// interstitial" pattern.
+
+test("applyBeneficialActionDurationSelected records the choice and touches nothing else", () => {
+  const before = { ...createEmptyLiveState(), actionImageryCompleted: true };
+  const after = applyBeneficialActionDurationSelected(before, 8);
+  assert.equal(after.beneficialActionDurationMinutes, 8);
+  assert.equal(after.actionImageryCompleted, true);
+  assert.equal(after.currentArcStage, before.currentArcStage, "never advances the ArcStage itself");
+});
+
+test("the Beneficial Action duration choice is only ever needed on the PLANNED-action path -- the alternative-action path (selectedAction already set) never gates on it", () => {
+  // Mirrors live/ArcLiveRenderer.tsx's own needsBeneficialActionDuration condition exactly.
+  function needsBeneficialActionDuration(session: ArcLiveState): boolean {
+    return session.selectedAction === null && session.beneficialActionDurationMinutes === null;
+  }
+
+  const plannedNotYetChosen: ArcLiveState = { ...createEmptyLiveState(), plannedActionConfirmed: true, actionImageryCompleted: true };
+  assert.equal(needsBeneficialActionDuration(plannedNotYetChosen), true, "planned path, no live choice yet -- the picker is needed");
+
+  const plannedChosen = applyBeneficialActionDurationSelected(plannedNotYetChosen, 6);
+  assert.equal(needsBeneficialActionDuration(plannedChosen), false, "planned path, already chosen -- the picker is no longer needed");
+
+  const alternative: ArcLiveState = {
+    ...createEmptyLiveState(),
+    selectedAction: "5 דקות תרגילים בבית",
+    selectedActionDuration: 5,
+    actionImageryCompleted: true,
+  };
+  assert.equal(needsBeneficialActionDuration(alternative), false, "alternative-action path already has its own duration -- the live picker is never asked");
+});
+
+test("applySuccessFocusChoice records the choice and touches nothing else", () => {
+  const before = createEmptyLiveState();
+  const now = applySuccessFocusChoice(before, "now");
+  assert.equal(now.successFocusChoice, "now");
+  assert.equal(now.currentArcStage, before.currentArcStage, "never advances the ArcStage itself");
+
+  const later = applySuccessFocusChoice(before, "later");
+  assert.equal(later.successFocusChoice, "later");
+});
+
+test("a fresh session starts with successFocusChoice null -- Success Focus is never forced immediately", () => {
+  assert.equal(createEmptyLiveState().successFocusChoice, null);
+});
+
+test("success_focus's own engine transition is completely unaffected by successFocusChoice -- deferring Focus Success still reaches negative_action/complete exactly as choosing 'now' would", () => {
+  const pWithHabit = profile();
+  const activeLayersWithHabit: DevelopmentLayer[] = ["habit"];
+
+  const laterSession: ArcLiveState = { ...createEmptyLiveState(), successFocusChoice: "later", actionReached: true, realActionCompleted: true };
+  const nowSession: ArcLiveState = { ...createEmptyLiveState(), successFocusChoice: "now", actionReached: true, realActionCompleted: true };
+
+  const laterOutcome = getNextArcStage("success_focus", laterSession, pWithHabit, activeLayersWithHabit);
+  const nowOutcome = getNextArcStage("success_focus", nowSession, pWithHabit, activeLayersWithHabit);
+  assert.deepEqual(laterOutcome, nowOutcome, "the transition depends only on needsNegativeAction, never on successFocusChoice");
 });

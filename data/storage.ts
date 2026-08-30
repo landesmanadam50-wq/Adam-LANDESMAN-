@@ -194,3 +194,58 @@ export async function saveTimerRun(run: TimerRun): Promise<void> {
 export async function clearTimerRun(timerType: TimerType): Promise<void> {
   await AsyncStorage.removeItem(timerRunKey(timerType));
 }
+
+/**
+ * A "come back later" reminder -- a distinct concept from TimerRun
+ * above (which times an activity already in progress): this persists
+ * the trainee's own intention for a FUTURE moment that hasn't happened
+ * yet, scheduled via data/notifications.ts's scheduleReminderNotification.
+ * Two independent kinds, exactly like TimerType's three independent
+ * timers -- deferring Success Focus (see live/screens.tsx's
+ * SuccessFocusChoiceScreen) can never overwrite or be confused with a
+ * separately-scheduled future ARC session reminder (see app/index.tsx),
+ * and vice versa. At most one pending reminder per kind -- scheduling a
+ * new one for the same kind (data/reminders.ts's scheduleDeferredReminder)
+ * always cancels and replaces whatever was pending for that kind first,
+ * so a trainee can never end up with two overlapping reminders of the
+ * same kind. notificationId is cleared alongside the record once the
+ * reminder is resolved (its notification fires and is handled, or the
+ * trainee replaces/cancels it) -- never left dangling to fire a
+ * redundant signal later.
+ */
+export type ReminderKind = "focusSuccess" | "arc";
+
+export interface PendingReminder {
+  kind: ReminderKind;
+  /** ISO timestamp of when this reminder is scheduled to fire. */
+  fireAt: string;
+  /**
+   * Only meaningful for kind "focusSuccess": true = "Focus Success with
+   * ARC" was chosen, false = "Focus Success without ARC". Always true
+   * for kind "arc" (a future ARC session is, by construction, "with
+   * ARC") -- kept on every record rather than a separate optional field
+   * so the shape stays uniform across both kinds.
+   */
+  arcRequested: boolean;
+  notificationId: string | null;
+  createdAt: string;
+}
+
+function pendingReminderKey(kind: ReminderKind): string {
+  return `archi.pendingReminder.v1.${kind}`;
+}
+
+export async function loadPendingReminder(kind: ReminderKind): Promise<PendingReminder | null> {
+  const raw = await AsyncStorage.getItem(pendingReminderKey(kind));
+  return raw ? (JSON.parse(raw) as PendingReminder) : null;
+}
+
+/** Always keyed by this reminder's own kind, so saving one kind's reminder can never overwrite the other's. */
+export async function savePendingReminder(reminder: PendingReminder): Promise<void> {
+  await AsyncStorage.setItem(pendingReminderKey(reminder.kind), JSON.stringify(reminder));
+}
+
+/** Called once a reminder's notification has actually fired and been handled, or when it's being replaced by a newly-scheduled one of the same kind. Only ever clears the ONE named kind's record. */
+export async function clearPendingReminder(kind: ReminderKind): Promise<void> {
+  await AsyncStorage.removeItem(pendingReminderKey(kind));
+}

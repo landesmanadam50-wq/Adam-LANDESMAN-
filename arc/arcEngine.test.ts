@@ -595,6 +595,25 @@ test("resolveActionDuration never invents a duration when neither is set", () =>
   assert.equal(resolveActionDuration(null, p), null);
 });
 
+// --- Timer-update task: the trainee's own live, in-session Beneficial
+// Action duration choice (5-10 minutes) sits between the alternative
+// action's own duration and the BUILD-level fallback in priority.
+
+test("resolveActionDuration prefers the live beneficialActionDurationMinutes choice over the BUILD-level actionDuration", () => {
+  const p = profile({ actionDuration: 20 });
+  assert.equal(resolveActionDuration(null, p, 7), 7);
+});
+
+test("resolveActionDuration still prefers the alternative action's own session-specific duration over the live beneficialActionDurationMinutes choice", () => {
+  const p = profile({ actionDuration: 20 });
+  assert.equal(resolveActionDuration(5, p, 7), 5, "the alternative-action path's own duration always wins -- it's never overridden by the planned-action-only live choice");
+});
+
+test("resolveActionDuration falls back to the BUILD-level actionDuration when neither the alternative nor the live choice is set", () => {
+  const p = profile({ actionDuration: 20 });
+  assert.equal(resolveActionDuration(null, p, null), 20);
+});
+
 test("resolveEncodingTarget: currentAction becomes the alternative action once selectedAction is set, and the planned BUILD action itself is never mutated", () => {
   const p = profile({ internalAction: "לצאת להליכה של 20 דקות" });
   const resolved = resolveEncodingTarget({
@@ -608,32 +627,28 @@ test("resolveEncodingTarget: currentAction becomes the alternative action once s
   assert.equal(p.internalAction, "לצאת להליכה של 20 דקות", "the planned/BUILD action itself is untouched");
 });
 
-// --- resolveActPhase: the "act" stage's four sub-phases, in their
+// --- resolveActPhase: the "act" stage's three sub-phases, in their
 // fixed, one-directional order -- see arc/instructionTiming.ts and
-// arc/actionTimer.ts for why Imagery/Preparation timing and the actual
-// Action Timer must stay explicitly separate concepts.
+// arc/actionTimer.ts for why Imagery timing and the actual Action
+// Timer must stay explicitly separate concepts. The standalone Action
+// Preparation sub-phase that used to sit between Imagery and
+// Performing is removed (LIVE-flow-update task) -- Imagery now goes
+// straight to Performing.
 
 test("resolveActPhase stays at 'choice' until currentAction is resolved", () => {
-  assert.equal(resolveActPhase(false, null, false, false), "choice");
-  assert.equal(resolveActPhase(false, null, true, true), "choice", "not yet resolved, even if the later flags are somehow set");
+  assert.equal(resolveActPhase(false, null, false), "choice");
+  assert.equal(resolveActPhase(false, null, true), "choice", "not yet resolved, even if the later flag is somehow set");
 });
 
 test("resolveActPhase moves to 'imagery' once currentAction is resolved (planned confirmed)", () => {
-  assert.equal(resolveActPhase(true, null, false, false), "imagery");
+  assert.equal(resolveActPhase(true, null, false), "imagery");
 });
 
 test("resolveActPhase moves to 'imagery' once currentAction is resolved (a valid alternative was entered)", () => {
-  assert.equal(resolveActPhase(false, "חלופה", false, false), "imagery");
+  assert.equal(resolveActPhase(false, "חלופה", false), "imagery");
 });
 
-test("resolveActPhase moves to 'preparation' only once Action Imagery is completed", () => {
-  assert.equal(resolveActPhase(true, null, true, false), "preparation");
-});
-
-test("resolveActPhase moves to 'performing' only once both Action Imagery and Action Preparation are completed", () => {
-  assert.equal(resolveActPhase(true, null, true, true), "performing");
-});
-
-test("resolveActPhase never skips a phase: Preparation completed alone (Imagery not) still stays at 'imagery'", () => {
-  assert.equal(resolveActPhase(true, null, false, true), "imagery");
+test("resolveActPhase moves directly to 'performing' once Action Imagery is completed -- no standalone Preparation phase in between", () => {
+  assert.equal(resolveActPhase(true, null, true), "performing");
+  assert.equal(resolveActPhase(false, "חלופה", true), "performing");
 });

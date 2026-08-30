@@ -380,7 +380,16 @@ export function getStageCopy(
       }
 
       if (encoding?.bodyLanguageCue) {
-        segments.push({ text: `שמור על ${encoding.bodyLanguageCue}.`, durationSeconds: INSTRUCTION_TIMING.encodeBodyLanguageCue });
+        // LIVE-flow-update task: folds in the "carry this into the real
+        // action" reminder that used to live on its own standalone
+        // Action Preparation screen (now removed -- see
+        // arc/arcEngine.ts's resolveActPhase) so that instruction is
+        // preserved rather than lost, right where the cue is first
+        // introduced.
+        segments.push({
+          text: `שמור על ${encoding.bodyLanguageCue}, גם בהמשך וגם בזמן הפעולה עצמה.`,
+          durationSeconds: INSTRUCTION_TIMING.encodeBodyLanguageCue,
+        });
         hasContinuityContent = true;
       } else if (!encoding?.mantra && encoding?.target) {
         // No explicit body-language cue and no mantra either -- fall
@@ -404,17 +413,16 @@ export function getStageCopy(
     }
 
     case "act": {
-      // Which of the "act" stage's four sub-phases to show -- see
+      // Which of the "act" stage's three sub-phases to show -- see
       // arc/arcEngine.ts's resolveActPhase doc for the fixed,
-      // one-directional order (choice -> imagery -> preparation ->
-      // performing). Still one ArcStage value throughout; no new stage
-      // was added.
-      const phase = resolveActPhase(
-        state.plannedActionConfirmed,
-        state.selectedAction,
-        state.actionImageryCompleted,
-        state.actionPreparationCompleted
-      );
+      // one-directional order (choice -> imagery -> performing). Still
+      // one ArcStage value throughout; no new stage was added. The
+      // standalone Action Preparation sub-phase that used to sit
+      // between imagery and performing is removed -- its useful
+      // "carry the cue into the real action" reminder now lives on
+      // Encoding's own body-language segment instead (see the "encode"
+      // case above).
+      const phase = resolveActPhase(state.plannedActionConfirmed, state.selectedAction, state.actionImageryCompleted);
 
       if (phase === "choice") {
         // Deliberately resolved WITHOUT the selectedAction override here
@@ -473,24 +481,6 @@ export function getStageCopy(
           title: "דמיון הפעולה",
           body: text,
           segments: [{ text, durationSeconds: INSTRUCTION_TIMING.actionImagery }],
-        };
-      }
-
-      if (phase === "preparation") {
-        // A short reminder to carry the SAME Body-Language Cue into the
-        // real behavior -- deliberately not a second, separate cue
-        // reminder before Imagery (Imagery already contains it above).
-        // No cue configured -> skip this reminder cleanly (empty
-        // segments array, trivially "complete" from t=0 -- see
-        // getInstructionTimingStatus): never invent one, never show an
-        // empty placeholder.
-        const segments: InstructionSegment[] = bodyLanguageCue
-          ? [{ text: `בזמן הפעולה, המשך לשמור על: ${bodyLanguageCue}.`, durationSeconds: INSTRUCTION_TIMING.actionPreparation }]
-          : [];
-        return {
-          title: "הכנה לפעולה",
-          body: segments.length > 0 ? segments.map((segment) => segment.text).join(" ") : "",
-          segments,
         };
       }
 

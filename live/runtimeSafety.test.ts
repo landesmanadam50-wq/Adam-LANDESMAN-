@@ -136,10 +136,10 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
   assert.deepEqual(Object.keys(state).sort(), [
     "acceptanceNeeded",
     "actionImageryCompleted",
-    "actionPreparationCompleted",
     "actionReached",
     "activeTools",
     "arcThoughtCompleted",
+    "beneficialActionDurationMinutes",
     "currentArcStage",
     "desiredStateRating",
     "loopIterationCount",
@@ -156,6 +156,7 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "selectedTarget",
     "sensationIntensity",
     "sensationLocation",
+    "successFocusChoice",
     "triggerType",
     "wantsPreventiveAction",
   ]);
@@ -412,12 +413,9 @@ test("a reactive_urge session, walked to 'act' through the real engine, that cho
   assert.ok(!imageryCopy.body.includes("משך הפעולה"), "the Action Timer's duration is not named yet during Imagery -- it hasn't started");
   assert.equal(containsInductionPattern(imageryCopy.body), false);
 
-  // Imagery -> Preparation -> the actual timed Action, same currentAction throughout.
+  // Imagery -> directly to the actual timed Action (no standalone
+  // Preparation phase in between), same currentAction throughout.
   state = { ...state, actionImageryCompleted: true };
-  const preparationCopy = getStageCopy(stage, p, state, activeLayers);
-  assert.ok(!preparationCopy.body.includes("דמיין"), "Action Preparation does not repeat the Imagery sentence");
-
-  state = { ...state, actionPreparationCompleted: true };
   const resolvedCopy = getStageCopy(stage, p, state, activeLayers);
   assert.ok(!resolvedCopy.body.includes("דמיין"), "the actual Action screen no longer shows the Imagery sentence");
   assert.match(resolvedCopy.body, /עכשיו הזמן: 5 דקות תרגילים בבית\./, "the actual Action names the resolved alternative currentAction");
@@ -446,9 +444,14 @@ test("a reactive_urge session with the habit layer active, walked end to end thr
     if (stage === "sensation_check") state = { ...state, sensationIntensity: 2 };
     if (stage === "act") {
       // Resolve currentAction (the "כן" branch) and walk through
-      // Imagery/Preparation without stopping -- this test is about
-      // stage ORDER, not the act sub-phases (already covered above).
-      state = { ...state, plannedActionConfirmed: true, actionImageryCompleted: true, actionPreparationCompleted: true };
+      // Imagery without stopping -- this test is about stage ORDER,
+      // not the act sub-phases (already covered above).
+      state = { ...state, plannedActionConfirmed: true, actionImageryCompleted: true };
+    }
+    if (stage === "success_focus") {
+      // Skip the now/later choice this test isn't about -- proceed
+      // through the existing "now" flow.
+      state = { ...state, successFocusChoice: "now" };
     }
     if (stage === "negative_action") {
       state = { ...state, negativeActionStarted: true };

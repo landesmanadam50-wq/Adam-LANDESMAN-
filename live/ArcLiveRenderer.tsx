@@ -25,12 +25,13 @@ import {
 } from "../arc/arcEngine.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
 import type { TimerRun } from "../data/storage.ts";
+import type { DeferralOption } from "../data/reminders.ts";
 import {
   AcceptScreen,
   ActionChoiceScreen,
   ActionImageryScreen,
-  ActionPreparationScreen,
   ActionScreen,
+  BeneficialActionDurationChoiceScreen,
   CompleteScreen,
   DesiredStateRatingScreen,
   EncodingScreen,
@@ -45,6 +46,8 @@ import {
   RegulationScreen,
   SensationRatingScreen,
   StayScreen,
+  SuccessFocusChoiceScreen,
+  SuccessFocusDeferralScreen,
   SuccessFocusScreen,
   TransitionCheckScreen,
   TriggerSelectScreen,
@@ -93,10 +96,13 @@ export interface ArcLiveRendererProps {
   onSelectAlternativeActionDuration: (minutes: number) => void;
   onSubmitAlternativeAction: () => void;
   onActionImageryContinue: () => void;
-  onActionPreparationContinue: () => void;
+  onSelectBeneficialActionDuration: (minutes: number) => void;
   onActionCompleted: () => void;
+  onSuccessFocusChoice: (choice: "now" | "later") => void;
   onSelectSuccessFocusMinutes: (minutes: number) => void;
   onSuccessFocusContinue: () => void;
+  deferralOptions: DeferralOption[];
+  onDeferSuccessFocus: (option: DeferralOption, withArc: boolean) => void;
   resumedSuccessCodingRun: TimerRun | null;
   negativeActionDurationMinutes: number | null;
   onNegativeActionStart: () => void;
@@ -297,20 +303,17 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       return <EncodingScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
     case "act": {
-      // Which of the "act" stage's four sub-phases to show -- same
+      // Which of the "act" stage's three sub-phases to show -- same
       // "stay at this ArcStage, render a conditional interstitial"
       // pattern as trigger_selection's reactive chooser /
       // desired_state_check's proactive-target picker, extended to a
       // fixed one-directional sequence. See arc/arcEngine.ts's
       // resolveActPhase doc. Each sub-phase is a distinct component, so
       // switching between them already remounts (resetting any timing
-      // state) with no explicit key needed here.
-      const actPhase = resolveActPhase(
-        session.plannedActionConfirmed,
-        session.selectedAction,
-        session.actionImageryCompleted,
-        session.actionPreparationCompleted
-      );
+      // state) with no explicit key needed here. The standalone Action
+      // Preparation sub-phase that used to sit between imagery and
+      // performing is removed -- imagery goes straight to performing.
+      const actPhase = resolveActPhase(session.plannedActionConfirmed, session.selectedAction, session.actionImageryCompleted);
 
       if (actPhase === "choice") {
         return (
@@ -331,16 +334,27 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
         return <ActionImageryScreen copy={copy} onContinue={props.onActionImageryContinue} />;
       }
 
-      if (actPhase === "preparation") {
-        return <ActionPreparationScreen copy={copy} onContinue={props.onActionPreparationContinue} />;
+      // actPhase === "performing": the actual timed Action. Timer-update
+      // task: the Beneficial Action Timer now uses a trainee-chosen
+      // duration (5-10 minutes) rather than silently reusing whatever
+      // was configured in BUILD -- but only on the PLANNED-action path
+      // (session.selectedAction === null); the alternative-action path
+      // already has its own session-specific duration, chosen back on
+      // ActionChoiceScreen, and is left completely alone. Until that
+      // choice is made, show BeneficialActionDurationChoiceScreen
+      // instead of starting the timer -- mirrors the established
+      // "stay at this ArcStage, render a conditional interstitial"
+      // pattern used throughout this switch, so no new ArcStage/timer
+      // system is introduced.
+      const needsBeneficialActionDuration = session.selectedAction === null && session.beneficialActionDurationMinutes === null;
+      if (needsBeneficialActionDuration) {
+        return <BeneficialActionDurationChoiceScreen copy={copy} onSelectDuration={props.onSelectBeneficialActionDuration} />;
       }
-
-      // actPhase === "performing": the actual timed Action. The Action
-      // Timer's duration is resolved independently of `copy` (which only
-      // carries display text) -- the same resolver Encoding/Imagery/
-      // Preparation never call, since the timer must never start before
-      // this phase.
-      const durationMinutes = resolveActionDuration(session.selectedActionDuration, profile);
+      // The Action Timer's duration is resolved independently of `copy`
+      // (which only carries display text) -- the same resolver
+      // Encoding/Imagery never call, since the timer must never start
+      // before this phase.
+      const durationMinutes = resolveActionDuration(session.selectedActionDuration, profile, session.beneficialActionDurationMinutes);
       // resumedRun is never passed here: a resumed Beneficial Action
       // Timer bypasses ArcLiveRenderer entirely (see
       // live/LiveSessionScreen.tsx's module doc) since reconstructing
@@ -350,11 +364,24 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       return <ActionScreen copy={copy} durationMinutes={durationMinutes} onCompleted={props.onActionCompleted} />;
     }
 
-    case "success_focus":
-      // Unlike "act"'s Beneficial Action Timer, this stage's copy never
-      // depends on triggerType/selectedTarget/selectedAction -- so a
-      // resumed run can safely flow through the normal pipeline here
-      // (see live/LiveSessionScreen.tsx's resume handling), rather than
+    case "success_focus": {
+      // Reminder/timer-update task: Success Focus is no longer forced
+      // immediately -- see live/screens.tsx's SuccessFocusChoiceScreen/
+      // SuccessFocusDeferralScreen. session.successFocusChoice is
+      // pre-set to "now" when resuming an already-in-progress Success
+      // Coding timer (see live/LiveSessionScreen.tsx's resume handling)
+      // so a resumed run never re-asks the now/later question.
+      if (session.successFocusChoice === null) {
+        return <SuccessFocusChoiceScreen copy={copy} onChoose={props.onSuccessFocusChoice} />;
+      }
+      if (session.successFocusChoice === "later") {
+        return <SuccessFocusDeferralScreen copy={copy} options={props.deferralOptions} onConfirm={props.onDeferSuccessFocus} />;
+      }
+      // "now": the existing, completely unchanged flow. Unlike "act"'s
+      // Beneficial Action Timer, this stage's copy never depends on
+      // triggerType/selectedTarget/selectedAction -- so a resumed run
+      // can safely flow through the normal pipeline here (see
+      // live/LiveSessionScreen.tsx's resume handling), rather than
       // needing its own bypass.
       return (
         <SuccessFocusScreen
@@ -368,6 +395,7 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           onContinue={props.onSuccessFocusContinue}
         />
       );
+    }
 
     case "negative_action": {
       // The trainee's own predefined negative/interfering action

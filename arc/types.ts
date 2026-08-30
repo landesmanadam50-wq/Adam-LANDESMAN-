@@ -193,30 +193,52 @@ export interface ArcLiveState {
   /** Set once the trainee confirms they'll perform the planned/mapped action as-is (the "כן" branch of the Action-choice screen) -- distinct from selectedAction being null, which alone would be ambiguous between "not yet asked" and "asked, planned action confirmed". */
   plannedActionConfirmed: boolean;
   /**
-   * Session-only flags gating the "act" stage's Imagery and Preparation
-   * sub-phases -- see arc/arcEngine.ts's resolveActPhase, which stays at
-   * "imagery" until this is true, then "preparation" until that one is,
-   * then "performing" (the actual timed Action; see arc/actionTimer.ts).
-   * Both false by default; never persisted to ArcBuildProfile, and never
-   * read by resolveActionDuration or the Action Timer itself -- they only
-   * sequence which screen shows next within "act", the same ArcStage
-   * value throughout (no new ArcStage was added).
+   * Session-only flag gating the "act" stage's Imagery sub-phase -- see
+   * arc/arcEngine.ts's resolveActPhase, which stays at "imagery" until
+   * this is true, then "performing" (the actual timed Action; see
+   * arc/actionTimer.ts). False by default; never persisted to
+   * ArcBuildProfile, and never read by resolveActionDuration or the
+   * Action Timer itself -- it only sequences which screen shows next
+   * within "act", the same ArcStage value throughout (no new ArcStage
+   * was added). The standalone Action Preparation sub-phase that used
+   * to follow this one is removed -- Imagery now goes directly to
+   * Performing.
    */
   actionImageryCompleted: boolean;
-  actionPreparationCompleted: boolean;
+  /**
+   * The trainee's own live, in-session choice of Beneficial Action
+   * duration (5-10 minutes) -- see live/screens.tsx's
+   * BeneficialActionDurationChoiceScreen and
+   * arc/arcEngine.ts's resolveActionDuration. Null until chosen; only
+   * ever asked on the PLANNED-action path (the alternative-action path
+   * already has its own session-specific duration via
+   * selectedActionDuration). Never reset once set within a session.
+   */
+  beneficialActionDurationMinutes: number | null;
 
   /**
    * Set once the trainee explicitly taps "begin" on the negative_action
    * stage's predefined-action screen -- unlike the Beneficial Action
-   * Timer (which starts automatically once Action Preparation
-   * completes) and the Success Focus Timer (which starts automatically
-   * on entering that stage), the Negative Action Timer requires an
+   * Timer (which starts automatically once Action Imagery completes)
+   * and the Success Focus Timer (which starts automatically on
+   * entering that stage), the Negative Action Timer requires an
    * explicit start action per spec. False by default; never reset back
    * to false once true within a session (no way back, same
    * one-directional shape as plannedActionConfirmed/
    * actionImageryCompleted above).
    */
   negativeActionStarted: boolean;
+
+  /**
+   * Whether the trainee chose to do Success Focus now (proceeds through
+   * the existing timer + minutes-picker + reinforcement flow, entirely
+   * unchanged) or defer it to a later time (schedules ONE reminder
+   * instead of running the timer this session -- see
+   * data/storage.ts's PendingReminder and data/notifications.ts's
+   * scheduleReminderNotification). Null until chosen -- see
+   * live/screens.tsx's SuccessFocusChoiceScreen.
+   */
+  successFocusChoice: "now" | "later" | null;
 
   acceptanceNeeded: boolean | null;
   regulationReady: boolean | null;
@@ -249,8 +271,9 @@ export function createEmptyLiveState(): ArcLiveState {
     selectedActionDuration: null,
     plannedActionConfirmed: false,
     actionImageryCompleted: false,
-    actionPreparationCompleted: false,
+    beneficialActionDurationMinutes: null,
     negativeActionStarted: false,
+    successFocusChoice: null,
     acceptanceNeeded: null,
     regulationReady: null,
     regulationNeeded: false,

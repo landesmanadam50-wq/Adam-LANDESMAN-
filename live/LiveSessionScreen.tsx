@@ -62,13 +62,14 @@ import {
   advanceLiveSession,
   applyActionCompletion,
   applyActionImageryCompleted,
-  applyActionPreparationCompleted,
   applyAlternativeAction,
+  applyBeneficialActionDurationSelected,
   applyNegativeActionStarted,
   applyPlannedActionConfirmed,
   applyRegulationToolUsed,
   applyScaleAnswer,
   applySensationAnswer,
+  applySuccessFocusChoice,
   applyTargetSelection,
   applyTriggerSelection,
   applyYesNoAnswer,
@@ -76,6 +77,8 @@ import {
   resolveSensationLocation,
 } from "./liveEventAdapter.ts";
 import { getAvailableLiveTriggers } from "../arc/arcEngine.ts";
+import { DEFERRAL_OPTIONS, scheduleDeferredReminder } from "../data/reminders.ts";
+import type { DeferralOption } from "../data/reminders.ts";
 import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
 import { ActionScreen } from "./screens.tsx";
 
@@ -155,7 +158,17 @@ export default function LiveSessionScreen() {
           // are asserted true because success_focus is only reachable
           // after "act" genuinely completed -- Training Day credit
           // stays correct if this resumed session goes on to complete.
-          setSession({ ...createEmptyLiveState(), currentArcStage: "success_focus", actionReached: true, realActionCompleted: true });
+          // successFocusChoice is pre-set to "now" -- a real Success
+          // Coding timer is already running, so the now/later choice
+          // (only relevant before the timer starts) must never be
+          // re-asked here.
+          setSession({
+            ...createEmptyLiveState(),
+            currentArcStage: "success_focus",
+            actionReached: true,
+            realActionCompleted: true,
+            successFocusChoice: "now",
+          });
           setStage("success_focus");
           return;
         }
@@ -435,10 +448,29 @@ export default function LiveSessionScreen() {
             setPendingAlternativeActionDuration(null);
           }}
           onActionImageryContinue={() => setSession(applyActionImageryCompleted(session))}
-          onActionPreparationContinue={() => setSession(applyActionPreparationCompleted(session))}
+          onSelectBeneficialActionDuration={(minutes) => setSession(applyBeneficialActionDurationSelected(session, minutes))}
           onActionCompleted={() => commitAdvance(applyActionCompletion(session, true))}
+          onSuccessFocusChoice={(choice) => setSession(applySuccessFocusChoice(session, choice))}
           onSelectSuccessFocusMinutes={(minutes) => setSuccessFocusMinutes(minutes)}
           onSuccessFocusContinue={() => commitAdvance(session)}
+          deferralOptions={DEFERRAL_OPTIONS}
+          onDeferSuccessFocus={(option, withArc) => {
+            // Schedules exactly one reminder for this kind
+            // (data/reminders.ts's scheduleDeferredReminder replaces
+            // any previously-pending "focusSuccess" reminder first, so
+            // this can never create a duplicate) and lets the session
+            // progress past success_focus exactly as choosing "now" and
+            // finishing the timer flow would have -- the Success Coding
+            // timer itself is never started for this session.
+            scheduleDeferredReminder({
+              kind: "focusSuccess",
+              option,
+              arcRequested: withArc,
+              title: "התמקדות בהצלחה",
+              body: withArc ? "זמן להתמקדות בהצלחה עם ARC." : "זמן להתמקדות בהצלחה.",
+            });
+            commitAdvance(session);
+          }}
           resumedSuccessCodingRun={resumedSuccessCodingRun}
           negativeActionDurationMinutes={negativeActionDurationMinutes}
           onNegativeActionStart={() => setSession(applyNegativeActionStarted(session))}
@@ -461,6 +493,15 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     padding: 24,
-    justifyContent: "center",
+    // Layout-refinement task: top-anchored, NOT vertically centered.
+    // Centering (the previous value here) made the ENTIRE content block
+    // re-center every time it grew -- e.g. a rating question/scale
+    // appearing underneath already-visible protocol text -- which reads
+    // as the existing protocol content jumping upward. A top anchor
+    // means growing content only ever extends downward from its
+    // existing position; the surrounding ScrollView (unchanged) already
+    // provides scrolling once content exceeds the viewport, so nothing
+    // needs to shrink or recenter to fit.
+    justifyContent: "flex-start",
   },
 });
