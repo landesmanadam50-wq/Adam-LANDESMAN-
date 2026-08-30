@@ -16,7 +16,7 @@ import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
-import { getInstructionTimingStatus } from "../arc/instructionTiming.ts";
+import { getInstructionTimingStatus, INLINE_RATING_REVEAL_DELAY_SECONDS } from "../arc/instructionTiming.ts";
 import { formatRemainingTime, generateTimerRunId, getActionTimerStatusFromStartedAt } from "../arc/actionTimer.ts";
 import type { ActionTimerStatus } from "../arc/actionTimer.ts";
 import { cancelScheduledNotification, scheduleTimerCompletionNotification } from "../data/notifications.ts";
@@ -479,19 +479,80 @@ export function StayScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinu
   return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
 }
 
+/**
+ * Timing-update task: the intensity recheck that used to live on its
+ * own separate sensation_check page immediately after Accept is now
+ * shown inline on THIS page instead, revealed exactly
+ * INLINE_RATING_REVEAL_DELAY_SECONDS after the trainee answers --
+ * Accept has no instruction-timing segments of its own (it's an
+ * immediate yes/no, not a timed practice period), so unlike
+ * Presence/Regulation's "instruction time PLUS 15s" the delay here
+ * simply starts at answer-time. Mounting AcceptRatingReveal exactly
+ * when `answered` flips true is what starts that clock (useElapsedSeconds
+ * always starts from mount -- see its own doc above), reusing the same
+ * primitive without needing a new one. ratingCopy is null when
+ * arc/arcEngine.ts's own accept transition is loop-capped (goes
+ * straight to "regulate", skipping the recheck rating entirely, exactly
+ * as before this merge) -- see live/ArcLiveRenderer.tsx's "accept" case
+ * for that peek. Answering never itself advances the ArcStage anymore
+ * (see live/LiveSessionScreen.tsx's onAcceptAnswer) -- only selecting
+ * the rating, or continuing without one in the capped case, does.
+ */
+function AcceptRatingReveal({
+  ratingCopy,
+  onSelectRating,
+  onContinueWithoutRating,
+}: {
+  ratingCopy: ArcStageCopy | null;
+  onSelectRating: (value: number) => void;
+  onContinueWithoutRating: () => void;
+}) {
+  const elapsedSeconds = useElapsedSeconds();
+  const status = getInstructionTimingStatus([{ text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS }], elapsedSeconds);
+  if (!status.complete) {
+    return null;
+  }
+  if (ratingCopy) {
+    return (
+      <View>
+        <Title copy={ratingCopy} />
+        <ScaleButtons onSelect={onSelectRating} />
+      </View>
+    );
+  }
+  return <PrimaryButton label="המשך" onPress={onContinueWithoutRating} />;
+}
+
 export function AcceptScreen({
   copy,
   labels,
+  ratingCopy,
   onAnswer,
+  onSelectRating,
+  onContinueWithoutRating,
 }: {
   copy: ArcStageCopy;
   labels: YesNoLabels;
+  ratingCopy: ArcStageCopy | null;
   onAnswer: (yes: boolean) => void;
+  onSelectRating: (value: number) => void;
+  onContinueWithoutRating: () => void;
 }) {
+  const [answered, setAnswered] = useState(false);
   return (
     <View>
       <Title copy={copy} />
-      <YesNoButtons labels={labels} onAnswer={onAnswer} />
+      {!answered ? (
+        <YesNoButtons
+          labels={labels}
+          onAnswer={(yes) => {
+            setAnswered(true);
+            onAnswer(yes);
+          }}
+        />
+      ) : (
+        <AcceptRatingReveal ratingCopy={ratingCopy} onSelectRating={onSelectRating} onContinueWithoutRating={onContinueWithoutRating} />
+      )}
     </View>
   );
 }

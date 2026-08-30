@@ -50,6 +50,7 @@ import {
   applySensationAnswer,
   applyTargetSelection,
   applyTriggerSelection,
+  applyYesNoAnswer,
   hasSensationLocationResponse,
   hasValidAlternativeAction,
   resolveSensationLocation,
@@ -675,4 +676,149 @@ test("BUG REGRESSION: the arc_thought_expand_presence (\"הרחבה\") screen re
   assert.equal(advanced.session.presenceRating, 9, "stored in the exact existing field");
   assert.notEqual(advanced.stage, "arc_thought_presence_recheck", "the old standalone rating stage is never the literal next rendered stage");
   assert.equal(advanced.stage, "sensation_check", "progression continues correctly to the next protocol stage");
+});
+
+// --- BUG REGRESSION: the Desired State Level check must appear inline
+// on the SAME Regulation ("ויסות") screen. This mirrors the Presence
+// regression test above but for Regulation's real production copy, so
+// both named categories from the escalated bug report have an
+// end-to-end guard tying the real getStageCopy output through the
+// reveal timer and the merge handler, not just structural segment
+// shape (already covered separately in arc/stageCopy.test.ts).
+test("BUG REGRESSION: the Regulation (\"ויסות\") screen reveals the Desired State Level rating inline only after instruction+15s, remains on the same screen, and the existing ARC threshold/progression logic still receives the exact same value", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8" });
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "proactive",
+    selectedTarget: "state",
+    loopIterationCount: 1, // regulate is only ever reached after a prior desired_state_check pass, so a target is already resolved
+  };
+
+  // The REAL production copy for this exact stage -- not a synthetic segments array.
+  const copy = getStageCopy("regulate", p, session, activeLayers);
+  assert.equal(copy.title, "ויסות");
+  assert.ok(copy.segments, "must be a timed/segmented screen, not the untimed 'segments: null' shape that renders an immediate Continue");
+
+  const instructionSeconds = INSTRUCTION_TIMING.regulate;
+  const totalRevealSeconds = instructionSeconds + INLINE_RATING_REVEAL_DELAY_SECONDS;
+  assert.equal(getInstructionTimingStatus(copy.segments, 0).complete, false, "hidden at t=0");
+  assert.equal(getInstructionTimingStatus(copy.segments, instructionSeconds).complete, false, "still hidden the instant Regulation's own instruction finishes");
+  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds - 0.1).complete, false, "hidden one tick before instruction+15s");
+  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds).complete, true, "revealed exactly at instruction+15s, remaining on this same screen");
+
+  // Selecting the rating stores it in the existing desiredStateRating
+  // field, and the existing getProactiveStage threshold decides what
+  // comes next -- both completely unchanged by the merge.
+  const withToolUsed = applyRegulationToolUsed(session, p.regulationTool);
+  const hop = advanceLiveSession("regulate", withToolUsed, p, activeLayers);
+  assert.equal(hop.stage, "desired_state_check");
+  const withRating = applyScaleAnswer("desired_state_check", hop.session, 7); // matches the existing at/above-threshold case already covered by test 9 above
+  const advanced = advanceLiveSession("desired_state_check", withRating, p, activeLayers);
+  assert.equal(advanced.session.desiredStateRating, 7, "stored in the exact existing field");
+  assert.notEqual(advanced.stage, "desired_state_check", "the old standalone rating stage is never the literal next rendered stage");
+  assert.equal(advanced.stage, "encode", "existing ARC threshold/progression logic still receives and acts on the exact same value");
+});
+
+// --- Timing-update task: inline Feeling/Urge/Interfering-state intensity
+// merge (accept -> sensation_check recheck). This was the one standalone
+// rating-after-experience path left unmerged in the earlier Presence/
+// Regulation work (deliberately, at the time) -- it is the genuine gap
+// behind this escalated report's "feeling/urge/interfering-state
+// intensity" category. See live/screens.tsx's
+// AcceptScreen/AcceptRatingReveal and live/LiveSessionScreen.tsx's
+// onAcceptAnswer/onAcceptIntensityRating/onAcceptContinueWithoutRating.
+
+function simulateOnAcceptIntensityRating(
+  session: ArcLiveState,
+  p: ArcBuildProfile,
+  activeLayers: DevelopmentLayer[],
+  value: number
+) {
+  const hop = advanceLiveSession("accept", session, p, activeLayers);
+  const withRating = applySensationAnswer(hop.session, hop.session.sensationLocation, value);
+  return advanceLiveSession(hop.stage, withRating, p, activeLayers);
+}
+
+test("Feeling/intensity merge: the accept screen's own reveal gate (a single INLINE_RATING_REVEAL_DELAY_SECONDS placeholder segment -- accept has no instruction timing of its own to precede it, so the delay starts at answer-time) hides the recheck rating for the full 15s and reveals it exactly at 15s", () => {
+  const segments = [{ text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS }];
+  assert.equal(getInstructionTimingStatus(segments, 0).complete, false, "hidden immediately after answering");
+  assert.equal(getInstructionTimingStatus(segments, INLINE_RATING_REVEAL_DELAY_SECONDS - 0.1).complete, false, "still hidden one tick before 15s");
+  assert.equal(getInstructionTimingStatus(segments, INLINE_RATING_REVEAL_DELAY_SECONDS).complete, true, "revealed exactly at 15s after answering");
+});
+
+test("Feeling/intensity merge: selecting the recheck rating on the accept screen produces the exact same stage/session as the old two-screen flow (accept -> sensation_check, entered separately) -- the correct existing intensity field is used, with no duplicate rating created", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "reactive_emotion",
+    sensationLocation: "בטן", // set by the ORIGINAL sensation_check, before ever reaching accept
+    sensationIntensity: 6,
+    loopIterationCount: 0,
+  };
+
+  // OLD flow: two separate real hops, exactly as when sensation_check's recheck was its own rendered screen.
+  const oldHop1 = advanceLiveSession("accept", session, p, activeLayers);
+  assert.equal(oldHop1.stage, "sensation_check");
+  const oldHop2 = advanceLiveSession(
+    "sensation_check",
+    applySensationAnswer(oldHop1.session, oldHop1.session.sensationLocation, 4),
+    p,
+    activeLayers
+  );
+
+  // NEW merged flow: one inline rating answered directly on the accept screen.
+  const merged = simulateOnAcceptIntensityRating(session, p, activeLayers, 4);
+
+  assert.deepEqual(merged, oldHop2, "merging the rating onto the same page must not change the resulting stage or session at all");
+  assert.equal(merged.session.sensationIntensity, 4, "stored in the exact existing sensationIntensity field -- the same one the initial check and every other recheck already use");
+  assert.equal(merged.session.sensationLocation, "בטן", "the existing location is preserved, never re-asked or overwritten by the recheck");
+  assert.notEqual(merged.stage, "sensation_check", "the old standalone recheck stage is never the literal next rendered stage once merged");
+});
+
+test("Feeling/intensity merge: answering accept's yes/no never itself advances the ArcStage -- it only stores acceptanceNeeded exactly as before; the stage only advances once the rating (or the capped no-rating Continue) fires", () => {
+  const session = createEmptyLiveState();
+  const answeredYes = applyYesNoAnswer("accept", session, true);
+  assert.equal(answeredYes.acceptanceNeeded, false, "yes -> acceptanceNeeded false, same existing mapping as before the merge");
+  assert.equal(answeredYes.currentArcStage, session.currentArcStage, "answering alone never advances currentArcStage");
+
+  const answeredNo = applyYesNoAnswer("accept", session, false);
+  assert.equal(answeredNo.acceptanceNeeded, true, "no -> acceptanceNeeded true, same existing mapping as before the merge");
+});
+
+test("Feeling/intensity merge: once the loop-safety cap is reached, accept's own transition (peeked by live/ArcLiveRenderer.tsx before offering a rating) goes straight to regulate -- no rating is asked for, matching the pre-merge capped behavior", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "reactive_emotion",
+    sensationLocation: "חזה",
+    sensationIntensity: 5,
+    loopIterationCount: 3, // == ARC_CONFIG.safety.maxLoopIterations
+  };
+  const peek = getNextArcStage("accept", session, p, activeLayers);
+  assert.equal(peek.stage, "regulate", "capped -- no recheck rating stage is reached at all, same as before the merge");
+});
+
+test("Feeling/intensity merge: the full stay -> accept -> (rating) chain reaches the exact same downstream stage the old standalone-screen flow would have, proving no regression to reactive routing or awareness logic", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  // A real reactive session already through the initial sensation_check (intensity 8, "stay" band) and now sitting at "stay".
+  const initial: ArcLiveState = applySensationAnswer({ ...createEmptyLiveState(), triggerType: "reactive_emotion" }, "חזה", 8);
+  const afterStay = advanceLiveSession("stay", initial, p, activeLayers);
+  assert.equal(afterStay.stage, "accept", "stay -> accept is completely unchanged by this merge");
+
+  const merged = simulateOnAcceptIntensityRating(afterStay.session, p, activeLayers, 3); // matches test 10's existing intensity-3 -> encode classification
+  assert.equal(merged.stage, "encode", "the SAME classification (getReactiveStage) that would have run on the old standalone recheck screen still runs, unchanged");
+});
+
+test("no separate sensation_check page is visited for the accept-triggered recheck -- its own case in live/ArcLiveRenderer.tsx (SensationRatingScreen) is still reachable, just not from this specific hop", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  // The OTHER, still-unmerged path into sensation_check -- its first-time entry -- is completely unaffected.
+  let session = applyTriggerSelection(createEmptyLiveState(), "reactive_emotion");
+  session = applyScaleAnswer("presence_check", session, 9); // high presence, skip ARC Thought
+  const outcome = step("presence_check", session, p, activeLayers);
+  assert.equal(outcome.stage, "sensation_check", "the initial sensation_check entry is untouched -- only the accept-triggered recheck was merged");
 });

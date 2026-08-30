@@ -83,6 +83,9 @@ export interface ArcLiveRendererProps {
   onRegulateContinue: () => void;
   onPresenceExperienceRating: (value: number) => void;
   onRegulationExperienceRating: (value: number) => void;
+  onAcceptAnswer: (yes: boolean) => void;
+  onAcceptIntensityRating: (value: number) => void;
+  onAcceptContinueWithoutRating: () => void;
   pendingAlternativeAction: string;
   pendingAlternativeActionDuration: number | null;
   onConfirmPlannedAction: () => void;
@@ -196,8 +199,43 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
     case "stay":
       return <StayScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
-    case "accept":
-      return <AcceptScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
+    case "accept": {
+      // Timing-update task: the intensity recheck that used to live on
+      // its own separate sensation_check page immediately after Accept
+      // is now shown inline on this same page instead (see
+      // live/screens.tsx's AcceptScreen). Peeking the engine's own real
+      // "accept" transition (unchanged, same getNextArcStage case) is
+      // what decides whether a rating is even expected next: it isn't
+      // once the loop-safety cap has been reached (accept's own
+      // transition goes straight to "regulate" in that case, exactly as
+      // it always has) -- ratingCopy stays null then, and the screen
+      // falls back to a plain Continue once the delay elapses.
+      // Otherwise sensation_check's own copy (already the "recheck"
+      // variant here, since sensationLocation/sensationIntensity are
+      // already set from the initial check) is reused verbatim for the
+      // inline rating prompt; sensation_check's own getNextArcStage
+      // transition still decides what happens after the rating is
+      // selected -- see live/LiveSessionScreen.tsx's
+      // onAcceptIntensityRating. Answering yes/no never itself advances
+      // the ArcStage anymore -- only the rating (or the no-rating
+      // Continue) does, so key={stage} alone (not loopIterationCount)
+      // is enough here: unlike Presence/Regulation, "accept" is never
+      // the stage looped back TO (its own loop-back target is "stay",
+      // a different stage value, which already remounts on its own).
+      const peek = getNextArcStage("accept", session, profile, activeLayers);
+      const ratingCopy = peek.stage === "sensation_check" ? getStageCopy("sensation_check", profile, session, activeLayers) : null;
+      return (
+        <AcceptScreen
+          key={stage}
+          copy={copy}
+          labels={getYesNoLabels(stage)}
+          ratingCopy={ratingCopy}
+          onAnswer={props.onAcceptAnswer}
+          onSelectRating={props.onAcceptIntensityRating}
+          onContinueWithoutRating={props.onAcceptContinueWithoutRating}
+        />
+      );
+    }
 
     case "reactive_transition_check":
       return <TransitionCheckScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;

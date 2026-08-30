@@ -404,6 +404,25 @@ export default function LiveSessionScreen() {
                 : applySensationAnswer(hop.session, hop.session.sensationLocation, value);
             commitAdvance(withRating, hop.stage);
           }}
+          onAcceptAnswer={(yes) => setSession(applyYesNoAnswer("accept", session, yes))}
+          onAcceptIntensityRating={(value) => {
+            // Mirrors onRegulationExperienceRating's shape: simulates
+            // the real, unchanged accept -> sensation_check hop
+            // (respecting the loop-safety cap exactly as
+            // arc/arcEngine.ts's "accept" case always has), then
+            // applies the just-selected intensity to that recheck and
+            // continues through sensation_check's own, also unchanged,
+            // transition. Location is preserved from the initial check
+            // (never re-asked here), exactly like the existing
+            // onSubmitSensationIntensity recheck path. See
+            // live/ArcLiveRenderer.tsx's "accept" case, which only ever
+            // offers this rating when its own peek already confirmed
+            // sensation_check is next.
+            const hop = advanceLiveSession("accept", session, profile, activeLayers);
+            const withRating = applySensationAnswer(hop.session, hop.session.sensationLocation, value);
+            commitAdvance(withRating, hop.stage);
+          }}
+          onAcceptContinueWithoutRating={() => commitAdvance(session, "accept")}
           pendingAlternativeAction={pendingAlternativeAction}
           pendingAlternativeActionDuration={pendingAlternativeActionDuration}
           onConfirmPlannedAction={() => setSession(applyPlannedActionConfirmed(session))}
