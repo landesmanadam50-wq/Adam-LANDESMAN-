@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Animated, AppState, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
@@ -218,6 +219,54 @@ function RevealedInstructionLines({ segments }: { segments: InstructionSegment[]
   );
 }
 
+/**
+ * Visual-refinement task: the inline rating's own reveal, once its
+ * timing gate flips (status.complete on PresenceExperienceScreen/
+ * RegulationScreen, or AcceptRatingReveal's own gate) -- previously an
+ * instant, un-animated block. Now uses the SAME calm, progressive
+ * entrance as RevealedLine/RevealedInstructionLines above: the rating
+ * prompt (still exactly `<Title copy={ratingCopy} />` -- unchanged
+ * content/structure, title+body together read as the one new prompt)
+ * fades + moves up gently first; once that finishes, the rating
+ * control passed as `children` (unchanged ScaleButtons, still the same
+ * component/values/onSelect wiring) fades in the same way directly
+ * beneath it. Both animations run exactly once, starting the instant
+ * this mounts -- which is exactly the instant the caller's existing,
+ * unmodified reveal gate (status.complete / the 15s delay) first
+ * allows it to render at all, so nothing about WHEN the rating appears
+ * changes, only HOW. Everything already on screen above this (the
+ * protocol instruction lines, via RevealedInstructionLines) is
+ * untouched -- this component only wraps what each caller already
+ * conditionally rendered.
+ */
+function RevealedRatingPrompt({ ratingCopy, children }: { ratingCopy: ArcStageCopy; children: ReactNode }) {
+  const promptOpacity = useRef(new Animated.Value(0)).current;
+  const promptTranslateY = useRef(new Animated.Value(8)).current;
+  const controlsOpacity = useRef(new Animated.Value(0)).current;
+  const controlsTranslateY = useRef(new Animated.Value(8)).current;
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(promptOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.timing(promptTranslateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+      ]),
+      Animated.parallel([
+        Animated.timing(controlsOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.timing(controlsTranslateY, { toValue: 0, duration: 350, useNativeDriver: true }),
+      ]),
+    ]).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <View>
+      <Animated.View style={{ opacity: promptOpacity, transform: [{ translateY: promptTranslateY }] }}>
+        <Title copy={ratingCopy} />
+      </Animated.View>
+      <Animated.View style={{ opacity: controlsOpacity, transform: [{ translateY: controlsTranslateY }] }}>{children}</Animated.View>
+    </View>
+  );
+}
+
 function ScaleButtons({ onSelect }: { onSelect: (value: number) => void }) {
   return (
     <View style={styles.scaleRow}>
@@ -396,10 +445,9 @@ export function PresenceExperienceScreen({
       <Text style={styles.title}>{copy.title}</Text>
       <RevealedInstructionLines segments={status.visibleSegments} />
       {status.complete && (
-        <View>
-          <Title copy={ratingCopy} />
+        <RevealedRatingPrompt ratingCopy={ratingCopy}>
           <ScaleButtons onSelect={onSelectRating} />
-        </View>
+        </RevealedRatingPrompt>
       )}
     </View>
   );
@@ -556,10 +604,9 @@ function AcceptRatingReveal({
   }
   if (ratingCopy) {
     return (
-      <View>
-        <Title copy={ratingCopy} />
+      <RevealedRatingPrompt ratingCopy={ratingCopy}>
         <ScaleButtons onSelect={onSelectRating} />
-      </View>
+      </RevealedRatingPrompt>
     );
   }
   return <PrimaryButton label="המשך" onPress={onContinueWithoutRating} />;
@@ -653,10 +700,9 @@ export function RegulationScreen({
       <RevealedInstructionLines segments={status.visibleSegments} />
       {status.complete &&
         (ratingCopy ? (
-          <View>
-            <Title copy={ratingCopy} />
+          <RevealedRatingPrompt ratingCopy={ratingCopy}>
             <ScaleButtons onSelect={onSelectRating} />
-          </View>
+          </RevealedRatingPrompt>
         ) : (
           <PrimaryButton label="המשך" onPress={onContinue} />
         ))}

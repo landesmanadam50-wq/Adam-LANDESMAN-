@@ -822,3 +822,57 @@ test("no separate sensation_check page is visited for the accept-triggered reche
   const outcome = step("presence_check", session, p, activeLayers);
   assert.equal(outcome.stage, "sensation_check", "the initial sensation_check entry is untouched -- only the accept-triggered recheck was merged");
 });
+
+// --- Visual-refinement task: the inline rating's reveal now uses a
+// calm fade + small upward-move entrance (live/screens.tsx's
+// RevealedRatingPrompt), matching RevealedInstructionLines' progressive
+// style. This project has no React rendering harness (node --test, not
+// Jest/RTL), so the animation/mount behavior itself isn't directly
+// testable here -- these tests instead pin the underlying DATA
+// guarantees the visual change depends on and must not disturb: the
+// protocol instruction content is still driven by an independent,
+// always-rendered `visibleSegments` array that the rating's own reveal
+// never touches or hides, and the reveal timing gate itself (still
+// `status.complete`, still the same existing delay) is completely
+// unchanged by this purely-presentational update.
+
+test("visual refinement: at the exact moment the Presence rating becomes available, all of arc_thought_expand_presence's own instruction content is still present in visibleSegments -- the rating is additive, never a replacement of what's already on screen", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
+  const copy = getStageCopy("arc_thought_expand_presence", p, session, activeLayers);
+  assert.ok(copy.segments);
+
+  const instructionSeconds = INSTRUCTION_TIMING.arcThoughtExpandPresence;
+  const totalRevealSeconds = instructionSeconds + INLINE_RATING_REVEAL_DELAY_SECONDS;
+  const atReveal = getInstructionTimingStatus(copy.segments, totalRevealSeconds);
+  assert.equal(atReveal.complete, true, "reveal timing itself is unchanged by this purely-presentational update");
+
+  const realInstructionText = atReveal.visibleSegments.filter((s) => s.text.length > 0).map((s) => s.text);
+  assert.deepEqual(
+    realInstructionText,
+    [copy.segments[0].text],
+    "the real instruction line is still there, unreplaced and unhidden, at the exact instant the rating becomes available"
+  );
+});
+
+test("visual refinement: at the exact moment the Regulation/Desired-State rating becomes available, Regulation's own instruction content is still present in visibleSegments -- same additive guarantee as Presence", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8" });
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = { ...createEmptyLiveState(), triggerType: "proactive", selectedTarget: "state", loopIterationCount: 1 };
+  const copy = getStageCopy("regulate", p, session, activeLayers);
+  assert.ok(copy.segments);
+
+  const totalRevealSeconds = INSTRUCTION_TIMING.regulate + INLINE_RATING_REVEAL_DELAY_SECONDS;
+  const atReveal = getInstructionTimingStatus(copy.segments, totalRevealSeconds);
+  assert.equal(atReveal.complete, true, "reveal timing itself is unchanged by this purely-presentational update");
+
+  const realInstructionText = atReveal.visibleSegments.filter((s) => s.text.length > 0).map((s) => s.text);
+  assert.deepEqual(realInstructionText, [copy.segments[0].text], "Regulation's own instruction line is still there, unreplaced, exactly when the rating becomes available");
+});
+
+test("visual refinement: the accept-triggered intensity rating's own reveal gate is unchanged -- still exactly INLINE_RATING_REVEAL_DELAY_SECONDS after answering, hidden strictly before it", () => {
+  const gateSegments = [{ text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS }];
+  assert.equal(getInstructionTimingStatus(gateSegments, INLINE_RATING_REVEAL_DELAY_SECONDS - 0.1).complete, false, "still hidden one tick before the existing reveal time");
+  assert.equal(getInstructionTimingStatus(gateSegments, INLINE_RATING_REVEAL_DELAY_SECONDS).complete, true, "revealed exactly at the existing reveal time, not before");
+});
