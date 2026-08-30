@@ -211,9 +211,20 @@ export default function LiveSessionScreen() {
     });
   };
 
-  const commitAdvance = (patchedSession: ArcLiveState) => {
+  /**
+   * transitionStage defaults to the current rendered `stage`, matching
+   * every pre-existing call site exactly. The two inline-rating merge
+   * handlers below (onPresenceExperienceRating/onRegulationExperienceRating)
+   * are the only callers that ever pass a different one: they simulate
+   * walking through a stage that is no longer separately rendered
+   * (arc_thought_presence_recheck / desired_state_check / sensation_check,
+   * reached via regulate) by computing that stage's own, completely
+   * unchanged getNextArcStage transition here, without ever setting
+   * `stage` to it in between.
+   */
+  const commitAdvance = (patchedSession: ArcLiveState, transitionStage: ArcStage = stage) => {
     if (!profile) return;
-    const { session: nextSession, stage: nextStage } = advanceLiveSession(stage, patchedSession, profile, activeLayers);
+    const { session: nextSession, stage: nextStage } = advanceLiveSession(transitionStage, patchedSession, profile, activeLayers);
     // Each timer's persisted run is cleared the moment its own stage is
     // left -- the only way out of any of the three is its real activity
     // actually completing (act -> success_focus, success_focus ->
@@ -370,6 +381,29 @@ export default function LiveSessionScreen() {
           onSelectReactiveExperience={(target) => commitAdvance(applyTargetSelection(session, target))}
           onGenericContinue={() => commitAdvance(session)}
           onRegulateContinue={() => commitAdvance(applyRegulationToolUsed(session, profile.regulationTool))}
+          onPresenceExperienceRating={(value) =>
+            commitAdvance(applyScaleAnswer("arc_thought_presence_recheck", session, value), "arc_thought_presence_recheck")
+          }
+          onRegulationExperienceRating={(value) => {
+            // Mirrors onRegulateContinue's own applyRegulationToolUsed
+            // side effect first, then simulates the real, unchanged
+            // regulate -> desired_state_check/sensation_check hop
+            // (respecting the loop-safety cap exactly as
+            // arc/arcEngine.ts's "regulate" case always has) to learn
+            // which rating field this session is actually mid-way
+            // through, before applying the just-selected value to it
+            // and continuing through THAT stage's own, also unchanged,
+            // transition. See live/ArcLiveRenderer.tsx's "regulate"
+            // case, which only ever offers this rating when its own
+            // peek already confirmed one of these two outcomes.
+            const withToolUsed = applyRegulationToolUsed(session, profile.regulationTool);
+            const hop = advanceLiveSession("regulate", withToolUsed, profile, activeLayers);
+            const withRating =
+              hop.stage === "desired_state_check"
+                ? applyScaleAnswer("desired_state_check", hop.session, value)
+                : applySensationAnswer(hop.session, hop.session.sensationLocation, value);
+            commitAdvance(withRating, hop.stage);
+          }}
           pendingAlternativeAction={pendingAlternativeAction}
           pendingAlternativeActionDuration={pendingAlternativeActionDuration}
           onConfirmPlannedAction={() => setSession(applyPlannedActionConfirmed(session))}

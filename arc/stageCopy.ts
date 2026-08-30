@@ -27,7 +27,7 @@ import {
   getInterferingStateRecognitionPrompt,
 } from "./instructions.ts";
 import type { InstructionSegment } from "./instructionTiming.ts";
-import { INSTRUCTION_TIMING } from "./instructionTiming.ts";
+import { INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "./instructionTiming.ts";
 
 export type ArcStageInputKind =
   | "triggerSelect"
@@ -161,8 +161,22 @@ export function getStageCopy(
     }
 
     case "arc_thought_expand_presence": {
+      // Timing-update task: the Presence Rating that used to live on
+      // arc_thought_presence_recheck's own separate page is now shown
+      // inline on THIS page instead (see live/screens.tsx's
+      // PresenceExperienceScreen) once this instruction's own timing
+      // PLUS the additional INLINE_RATING_REVEAL_DELAY_SECONDS have
+      // both elapsed -- modeled as one trailing, empty-text segment so
+      // getInstructionTimingStatus's existing `complete` flag stays the
+      // single source of truth for "reveal the rating now". body stays
+      // just the spoken instruction text; the trailing segment carries
+      // no text of its own.
       const text = getExpandPresenceInstruction();
-      return { title: "הרחבה", body: text, segments: [{ text, durationSeconds: INSTRUCTION_TIMING.arcThoughtExpandPresence }] };
+      const segments: InstructionSegment[] = [
+        { text, durationSeconds: INSTRUCTION_TIMING.arcThoughtExpandPresence },
+        { text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS },
+      ];
+      return { title: "הרחבה", body: text, segments };
     }
 
     case "arc_thought_presence_recheck":
@@ -256,10 +270,22 @@ export function getStageCopy(
       // comes first; the regulation tool/cue follows. Its own timing
       // config (INSTRUCTION_TIMING.regulate), deliberately separate from
       // Stay/Presence's -- see arc/instructionTiming.ts.
+      // Timing-update task: the Desired State Level check (proactive) /
+      // intensity recheck (reactive) that used to live on its own
+      // separate page immediately after Regulation is now shown inline
+      // on THIS page instead (see live/screens.tsx's RegulationScreen),
+      // once this instruction's own timing PLUS the additional
+      // INLINE_RATING_REVEAL_DELAY_SECONDS have both elapsed -- same
+      // trailing-empty-segment mechanism as arc_thought_expand_presence
+      // above.
       const text = profile.regulationTool
         ? `שים לב לתחושה שלך עכשיו. השתמש בכלי הוויסות שלך: ${profile.regulationTool}.`
         : "שים לב לתחושה שלך עכשיו.";
-      return { title: "ויסות", body: text, segments: [{ text, durationSeconds: INSTRUCTION_TIMING.regulate }] };
+      const segments: InstructionSegment[] = [
+        { text, durationSeconds: INSTRUCTION_TIMING.regulate },
+        { text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS },
+      ];
+      return { title: "ויסות", body: text, segments };
     }
 
     case "desired_state_check": {

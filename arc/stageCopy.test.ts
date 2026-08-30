@@ -5,7 +5,7 @@ import { getStageCopy, getStageInputKind } from "./stageCopy.ts";
 import { createEmptyLiveState } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { containsInductionPattern } from "./instructions.ts";
-import { INSTRUCTION_TIMING } from "./instructionTiming.ts";
+import { INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "./instructionTiming.ts";
 
 function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
   return {
@@ -745,7 +745,7 @@ test("stages the timed-reveal system doesn't apply to carry segments: null, unch
   }
 });
 
-test("ARC Thought's three sub-stages each carry exactly one segment, matching their own configured duration", () => {
+test("ARC Thought's awareness/combined-attention sub-stages each carry exactly one segment, matching their own configured duration", () => {
   const p = profile();
   const s = liveState();
   const awareness = getStageCopy("arc_thought_awareness", p, s, ["state"]);
@@ -756,10 +756,16 @@ test("ARC Thought's three sub-stages each carry exactly one segment, matching th
   const combined = getStageCopy("arc_thought_combined_attention", p, s, ["state"]);
   assert.equal(combined.segments?.length, 1);
   assert.equal(combined.segments?.[0].durationSeconds, INSTRUCTION_TIMING.arcThoughtCombinedAttention);
+});
 
-  const expand = getStageCopy("arc_thought_expand_presence", p, s, ["state"]);
-  assert.equal(expand.segments?.length, 1);
+test("arc_thought_expand_presence carries its own instruction segment plus a trailing, empty-text INLINE_RATING_REVEAL_DELAY_SECONDS placeholder -- the inline-merged Presence Rating's reveal gate", () => {
+  const expand = getStageCopy("arc_thought_expand_presence", profile(), liveState(), ["state"]);
+  assert.equal(expand.segments?.length, 2, "the instruction segment plus the trailing rating-reveal-delay segment");
   assert.equal(expand.segments?.[0].durationSeconds, INSTRUCTION_TIMING.arcThoughtExpandPresence);
+  assert.equal(expand.segments?.[0].text.length > 0, true, "the real instruction text stays on the first segment");
+  assert.equal(expand.segments?.[1].durationSeconds, INLINE_RATING_REVEAL_DELAY_SECONDS);
+  assert.equal(expand.segments?.[1].text, "", "the trailing placeholder carries no text of its own");
+  assert.equal(expand.body, expand.segments?.[0].text, "body stays exactly the spoken instruction text, unaffected by the trailing placeholder");
 });
 
 test("Stay/Presence reveals the current-sensation segment first, then the natural-breath segment -- the exact spec example, 4s then 8s", () => {
@@ -781,12 +787,15 @@ test("Stay/Presence's breath segment stays non-regulatory -- no slow/deepen/exte
   }
 });
 
-test("Regulation has its own single segment and duration, separate from Stay/Presence's", () => {
+test("Regulation has its own instruction segment and duration, separate from Stay/Presence's, plus a trailing rating-reveal-delay placeholder for the inline-merged Desired State/intensity rating", () => {
   const p = profile({ regulationTool: "נשימה 4-7-8" });
   const copy = getStageCopy("regulate", p, liveState(), ["state"]);
-  assert.equal(copy.segments?.length, 1);
+  assert.equal(copy.segments?.length, 2, "the instruction segment plus the trailing rating-reveal-delay segment");
   assert.equal(copy.segments?.[0].durationSeconds, INSTRUCTION_TIMING.regulate);
   assert.notEqual(INSTRUCTION_TIMING.regulate, INSTRUCTION_TIMING.stayCurrentSensation, "sanity: Regulation's timing config is its own, not reused from Stay");
+  assert.equal(copy.segments?.[1].durationSeconds, INLINE_RATING_REVEAL_DELAY_SECONDS);
+  assert.equal(copy.segments?.[1].text, "", "the trailing placeholder carries no text of its own");
+  assert.equal(copy.body, copy.segments?.[0].text, "body stays exactly the spoken instruction text, unaffected by the trailing placeholder");
 });
 
 test("Encoding preserves its exact 4-piece order (Updated Sensation -> Short Regulation Cue -> Body-Language -> Mantra) as four separate timed segments", () => {

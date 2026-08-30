@@ -17,6 +17,7 @@ import { getStageCopy, getYesNoLabels } from "../arc/stageCopy.ts";
 import {
   getAvailableProactiveTargets,
   getAvailableReactiveExperiences,
+  getNextArcStage,
   needsProactiveTargetSelection,
   needsReactiveStateSelection,
   resolveActionDuration,
@@ -36,6 +37,7 @@ import {
   InstructionScreen,
   NegativeActionScreen,
   NegativeActionStartScreen,
+  PresenceExperienceScreen,
   PresenceRatingScreen,
   PreventiveActionCheckScreen,
   ProactiveTargetScreen,
@@ -79,6 +81,8 @@ export interface ArcLiveRendererProps {
   onSelectReactiveExperience: (target: DevelopmentLayer) => void;
   onGenericContinue: () => void;
   onRegulateContinue: () => void;
+  onPresenceExperienceRating: (value: number) => void;
+  onRegulationExperienceRating: (value: number) => void;
   pendingAlternativeAction: string;
   pendingAlternativeActionDuration: number | null;
   onConfirmPlannedAction: () => void;
@@ -130,15 +134,42 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
 
     case "arc_thought_awareness":
     case "arc_thought_combined_attention":
-    case "arc_thought_expand_presence":
     case "preventive_action":
-      // key={stage}: these four adjacent stages all render this same
+      // key={stage}: these three adjacent stages all render this same
       // InstructionScreen component -- without a key that changes per
       // stage, React would reuse the same instance across the
       // transition and its internal elapsed-time clock (useElapsedSeconds,
       // in live/screens.tsx) would keep running instead of resetting.
       // See arc/instructionTiming.ts's module doc, #9/#12.
       return <InstructionScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
+
+    case "arc_thought_expand_presence": {
+      // Timing-update task: the Presence Rating that used to live on
+      // its own separate arc_thought_presence_recheck page is now shown
+      // inline on this same page instead (see live/screens.tsx's
+      // PresenceExperienceScreen) -- arc_thought_presence_recheck is
+      // never itself rendered as the current stage anymore, but its
+      // copy is still reused verbatim for the inline rating prompt, and
+      // its own getNextArcStage transition (loop-back-if-still-low,
+      // capped by ARC_CONFIG.safety.maxLoopIterations, or continue) is
+      // still exactly what decides what happens after the rating is
+      // selected -- see live/LiveSessionScreen.tsx's
+      // onPresenceExperienceRating. key incorporates loopIterationCount
+      // (not just stage) so a loop-back -- which re-enters this exact
+      // same stage value -- still remounts and resets the timing/rating
+      // reveal from scratch, the same way key={stage} alone already
+      // does for every OTHER pair of genuinely different adjacent
+      // stages above.
+      const ratingCopy = getStageCopy("arc_thought_presence_recheck", profile, session, activeLayers);
+      return (
+        <PresenceExperienceScreen
+          key={`${stage}-${session.loopIterationCount}`}
+          copy={copy}
+          ratingCopy={ratingCopy}
+          onSelectRating={props.onPresenceExperienceRating}
+        />
+      );
+    }
 
     case "preventive_action_check":
       return <PreventiveActionCheckScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
@@ -171,8 +202,41 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
     case "reactive_transition_check":
       return <TransitionCheckScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
 
-    case "regulate":
-      return <RegulationScreen key={stage} copy={copy} onContinue={props.onRegulateContinue} />;
+    case "regulate": {
+      // Timing-update task: the Desired State Level check (proactive)
+      // or intensity recheck (reactive) that used to live on its own
+      // separate page immediately after Regulation is now shown inline
+      // on this same page instead (see live/screens.tsx's
+      // RegulationScreen). Peeking the engine's own real "regulate"
+      // transition (unchanged, same getNextArcStage case) is what
+      // decides whether a rating is even expected next: it isn't once
+      // the loop-safety cap has been reached (regulate's own transition
+      // goes straight to "encode" in that case, exactly as it always
+      // has) -- ratingCopy stays null then, and the screen falls back
+      // to the same plain Continue regulate always had. Otherwise the
+      // peeked stage's own copy is reused verbatim for the inline
+      // rating prompt; that stage's own getNextArcStage transition
+      // (getProactiveStage/getReactiveStage, loop-back capped the same
+      // way) still decides what happens after the rating is selected --
+      // see live/LiveSessionScreen.tsx's onRegulationExperienceRating.
+      // key incorporates loopIterationCount for the same reason as
+      // arc_thought_expand_presence above: a loop back to "regulate"
+      // re-enters this exact same stage value and must still remount.
+      const peek = getNextArcStage("regulate", session, profile, activeLayers);
+      const ratingCopy =
+        peek.stage === "desired_state_check" || peek.stage === "sensation_check"
+          ? getStageCopy(peek.stage, profile, session, activeLayers)
+          : null;
+      return (
+        <RegulationScreen
+          key={`${stage}-${session.loopIterationCount}`}
+          copy={copy}
+          ratingCopy={ratingCopy}
+          onContinue={props.onRegulateContinue}
+          onSelectRating={props.onRegulationExperienceRating}
+        />
+      );
+    }
 
     case "desired_state_check": {
       if (needsProactiveTargetSelection(session.triggerType, activeLayers, profile, session.selectedTarget)) {

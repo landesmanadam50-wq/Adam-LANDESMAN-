@@ -25,6 +25,7 @@ import {
   getAvailableLiveTriggers,
   getAvailableProactiveTargets,
   getFirstArcStage,
+  getNextArcStage,
   needsCurrentActionResolution,
   resolveActionDuration,
   resolveEncodingTarget,
@@ -42,6 +43,7 @@ import {
   applyAlternativeAction,
   applyNegativeActionStarted,
   applyPlannedActionConfirmed,
+  applyRegulationToolUsed,
   applyScaleAnswer,
   applySensationAnswer,
   applyTargetSelection,
@@ -442,4 +444,172 @@ test("33. a fresh session starts with negativeActionStarted false -- the Negativ
 
 test("getFirstArcStage is trigger_selection, matching the new LIVE entry question", () => {
   assert.equal(getFirstArcStage(), "trigger_selection");
+});
+
+// --- Timing-update task: inline Presence/Regulation rating merge.
+//
+// live/LiveSessionScreen.tsx's onPresenceExperienceRating/
+// onRegulationExperienceRating handlers never render
+// arc_thought_presence_recheck, or desired_state_check/sensation_check
+// reached via regulate, as their own screen anymore -- the rating is
+// answered inline on the preceding experience's page instead. These
+// tests replicate those handlers' exact logic (same applyXxx/
+// advanceLiveSession calls, same order) and compare the result against
+// the OLD, separately-rendered two-screen flow -- walking the SAME,
+// completely unmodified arc/arcEngine.ts transitions one real hop at a
+// time. Equal results at every step confirm the merge only changed
+// WHERE the rating is collected, never the ARC logic, thresholds,
+// loop-safety cap, or stored rating fields themselves.
+
+function simulateOnPresenceExperienceRating(
+  session: ArcLiveState,
+  p: ArcBuildProfile,
+  activeLayers: DevelopmentLayer[],
+  value: number
+) {
+  return advanceLiveSession(
+    "arc_thought_presence_recheck",
+    applyScaleAnswer("arc_thought_presence_recheck", session, value),
+    p,
+    activeLayers
+  );
+}
+
+function simulateOnRegulationExperienceRating(
+  session: ArcLiveState,
+  p: ArcBuildProfile,
+  activeLayers: DevelopmentLayer[],
+  value: number
+) {
+  const withToolUsed = applyRegulationToolUsed(session, p.regulationTool);
+  const hop = advanceLiveSession("regulate", withToolUsed, p, activeLayers);
+  const withRating =
+    hop.stage === "desired_state_check"
+      ? applyScaleAnswer("desired_state_check", hop.session, value)
+      : applySensationAnswer(hop.session, hop.session.sensationLocation, value);
+  return advanceLiveSession(hop.stage, withRating, p, activeLayers);
+}
+
+test("Presence merge: a high recheck rating produces the exact same stage/session as the old two-screen flow (expand_presence -> presence_recheck, entered separately)", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
+
+  // OLD flow: two separate real hops, exactly as when
+  // arc_thought_presence_recheck was its own rendered screen.
+  const oldHop1 = advanceLiveSession("arc_thought_expand_presence", session, p, activeLayers);
+  assert.equal(oldHop1.stage, "arc_thought_presence_recheck");
+  const oldHop2 = advanceLiveSession(
+    "arc_thought_presence_recheck",
+    applyScaleAnswer("arc_thought_presence_recheck", oldHop1.session, 9),
+    p,
+    activeLayers
+  );
+
+  // NEW merged flow: one inline rating answered directly on
+  // arc_thought_expand_presence's own page.
+  const merged = simulateOnPresenceExperienceRating(session, p, activeLayers, 9);
+
+  assert.deepEqual(merged, oldHop2, "merging the rating onto the same page must not change the resulting stage or session at all");
+  assert.equal(merged.session.presenceRating, 9, "the rating is stored in the exact same existing field");
+  assert.notEqual(
+    merged.stage,
+    "arc_thought_presence_recheck",
+    "the old standalone rating stage is never the literal next rendered stage once merged"
+  );
+});
+
+test("Presence merge: a still-low recheck rating loops back to arc_thought_expand_presence with loopIterationCount incremented, exactly as the old flow's loop-back did", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
+  const merged = simulateOnPresenceExperienceRating(session, p, activeLayers, 2);
+  assert.equal(merged.stage, "arc_thought_expand_presence", "still low -> loop back to re-expand, same target stage the old flow looped to");
+  assert.equal(merged.session.loopIterationCount, 1);
+});
+
+test("Presence merge: the loop-back is still capped at ARC_CONFIG.safety.maxLoopIterations (3) -- eventually force-continues past ARC Thought, never trapping the trainee", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  let result = simulateOnPresenceExperienceRating({ ...createEmptyLiveState(), triggerType: "reactive_emotion" }, p, activeLayers, 2);
+  let calls = 1;
+  while (result.stage === "arc_thought_expand_presence" && calls < 10) {
+    assert.ok(result.session.loopIterationCount <= 3, "loopIterationCount must never exceed the safety cap while still looping");
+    result = simulateOnPresenceExperienceRating(result.session, p, activeLayers, 2);
+    calls++;
+  }
+  assert.notEqual(result.stage, "arc_thought_expand_presence", "must eventually be forced past the loop within a handful of attempts");
+  assert.equal(result.session.loopIterationCount, 3, "force-continued at exactly the safety cap, same as before the merge");
+});
+
+test("Regulation merge (proactive): the Desired State Level rating merges inline, producing the exact same stage/session as the old two-screen flow (regulate -> desired_state_check, entered separately)", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "proactive",
+    selectedTarget: "state",
+    loopIterationCount: 1,
+  };
+
+  const withToolUsed = applyRegulationToolUsed(session, p.regulationTool);
+  const oldHop1 = advanceLiveSession("regulate", withToolUsed, p, activeLayers);
+  assert.equal(oldHop1.stage, "desired_state_check");
+  const oldHop2 = advanceLiveSession("desired_state_check", applyScaleAnswer("desired_state_check", oldHop1.session, 8), p, activeLayers);
+
+  const merged = simulateOnRegulationExperienceRating(session, p, activeLayers, 8);
+
+  assert.deepEqual(merged, oldHop2);
+  assert.equal(merged.session.desiredStateRating, 8, "stored in the exact same existing field");
+  assert.ok(merged.session.activeTools.includes(p.regulationTool!), "applyRegulationToolUsed's existing side effect is preserved by the merge");
+});
+
+test("Regulation merge (reactive): the intensity recheck rating merges inline, preserving the existing sensationLocation instead of re-asking for it, exactly as the old flow's recheck did", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "reactive_emotion",
+    sensationLocation: "חזה",
+    sensationIntensity: 5,
+    loopIterationCount: 1,
+  };
+
+  const withToolUsed = applyRegulationToolUsed(session, p.regulationTool);
+  const oldHop1 = advanceLiveSession("regulate", withToolUsed, p, activeLayers);
+  assert.equal(oldHop1.stage, "sensation_check");
+  const oldHop2 = advanceLiveSession(
+    "sensation_check",
+    applySensationAnswer(oldHop1.session, oldHop1.session.sensationLocation, 3),
+    p,
+    activeLayers
+  );
+
+  const merged = simulateOnRegulationExperienceRating(session, p, activeLayers, 3);
+
+  assert.deepEqual(merged, oldHop2);
+  assert.equal(merged.session.sensationIntensity, 3);
+  assert.equal(merged.session.sensationLocation, "חזה", "the recheck never re-asks for or overwrites the existing location");
+});
+
+test("Regulation merge: once the loop-safety cap is reached, regulate's own transition (peeked by live/ArcLiveRenderer.tsx before ever offering a rating) goes straight to encode -- no rating is asked for, matching the pre-merge capped behavior", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "proactive",
+    selectedTarget: "state",
+    loopIterationCount: 3, // == ARC_CONFIG.safety.maxLoopIterations
+  };
+  const peek = getNextArcStage("regulate", session, p, activeLayers);
+  assert.equal(peek.stage, "encode", "capped -- no recheck rating stage is reached at all, same as before the merge");
+});
+
+test("desired_state_check's own first-time entry (via afterArcThought, never through regulate) is completely unaffected by the Regulation merge -- that occurrence was never merged, and is still its own standalone rating screen", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  let session = applyTriggerSelection(createEmptyLiveState(), "proactive");
+  session = applyScaleAnswer("presence_check", session, 9); // high presence, skip ARC Thought
+  const outcome = step("presence_check", session, p, activeLayers);
+  assert.equal(outcome.stage, "desired_state_check", "still reached directly, exactly as before -- unaffected by the merge");
 });

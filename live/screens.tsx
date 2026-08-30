@@ -319,6 +319,50 @@ export function PresenceRatingScreen({ copy, onSelect }: { copy: ArcStageCopy; o
   );
 }
 
+/**
+ * Timing-update task: arc_thought_expand_presence's own timed
+ * instruction, merged with the Presence Rating that used to live on
+ * arc_thought_presence_recheck's own separate page (see
+ * arc/stageCopy.ts's "arc_thought_expand_presence" case, whose
+ * segments now carry a trailing INLINE_RATING_REVEAL_DELAY_SECONDS
+ * placeholder). ratingCopy is that recheck stage's own copy, reused
+ * verbatim rather than duplicated -- see live/ArcLiveRenderer.tsx's
+ * "arc_thought_expand_presence" case. The rating is not rendered at
+ * all until status.complete (instruction time + the additional 15s
+ * have both elapsed), matching "the rating must not be visible during
+ * the additional experiential period". Selecting a value still writes
+ * presenceRating through the exact same applyScaleAnswer path as
+ * before -- see live/LiveSessionScreen.tsx's onPresenceExperienceRating.
+ */
+export function PresenceExperienceScreen({
+  copy,
+  ratingCopy,
+  onSelectRating,
+}: {
+  copy: ArcStageCopy;
+  ratingCopy: ArcStageCopy;
+  onSelectRating: (value: number) => void;
+}) {
+  const elapsedSeconds = useElapsedSeconds();
+  const status = getInstructionTimingStatus(copy.segments ?? [], elapsedSeconds);
+  const visibleText = status.visibleSegments
+    .map((segment) => segment.text)
+    .filter((text) => text.length > 0)
+    .join(" ");
+  return (
+    <View>
+      <Text style={styles.title}>{copy.title}</Text>
+      {visibleText.length > 0 && <Text style={styles.body}>{visibleText}</Text>}
+      {status.complete && (
+        <View>
+          <Title copy={ratingCopy} />
+          <ScaleButtons onSelect={onSelectRating} />
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function InstructionScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinue: () => void }) {
   return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
 }
@@ -469,8 +513,56 @@ export function TransitionCheckScreen({
   );
 }
 
-export function RegulationScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinue: () => void }) {
-  return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
+/**
+ * Timing-update task: Regulation's own timed instruction, merged with
+ * whichever rating used to follow it on its own separate page --
+ * Desired State Level (proactive) or the intensity recheck (reactive)
+ * -- see arc/stageCopy.ts's "regulate" case (segments now carry a
+ * trailing INLINE_RATING_REVEAL_DELAY_SECONDS placeholder) and
+ * live/ArcLiveRenderer.tsx's "regulate" case, which peeks the engine's
+ * own regulate transition to decide whether a rating is even expected
+ * next (it isn't when the loop-safety cap has been reached -- see
+ * arc/arcEngine.ts's loopCapped -- in which case ratingCopy is null and
+ * this renders the same plain Continue regulate always had). Nothing
+ * (no rating, no Continue button) is shown until status.complete,
+ * matching "the rating must not be visible during the additional
+ * experiential period". Selecting a rating still writes
+ * desiredStateRating/sensationIntensity through the exact same
+ * apply*Answer paths as before -- see
+ * live/LiveSessionScreen.tsx's onRegulationExperienceRating.
+ */
+export function RegulationScreen({
+  copy,
+  ratingCopy,
+  onContinue,
+  onSelectRating,
+}: {
+  copy: ArcStageCopy;
+  ratingCopy: ArcStageCopy | null;
+  onContinue: () => void;
+  onSelectRating: (value: number) => void;
+}) {
+  const elapsedSeconds = useElapsedSeconds();
+  const status = getInstructionTimingStatus(copy.segments ?? [], elapsedSeconds);
+  const visibleText = status.visibleSegments
+    .map((segment) => segment.text)
+    .filter((text) => text.length > 0)
+    .join(" ");
+  return (
+    <View>
+      <Text style={styles.title}>{copy.title}</Text>
+      {visibleText.length > 0 && <Text style={styles.body}>{visibleText}</Text>}
+      {status.complete &&
+        (ratingCopy ? (
+          <View>
+            <Title copy={ratingCopy} />
+            <ScaleButtons onSelect={onSelectRating} />
+          </View>
+        ) : (
+          <PrimaryButton label="המשך" onPress={onContinue} />
+        ))}
+    </View>
+  );
 }
 
 export function ProactiveTargetScreen({

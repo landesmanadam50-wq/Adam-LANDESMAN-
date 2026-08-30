@@ -50,6 +50,24 @@ export interface InstructionSegment {
  * and reused across every profile/session rather than hard-coded per
  * screen.
  */
+/**
+ * Encoding's per-piece base durations before the timing-update task
+ * added ENCODING_DURATION_INCREASE_SECONDS on top -- kept as their own
+ * named constants so that increase stays one auditable addition rather
+ * than five opaque new literals. Every other stage's duration is
+ * unaffected by that task and stays a plain literal below.
+ */
+const ENCODING_BASE_SECONDS = {
+  updatedSensation: 4,
+  shortRegulationCue: 4,
+  bodyLanguageCue: 4,
+  identityMantra: 4,
+  fallback: 4,
+} as const;
+
+/** Timing-update task: every individual Encoding step's duration increases by exactly +7s over its previous duration -- never applied to any non-Encoding stage. */
+const ENCODING_DURATION_INCREASE_SECONDS = 7;
+
 export const INSTRUCTION_TIMING = {
   arcThoughtAwareness: 5,
   arcThoughtCombinedAttention: 5,
@@ -57,15 +75,29 @@ export const INSTRUCTION_TIMING = {
   stayCurrentSensation: 4,
   stayNaturalBreath: 8,
   regulate: 10,
-  encodeUpdatedSensation: 4,
-  encodeShortRegulationCue: 4,
-  encodeBodyLanguageCue: 4,
-  encodeIdentityMantra: 4,
+  encodeUpdatedSensation: ENCODING_BASE_SECONDS.updatedSensation + ENCODING_DURATION_INCREASE_SECONDS,
+  encodeShortRegulationCue: ENCODING_BASE_SECONDS.shortRegulationCue + ENCODING_DURATION_INCREASE_SECONDS,
+  encodeBodyLanguageCue: ENCODING_BASE_SECONDS.bodyLanguageCue + ENCODING_DURATION_INCREASE_SECONDS,
+  encodeIdentityMantra: ENCODING_BASE_SECONDS.identityMantra + ENCODING_DURATION_INCREASE_SECONDS,
   /** The generic "take a moment" fallback line, only shown when nothing else in Encoding was configured for this target. */
-  encodeFallback: 4,
+  encodeFallback: ENCODING_BASE_SECONDS.fallback + ENCODING_DURATION_INCREASE_SECONDS,
   actionImagery: 5,
   actionPreparation: 4,
 } as const;
+
+/**
+ * Timing-update task: the additional page-local delay, on top of a
+ * screen's own instruction timing, before an inline rating/check that
+ * used to live on its own separate page is allowed to reveal on the
+ * SAME page -- see arc/stageCopy.ts's "arc_thought_expand_presence" and
+ * "regulate" cases (the only two stages this applies to) and
+ * live/screens.tsx's PresenceExperienceScreen/RegulationScreen. Modeled
+ * as one more trailing, empty-text InstructionSegment appended to those
+ * stages' own segments array, so getInstructionTimingStatus's existing
+ * `complete` flag -- unchanged -- is the single source of truth for
+ * "reveal the rating now" with no new timing primitive needed.
+ */
+export const INLINE_RATING_REVEAL_DELAY_SECONDS = 15;
 
 export interface InstructionTimingStatus {
   /** Every segment revealed so far, in order -- cumulative, never shrinks as elapsedSeconds grows. */
