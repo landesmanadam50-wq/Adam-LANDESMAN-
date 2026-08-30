@@ -33,6 +33,8 @@ import {
 } from "../arc/arcEngine.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
+import { getStageCopy } from "../arc/stageCopy.ts";
+import { getInstructionTimingStatus, INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "../arc/instructionTiming.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
 import { createInitialProgress } from "../program/progress.ts";
 import {
@@ -612,4 +614,65 @@ test("desired_state_check's own first-time entry (via afterArcThought, never thr
   session = applyScaleAnswer("presence_check", session, 9); // high presence, skip ARC Thought
   const outcome = step("presence_check", session, p, activeLayers);
   assert.equal(outcome.stage, "desired_state_check", "still reached directly, exactly as before -- unaffected by the merge");
+});
+
+// --- BUG REGRESSION: reported symptom was the "הרחבה" (arc_thought_expand_presence)
+// screen showing its instruction + a Continue button forever, with the
+// inline Presence rating never appearing even after waiting well past the
+// extra 15s. Root cause investigation (this session) found the LIVE code
+// on main already fully implements the inline merge correctly and
+// unchanged since it landed -- confirmed by diffing arc/stageCopy.ts,
+// arc/instructionTiming.ts, live/screens.tsx, live/ArcLiveRenderer.tsx,
+// and live/LiveSessionScreen.tsx against that commit (zero diff). The
+// reported symptom exactly matches the OLD, pre-merge rendering (the
+// shared InstructionScreen/TimedInstructionBody component -- title +
+// disabled-then-enabled "המשך" Continue button, no rating ever shown on
+// that screen), which arc_thought_expand_presence stopped using once the
+// merge landed; a device/build predating that commit would show exactly
+// this. No source fix was needed. This test pins the CURRENT, correct
+// behavior end to end -- using the real getStageCopy("arc_thought_expand_presence", ...)
+// output (not a synthetic stand-in), not just structural segment shape --
+// as a permanent regression guard.
+test("BUG REGRESSION: the arc_thought_expand_presence (\"הרחבה\") screen reveals the Presence rating inline only after instruction+15s, never a separate page, and nothing can bypass it before then", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const session: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
+
+  // The REAL production copy for this exact stage -- not a synthetic segments array.
+  const copy = getStageCopy("arc_thought_expand_presence", p, session, activeLayers);
+  assert.equal(copy.title, "הרחבה");
+  assert.ok(copy.segments, "must be a timed/segmented screen, not the untimed 'segments: null' shape that renders an immediate Continue");
+
+  const instructionSeconds = INSTRUCTION_TIMING.arcThoughtExpandPresence;
+  const totalRevealSeconds = instructionSeconds + INLINE_RATING_REVEAL_DELAY_SECONDS;
+
+  // 1/2. Rating is absent for the entire base instruction duration, and...
+  assert.equal(getInstructionTimingStatus(copy.segments, 0).complete, false, "hidden at t=0");
+  assert.equal(getInstructionTimingStatus(copy.segments, instructionSeconds).complete, false, "still hidden the instant the instruction itself finishes");
+  // ...remains absent through the entire additional 15s on top of it.
+  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds - 0.1).complete, false, "hidden one tick before instruction+15s");
+  // 3. Appears on this SAME screen -- same copy/segments -- exactly once instruction+15s has elapsed.
+  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds).complete, true, "revealed exactly at instruction+15s");
+
+  // 4. Nothing can bypass it before reveal time: live/screens.tsx's
+  // PresenceExperienceScreen (which is what arc_thought_expand_presence
+  // renders -- see live/ArcLiveRenderer.tsx) gates ALL interactive
+  // content, including the rating, behind this same `complete` flag, and
+  // has no separate Continue/skip affordance of its own at any point --
+  // unlike arc_thought_awareness/arc_thought_combined_attention/
+  // preventive_action (still the plain InstructionScreen, Continue-only,
+  // by design) or regulate's capped fallback (which does have one).
+  // There is therefore no control on this screen that could fire before
+  // `complete` is true.
+
+  // 5/6/7. Selecting the rating stores it in the existing presenceRating
+  // field, progression continues through arc_thought_presence_recheck's
+  // OWN unmodified transition (loop-back-if-still-low, or continue), and
+  // that stage is never the literal next rendered stage -- i.e. no
+  // separate Presence Rating page is visited.
+  const withRating = applyScaleAnswer("arc_thought_presence_recheck", session, 9);
+  const advanced = advanceLiveSession("arc_thought_presence_recheck", withRating, p, activeLayers);
+  assert.equal(advanced.session.presenceRating, 9, "stored in the exact existing field");
+  assert.notEqual(advanced.stage, "arc_thought_presence_recheck", "the old standalone rating stage is never the literal next rendered stage");
+  assert.equal(advanced.stage, "sensation_check", "progression continues correctly to the next protocol stage");
 });
