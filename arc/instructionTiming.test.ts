@@ -66,10 +66,9 @@ test("an empty segments array is trivially complete from t=0, with nothing to sh
 // exactly +7s over its previous (4s) duration -- never applied to any
 // non-Encoding stage's timing.
 
-test("every Encoding step's duration is its previous 4-second duration plus exactly +7s (preserved, unreplaced) plus the later +15s UX/timing-update increase on top", () => {
+test("every Encoding step's duration is its previous 4-second duration plus exactly +7s (preserved, unreplaced) -- the dwell-time task removed the +15s UX/timing-update increase from Encoding (and the four other configurable-dwell stages), replaced by arc/stageCopy.ts appending the CURRENT target's own configured Encoding dwell as a trailing segment instead (arc/dwellTimes.ts) -- never baked into these per-piece durations", () => {
   const PREVIOUS_ENCODING_SECONDS = 4;
   const ENCODING_INCREASE_SECONDS = 7;
-  const EXPERIENTIAL_TIME_INCREASE_SECONDS = 15;
   for (const key of [
     "encodeUpdatedSensation",
     "encodeShortRegulationCue",
@@ -79,29 +78,38 @@ test("every Encoding step's duration is its previous 4-second duration plus exac
   ] as const) {
     assert.equal(
       INSTRUCTION_TIMING[key],
-      PREVIOUS_ENCODING_SECONDS + ENCODING_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-      `${key} must be its previous ${PREVIOUS_ENCODING_SECONDS}s duration plus the preserved +${ENCODING_INCREASE_SECONDS}s plus the +${EXPERIENTIAL_TIME_INCREASE_SECONDS}s UX/timing update, not a value that replaced either increase`
+      PREVIOUS_ENCODING_SECONDS + ENCODING_INCREASE_SECONDS,
+      `${key} must be its previous ${PREVIOUS_ENCODING_SECONDS}s duration plus the preserved +${ENCODING_INCREASE_SECONDS}s, with no flat experiential increase baked in any more`
     );
-    assert.equal(INSTRUCTION_TIMING[key], 26);
+    assert.equal(INSTRUCTION_TIMING[key], 11);
   }
 });
 
-test("every LIVE experiential protocol stage's duration -- Encoding included -- carries the +15s UX/timing-update increase on top of what it was already configured to; the real Action Timer isn't part of this table at all", () => {
+test("the three ARC Thought/Presence stages still carry the +15s UX/timing-update increase (Presence is untouched by the dwell-time task); the five now-configurable-dwell stages (Stay/Regulation/Encoding/Action-Imagery) reverted to their base, pre-increase durations, with a personal dwell appended separately instead (arc/dwellTimes.ts); the real Action Timer isn't part of this table at all", () => {
   const EXPERIENTIAL_TIME_INCREASE_SECONDS = 15;
-  const previousValues: Record<string, number> = {
+  const presenceValues: Record<string, number> = {
     arcThoughtAwareness: 5,
     arcThoughtCombinedAttention: 5,
     arcThoughtExpandPresence: 5,
+  };
+  for (const [key, previousValue] of Object.entries(presenceValues)) {
+    assert.equal(
+      INSTRUCTION_TIMING[key as keyof typeof INSTRUCTION_TIMING],
+      previousValue + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+      `${key} (Presence) must still be its previous ${previousValue}s duration plus exactly +${EXPERIENTIAL_TIME_INCREASE_SECONDS}s`
+    );
+  }
+  const dwellStageBaseValues: Record<string, number> = {
     stayCurrentSensation: 4,
     stayNaturalBreath: 8,
     regulate: 10,
     actionImagery: 5,
   };
-  for (const [key, previousValue] of Object.entries(previousValues)) {
+  for (const [key, baseValue] of Object.entries(dwellStageBaseValues)) {
     assert.equal(
       INSTRUCTION_TIMING[key as keyof typeof INSTRUCTION_TIMING],
-      previousValue + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-      `${key} must be its previous ${previousValue}s duration plus exactly +${EXPERIENTIAL_TIME_INCREASE_SECONDS}s`
+      baseValue,
+      `${key} must be back to its base ${baseValue}s -- the flat +15s it used to carry is now served by a personal, per-ARC-state configurable dwell instead`
     );
   }
   // The real Action Timer (Beneficial Action / Success Focus / Negative
@@ -213,15 +221,15 @@ test("visibleSegments is always a stable, growing prefix as elapsed time increas
   assert.equal(atT12[1], atT4[1], "segment 1 is the identical object once revealed, unaffected by segment 2 joining");
 });
 
-test("progressive reveal works identically against a real multi-segment stage's own production copy (Stay, now 19s+23s after the +15s UX/timing update) -- confirming the growing-prefix guarantee holds for actual LIVE content, not just a synthetic example", () => {
+test("progressive reveal works identically against a real multi-segment stage's own production copy (Stay, now 4s+8s -- the dwell-time task reverted these to their base durations, with a personal dwell appended separately) -- confirming the growing-prefix guarantee holds for actual LIVE content, not just a synthetic example", () => {
   const stayText1 = "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה.";
   const stayText2 = "שים לב גם לנשימה כפי שהיא מתרחשת מעצמה.";
   const segments: InstructionSegment[] = [
     { text: stayText1, durationSeconds: INSTRUCTION_TIMING.stayCurrentSensation },
     { text: stayText2, durationSeconds: INSTRUCTION_TIMING.stayNaturalBreath },
   ];
-  assert.equal(INSTRUCTION_TIMING.stayCurrentSensation, 19, "sanity: base 4s + the +15s UX/timing-update increase");
-  assert.equal(INSTRUCTION_TIMING.stayNaturalBreath, 23, "sanity: base 8s + the +15s UX/timing-update increase");
+  assert.equal(INSTRUCTION_TIMING.stayCurrentSensation, 4, "sanity: base 4s, the +15s UX/timing-update increase no longer applies here");
+  assert.equal(INSTRUCTION_TIMING.stayNaturalBreath, 8, "sanity: base 8s, the +15s UX/timing-update increase no longer applies here");
 
   const beforeBreathJoins = getInstructionTimingStatus(segments, INSTRUCTION_TIMING.stayCurrentSensation - 0.1);
   assert.deepEqual(beforeBreathJoins.visibleSegments.map((s) => s.text), [stayText1], "only the first line is up, one tick before the second joins");

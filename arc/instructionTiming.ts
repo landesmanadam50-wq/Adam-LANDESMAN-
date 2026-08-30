@@ -70,22 +70,25 @@ const ENCODING_DURATION_INCREASE_SECONDS = 7;
 
 /**
  * UX/timing-update task: every LIVE experiential protocol stage's
- * guided-practice duration gets an additional +15s on top of whatever
- * it was already configured to (Encoding's own separate +7s per-step
- * increase above stays fully intact -- this layers on top of it, not
- * instead of it). One central constant, applied uniformly to every
- * entry below, rather than a bespoke per-screen value -- so this stays
- * config-driven the same way the Encoding increase was.
- *
- * Deliberately a SEPARATE constant from INLINE_RATING_REVEAL_DELAY_SECONDS
- * below, even though both happen to be 15s today: this one extends a
- * stage's own guided-practice time; that one is an unrelated concept --
- * the delay before an inline rating reveals once practice is already
- * done. Never applied to the real Action Timer (Beneficial Action /
- * Success Focus / Negative Action -- arc/actionTimer.ts, program/engine.ts)
- * or to scheduled reminders/standalone action durations -- none of
- * those are configured here; this table only ever governs instruction-
- * practice time.
+ * guided-practice duration got an additional +15s on top of whatever it
+ * was already configured to. Dwell-time task: for the five stages a
+ * trainee can now personally configure a post-instruction dwell time
+ * for (Sensation/Awareness = stay, Acceptance = accept, Regulation =
+ * regulate, Encoding = encode, Action Imagery = act's imagery
+ * sub-phase -- see arc/dwellTimes.ts), this flat +15s was serving
+ * exactly the same purpose the new configurable dwell now does more
+ * precisely (per-trainee, per-ARC-state) -- so it's removed from those
+ * five entries below, replaced by arc/stageCopy.ts appending a
+ * withTrailingDwellSegment (arc/dwellTimes.ts) sized from the current
+ * ARC state's own configuration, once, after the instruction segments
+ * below. It stays fully intact for the three ARC Thought/Presence
+ * entries (arcThoughtAwareness/CombinedAttention/ExpandPresence):
+ * Presence isn't one of the five configurable dwell categories, and the
+ * Presence technique itself is explicitly unchanged by the dwell-time
+ * task. Encoding's own separate +7s per-step increase
+ * (ENCODING_DURATION_INCREASE_SECONDS) is untouched either way -- it's
+ * instruction-reveal pacing, not a post-instruction dwell, so it's
+ * outside this task's scope regardless of which stage it's on.
  */
 const EXPERIENTIAL_TIME_INCREASE_SECONDS = 15;
 
@@ -93,16 +96,16 @@ export const INSTRUCTION_TIMING = {
   arcThoughtAwareness: 5 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
   arcThoughtCombinedAttention: 5 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
   arcThoughtExpandPresence: 5 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-  stayCurrentSensation: 4 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-  stayNaturalBreath: 8 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-  regulate: 10 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-  encodeUpdatedSensation: ENCODING_BASE_SECONDS.updatedSensation + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-  encodeShortRegulationCue: ENCODING_BASE_SECONDS.shortRegulationCue + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-  encodeBodyLanguageCue: ENCODING_BASE_SECONDS.bodyLanguageCue + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-  encodeIdentityMantra: ENCODING_BASE_SECONDS.identityMantra + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  stayCurrentSensation: 4,
+  stayNaturalBreath: 8,
+  regulate: 10,
+  encodeUpdatedSensation: ENCODING_BASE_SECONDS.updatedSensation + ENCODING_DURATION_INCREASE_SECONDS,
+  encodeShortRegulationCue: ENCODING_BASE_SECONDS.shortRegulationCue + ENCODING_DURATION_INCREASE_SECONDS,
+  encodeBodyLanguageCue: ENCODING_BASE_SECONDS.bodyLanguageCue + ENCODING_DURATION_INCREASE_SECONDS,
+  encodeIdentityMantra: ENCODING_BASE_SECONDS.identityMantra + ENCODING_DURATION_INCREASE_SECONDS,
   /** The generic "take a moment" fallback line, only shown when nothing else in Encoding was configured for this target. */
-  encodeFallback: ENCODING_BASE_SECONDS.fallback + ENCODING_DURATION_INCREASE_SECONDS + EXPERIENTIAL_TIME_INCREASE_SECONDS,
-  actionImagery: 5 + EXPERIENTIAL_TIME_INCREASE_SECONDS,
+  encodeFallback: ENCODING_BASE_SECONDS.fallback + ENCODING_DURATION_INCREASE_SECONDS,
+  actionImagery: 5,
 } as const;
 
 /**

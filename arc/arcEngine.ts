@@ -78,6 +78,27 @@ function loopCapped(loopIterationCount: number): boolean {
   return loopIterationCount >= ARC_CONFIG.safety.maxLoopIterations;
 }
 
+/**
+ * Whether the Accept stage's "not ready yet" willingness sub-flow (see
+ * live/screens.tsx's AcceptScreen: "לא" -> unwillingness-acknowledgment
+ * -> configured Acceptance dwell -> readiness-recheck question) has
+ * used up its safety-cap rounds. Reuses the exact same cap
+ * (ARC_CONFIG.safety.maxLoopIterations) and loopCapped() the ARC
+ * Thought / reactive / proactive recheck loops already use, applied to
+ * its own dedicated counter (ArcLiveState.acceptanceWillingnessLoopCount)
+ * rather than sharing "accept"'s own, unrelated loopIterationCount
+ * (which governs a completely different loop -- the accept ->
+ * sensation_check intensity recheck once the trainee IS willing -- and
+ * must not be perturbed by how many times the trainee said "not yet"
+ * here). Once capped, the sub-flow forces forward into the normal
+ * Acceptance path automatically -- exactly the same "force forward
+ * once capped" behavior every other loop in this file already has --
+ * rather than asking the readiness question a further time.
+ */
+export function isAcceptanceWillingnessLoopCapped(acceptanceWillingnessLoopCount: number): boolean {
+  return loopCapped(acceptanceWillingnessLoopCount);
+}
+
 export function getFirstArcStage(): ArcStage {
   return "trigger_selection";
 }

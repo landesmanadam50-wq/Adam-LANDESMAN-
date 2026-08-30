@@ -40,6 +40,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     stateEncodingRegulationCue: null,
     stateEncoding: null,
     internalAction: "סריקת גוף",
+    stateDwellTimes: null,
     desiredIdentity: "אדם רגוע ובוטח",
     identityChallengeContext: null,
     identityInterferingEmotion: null,
@@ -47,6 +48,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityEncodingRegulationCue: null,
     identityEncoding: null,
     identityAction: null,
+    identityDwellTimes: null,
     habit: "לבדוק את הטלפון בכל הפסקה",
     beneficialAction: "לגשת ולפתוח שיחה",
     preventiveAction: null,
@@ -135,6 +137,7 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
   }
   assert.deepEqual(Object.keys(state).sort(), [
     "acceptanceNeeded",
+    "acceptanceWillingnessLoopCount",
     "actionImageryCompleted",
     "actionReached",
     "activeTools",

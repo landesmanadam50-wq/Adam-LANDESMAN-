@@ -41,6 +41,24 @@ export interface EncodingProfile {
   mantra: string | null;
 }
 
+/**
+ * Personal, per-ARC-state dwell times (see arc/dwellTimes.ts) -- how
+ * long, in seconds, a trainee wants to remain in each of five
+ * experiential LIVE stages AFTER that stage's own instruction has
+ * already finished revealing (never the instruction/explanation
+ * duration itself -- see arc/instructionTiming.ts, untouched by this).
+ * One full set per ARC Map (ArcBuildProfile.stateDwellTimes/
+ * identityDwellTimes below) -- never one shared global profile, so a
+ * trainee can configure e.g. "תשוקה" differently from "פיזור".
+ */
+export interface DwellTimes {
+  sensationDwellSeconds: number;
+  acceptanceDwellSeconds: number;
+  regulationDwellSeconds: number;
+  encodingDwellSeconds: number;
+  actionImageryDwellSeconds: number;
+}
+
 export interface ArcBuildProfile {
   programPath: string;
   /**
@@ -89,6 +107,15 @@ export interface ArcBuildProfile {
   stateEncodingRegulationCue: string | null;
   stateEncoding: EncodingProfile | null;
   internalAction: string | null;
+  /**
+   * The state layer's own configured dwell times (arc/dwellTimes.ts) --
+   * null until BUILD-ARC's "זמן שהייה" step is saved for this target,
+   * in which case every one of the five fields is resolved against
+   * DEFAULT_DWELL_TIMES; a legacy profile stored before this feature
+   * existed has this missing entirely (undefined once JSON.parse'd),
+   * resolved the exact same way. Never mixed with identityDwellTimes.
+   */
+  stateDwellTimes: Partial<DwellTimes> | null;
 
   desiredIdentity: string | null;
   /** The identity layer's own ARC Map, parallel to challengeContext/interferingState above -- a second, independently editable ARC Map around a second Desired State (desiredIdentity), not a duplicate of the state layer's. */
@@ -100,6 +127,8 @@ export interface ArcBuildProfile {
   identityEncodingRegulationCue: string | null;
   identityEncoding: EncodingProfile | null;
   identityAction: string | null;
+  /** The identity layer's own configured dwell times, parallel to stateDwellTimes above -- never mixed with it. */
+  identityDwellTimes: Partial<DwellTimes> | null;
 
   habit: string | null;
   beneficialAction: string | null;
@@ -241,6 +270,17 @@ export interface ArcLiveState {
   successFocusChoice: "now" | "later" | null;
 
   acceptanceNeeded: boolean | null;
+  /**
+   * Safety cap on the Acceptance "not ready yet" willingness loop (the
+   * accept stage's "לא" -> unwillingness-acknowledgment -> dwell ->
+   * readiness-recheck sub-flow -- see live/screens.tsx's AcceptScreen
+   * and arc/arcEngine.ts's isAcceptanceWillingnessLoopCapped). Its own
+   * dedicated counter, deliberately separate from loopIterationCount
+   * (which governs the UNRELATED accept -> sensation_check intensity-
+   * recheck loop) so this sub-flow can never perturb, or be perturbed
+   * by, that other loop's own independent cap.
+   */
+  acceptanceWillingnessLoopCount: number;
   regulationReady: boolean | null;
   regulationNeeded: boolean;
   wantsPreventiveAction: boolean | null;
@@ -275,6 +315,7 @@ export function createEmptyLiveState(): ArcLiveState {
     negativeActionStarted: false,
     successFocusChoice: null,
     acceptanceNeeded: null,
+    acceptanceWillingnessLoopCount: 0,
     regulationReady: null,
     regulationNeeded: false,
     wantsPreventiveAction: null,

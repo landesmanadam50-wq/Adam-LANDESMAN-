@@ -17,8 +17,9 @@ import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
-import { getInstructionTimingStatus, INLINE_RATING_REVEAL_DELAY_SECONDS } from "../arc/instructionTiming.ts";
+import { getInstructionTimingStatus } from "../arc/instructionTiming.ts";
 import type { InstructionSegment } from "../arc/instructionTiming.ts";
+import { getAcceptanceReadinessRecheckQuestion, getAcceptanceUnwillingnessAcknowledgment } from "../arc/stageCopy.ts";
 import { formatRemainingTime, generateTimerRunId, getActionTimerStatusFromStartedAt } from "../arc/actionTimer.ts";
 import type { ActionTimerStatus } from "../arc/actionTimer.ts";
 import { cancelScheduledNotification, scheduleTimerCompletionNotification } from "../data/notifications.ts";
@@ -284,6 +285,37 @@ function PrimaryButton({ label, onPress, disabled }: { label: string; onPress: (
 }
 
 /**
+ * "Continue available" cue (#8/#9, and the dwell-time task's #O): fires
+ * exactly once, the instant `complete` first turns true -- never
+ * before, never again on a later re-render of this same mount, and
+ * never on returning to an ALREADY-mounted screen (the app
+ * backgrounding/foregrounding doesn't remount whatever calls this
+ * hook). A fresh mount (a new instructional/dwell bout, or a genuinely
+ * new stage) naturally resets cuePlayedRef along with whatever elapsed-
+ * time clock drives `complete` -- the same lifecycle useElapsedSeconds
+ * itself already relies on -- so a real new bout correctly gets its own
+ * cue. `complete` staying false forever (no segments, an immediate,
+ * never-gated Continue) never fires it: there is no "becomes available"
+ * moment for those. Distinct from, and never confused with,
+ * playTimerCompletionSound (the Action/Success-Focus/Negative-Action
+ * completion bell) -- a different, quieter sound file entirely
+ * (data/timerSound.ts) -- and this cue never itself advances the
+ * protocol: the trainee still chooses when to continue/respond. Shared
+ * by every screen gated on a dwell/instruction-timing completion
+ * (TimedInstructionBody, RegulationScreen, and Accept's own dwell-gated
+ * sub-views below) so this exactly-once guarantee lives in one place.
+ */
+function useContinueAvailableCue(complete: boolean): void {
+  const cuePlayedRef = useRef(false);
+  useEffect(() => {
+    if (!complete || cuePlayedRef.current) return;
+    cuePlayedRef.current = true;
+    playContinueAvailableCue();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complete]);
+}
+
+/**
  * Shared renderer for every progressive timed-instruction screen
  * (the ARC Thought sub-stages, Stay/Presence, Regulation, Encoding,
  * plus the "act" stage's Imagery and Preparation sub-phases): when
@@ -308,30 +340,7 @@ function TimedInstructionBody({
 }) {
   const elapsedSeconds = useElapsedSeconds();
   const status = copy.segments ? getInstructionTimingStatus(copy.segments, elapsedSeconds) : null;
-
-  // "Continue available" cue (#8/#9): fires exactly once, the instant
-  // Continue becomes enabled -- never before, never again on a later
-  // re-render of this same mount, and never on returning to an
-  // ALREADY-mounted screen (the app backgrounding/foregrounding doesn't
-  // remount this component). A fresh mount (a new instructional bout,
-  // or a genuinely new stage) naturally resets cuePlayedRef along with
-  // elapsedSeconds -- the same lifecycle useElapsedSeconds itself
-  // already relies on -- so a real new bout correctly gets its own cue.
-  // Screens with no segments at all (copy.segments === null, an
-  // immediate, never-gated Continue) never fire it: there is no
-  // "becomes available" moment for those: it's available from t=0.
-  // Distinct from, and never confused with, playTimerCompletionSound
-  // (the Action/Success-Focus/Negative-Action completion bell) -- a
-  // different, quieter sound file entirely (data/timerSound.ts), and
-  // this cue never itself advances the protocol: the trainee still
-  // presses Continue whenever they choose to.
-  const cuePlayedRef = useRef(false);
-  useEffect(() => {
-    if (!status || !status.complete || cuePlayedRef.current) return;
-    cuePlayedRef.current = true;
-    playContinueAvailableCue();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status?.complete]);
+  useContinueAvailableCue(status?.complete ?? false);
 
   if (!copy.segments || !status) {
     return (
@@ -589,35 +598,39 @@ export function StayScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinu
 }
 
 /**
- * Timing-update task: the intensity recheck that used to live on its
- * own separate sensation_check page immediately after Accept is now
- * shown inline on THIS page instead, revealed exactly
- * INLINE_RATING_REVEAL_DELAY_SECONDS after the trainee answers --
- * Accept has no instruction-timing segments of its own (it's an
- * immediate yes/no, not a timed practice period), so unlike
- * Presence/Regulation's "instruction time PLUS 15s" the delay here
- * simply starts at answer-time. Mounting AcceptRatingReveal exactly
- * when `answered` flips true is what starts that clock (useElapsedSeconds
- * always starts from mount -- see its own doc above), reusing the same
- * primitive without needing a new one. question is null when
- * arc/arcEngine.ts's own accept transition is loop-capped (goes
- * straight to "regulate", skipping the recheck rating entirely, exactly
- * as before this merge) -- see live/ArcLiveRenderer.tsx's "accept" case
- * for that peek. Answering never itself advances the ArcStage anymore
- * (see live/LiveSessionScreen.tsx's onAcceptAnswer) -- only selecting
- * the rating, or continuing without one in the capped case, does.
+ * Dwell-time task: the "existing normal Acceptance" path (#I, #L) --
+ * reached once the trainee is willing, whether immediately (the
+ * stage's very first "כן") or after one or more unwillingness rounds
+ * (a later "כן" on the readiness-recheck question below). Mounting this
+ * exactly when that happens is what starts its own dwell clock
+ * (useElapsedSeconds always starts from mount), reusing the same
+ * primitive the rest of this file's dwell/instruction-timing screens
+ * do. The delay is this target's own configured Acceptance dwell
+ * (acceptanceDwellSeconds -- see arc/dwellTimes.ts's
+ * resolveDwellSecondsFor, resolved once in live/ArcLiveRenderer.tsx's
+ * "accept" case), never a separate hard-coded duration. question is
+ * null when arc/arcEngine.ts's own accept transition is loop-capped
+ * (goes straight to "regulate", skipping the recheck rating entirely --
+ * an unrelated, unchanged loop; see live/ArcLiveRenderer.tsx's "accept"
+ * case for that peek) -- the screen then falls back to a plain
+ * Continue once the dwell elapses, same as before this task. The
+ * subtle Continue-available cue fires once the dwell completes, same
+ * as every other dwell-gated screen in this file.
  */
 function AcceptRatingReveal({
+  acceptanceDwellSeconds,
   question,
   onSelectRating,
   onContinueWithoutRating,
 }: {
+  acceptanceDwellSeconds: number;
   question: string | null;
   onSelectRating: (value: number) => void;
   onContinueWithoutRating: () => void;
 }) {
   const elapsedSeconds = useElapsedSeconds();
-  const status = getInstructionTimingStatus([{ text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS }], elapsedSeconds);
+  const status = getInstructionTimingStatus([{ text: "", durationSeconds: acceptanceDwellSeconds }], elapsedSeconds);
+  useContinueAvailableCue(status.complete);
   if (!status.complete) {
     return null;
   }
@@ -631,35 +644,149 @@ function AcceptRatingReveal({
   return <PrimaryButton label="המשך" onPress={onContinueWithoutRating} />;
 }
 
+/**
+ * One round of the Accept stage's "not ready yet" sub-flow (#H-#M):
+ * shows the unwillingness-acknowledgment line immediately (it's a
+ * simple statement of the current moment, not a timed practice
+ * sequence of its own -- see arc/stageCopy.ts's
+ * getAcceptanceUnwillingnessAcknowledgment), then waits this target's
+ * SAME configured Acceptance dwell used by the normal "כן" path above
+ * (never a separate hard-coded duration -- #K) before firing the
+ * subtle Continue-available cue and revealing this round's outcome:
+ * the readiness question again (capped === false) or nothing at all
+ * (capped === true -- the caller, AcceptScreen below, auto-advances
+ * into the normal Acceptance path instead of asking a further time,
+ * mirroring the "force forward once capped" behavior every other loop
+ * in arc/arcEngine.ts already has). A fresh `key` per round at the call
+ * site is what gives each round its own independent dwell clock and
+ * its own independent cue firing, the same remount-based reset already
+ * used throughout this file (see e.g. arc_thought_expand_presence's
+ * `key={stage}-${loopIterationCount}`).
+ */
+function AcceptanceUnwillingnessRound({
+  acceptanceDwellSeconds,
+  capped,
+  labels,
+  onDwellCapped,
+  onAnswer,
+}: {
+  acceptanceDwellSeconds: number;
+  capped: boolean;
+  labels: YesNoLabels;
+  onDwellCapped: () => void;
+  onAnswer: (yes: boolean) => void;
+}) {
+  const elapsedSeconds = useElapsedSeconds();
+  const segments: InstructionSegment[] = [
+    { text: getAcceptanceUnwillingnessAcknowledgment(), durationSeconds: 0 },
+    { text: "", durationSeconds: acceptanceDwellSeconds },
+  ];
+  const status = getInstructionTimingStatus(segments, elapsedSeconds);
+  useContinueAvailableCue(status.complete);
+
+  const cappedHandledRef = useRef(false);
+  useEffect(() => {
+    if (!status.complete || !capped || cappedHandledRef.current) return;
+    cappedHandledRef.current = true;
+    onDwellCapped();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.complete, capped]);
+
+  return (
+    <View>
+      <RevealedInstructionLines segments={status.visibleSegments} />
+      {status.complete && !capped && (
+        <RevealedRatingPrompt question={getAcceptanceReadinessRecheckQuestion()}>
+          <YesNoButtons labels={labels} onAnswer={onAnswer} />
+        </RevealedRatingPrompt>
+      )}
+    </View>
+  );
+}
+
+/**
+ * The Accept stage (#H-#M): "כן" (the stage's very first question, or
+ * any later readiness-recheck question) resolves straight into the
+ * existing normal Acceptance dwell-then-rating path (AcceptRatingReveal
+ * above), completely unchanged in meaning/framing. "לא" no longer
+ * leaves the trainee stuck -- it enters the unwillingness sub-flow
+ * instead: an acknowledgment of the current unwillingness itself
+ * (never treated as failure, never asking the trainee to evoke/
+ * strengthen the interfering sensation), this target's own configured
+ * Acceptance dwell, then the readiness question again -- looping, with
+ * a safe, defined exit once willingnessCapped (resolved in
+ * live/ArcLiveRenderer.tsx from arc/arcEngine.ts's
+ * isAcceptanceWillingnessLoopCapped): the sub-flow then auto-proceeds
+ * into the normal Acceptance path exactly as if "כן" had been chosen,
+ * rather than asking a further time -- never an unbounded loop.
+ *
+ * Every already-revealed unwillingness round's acknowledgment line
+ * stays visible (progressive append, matching this app's existing
+ * style throughout) as willingnessLoopCount grows across re-renders
+ * of this SAME mount (key={stage} at the call site, unchanged --
+ * "accept" is never itself the target of a loop-back the way
+ * Presence/Regulation are, so no per-round remount of the whole screen
+ * is needed, only of the currently-active round via
+ * AcceptanceUnwillingnessRound's own key).
+ */
 export function AcceptScreen({
   copy,
   labels,
   question,
-  onAnswer,
+  acceptanceDwellSeconds,
+  willingnessLoopCount,
+  willingnessCapped,
+  onWillingnessAnswer,
   onSelectRating,
   onContinueWithoutRating,
 }: {
   copy: ArcStageCopy;
   labels: YesNoLabels;
   question: string | null;
-  onAnswer: (yes: boolean) => void;
+  acceptanceDwellSeconds: number;
+  willingnessLoopCount: number;
+  willingnessCapped: boolean;
+  onWillingnessAnswer: (yes: boolean) => void;
   onSelectRating: (value: number) => void;
   onContinueWithoutRating: () => void;
 }) {
-  const [answered, setAnswered] = useState(false);
+  const [resolved, setResolved] = useState(false);
+
+  function handleAnswer(yes: boolean) {
+    onWillingnessAnswer(yes);
+    if (yes) setResolved(true);
+  }
+
+  const acknowledgedRounds = resolved ? willingnessLoopCount : Math.max(0, willingnessLoopCount - 1);
+
   return (
     <View>
       <Title copy={copy} />
-      {!answered ? (
-        <YesNoButtons
-          labels={labels}
-          onAnswer={(yes) => {
-            setAnswered(true);
-            onAnswer(yes);
-          }}
+      {willingnessLoopCount === 0 && !resolved && <YesNoButtons labels={labels} onAnswer={handleAnswer} />}
+      {willingnessLoopCount > 0 && (
+        <>
+          {Array.from({ length: acknowledgedRounds }, (_, index) => index + 1).map((round) => (
+            <RevealedLine key={round} text={getAcceptanceUnwillingnessAcknowledgment()} />
+          ))}
+          {!resolved && (
+            <AcceptanceUnwillingnessRound
+              key={willingnessLoopCount}
+              acceptanceDwellSeconds={acceptanceDwellSeconds}
+              capped={willingnessCapped}
+              labels={labels}
+              onDwellCapped={() => setResolved(true)}
+              onAnswer={handleAnswer}
+            />
+          )}
+        </>
+      )}
+      {resolved && (
+        <AcceptRatingReveal
+          acceptanceDwellSeconds={acceptanceDwellSeconds}
+          question={question}
+          onSelectRating={onSelectRating}
+          onContinueWithoutRating={onContinueWithoutRating}
         />
-      ) : (
-        <AcceptRatingReveal question={question} onSelectRating={onSelectRating} onContinueWithoutRating={onContinueWithoutRating} />
       )}
     </View>
   );
@@ -717,6 +844,7 @@ export function RegulationScreen({
 }) {
   const elapsedSeconds = useElapsedSeconds();
   const status = getInstructionTimingStatus(copy.segments ?? [], elapsedSeconds);
+  useContinueAvailableCue(status.complete);
   return (
     <View>
       <Text style={styles.title}>{copy.title}</Text>

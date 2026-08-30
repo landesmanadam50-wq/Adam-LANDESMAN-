@@ -35,10 +35,14 @@ import { createEmptyLiveState } from "../arc/types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
 import { getInlineRequiredRatingQuestion, getStageCopy } from "../arc/stageCopy.ts";
 import { getInstructionTimingStatus, INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "../arc/instructionTiming.ts";
+import { DEFAULT_DWELL_TIMES } from "../arc/dwellTimes.ts";
+import { isAcceptanceWillingnessLoopCapped } from "../arc/arcEngine.ts";
+import { ARC_CONFIG } from "../arc/config.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
 import { createInitialProgress } from "../program/progress.ts";
 import {
   advanceLiveSession,
+  applyAcceptanceWillingnessAnswer,
   applyActionCompletion,
   applyActionImageryCompleted,
   applyAlternativeAction,
@@ -70,6 +74,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     supportiveState: null,
     stateEncoding: null,
     internalAction: null,
+    stateDwellTimes: null,
     desiredIdentity: null,
     identityChallengeContext: null,
     identityInterferingEmotion: null,
@@ -77,6 +82,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityEncodingRegulationCue: null,
     identityEncoding: null,
     identityAction: null,
+    identityDwellTimes: null,
     habit: null,
     beneficialAction: null,
     preventiveAction: null,
@@ -687,7 +693,7 @@ test("BUG REGRESSION: the arc_thought_expand_presence (\"הרחבה\") screen re
 // end-to-end guard tying the real getStageCopy output through the
 // reveal timer and the merge handler, not just structural segment
 // shape (already covered separately in arc/stageCopy.test.ts).
-test("BUG REGRESSION: the Regulation (\"ויסות\") screen reveals the Desired State Level rating inline only after instruction+15s, remains on the same screen, and the existing ARC threshold/progression logic still receives the exact same value", () => {
+test("BUG REGRESSION: the Regulation (\"ויסות\") screen reveals the Desired State Level rating inline only after instruction+dwell, remains on the same screen, and the existing ARC threshold/progression logic still receives the exact same value", () => {
   const p = profile({ regulationTool: "נשימה 4-7-8" });
   const activeLayers: DevelopmentLayer[] = ["state"];
   const session: ArcLiveState = {
@@ -703,11 +709,17 @@ test("BUG REGRESSION: the Regulation (\"ויסות\") screen reveals the Desired
   assert.ok(copy.segments, "must be a timed/segmented screen, not the untimed 'segments: null' shape that renders an immediate Continue");
 
   const instructionSeconds = INSTRUCTION_TIMING.regulate;
-  const totalRevealSeconds = instructionSeconds + INLINE_RATING_REVEAL_DELAY_SECONDS;
+  // Dwell-time task: the trailing reveal segment is now this target's own
+  // configured Regulation dwell (arc/dwellTimes.ts) -- DEFAULT_DWELL_TIMES'
+  // value here, since `p` never customized regulationDwellSeconds --
+  // rather than the flat INLINE_RATING_REVEAL_DELAY_SECONDS this used to
+  // carry (that constant now governs only arc_thought_expand_presence's
+  // unrelated, unchanged Presence rating reveal).
+  const totalRevealSeconds = instructionSeconds + DEFAULT_DWELL_TIMES.regulationDwellSeconds;
   assert.equal(getInstructionTimingStatus(copy.segments, 0).complete, false, "hidden at t=0");
   assert.equal(getInstructionTimingStatus(copy.segments, instructionSeconds).complete, false, "still hidden the instant Regulation's own instruction finishes");
-  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds - 0.1).complete, false, "hidden one tick before instruction+15s");
-  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds).complete, true, "revealed exactly at instruction+15s, remaining on this same screen");
+  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds - 0.1).complete, false, "hidden one tick before instruction+dwell");
+  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds).complete, true, "revealed exactly at instruction+dwell, remaining on this same screen");
 
   // Selecting the rating stores it in the existing desiredStateRating
   // field, and the existing getProactiveStage threshold decides what
@@ -742,11 +754,12 @@ function simulateOnAcceptIntensityRating(
   return advanceLiveSession(hop.stage, withRating, p, activeLayers);
 }
 
-test("Feeling/intensity merge: the accept screen's own reveal gate (a single INLINE_RATING_REVEAL_DELAY_SECONDS placeholder segment -- accept has no instruction timing of its own to precede it, so the delay starts at answer-time) hides the recheck rating for the full 15s and reveals it exactly at 15s", () => {
-  const segments = [{ text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS }];
+test("Feeling/intensity merge: the accept screen's own reveal gate (a single dwell placeholder segment -- accept has no instruction timing of its own to precede it, so the delay starts at answer-time) hides the recheck rating for the full configured Acceptance dwell and reveals it exactly then -- dwell-time task: this is now the CURRENT target's own configured Acceptance dwell (arc/dwellTimes.ts), DEFAULT_DWELL_TIMES.acceptanceDwellSeconds here since unconfigured, not the flat INLINE_RATING_REVEAL_DELAY_SECONDS this used to hard-code", () => {
+  const acceptanceDwellSeconds = DEFAULT_DWELL_TIMES.acceptanceDwellSeconds;
+  const segments = [{ text: "", durationSeconds: acceptanceDwellSeconds }];
   assert.equal(getInstructionTimingStatus(segments, 0).complete, false, "hidden immediately after answering");
-  assert.equal(getInstructionTimingStatus(segments, INLINE_RATING_REVEAL_DELAY_SECONDS - 0.1).complete, false, "still hidden one tick before 15s");
-  assert.equal(getInstructionTimingStatus(segments, INLINE_RATING_REVEAL_DELAY_SECONDS).complete, true, "revealed exactly at 15s after answering");
+  assert.equal(getInstructionTimingStatus(segments, acceptanceDwellSeconds - 0.1).complete, false, "still hidden one tick before the dwell elapses");
+  assert.equal(getInstructionTimingStatus(segments, acceptanceDwellSeconds).complete, true, "revealed exactly once the configured Acceptance dwell has elapsed after answering");
 });
 
 test("Feeling/intensity merge: selecting the recheck rating on the accept screen produces the exact same stage/session as the old two-screen flow (accept -> sensation_check, entered separately) -- the correct existing intensity field is used, with no duplicate rating created", () => {
@@ -779,14 +792,55 @@ test("Feeling/intensity merge: selecting the recheck rating on the accept screen
   assert.notEqual(merged.stage, "sensation_check", "the old standalone recheck stage is never the literal next rendered stage once merged");
 });
 
-test("Feeling/intensity merge: answering accept's yes/no never itself advances the ArcStage -- it only stores acceptanceNeeded exactly as before; the stage only advances once the rating (or the capped no-rating Continue) fires", () => {
+test("Feeling/intensity merge: answering accept's willingness question (either the initial one, or a later readiness-recheck) never itself advances the ArcStage -- the stage only advances once the rating (or the capped no-rating Continue) fires", () => {
   const session = createEmptyLiveState();
-  const answeredYes = applyYesNoAnswer("accept", session, true);
+  const answeredYes = applyAcceptanceWillingnessAnswer(session, true);
   assert.equal(answeredYes.acceptanceNeeded, false, "yes -> acceptanceNeeded false, same existing mapping as before the merge");
   assert.equal(answeredYes.currentArcStage, session.currentArcStage, "answering alone never advances currentArcStage");
+  assert.equal(answeredYes.acceptanceWillingnessLoopCount, 0, "a 'yes' never starts an unwillingness round");
 
-  const answeredNo = applyYesNoAnswer("accept", session, false);
+  const answeredNo = applyAcceptanceWillingnessAnswer(session, false);
   assert.equal(answeredNo.acceptanceNeeded, true, "no -> acceptanceNeeded true, same existing mapping as before the merge");
+  assert.equal(answeredNo.currentArcStage, session.currentArcStage, "answering alone never advances currentArcStage");
+  assert.equal(answeredNo.acceptanceWillingnessLoopCount, 1, "no -> starts (or advances) the unwillingness sub-flow's own dedicated counter");
+});
+
+// --- Dwell-time task: the Accept "לא" willingness sub-flow (#H-#M).
+// applyAcceptanceWillingnessAnswer + isAcceptanceWillingnessLoopCapped
+// are the pure pieces live/screens.tsx's AcceptScreen composes into the
+// unwillingness-acknowledgment -> dwell -> readiness-recheck loop.
+
+test("acceptanceWillingnessLoopCount starts at 0 and is untouched by unrelated session state -- createEmptyLiveState's own baseline", () => {
+  assert.equal(createEmptyLiveState().acceptanceWillingnessLoopCount, 0);
+});
+
+test("repeated 'no' answers advance acceptanceWillingnessLoopCount by exactly one each time, independent of loopIterationCount (the UNRELATED accept -> sensation_check intensity-recheck loop)", () => {
+  let session = { ...createEmptyLiveState(), loopIterationCount: 2 };
+  session = applyAcceptanceWillingnessAnswer(session, false);
+  assert.equal(session.acceptanceWillingnessLoopCount, 1);
+  assert.equal(session.loopIterationCount, 2, "the unrelated intensity-recheck loop counter must never be perturbed by this sub-flow");
+  session = applyAcceptanceWillingnessAnswer(session, false);
+  assert.equal(session.acceptanceWillingnessLoopCount, 2);
+  session = applyAcceptanceWillingnessAnswer(session, false);
+  assert.equal(session.acceptanceWillingnessLoopCount, 3);
+  assert.equal(session.loopIterationCount, 2, "still untouched after three unwillingness rounds");
+});
+
+test("isAcceptanceWillingnessLoopCapped reuses the exact same cap (ARC_CONFIG.safety.maxLoopIterations) every other ARC loop already uses -- not capped below it, capped at and above it", () => {
+  assert.equal(isAcceptanceWillingnessLoopCapped(0), false);
+  assert.equal(isAcceptanceWillingnessLoopCapped(ARC_CONFIG.safety.maxLoopIterations - 1), false);
+  assert.equal(isAcceptanceWillingnessLoopCapped(ARC_CONFIG.safety.maxLoopIterations), true);
+  assert.equal(isAcceptanceWillingnessLoopCapped(ARC_CONFIG.safety.maxLoopIterations + 1), true);
+});
+
+test("the willingness sub-flow has a defined, safe exit once capped -- three 'no' answers (matching maxLoopIterations=3) reach the cap, and a session at that count is reported capped, matching AcceptScreen's own 'auto-proceed into the normal Acceptance path instead of asking again' behavior", () => {
+  let session = createEmptyLiveState();
+  for (let i = 0; i < ARC_CONFIG.safety.maxLoopIterations; i++) {
+    assert.equal(isAcceptanceWillingnessLoopCapped(session.acceptanceWillingnessLoopCount), false, `round ${i + 1} must still be allowed to ask again`);
+    session = applyAcceptanceWillingnessAnswer(session, false);
+  }
+  assert.equal(session.acceptanceWillingnessLoopCount, ARC_CONFIG.safety.maxLoopIterations);
+  assert.equal(isAcceptanceWillingnessLoopCapped(session.acceptanceWillingnessLoopCount), true, "capped after exactly maxLoopIterations rounds -- no unbounded loop");
 });
 
 test("Feeling/intensity merge: once the loop-safety cap is reached, accept's own transition (peeked by live/ArcLiveRenderer.tsx before offering a rating) goes straight to regulate -- no rating is asked for, matching the pre-merge capped behavior", () => {
@@ -865,7 +919,11 @@ test("visual refinement: at the exact moment the Regulation/Desired-State rating
   const copy = getStageCopy("regulate", p, session, activeLayers);
   assert.ok(copy.segments);
 
-  const totalRevealSeconds = INSTRUCTION_TIMING.regulate + INLINE_RATING_REVEAL_DELAY_SECONDS;
+  // Dwell-time task: the trailing reveal segment is now this target's own
+  // configured Regulation dwell (DEFAULT_DWELL_TIMES here, since `p` never
+  // customized it), not the flat INLINE_RATING_REVEAL_DELAY_SECONDS this
+  // used to carry.
+  const totalRevealSeconds = INSTRUCTION_TIMING.regulate + DEFAULT_DWELL_TIMES.regulationDwellSeconds;
   const atReveal = getInstructionTimingStatus(copy.segments, totalRevealSeconds);
   assert.equal(atReveal.complete, true, "reveal timing itself is unchanged by this purely-presentational update");
 
@@ -873,10 +931,11 @@ test("visual refinement: at the exact moment the Regulation/Desired-State rating
   assert.deepEqual(realInstructionText, [copy.segments[0].text], "Regulation's own instruction line is still there, unreplaced, exactly when the rating becomes available");
 });
 
-test("visual refinement: the accept-triggered intensity rating's own reveal gate is unchanged -- still exactly INLINE_RATING_REVEAL_DELAY_SECONDS after answering, hidden strictly before it", () => {
-  const gateSegments = [{ text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS }];
-  assert.equal(getInstructionTimingStatus(gateSegments, INLINE_RATING_REVEAL_DELAY_SECONDS - 0.1).complete, false, "still hidden one tick before the existing reveal time");
-  assert.equal(getInstructionTimingStatus(gateSegments, INLINE_RATING_REVEAL_DELAY_SECONDS).complete, true, "revealed exactly at the existing reveal time, not before");
+test("visual refinement: the accept-triggered intensity rating's own reveal gate uses the CURRENT target's own configured Acceptance dwell (dwell-time task) -- still hidden strictly before it, revealed exactly at it", () => {
+  const acceptanceDwellSeconds = DEFAULT_DWELL_TIMES.acceptanceDwellSeconds;
+  const gateSegments = [{ text: "", durationSeconds: acceptanceDwellSeconds }];
+  assert.equal(getInstructionTimingStatus(gateSegments, acceptanceDwellSeconds - 0.1).complete, false, "still hidden one tick before the reveal time");
+  assert.equal(getInstructionTimingStatus(gateSegments, acceptanceDwellSeconds).complete, true, "revealed exactly at the reveal time, not before");
 });
 
 // --- Visual-refinement task (concise question line): the ONE fixed

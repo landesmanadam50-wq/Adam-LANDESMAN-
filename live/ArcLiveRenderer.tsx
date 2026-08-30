@@ -18,11 +18,14 @@ import {
   getAvailableProactiveTargets,
   getAvailableReactiveExperiences,
   getNextArcStage,
+  isAcceptanceWillingnessLoopCapped,
   needsProactiveTargetSelection,
   needsReactiveStateSelection,
   resolveActionDuration,
   resolveActPhase,
+  resolveEncodingTarget,
 } from "../arc/arcEngine.ts";
+import { resolveDwellSecondsFor } from "../arc/dwellTimes.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
 import type { TimerRun } from "../data/storage.ts";
 import type { DeferralOption } from "../data/reminders.ts";
@@ -86,7 +89,7 @@ export interface ArcLiveRendererProps {
   onRegulateContinue: () => void;
   onPresenceExperienceRating: (value: number) => void;
   onRegulationExperienceRating: (value: number) => void;
-  onAcceptAnswer: (yes: boolean) => void;
+  onAcceptWillingnessAnswer: (yes: boolean) => void;
   onAcceptIntensityRating: (value: number) => void;
   onAcceptContinueWithoutRating: () => void;
   pendingAlternativeAction: string;
@@ -217,7 +220,7 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       // once the loop-safety cap has been reached (accept's own
       // transition goes straight to "regulate" in that case, exactly as
       // it always has) -- question stays null then, and the screen
-      // falls back to a plain Continue once the delay elapses.
+      // falls back to a plain Continue once the dwell elapses.
       // Otherwise the inline prompt is the fixed, concise
       // getInlineRequiredRatingQuestion("intensity") line, not
       // sensation_check's own title+body copy -- that copy is untouched
@@ -230,7 +233,24 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       // (not loopIterationCount) is enough here: unlike
       // Presence/Regulation, "accept" is never the stage looped back TO
       // (its own loop-back target is "stay", a different stage value,
-      // which already remounts on its own).
+      // which already remounts on its own) -- the NEW unwillingness
+      // sub-flow's own rounds instead remount individually via
+      // AcceptanceUnwillingnessRound's own key, inside the same
+      // AcceptScreen mount (see live/screens.tsx).
+      //
+      // Dwell-time task: the CURRENT target's own configured Acceptance
+      // dwell (arc/dwellTimes.ts) governs both the normal "כן" path and
+      // every round of the "לא" unwillingness sub-flow -- resolved once
+      // here, from the SAME layer resolution every other stage uses
+      // (never another target's configuration), and passed straight
+      // through to AcceptScreen.
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: session.triggerType,
+        selectedTarget: session.selectedTarget,
+        buildProfile: profile,
+      });
+      const acceptanceDwellSeconds = resolveDwellSecondsFor("acceptanceDwellSeconds", layer, profile);
       const peek = getNextArcStage("accept", session, profile, activeLayers);
       const question = peek.stage === "sensation_check" ? getInlineRequiredRatingQuestion("intensity") : null;
       return (
@@ -239,7 +259,10 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           copy={copy}
           labels={getYesNoLabels(stage)}
           question={question}
-          onAnswer={props.onAcceptAnswer}
+          acceptanceDwellSeconds={acceptanceDwellSeconds}
+          willingnessLoopCount={session.acceptanceWillingnessLoopCount}
+          willingnessCapped={isAcceptanceWillingnessLoopCapped(session.acceptanceWillingnessLoopCount)}
+          onWillingnessAnswer={props.onAcceptWillingnessAnswer}
           onSelectRating={props.onAcceptIntensityRating}
           onContinueWithoutRating={props.onAcceptContinueWithoutRating}
         />

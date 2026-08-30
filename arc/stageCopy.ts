@@ -28,6 +28,7 @@ import {
 } from "./instructions.ts";
 import type { InstructionSegment } from "./instructionTiming.ts";
 import { INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "./instructionTiming.ts";
+import { resolveDwellSecondsFor, withTrailingDwellSegment } from "./dwellTimes.ts";
 
 export type ArcStageInputKind =
   | "triggerSelect"
@@ -96,6 +97,25 @@ export function getInlineRequiredRatingQuestion(kind: InlineRequiredRatingKind):
     case "intensity":
       return "מה עוצמת התחושה עכשיו?";
   }
+}
+
+/**
+ * The Accept stage's "לא" sub-flow (see live/screens.tsx's AcceptScreen):
+ * acknowledges the trainee's current unwillingness itself, as a thing to
+ * notice/accept rather than a failure -- never critical, never asking
+ * the trainee to intentionally evoke/strengthen/maintain the interfering
+ * sensation. Shown once per unwillingness round (repeated "לא" answers
+ * repeat this same line, progressively appended -- never replacing what
+ * was already shown -- up to the loop-safety cap; see
+ * arc/arcEngine.ts's isAcceptanceWillingnessLoopCapped).
+ */
+export function getAcceptanceUnwillingnessAcknowledgment(): string {
+  return "שים לב לכך שכרגע אינך מוכן לקבל את התחושה. אין צורך לשנות את זה.";
+}
+
+/** The readiness re-check asked again after each unwillingness round's own configured Acceptance dwell has completed -- "כן" proceeds into the existing normal Acceptance path; "לא" repeats the unwillingness round, capped. */
+export function getAcceptanceReadinessRecheckQuestion(): string {
+  return "האם אתה מוכן עכשיו לאפשר לתחושה להיות כפי שהיא?";
 }
 
 const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
@@ -273,12 +293,28 @@ export function getStageCopy(
       // Stay/Presence's. Two progressive segments, not one: the current
       // sensation is offered first, breath awareness only joins once the
       // trainee has had the configured minimum time with the sensation
-      // alone (see arc/instructionTiming.ts).
-      const segments: InstructionSegment[] = [
+      // alone (see arc/instructionTiming.ts). Dwell-time task: this is
+      // the "Sensation / Awareness" dwell category -- once both
+      // instruction segments above have revealed, ONE trailing dwell
+      // segment (arc/dwellTimes.ts) sized from the CURRENT target's own
+      // configuration (never another target's) is appended, replacing
+      // the flat +15s this stage used to carry on each segment.
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: state.triggerType,
+        selectedTarget: state.selectedTarget,
+        buildProfile: profile,
+      });
+      const dwellSeconds = resolveDwellSecondsFor("sensationDwellSeconds", layer, profile);
+      const instructionSegments: InstructionSegment[] = [
         { text: "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה.", durationSeconds: INSTRUCTION_TIMING.stayCurrentSensation },
         { text: "שים לב גם לנשימה כפי שהיא מתרחשת מעצמה.", durationSeconds: INSTRUCTION_TIMING.stayNaturalBreath },
       ];
-      return { title: "הישאר עם זה", body: segments.map((segment) => segment.text).join(" "), segments };
+      return {
+        title: "הישאר עם זה",
+        body: instructionSegments.map((segment) => segment.text).join(" "),
+        segments: withTrailingDwellSegment(instructionSegments, dwellSeconds),
+      };
     }
 
     case "accept":
@@ -301,18 +337,26 @@ export function getStageCopy(
       // Timing-update task: the Desired State Level check (proactive) /
       // intensity recheck (reactive) that used to live on its own
       // separate page immediately after Regulation is now shown inline
-      // on THIS page instead (see live/screens.tsx's RegulationScreen),
-      // once this instruction's own timing PLUS the additional
-      // INLINE_RATING_REVEAL_DELAY_SECONDS have both elapsed -- same
-      // trailing-empty-segment mechanism as arc_thought_expand_presence
-      // above.
+      // on THIS page instead (see live/screens.tsx's RegulationScreen).
+      // Dwell-time task: the rating now reveals once this instruction's
+      // own timing PLUS the CURRENT target's own configured Regulation
+      // dwell (arc/dwellTimes.ts) have both elapsed -- this stage's own
+      // dedicated dwell category, which replaces the flat
+      // INLINE_RATING_REVEAL_DELAY_SECONDS this trailing segment used to
+      // carry (that constant is now used only by
+      // arc_thought_expand_presence above, an unrelated, unchanged
+      // Presence concept).
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: state.triggerType,
+        selectedTarget: state.selectedTarget,
+        buildProfile: profile,
+      });
+      const dwellSeconds = resolveDwellSecondsFor("regulationDwellSeconds", layer, profile);
       const text = profile.regulationTool
         ? `שים לב לתחושה שלך עכשיו. השתמש בכלי הוויסות שלך: ${profile.regulationTool}.`
         : "שים לב לתחושה שלך עכשיו.";
-      const segments: InstructionSegment[] = [
-        { text, durationSeconds: INSTRUCTION_TIMING.regulate },
-        { text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS },
-      ];
+      const segments = withTrailingDwellSegment([{ text, durationSeconds: INSTRUCTION_TIMING.regulate }], dwellSeconds);
       return { title: "ויסות", body: text, segments };
     }
 
@@ -409,7 +453,18 @@ export function getStageCopy(
         segments.push({ text: "קח רגע לקבע את התחושה החדשה.", durationSeconds: INSTRUCTION_TIMING.encodeFallback });
       }
 
-      return { title: "קיבוע", body: segments.map((segment) => segment.text).join(" "), segments };
+      // Dwell-time task: the "Encoding / Body-Language" dwell category --
+      // ONE trailing dwell segment (arc/dwellTimes.ts), sized from the
+      // CURRENT target's own configuration, appended after this whole
+      // encode instruction sequence finishes revealing (never per
+      // sub-piece -- dwell is a single post-instruction period, not
+      // added once per segment).
+      const dwellSeconds = resolveDwellSecondsFor("encodingDwellSeconds", layer, profile);
+      return {
+        title: "קיבוע",
+        body: segments.map((segment) => segment.text).join(" "),
+        segments: withTrailingDwellSegment(segments, dwellSeconds),
+      };
     }
 
     case "act": {
@@ -450,7 +505,7 @@ export function getStageCopy(
       // way, from the same current target's own map, so they can never
       // diverge onto different actions or mix in another target's
       // Body-Language Cue.
-      const { actionLabel: currentAction, encoding } = resolveEncodingTarget({
+      const { layer, actionLabel: currentAction, encoding } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
         selectedTarget: state.selectedTarget,
@@ -472,15 +527,19 @@ export function getStageCopy(
         // placeholder when there isn't one. Has its own configured
         // minimum-practice duration, separate from actionDuration (the
         // real Action Timer, which hasn't started yet -- see
-        // arc/actionTimer.ts).
+        // arc/actionTimer.ts). Dwell-time task: the "Action Imagery"
+        // dwell category -- ONE trailing dwell segment (arc/dwellTimes.ts),
+        // sized from the CURRENT target's own configuration, appended
+        // once this instruction has finished revealing.
         const imagine = currentAction
           ? `דמיין את עצמך מבצע עכשיו את ${currentAction}`
           : "דמיין את עצמך מבצע עכשיו את הפעולה שבחרת";
         const text = bodyLanguageCue ? `${imagine}, תוך שמירה על ${bodyLanguageCue}.` : `${imagine}.`;
+        const dwellSeconds = resolveDwellSecondsFor("actionImageryDwellSeconds", layer, profile);
         return {
           title: "דמיון הפעולה",
           body: text,
-          segments: [{ text, durationSeconds: INSTRUCTION_TIMING.actionImagery }],
+          segments: withTrailingDwellSegment([{ text, durationSeconds: INSTRUCTION_TIMING.actionImagery }], dwellSeconds),
         };
       }
 

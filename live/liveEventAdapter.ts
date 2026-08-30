@@ -87,8 +87,6 @@ export function resolveSensationLocation(preset: string, custom: string, unclear
 
 export function applyYesNoAnswer(stage: ArcStage, session: ArcLiveState, yes: boolean): ArcLiveState {
   switch (stage) {
-    case "accept":
-      return { ...session, acceptanceNeeded: !yes };
     case "preventive_action_check":
       return { ...session, wantsPreventiveAction: yes };
     case "reactive_transition_check":
@@ -96,6 +94,33 @@ export function applyYesNoAnswer(stage: ArcStage, session: ArcLiveState, yes: bo
     default:
       return session;
   }
+}
+
+/**
+ * The Accept screen's "are you willing to accept this sensation as it
+ * is?" question -- asked both as the stage's very first question and,
+ * if answered "לא", again after each acceptance-of-unwillingness dwell
+ * round (live/screens.tsx's AcceptScreen) -- shares this one handler
+ * either way, rather than "accept" going through the generic
+ * applyYesNoAnswer above (that only ever covers stages where every
+ * answer routes through the SAME simple field write; Accept's "לא" also
+ * needs to advance its own dedicated loop counter, see below).
+ *
+ * "כן" resolves the question (acceptanceNeeded false), letting the
+ * screen proceed into the existing normal Acceptance dwell-then-rating
+ * flow. "לא" records that another round of the unwillingness sub-flow
+ * is starting, via its own dedicated counter
+ * (acceptanceWillingnessLoopCount) -- deliberately separate from
+ * loopIterationCount, which governs the UNRELATED accept ->
+ * sensation_check intensity-recheck loop and must not be perturbed by
+ * how many times the trainee said "not yet" here. Never itself advances
+ * the ArcStage (still "accept" either way) -- only the eventual rating
+ * selection or no-rating Continue does, exactly as answering "כן" alone
+ * already worked before this addition.
+ */
+export function applyAcceptanceWillingnessAnswer(session: ArcLiveState, yes: boolean): ArcLiveState {
+  if (yes) return { ...session, acceptanceNeeded: false };
+  return { ...session, acceptanceNeeded: true, acceptanceWillingnessLoopCount: session.acceptanceWillingnessLoopCount + 1 };
 }
 
 export function applyTargetSelection(session: ArcLiveState, target: DevelopmentLayer): ArcLiveState {

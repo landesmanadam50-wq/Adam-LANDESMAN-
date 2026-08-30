@@ -6,6 +6,7 @@ import { createEmptyLiveState } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { containsInductionPattern } from "./instructions.ts";
 import { INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "./instructionTiming.ts";
+import { DEFAULT_DWELL_TIMES } from "./dwellTimes.ts";
 
 function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
   return {
@@ -19,6 +20,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     supportiveState: "חמלה",
     stateEncoding: null,
     internalAction: "סריקת גוף",
+    stateDwellTimes: null,
     desiredIdentity: null,
     identityChallengeContext: null,
     identityInterferingEmotion: null,
@@ -26,6 +28,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityEncodingRegulationCue: null,
     identityEncoding: null,
     identityAction: null,
+    identityDwellTimes: null,
     habit: null,
     beneficialAction: null,
     preventiveAction: null,
@@ -756,14 +759,16 @@ test("arc_thought_expand_presence carries its own instruction segment plus a tra
   assert.equal(expand.body, expand.segments?.[0].text, "body stays exactly the spoken instruction text, unaffected by the trailing placeholder");
 });
 
-test("Stay/Presence reveals the current-sensation segment first, then the natural-breath segment -- the exact spec example, 4s then 8s", () => {
+test("Stay/Presence reveals the current-sensation segment first, then the natural-breath segment, then a trailing dwell segment sized from the CURRENT target's own configured Sensation/Awareness dwell (default 8s, unconfigured here) -- the exact spec example, 4s then 8s then the dwell", () => {
   const p = profile();
   const copy = getStageCopy("stay", p, liveState(), ["state"]);
-  assert.equal(copy.segments?.length, 2);
+  assert.equal(copy.segments?.length, 3, "the two instruction segments plus the trailing dwell segment");
   assert.equal(copy.segments?.[0].text, "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה.");
   assert.equal(copy.segments?.[0].durationSeconds, INSTRUCTION_TIMING.stayCurrentSensation);
   assert.equal(copy.segments?.[1].text, "שים לב גם לנשימה כפי שהיא מתרחשת מעצמה.");
   assert.equal(copy.segments?.[1].durationSeconds, INSTRUCTION_TIMING.stayNaturalBreath);
+  assert.equal(copy.segments?.[2].text, "", "the trailing dwell segment carries no text of its own");
+  assert.equal(copy.segments?.[2].durationSeconds, DEFAULT_DWELL_TIMES.sensationDwellSeconds);
 });
 
 test("Stay/Presence's breath segment stays non-regulatory -- no slow/deepen/extend-exhale/rhythm-change wording, that stays exclusive to Regulation", () => {
@@ -775,24 +780,24 @@ test("Stay/Presence's breath segment stays non-regulatory -- no slow/deepen/exte
   }
 });
 
-test("Regulation has its own instruction segment and duration, separate from Stay/Presence's, plus a trailing rating-reveal-delay placeholder for the inline-merged Desired State/intensity rating", () => {
+test("Regulation has its own instruction segment and duration, separate from Stay/Presence's, plus a trailing dwell segment (the CURRENT target's own configured Regulation dwell, default 12s unconfigured here) for the inline-merged Desired State/intensity rating", () => {
   const p = profile({ regulationTool: "נשימה 4-7-8" });
   const copy = getStageCopy("regulate", p, liveState(), ["state"]);
-  assert.equal(copy.segments?.length, 2, "the instruction segment plus the trailing rating-reveal-delay segment");
+  assert.equal(copy.segments?.length, 2, "the instruction segment plus the trailing dwell segment");
   assert.equal(copy.segments?.[0].durationSeconds, INSTRUCTION_TIMING.regulate);
   assert.notEqual(INSTRUCTION_TIMING.regulate, INSTRUCTION_TIMING.stayCurrentSensation, "sanity: Regulation's timing config is its own, not reused from Stay");
-  assert.equal(copy.segments?.[1].durationSeconds, INLINE_RATING_REVEAL_DELAY_SECONDS);
+  assert.equal(copy.segments?.[1].durationSeconds, DEFAULT_DWELL_TIMES.regulationDwellSeconds, "the flat INLINE_RATING_REVEAL_DELAY_SECONDS this trailing segment used to carry is now this stage's own configurable Regulation dwell");
   assert.equal(copy.segments?.[1].text, "", "the trailing placeholder carries no text of its own");
   assert.equal(copy.body, copy.segments?.[0].text, "body stays exactly the spoken instruction text, unaffected by the trailing placeholder");
 });
 
-test("Encoding preserves its exact 4-piece order (Updated Sensation -> Short Regulation Cue -> Body-Language -> Mantra) as four separate timed segments", () => {
+test("Encoding preserves its exact 4-piece order (Updated Sensation -> Short Regulation Cue -> Body-Language -> Mantra) as four separate timed segments, plus a trailing dwell segment (the CURRENT target's own configured Encoding dwell, default 10s unconfigured here)", () => {
   const p = profile({
     stateEncodingRegulationCue: "נשיפה רגועה",
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני בטוח כאן" },
   });
   const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
-  assert.equal(copy.segments?.length, 4);
+  assert.equal(copy.segments?.length, 5, "the four instruction segments plus the trailing dwell segment");
   assert.match(copy.segments![0].text, /שים לב לתחושה שלך עכשיו/);
   assert.equal(copy.segments![0].durationSeconds, INSTRUCTION_TIMING.encodeUpdatedSensation);
   assert.match(copy.segments![1].text, /נשיפה רגועה/);
@@ -801,27 +806,37 @@ test("Encoding preserves its exact 4-piece order (Updated Sensation -> Short Reg
   assert.equal(copy.segments![2].durationSeconds, INSTRUCTION_TIMING.encodeBodyLanguageCue);
   assert.match(copy.segments![3].text, /אני בטוח כאן/);
   assert.equal(copy.segments![3].durationSeconds, INSTRUCTION_TIMING.encodeIdentityMantra);
-  assert.equal(copy.body, copy.segments!.map((seg) => seg.text).join(" "), "body is exactly the joined segments, same text as before");
+  assert.equal(copy.segments![4].text, "", "the trailing dwell segment carries no text of its own");
+  assert.equal(copy.segments![4].durationSeconds, DEFAULT_DWELL_TIMES.encodingDwellSeconds);
+  assert.equal(
+    copy.body,
+    copy.segments!.slice(0, 4).map((seg) => seg.text).join(" "),
+    "body is exactly the joined instruction segments (never the trailing dwell placeholder), same text as before"
+  );
 });
 
-test("Encoding's fallback segment (nothing configured) is appended after the always-present sensation-notice segment, not an untimed instant screen", () => {
+test("Encoding's fallback segment (nothing configured) is appended after the always-present sensation-notice segment, not an untimed instant screen -- plus its own trailing dwell segment", () => {
   const p = profile({ stateEncoding: null, stateEncodingRegulationCue: null, regulationTool: null });
   const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
-  assert.equal(copy.segments?.length, 2, "the sensation-notice segment plus the fallback segment");
+  assert.equal(copy.segments?.length, 3, "the sensation-notice segment, the fallback segment, plus the trailing dwell segment");
   assert.equal(copy.segments?.[0].durationSeconds, INSTRUCTION_TIMING.encodeUpdatedSensation);
   assert.equal(copy.segments?.[1].text, "קח רגע לקבע את התחושה החדשה.");
   assert.equal(copy.segments?.[1].durationSeconds, INSTRUCTION_TIMING.encodeFallback);
+  assert.equal(copy.segments?.[2].text, "");
+  assert.equal(copy.segments?.[2].durationSeconds, DEFAULT_DWELL_TIMES.encodingDwellSeconds);
 });
 
-test("Action Imagery carries its own configured duration, distinct from every instruction stage above", () => {
+test("Action Imagery carries its own configured duration, distinct from every instruction stage above, plus a trailing dwell segment (the CURRENT target's own configured Action Imagery dwell, default 8s unconfigured here)", () => {
   const p = profile({
     beneficialAction: "לגשת ולפתוח שיחה",
     stateEncoding: null,
   });
   const base = { triggerType: "reactive_urge" as const, plannedActionConfirmed: true };
   const imagery = getStageCopy("act", p, liveState(base), ["habit"]);
-  assert.equal(imagery.segments?.length, 1);
+  assert.equal(imagery.segments?.length, 2, "the instruction segment plus the trailing dwell segment");
   assert.equal(imagery.segments?.[0].durationSeconds, INSTRUCTION_TIMING.actionImagery);
+  assert.equal(imagery.segments?.[1].text, "");
+  assert.equal(imagery.segments?.[1].durationSeconds, DEFAULT_DWELL_TIMES.actionImageryDwellSeconds);
 });
 
 test("the actual timed Action ('performing') carries segments: null -- it is governed by the separate Action Timer, never instruction segments -- and is reached directly once Action Imagery completes, with no standalone Action Preparation phase in between", () => {

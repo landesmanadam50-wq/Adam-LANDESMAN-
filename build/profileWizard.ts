@@ -55,9 +55,10 @@
  * (old data from before ArcProgramSelection persistence existed).
  */
 
-import type { ArcBuildProfile, EncodingProfile } from "../arc/types.ts";
+import type { ArcBuildProfile, DwellTimes, EncodingProfile } from "../arc/types.ts";
 import type { ArcProgramSelection, KnownProgramPath } from "../program/programTypes.ts";
 import { deriveNeedsFromLegacyProgramPath, resolveCurrentPreset } from "../program/selection.ts";
+import { clampDwellSeconds, DEFAULT_DWELL_TIMES } from "../arc/dwellTimes.ts";
 
 const LEGACY_PROGRAM_PATHS: KnownProgramPath[] = [
   "standard_3_week",
@@ -97,6 +98,7 @@ export type ProfileStep =
   | "identityEncodingRegulationCue"
   | "identityMantra"
   | "identityBodyLanguageCue"
+  | "dwellTimes"
   | "review";
 
 /**
@@ -149,6 +151,7 @@ export const STATE_ARC_STEP_ORDER: ProfileStep[] = [
   "stateEncodingRegulationCue",
   "stateMantra",
   "stateBodyLanguageCue",
+  "dwellTimes",
   "review",
 ];
 
@@ -161,6 +164,7 @@ export const IDENTITY_ARC_STEP_ORDER: ProfileStep[] = [
   "identityEncodingRegulationCue",
   "identityMantra",
   "identityBodyLanguageCue",
+  "dwellTimes",
   "review",
 ];
 
@@ -181,6 +185,18 @@ export interface ProfileDraft {
   stateEncodingRegulationCue: string;
   stateMantra: string;
   stateBodyLanguageCue: string;
+  /**
+   * The state layer's own configured dwell times (arc/dwellTimes.ts),
+   * kept as strings for direct TextInput binding -- see BUILD-ARC's
+   * "זמן שהייה" step (build/ArcMapScreen.tsx). Parsed and clamped into
+   * ArcBuildProfile.stateDwellTimes only at buildProfileFromDraft time,
+   * never earlier.
+   */
+  stateSensationDwellSeconds: string;
+  stateAcceptanceDwellSeconds: string;
+  stateRegulationDwellSeconds: string;
+  stateEncodingDwellSeconds: string;
+  stateActionImageryDwellSeconds: string;
 
   desiredIdentity: string;
   identityChallengeContext: string;
@@ -191,6 +207,12 @@ export interface ProfileDraft {
   identityEncodingRegulationCue: string;
   identityMantra: string;
   identityBodyLanguageCue: string;
+  /** The identity layer's own configured dwell times, parallel to the state fields above -- never mixed with them. */
+  identitySensationDwellSeconds: string;
+  identityAcceptanceDwellSeconds: string;
+  identityRegulationDwellSeconds: string;
+  identityEncodingDwellSeconds: string;
+  identityActionImageryDwellSeconds: string;
 
   habit: string;
   beneficialAction: string;
@@ -215,6 +237,11 @@ export function createEmptyDraft(): ProfileDraft {
     stateEncodingRegulationCue: "",
     stateMantra: "",
     stateBodyLanguageCue: "",
+    stateSensationDwellSeconds: String(DEFAULT_DWELL_TIMES.sensationDwellSeconds),
+    stateAcceptanceDwellSeconds: String(DEFAULT_DWELL_TIMES.acceptanceDwellSeconds),
+    stateRegulationDwellSeconds: String(DEFAULT_DWELL_TIMES.regulationDwellSeconds),
+    stateEncodingDwellSeconds: String(DEFAULT_DWELL_TIMES.encodingDwellSeconds),
+    stateActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.actionImageryDwellSeconds),
     desiredIdentity: "",
     identityChallengeContext: "",
     identityInterferingEmotion: "",
@@ -223,6 +250,11 @@ export function createEmptyDraft(): ProfileDraft {
     identityEncodingRegulationCue: "",
     identityMantra: "",
     identityBodyLanguageCue: "",
+    identitySensationDwellSeconds: String(DEFAULT_DWELL_TIMES.sensationDwellSeconds),
+    identityAcceptanceDwellSeconds: String(DEFAULT_DWELL_TIMES.acceptanceDwellSeconds),
+    identityRegulationDwellSeconds: String(DEFAULT_DWELL_TIMES.regulationDwellSeconds),
+    identityEncodingDwellSeconds: String(DEFAULT_DWELL_TIMES.encodingDwellSeconds),
+    identityActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.actionImageryDwellSeconds),
     habit: "",
     beneficialAction: "",
     hasPreventiveAction: null,
@@ -272,6 +304,13 @@ export function draftFromProfileAndSelection(
     stateEncodingRegulationCue: profile.stateEncodingRegulationCue ?? "",
     stateMantra: profile.stateEncoding?.mantra ?? "",
     stateBodyLanguageCue: profile.stateEncoding?.bodyLanguageCue ?? "",
+    stateSensationDwellSeconds: String(profile.stateDwellTimes?.sensationDwellSeconds ?? DEFAULT_DWELL_TIMES.sensationDwellSeconds),
+    stateAcceptanceDwellSeconds: String(profile.stateDwellTimes?.acceptanceDwellSeconds ?? DEFAULT_DWELL_TIMES.acceptanceDwellSeconds),
+    stateRegulationDwellSeconds: String(profile.stateDwellTimes?.regulationDwellSeconds ?? DEFAULT_DWELL_TIMES.regulationDwellSeconds),
+    stateEncodingDwellSeconds: String(profile.stateDwellTimes?.encodingDwellSeconds ?? DEFAULT_DWELL_TIMES.encodingDwellSeconds),
+    stateActionImageryDwellSeconds: String(
+      profile.stateDwellTimes?.actionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.actionImageryDwellSeconds
+    ),
     desiredIdentity: profile.desiredIdentity ?? "",
     identityChallengeContext: profile.identityChallengeContext ?? "",
     identityInterferingEmotion: profile.identityInterferingEmotion ?? "",
@@ -280,6 +319,13 @@ export function draftFromProfileAndSelection(
     identityEncodingRegulationCue: profile.identityEncodingRegulationCue ?? "",
     identityMantra: profile.identityEncoding?.mantra ?? "",
     identityBodyLanguageCue: profile.identityEncoding?.bodyLanguageCue ?? "",
+    identitySensationDwellSeconds: String(profile.identityDwellTimes?.sensationDwellSeconds ?? DEFAULT_DWELL_TIMES.sensationDwellSeconds),
+    identityAcceptanceDwellSeconds: String(profile.identityDwellTimes?.acceptanceDwellSeconds ?? DEFAULT_DWELL_TIMES.acceptanceDwellSeconds),
+    identityRegulationDwellSeconds: String(profile.identityDwellTimes?.regulationDwellSeconds ?? DEFAULT_DWELL_TIMES.regulationDwellSeconds),
+    identityEncodingDwellSeconds: String(profile.identityDwellTimes?.encodingDwellSeconds ?? DEFAULT_DWELL_TIMES.encodingDwellSeconds),
+    identityActionImageryDwellSeconds: String(
+      profile.identityDwellTimes?.actionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.actionImageryDwellSeconds
+    ),
     habit: profile.habit ?? "",
     beneficialAction: profile.beneficialAction ?? "",
     hasPreventiveAction: profile.preventiveAction !== null,
@@ -399,6 +445,34 @@ export function isIdentityArcDraftComplete(draft: ProfileDraft): boolean {
   return true;
 }
 
+/** Parses one dwell-time draft string, falling back to (and clamping into range around) DEFAULT_DWELL_TIMES' own value for that field -- never lets an emptied/invalid/out-of-range text field save a dwell value that would break the flow (#F). */
+function parseDwellField(text: string, fallback: number): number {
+  const trimmed = text.trim();
+  // An emptied text field ("") coerces to 0 via Number(), not NaN -- checked
+  // explicitly here so it falls back to this field's own default, the same
+  // as a genuinely unparseable value, rather than being clamped to
+  // MIN_DWELL_SECONDS like an intentionally-entered "0" would be.
+  if (trimmed.length === 0) return fallback;
+  return clampDwellSeconds(Number(trimmed), fallback);
+}
+
+/** Builds a full DwellTimes set (never a partial one) from this target's five draft fields -- always saved as a complete set once BUILD-ARC's "זמן שהייה" step is reached, so resolveDwellSecondsFor's own per-field fallback (arc/dwellTimes.ts) is really only ever exercised for a profile that never visited this step at all. */
+function dwellTimesFromDraft(draft: {
+  sensation: string;
+  acceptance: string;
+  regulation: string;
+  encoding: string;
+  actionImagery: string;
+}): DwellTimes {
+  return {
+    sensationDwellSeconds: parseDwellField(draft.sensation, DEFAULT_DWELL_TIMES.sensationDwellSeconds),
+    acceptanceDwellSeconds: parseDwellField(draft.acceptance, DEFAULT_DWELL_TIMES.acceptanceDwellSeconds),
+    regulationDwellSeconds: parseDwellField(draft.regulation, DEFAULT_DWELL_TIMES.regulationDwellSeconds),
+    encodingDwellSeconds: parseDwellField(draft.encoding, DEFAULT_DWELL_TIMES.encodingDwellSeconds),
+    actionImageryDwellSeconds: parseDwellField(draft.actionImagery, DEFAULT_DWELL_TIMES.actionImageryDwellSeconds),
+  };
+}
+
 function buildEncodingProfile(target: string, mantra: string, bodyLanguageCue: string): EncodingProfile | null {
   const trimmedMantra = mantra.trim();
   const trimmedCue = bodyLanguageCue.trim();
@@ -486,6 +560,15 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
         : null,
     stateEncoding: draft.needsState && supportiveState ? buildEncodingProfile(supportiveState, draft.stateMantra, draft.stateBodyLanguageCue) : null,
     internalAction: draft.needsState ? draft.internalAction.trim() : null,
+    stateDwellTimes: draft.needsState
+      ? dwellTimesFromDraft({
+          sensation: draft.stateSensationDwellSeconds,
+          acceptance: draft.stateAcceptanceDwellSeconds,
+          regulation: draft.stateRegulationDwellSeconds,
+          encoding: draft.stateEncodingDwellSeconds,
+          actionImagery: draft.stateActionImageryDwellSeconds,
+        })
+      : null,
 
     desiredIdentity,
     identityChallengeContext: needsIdentity && draft.identityChallengeContext.trim() ? draft.identityChallengeContext.trim() : null,
@@ -500,6 +583,15 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     // action is the same Desired Habit as the habit layer's, not asked
     // twice.
     identityAction: needsIdentity ? draft.beneficialAction.trim() : null,
+    identityDwellTimes: needsIdentity
+      ? dwellTimesFromDraft({
+          sensation: draft.identitySensationDwellSeconds,
+          acceptance: draft.identityAcceptanceDwellSeconds,
+          regulation: draft.identityRegulationDwellSeconds,
+          encoding: draft.identityEncodingDwellSeconds,
+          actionImagery: draft.identityActionImageryDwellSeconds,
+        })
+      : null,
 
     habit: draft.habit.trim(),
     beneficialAction: draft.beneficialAction.trim(),

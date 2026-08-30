@@ -140,24 +140,26 @@ test("first STATE ARC step is challengeContext; first IDENTITY ARC step is ident
   assert.equal(getFirstProfileStep(filledTwoWeekDraft(), IDENTITY_ARC_STEP_ORDER), "identityChallengeContext");
 });
 
-test("STATE_ARC_STEP_ORDER walks challengeContext -> interferingState -> statePreventiveAction -> stateEncodingRegulationCueAsk -> stateMantra -> stateBodyLanguageCue -> review, skipping the short-cue text step when 'use same cue' (or nothing) was chosen", () => {
+test("STATE_ARC_STEP_ORDER walks challengeContext -> interferingState -> statePreventiveAction -> stateEncodingRegulationCueAsk -> stateMantra -> stateBodyLanguageCue -> dwellTimes -> review, skipping the short-cue text step when 'use same cue' (or nothing) was chosen", () => {
   const draft = filledStateOnlyDraft();
   assert.equal(getNextProfileStep("challengeContext", draft, STATE_ARC_STEP_ORDER), "interferingState");
   assert.equal(getNextProfileStep("interferingState", draft, STATE_ARC_STEP_ORDER), "statePreventiveAction");
   assert.equal(getNextProfileStep("statePreventiveAction", draft, STATE_ARC_STEP_ORDER), "stateEncodingRegulationCueAsk");
   assert.equal(getNextProfileStep("stateEncodingRegulationCueAsk", draft, STATE_ARC_STEP_ORDER), "stateMantra");
   assert.equal(getNextProfileStep("stateMantra", draft, STATE_ARC_STEP_ORDER), "stateBodyLanguageCue");
-  assert.equal(getNextProfileStep("stateBodyLanguageCue", draft, STATE_ARC_STEP_ORDER), "review");
+  assert.equal(getNextProfileStep("stateBodyLanguageCue", draft, STATE_ARC_STEP_ORDER), "dwellTimes");
+  assert.equal(getNextProfileStep("dwellTimes", draft, STATE_ARC_STEP_ORDER), "review");
 });
 
-test("IDENTITY_ARC_STEP_ORDER walks identityChallengeContext -> identityInterferingEmotion -> identityPreventiveAction -> identityEncodingRegulationCueAsk -> identityMantra -> identityBodyLanguageCue -> review, independently of STATE_ARC_STEP_ORDER", () => {
+test("IDENTITY_ARC_STEP_ORDER walks identityChallengeContext -> identityInterferingEmotion -> identityPreventiveAction -> identityEncodingRegulationCueAsk -> identityMantra -> identityBodyLanguageCue -> dwellTimes -> review, independently of STATE_ARC_STEP_ORDER", () => {
   const draft = filledTwoWeekDraft();
   assert.equal(getNextProfileStep("identityChallengeContext", draft, IDENTITY_ARC_STEP_ORDER), "identityInterferingEmotion");
   assert.equal(getNextProfileStep("identityInterferingEmotion", draft, IDENTITY_ARC_STEP_ORDER), "identityPreventiveAction");
   assert.equal(getNextProfileStep("identityPreventiveAction", draft, IDENTITY_ARC_STEP_ORDER), "identityEncodingRegulationCueAsk");
   assert.equal(getNextProfileStep("identityEncodingRegulationCueAsk", draft, IDENTITY_ARC_STEP_ORDER), "identityMantra");
   assert.equal(getNextProfileStep("identityMantra", draft, IDENTITY_ARC_STEP_ORDER), "identityBodyLanguageCue");
-  assert.equal(getNextProfileStep("identityBodyLanguageCue", draft, IDENTITY_ARC_STEP_ORDER), "review");
+  assert.equal(getNextProfileStep("identityBodyLanguageCue", draft, IDENTITY_ARC_STEP_ORDER), "dwellTimes");
+  assert.equal(getNextProfileStep("dwellTimes", draft, IDENTITY_ARC_STEP_ORDER), "review");
 });
 
 test("neither BUILD-ARC step order ever asks for the Desired State/Identity itself -- both only reference it", () => {
@@ -166,8 +168,13 @@ test("neither BUILD-ARC step order ever asks for the Desired State/Identity itse
 });
 
 test("STATE_ARC_STEP_ORDER and IDENTITY_ARC_STEP_ORDER touch entirely disjoint ProfileDraft fields -- no shared field two targets could fight over", () => {
-  const stateFields = new Set(STATE_ARC_STEP_ORDER.filter((s) => s !== "review"));
-  const identityFields = new Set(IDENTITY_ARC_STEP_ORDER.filter((s) => s !== "review"));
+  // "review" and "dwellTimes" are shared STEP names (both step orders visit
+  // a step called "dwellTimes"), but each resolves to its own disjoint set
+  // of ProfileDraft fields per target (stateSensationDwellSeconds vs.
+  // identitySensationDwellSeconds, etc. -- see build/ArcMapScreen.tsx's
+  // dwellDraftFieldFor) -- excluded here the same way "review" already is.
+  const stateFields = new Set(STATE_ARC_STEP_ORDER.filter((s) => s !== "review" && s !== "dwellTimes"));
+  const identityFields = new Set(IDENTITY_ARC_STEP_ORDER.filter((s) => s !== "review" && s !== "dwellTimes"));
   for (const field of stateFields) {
     assert.ok(!identityFields.has(field), `"${field}" must not appear in both ARC step orders`);
   }
@@ -452,4 +459,115 @@ test("selectionFromDraft always sets needsHabit true for the current four preset
 
 test("selectionFromDraft throws on an incomplete draft (no needsState answer yet)", () => {
   assert.throws(() => selectionFromDraft(createEmptyDraft()));
+});
+
+// --- Dwell-time task: BUILD-ARC's "זמן שהייה" step (#A, #B, #F) ----------
+
+test("createEmptyDraft's five dwell fields per target default to the exact specified seconds", () => {
+  const draft = createEmptyDraft();
+  assert.equal(draft.stateSensationDwellSeconds, "8");
+  assert.equal(draft.stateAcceptanceDwellSeconds, "8");
+  assert.equal(draft.stateRegulationDwellSeconds, "12");
+  assert.equal(draft.stateEncodingDwellSeconds, "10");
+  assert.equal(draft.stateActionImageryDwellSeconds, "8");
+  assert.equal(draft.identitySensationDwellSeconds, "8");
+  assert.equal(draft.identityAcceptanceDwellSeconds, "8");
+  assert.equal(draft.identityRegulationDwellSeconds, "12");
+  assert.equal(draft.identityEncodingDwellSeconds, "10");
+  assert.equal(draft.identityActionImageryDwellSeconds, "8");
+});
+
+test("buildProfileFromDraft saves the state target's five dwell values, applying the correct defaults when left unedited", () => {
+  const p = buildProfileFromDraft(filledStateOnlyDraft());
+  assert.deepEqual(p.stateDwellTimes, {
+    sensationDwellSeconds: 8,
+    acceptanceDwellSeconds: 8,
+    regulationDwellSeconds: 12,
+    encodingDwellSeconds: 10,
+    actionImageryDwellSeconds: 8,
+  });
+});
+
+test("buildProfileFromDraft saves a state target's CUSTOMIZED dwell values exactly as entered -- the spec's own worked example for תשוקה", () => {
+  const p = buildProfileFromDraft(
+    filledStateOnlyDraft({
+      stateSensationDwellSeconds: "8",
+      stateAcceptanceDwellSeconds: "15",
+      stateRegulationDwellSeconds: "12",
+      stateEncodingDwellSeconds: "10",
+      stateActionImageryDwellSeconds: "8",
+    })
+  );
+  assert.deepEqual(p.stateDwellTimes, {
+    sensationDwellSeconds: 8,
+    acceptanceDwellSeconds: 15,
+    regulationDwellSeconds: 12,
+    encodingDwellSeconds: 10,
+    actionImageryDwellSeconds: 8,
+  });
+});
+
+test("different targets (state vs identity) can store entirely different dwell values, saved independently -- the spec's own worked example: תשוקה (state) with a 15s Acceptance dwell vs פיזור (identity) left at defaults", () => {
+  const p = buildProfileFromDraft(
+    filledTwoWeekDraft({
+      stateAcceptanceDwellSeconds: "15",
+      identityAcceptanceDwellSeconds: "8",
+    })
+  );
+  assert.equal(p.stateDwellTimes?.acceptanceDwellSeconds, 15);
+  assert.equal(p.identityDwellTimes?.acceptanceDwellSeconds, 8);
+  assert.notEqual(p.stateDwellTimes?.acceptanceDwellSeconds, p.identityDwellTimes?.acceptanceDwellSeconds, "the two targets' dwell configuration is never shared or mixed");
+});
+
+test("buildProfileFromDraft clamps an invalid dwell entry (empty/zero/negative/out-of-range text) rather than saving a value that would break the flow", () => {
+  const p = buildProfileFromDraft(
+    filledStateOnlyDraft({
+      stateSensationDwellSeconds: "", // emptied text field
+      stateAcceptanceDwellSeconds: "0",
+      stateRegulationDwellSeconds: "-5",
+      stateEncodingDwellSeconds: "9999",
+      stateActionImageryDwellSeconds: "6.7",
+    })
+  );
+  assert.equal(p.stateDwellTimes?.sensationDwellSeconds, 8, "an emptied field falls back to its own default");
+  assert.equal(p.stateDwellTimes?.acceptanceDwellSeconds, 1, "zero is clamped up to the minimum, never saved as zero");
+  assert.equal(p.stateDwellTimes?.regulationDwellSeconds, 1, "negative is clamped up to the minimum, never saved as negative");
+  assert.equal(p.stateDwellTimes?.encodingDwellSeconds, 120, "an absurdly large value is clamped down to the maximum");
+  assert.ok(Number.isInteger(p.stateDwellTimes?.actionImageryDwellSeconds), "a fractional entry is rounded to an integer");
+});
+
+test("stateDwellTimes/identityDwellTimes are null when that target isn't active at all -- dwell configuration is never invented for an unmapped target", () => {
+  const p = buildProfileFromDraft(filledHabitOnlyDraft());
+  assert.equal(p.stateDwellTimes, null);
+  assert.equal(p.identityDwellTimes, null);
+});
+
+test("dwell values persist across a save/load round trip via draftFromProfileAndSelection, exactly as entered", () => {
+  const draft = filledTwoWeekDraft({ stateAcceptanceDwellSeconds: "15", identityRegulationDwellSeconds: "20" });
+  const profile = buildProfileFromDraft(draft);
+  const selection = selectionFromDraft(draft);
+  const roundTripped = draftFromProfileAndSelection(profile, selection);
+  assert.equal(roundTripped.stateAcceptanceDwellSeconds, "15");
+  assert.equal(roundTripped.identityRegulationDwellSeconds, "20");
+  // Every field NOT explicitly customized round-trips back to the same default.
+  assert.equal(roundTripped.stateSensationDwellSeconds, "8");
+  assert.equal(roundTripped.identityEncodingDwellSeconds, "10");
+});
+
+test("legacy profile data (stateDwellTimes/identityDwellTimes missing entirely, as after JSON.parse of pre-feature data) receives the defaults safely when loaded into a draft -- no migration step, no broken/invalidated ARC map", () => {
+  const draft = filledTwoWeekDraft();
+  const legacyProfile = buildProfileFromDraft(draft);
+  delete (legacyProfile as { stateDwellTimes?: unknown }).stateDwellTimes;
+  delete (legacyProfile as { identityDwellTimes?: unknown }).identityDwellTimes;
+
+  const reloaded = draftFromProfileAndSelection(legacyProfile, selectionFromDraft(draft));
+  assert.equal(reloaded.stateSensationDwellSeconds, "8");
+  assert.equal(reloaded.stateAcceptanceDwellSeconds, "8");
+  assert.equal(reloaded.stateRegulationDwellSeconds, "12");
+  assert.equal(reloaded.stateEncodingDwellSeconds, "10");
+  assert.equal(reloaded.stateActionImageryDwellSeconds, "8");
+  assert.equal(reloaded.identitySensationDwellSeconds, "8");
+  // The rest of the legacy profile is completely unaffected/unbroken.
+  assert.equal(reloaded.supportiveState, draft.supportiveState);
+  assert.equal(reloaded.desiredIdentity, draft.desiredIdentity);
 });

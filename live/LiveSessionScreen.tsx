@@ -60,6 +60,7 @@ import { recordValidLiveCompletion } from "../program/progress.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
   advanceLiveSession,
+  applyAcceptanceWillingnessAnswer,
   applyActionCompletion,
   applyActionImageryCompleted,
   applyAlternativeAction,
@@ -417,7 +418,7 @@ export default function LiveSessionScreen() {
                 : applySensationAnswer(hop.session, hop.session.sensationLocation, value);
             commitAdvance(withRating, hop.stage);
           }}
-          onAcceptAnswer={(yes) => setSession(applyYesNoAnswer("accept", session, yes))}
+          onAcceptWillingnessAnswer={(yes) => setSession(applyAcceptanceWillingnessAnswer(session, yes))}
           onAcceptIntensityRating={(value) => {
             // Mirrors onRegulationExperienceRating's shape: simulates
             // the real, unchanged accept -> sensation_check hop

@@ -19,8 +19,24 @@ import {
   type ProfileDraft,
   type ProfileStep,
 } from "./profileWizard.ts";
+import type { DwellTimes } from "../arc/types.ts";
 
 type ArcTarget = "state" | "identity";
+
+/** BUILD-ARC's "זמן שהייה" step (#F): the five configurable dwell categories, in display order, each paired with the draft field it edits for whichever target (state/identity) is currently being configured. */
+const DWELL_ROWS: { key: keyof DwellTimes; label: string }[] = [
+  { key: "sensationDwellSeconds", label: "תחושה / מודעות" },
+  { key: "acceptanceDwellSeconds", label: "קבלה" },
+  { key: "regulationDwellSeconds", label: "ויסות" },
+  { key: "encodingDwellSeconds", label: "קידוד / שפת גוף" },
+  { key: "actionImageryDwellSeconds", label: "דמיון פעולה" },
+];
+
+/** Maps a dwell category + the currently-edited target to its ProfileDraft field name (e.g. "state" + "sensationDwellSeconds" -> "stateSensationDwellSeconds") -- keeps DWELL_ROWS itself target-agnostic rather than duplicating it per target. */
+function dwellDraftFieldFor(target: ArcTarget, key: keyof DwellTimes): keyof ProfileDraft {
+  const capitalized = `${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+  return `${target}${capitalized}` as keyof ProfileDraft;
+}
 
 const STATE_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   challengeContext: "באילו מצבים המצב הרצוי הזה במיוחד רלוונטי? (הקשר האתגר)",
@@ -30,6 +46,7 @@ const STATE_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   stateEncodingRegulationCue: "מהו כלי הוויסות הקצר לקידוד?",
   stateMantra: "יש לך מנטרה למצב הזה? (רשות)",
   stateBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך במצב הזה? (רשות, למשל כתפיים משוחררות)",
+  dwellTimes: "זמן שהייה",
   review: "סיכום מפת ARC",
 };
 const STATE_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
@@ -53,6 +70,7 @@ const IDENTITY_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   identityEncodingRegulationCue: "מהו כלי הוויסות הקצר לקידוד?",
   identityMantra: "יש לך מנטרה לזהות הזו? (רשות)",
   identityBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך בזהות הזו? (רשות)",
+  dwellTimes: "זמן שהייה",
   review: "סיכום מפת ARC",
 };
 const IDENTITY_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
@@ -295,6 +313,31 @@ export default function ArcMapScreen() {
           </View>
         )}
 
+        {step === "dwellTimes" && (
+          <View>
+            <Text style={styles.body}>כמה זמן תרצה להישאר בתרגיל לאחר סיום ההנחיה?</Text>
+            {DWELL_ROWS.map((row) => {
+              const field = dwellDraftFieldFor(activeTarget, row.key);
+              return (
+                <View key={row.key} style={styles.dwellRow}>
+                  <Text style={styles.dwellLabel}>{row.label}</Text>
+                  <TextInput
+                    style={styles.dwellInput}
+                    value={draft[field] as string}
+                    onChangeText={(text) => setDraft({ ...draft, [field]: text.replace(/[^0-9]/g, "") })}
+                    keyboardType="numeric"
+                    textAlign="center"
+                  />
+                  <Text style={styles.dwellUnit}>שניות</Text>
+                </View>
+              );
+            })}
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => goNext(draft)}>
+              <Text style={styles.buttonText}>המשך</Text>
+            </Pressable>
+          </View>
+        )}
+
         {step === "review" && (
           <View>
             <Text style={styles.body}>{`מטרה: ${labelFor(activeTarget, draft)}`}</Text>
@@ -406,5 +449,29 @@ const styles = StyleSheet.create({
   backButtonText: {
     color: "#0a7ea4",
     fontSize: 15,
+  },
+  dwellRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  dwellLabel: {
+    flex: 1,
+    fontSize: 16,
+    textAlign: "right",
+  },
+  dwellInput: {
+    width: 56,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 8,
+    fontSize: 16,
+    marginHorizontal: 8,
+  },
+  dwellUnit: {
+    fontSize: 14,
+    color: "#666",
   },
 });
