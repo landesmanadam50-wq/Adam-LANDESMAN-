@@ -33,7 +33,7 @@ import {
 } from "../arc/arcEngine.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
-import { getStageCopy } from "../arc/stageCopy.ts";
+import { getInlineRequiredRatingQuestion, getStageCopy } from "../arc/stageCopy.ts";
 import { getInstructionTimingStatus, INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "../arc/instructionTiming.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
 import { createInitialProgress } from "../program/progress.ts";
@@ -875,4 +875,132 @@ test("visual refinement: the accept-triggered intensity rating's own reveal gate
   const gateSegments = [{ text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS }];
   assert.equal(getInstructionTimingStatus(gateSegments, INLINE_RATING_REVEAL_DELAY_SECONDS - 0.1).complete, false, "still hidden one tick before the existing reveal time");
   assert.equal(getInstructionTimingStatus(gateSegments, INLINE_RATING_REVEAL_DELAY_SECONDS).complete, true, "revealed exactly at the existing reveal time, not before");
+});
+
+// --- Visual-refinement task (concise question line): the ONE fixed
+// question live/screens.tsx's RevealedRatingPrompt shows for each of
+// the three required inline ratings is picked in
+// live/ArcLiveRenderer.tsx by the exact same peek that already gates
+// whether a rating is offered at all (unchanged from the earlier
+// Presence/Regulation/Accept merge work). These tests mirror that
+// selection logic explicitly against the real engine peek, confirming:
+// the right question maps to the right flow, the selection is null
+// (no rating -> no bypassable Continue-only screen shows the wrong
+// question) exactly when the underlying peek says no rating is
+// expected, and this is completely independent of -- and doesn't
+// disturb -- the rating's stored value or the reveal timing itself
+// (both already covered above and unchanged here).
+
+function selectRegulationQuestion(peekStage: ArcStage): string | null {
+  if (peekStage === "desired_state_check") return getInlineRequiredRatingQuestion("desiredState");
+  if (peekStage === "sensation_check") return getInlineRequiredRatingQuestion("intensity");
+  return null;
+}
+
+test("the Presence screen's question is always the fixed presence question -- arc_thought_expand_presence unconditionally offers a rating, never null, matching its own unconditional getNextArcStage transition", () => {
+  assert.equal(getInlineRequiredRatingQuestion("presence"), "מה רמת הנוכחות שלך עכשיו?");
+});
+
+test("Regulation selects the Desired State question for the proactive branch and the intensity question for the reactive branch, matching the real engine's own regulate peek", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8" });
+  const proactiveSession: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "proactive",
+    selectedTarget: "state",
+    loopIterationCount: 1,
+  };
+  const proactivePeek = getNextArcStage("regulate", proactiveSession, p, ["state"]);
+  assert.equal(selectRegulationQuestion(proactivePeek.stage), "כמה אתה קרוב עכשיו למצב הרצוי?");
+
+  const reactiveSession: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "reactive_emotion",
+    sensationLocation: "חזה",
+    sensationIntensity: 4,
+    loopIterationCount: 1,
+  };
+  const reactivePeek = getNextArcStage("regulate", reactiveSession, p, ["state"]);
+  assert.equal(selectRegulationQuestion(reactivePeek.stage), "מה עוצמת התחושה עכשיו?");
+});
+
+test("Regulation's question is null (no bypassable rating question shown) exactly when the loop-safety cap makes no rating available at all -- the screen falls back to a plain Continue, matching pre-merge capped behavior", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8" });
+  const cappedSession: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "proactive",
+    selectedTarget: "state",
+    loopIterationCount: 3, // == ARC_CONFIG.safety.maxLoopIterations
+  };
+  const peek = getNextArcStage("regulate", cappedSession, p, ["state"]);
+  assert.equal(peek.stage, "encode");
+  assert.equal(selectRegulationQuestion(peek.stage), null, "no question -- and therefore no rating, and no way to bypass a rating that was never offered");
+});
+
+test("Accept selects the intensity question exactly when a recheck rating is expected, and null exactly when the loop-safety cap skips it -- matching accept's own real peek", () => {
+  const p = profile();
+  const uncappedSession: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "reactive_emotion",
+    sensationLocation: "בטן",
+    sensationIntensity: 6,
+    loopIterationCount: 0,
+  };
+  const uncappedPeek = getNextArcStage("accept", uncappedSession, p, ["state"]);
+  assert.equal(uncappedPeek.stage, "sensation_check");
+  const uncappedQuestion = uncappedPeek.stage === "sensation_check" ? getInlineRequiredRatingQuestion("intensity") : null;
+  assert.equal(uncappedQuestion, "מה עוצמת התחושה עכשיו?");
+
+  const cappedSession: ArcLiveState = {
+    ...uncappedSession,
+    loopIterationCount: 3,
+  };
+  const cappedPeek = getNextArcStage("accept", cappedSession, p, ["state"]);
+  const cappedQuestion: string | null = cappedPeek.stage === "sensation_check" ? getInlineRequiredRatingQuestion("intensity") : null;
+  assert.equal(cappedPeek.stage, "regulate");
+  assert.equal(cappedQuestion, null, "no question -- and therefore no rating, and no way to bypass a rating that was never offered");
+});
+
+test("stored rating values and progression are unaffected by the concise-question visual refinement -- selecting each required rating still writes the exact existing field and advances exactly as before", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8" });
+  const activeLayers: DevelopmentLayer[] = ["state"];
+
+  // Presence
+  const presenceSession: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
+  const presenceResult = advanceLiveSession(
+    "arc_thought_presence_recheck",
+    applyScaleAnswer("arc_thought_presence_recheck", presenceSession, 9),
+    p,
+    activeLayers
+  );
+  assert.equal(presenceResult.session.presenceRating, 9);
+
+  // Desired State (via Regulation, proactive)
+  const regulateSession: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "proactive",
+    selectedTarget: "state",
+    loopIterationCount: 1,
+  };
+  const withToolUsed = applyRegulationToolUsed(regulateSession, p.regulationTool);
+  const hop = advanceLiveSession("regulate", withToolUsed, p, activeLayers);
+  const desiredStateResult = advanceLiveSession("desired_state_check", applyScaleAnswer("desired_state_check", hop.session, 7), p, activeLayers);
+  assert.equal(desiredStateResult.session.desiredStateRating, 7);
+
+  // Intensity (via Accept)
+  const acceptSession: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "reactive_emotion",
+    sensationLocation: "חזה",
+    sensationIntensity: 8,
+    loopIterationCount: 0,
+  };
+  const acceptHop = advanceLiveSession("accept", acceptSession, p, activeLayers);
+  const intensityResult = advanceLiveSession(
+    "sensation_check",
+    applySensationAnswer(acceptHop.session, acceptHop.session.sensationLocation, 3),
+    p,
+    activeLayers
+  );
+  assert.equal(intensityResult.session.sensationIntensity, 3);
+  assert.equal(intensityResult.session.sensationLocation, "חזה", "location preserved, never re-asked");
 });

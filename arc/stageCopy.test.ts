@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getStageCopy, getStageInputKind } from "./stageCopy.ts";
+import { getInlineRequiredRatingQuestion, getStageCopy, getStageInputKind } from "./stageCopy.ts";
 import { createEmptyLiveState } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { containsInductionPattern } from "./instructions.ts";
@@ -896,4 +896,32 @@ test("negative_action's copy changes once started, still naming the same action"
   assert.match(before.body, /גלילה ברשת/);
   assert.match(after.body, /גלילה ברשת/);
   assert.notEqual(before.body, after.body, "the pre-start and in-progress copy must differ");
+});
+
+// --- Visual-refinement task: the ONE concise question line used by the
+// three REQUIRED inline ratings only -- Presence, Desired State Level,
+// and the feeling/urge/interfering-state intensity recheck. Exact
+// literal text per spec; never used for any other rating in the app
+// (every other rating stage keeps its own existing title+body copy,
+// completely untouched -- see the many getStageCopy tests above for
+// presence_check/arc_thought_presence_recheck/desired_state_check/
+// sensation_check, all still passing unchanged).
+
+test("getInlineRequiredRatingQuestion returns the exact specified concise question for each of the three required inline ratings", () => {
+  assert.equal(getInlineRequiredRatingQuestion("presence"), "מה רמת הנוכחות שלך עכשיו?");
+  assert.equal(getInlineRequiredRatingQuestion("desiredState"), "כמה אתה קרוב עכשיו למצב הרצוי?");
+  assert.equal(getInlineRequiredRatingQuestion("intensity"), "מה עוצמת התחושה עכשיו?");
+});
+
+test("getInlineRequiredRatingQuestion's three questions are distinct, single, concise lines -- no shared text, no heading-style prefix, one sentence each", () => {
+  const questions = [
+    getInlineRequiredRatingQuestion("presence"),
+    getInlineRequiredRatingQuestion("desiredState"),
+    getInlineRequiredRatingQuestion("intensity"),
+  ];
+  assert.equal(new Set(questions).size, 3, "all three questions are distinct");
+  for (const question of questions) {
+    assert.ok(!question.includes("\n"), "a single line, never multi-line");
+    assert.equal((question.match(/\?/g) ?? []).length, 1, "exactly one question in the line");
+  }
 });

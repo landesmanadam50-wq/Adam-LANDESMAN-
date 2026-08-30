@@ -220,36 +220,29 @@ function RevealedInstructionLines({ segments }: { segments: InstructionSegment[]
 }
 
 /**
- * Visual-refinement task: the inline rating's own reveal, once its
- * timing gate flips (status.complete on PresenceExperienceScreen/
- * RegulationScreen, or AcceptRatingReveal's own gate) -- previously an
- * instant, un-animated block. Now uses the SAME calm, progressive
- * entrance as RevealedLine/RevealedInstructionLines above: the rating
- * prompt (still exactly `<Title copy={ratingCopy} />` -- unchanged
- * content/structure, title+body together read as the one new prompt)
- * fades + moves up gently first; once that finishes, the rating
- * control passed as `children` (unchanged ScaleButtons, still the same
- * component/values/onSelect wiring) fades in the same way directly
- * beneath it. Both animations run exactly once, starting the instant
- * this mounts -- which is exactly the instant the caller's existing,
- * unmodified reveal gate (status.complete / the 15s delay) first
- * allows it to render at all, so nothing about WHEN the rating appears
- * changes, only HOW. Everything already on screen above this (the
- * protocol instruction lines, via RevealedInstructionLines) is
- * untouched -- this component only wraps what each caller already
- * conditionally rendered.
+ * Visual-refinement task: the reveal of the three REQUIRED inline
+ * ratings only (Presence, Desired State Level, and the feeling/urge/
+ * interfering-state intensity recheck -- see
+ * arc/stageCopy.ts's getInlineRequiredRatingQuestion, which is the only
+ * source of `question`; never used for any other rating in the app).
+ * Once the caller's own, unmodified reveal gate (status.complete / the
+ * existing 15s delay) first allows this to mount, it renders ONE
+ * concise question line -- via RevealedLine, the EXACT same component
+ * that reveals protocol instruction lines, so this uses the identical
+ * calm fade + small-upward-move entrance, with no separate heading --
+ * and then the rating control passed as `children` (unchanged
+ * ScaleButtons, same component/values/onSelect wiring) fades in the
+ * same way directly beneath it, once the question's own entrance has
+ * finished. Nothing about WHEN the rating appears changes, only HOW --
+ * and everything already on screen above this (the protocol
+ * instruction lines, via RevealedInstructionLines) is untouched.
  */
-function RevealedRatingPrompt({ ratingCopy, children }: { ratingCopy: ArcStageCopy; children: ReactNode }) {
-  const promptOpacity = useRef(new Animated.Value(0)).current;
-  const promptTranslateY = useRef(new Animated.Value(8)).current;
+function RevealedRatingPrompt({ question, children }: { question: string; children: ReactNode }) {
   const controlsOpacity = useRef(new Animated.Value(0)).current;
   const controlsTranslateY = useRef(new Animated.Value(8)).current;
   useEffect(() => {
     Animated.sequence([
-      Animated.parallel([
-        Animated.timing(promptOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-        Animated.timing(promptTranslateY, { toValue: 0, duration: 350, useNativeDriver: true }),
-      ]),
+      Animated.delay(350), // let the question line's own RevealedLine entrance finish first
       Animated.parallel([
         Animated.timing(controlsOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
         Animated.timing(controlsTranslateY, { toValue: 0, duration: 350, useNativeDriver: true }),
@@ -259,9 +252,7 @@ function RevealedRatingPrompt({ ratingCopy, children }: { ratingCopy: ArcStageCo
   }, []);
   return (
     <View>
-      <Animated.View style={{ opacity: promptOpacity, transform: [{ translateY: promptTranslateY }] }}>
-        <Title copy={ratingCopy} />
-      </Animated.View>
+      <RevealedLine text={question} />
       <Animated.View style={{ opacity: controlsOpacity, transform: [{ translateY: controlsTranslateY }] }}>{children}</Animated.View>
     </View>
   );
@@ -420,22 +411,25 @@ export function PresenceRatingScreen({ copy, onSelect }: { copy: ArcStageCopy; o
  * arc_thought_presence_recheck's own separate page (see
  * arc/stageCopy.ts's "arc_thought_expand_presence" case, whose
  * segments now carry a trailing INLINE_RATING_REVEAL_DELAY_SECONDS
- * placeholder). ratingCopy is that recheck stage's own copy, reused
- * verbatim rather than duplicated -- see live/ArcLiveRenderer.tsx's
- * "arc_thought_expand_presence" case. The rating is not rendered at
- * all until status.complete (instruction time + the additional 15s
- * have both elapsed), matching "the rating must not be visible during
- * the additional experiential period". Selecting a value still writes
- * presenceRating through the exact same applyScaleAnswer path as
- * before -- see live/LiveSessionScreen.tsx's onPresenceExperienceRating.
+ * placeholder). question is the fixed, concise inline-only prompt from
+ * getInlineRequiredRatingQuestion("presence") -- see
+ * live/ArcLiveRenderer.tsx's "arc_thought_expand_presence" case; the
+ * recheck stage's OWN title+body copy is untouched and still used by
+ * its other, standalone entry point (presence_check). The rating is
+ * not rendered at all until status.complete (instruction time + the
+ * additional 15s have both elapsed), matching "the rating must not be
+ * visible during the additional experiential period". Selecting a
+ * value still writes presenceRating through the exact same
+ * applyScaleAnswer path as before -- see
+ * live/LiveSessionScreen.tsx's onPresenceExperienceRating.
  */
 export function PresenceExperienceScreen({
   copy,
-  ratingCopy,
+  question,
   onSelectRating,
 }: {
   copy: ArcStageCopy;
-  ratingCopy: ArcStageCopy;
+  question: string;
   onSelectRating: (value: number) => void;
 }) {
   const elapsedSeconds = useElapsedSeconds();
@@ -445,7 +439,7 @@ export function PresenceExperienceScreen({
       <Text style={styles.title}>{copy.title}</Text>
       <RevealedInstructionLines segments={status.visibleSegments} />
       {status.complete && (
-        <RevealedRatingPrompt ratingCopy={ratingCopy}>
+        <RevealedRatingPrompt question={question}>
           <ScaleButtons onSelect={onSelectRating} />
         </RevealedRatingPrompt>
       )}
@@ -580,7 +574,7 @@ export function StayScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinu
  * simply starts at answer-time. Mounting AcceptRatingReveal exactly
  * when `answered` flips true is what starts that clock (useElapsedSeconds
  * always starts from mount -- see its own doc above), reusing the same
- * primitive without needing a new one. ratingCopy is null when
+ * primitive without needing a new one. question is null when
  * arc/arcEngine.ts's own accept transition is loop-capped (goes
  * straight to "regulate", skipping the recheck rating entirely, exactly
  * as before this merge) -- see live/ArcLiveRenderer.tsx's "accept" case
@@ -589,11 +583,11 @@ export function StayScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinu
  * the rating, or continuing without one in the capped case, does.
  */
 function AcceptRatingReveal({
-  ratingCopy,
+  question,
   onSelectRating,
   onContinueWithoutRating,
 }: {
-  ratingCopy: ArcStageCopy | null;
+  question: string | null;
   onSelectRating: (value: number) => void;
   onContinueWithoutRating: () => void;
 }) {
@@ -602,9 +596,9 @@ function AcceptRatingReveal({
   if (!status.complete) {
     return null;
   }
-  if (ratingCopy) {
+  if (question) {
     return (
-      <RevealedRatingPrompt ratingCopy={ratingCopy}>
+      <RevealedRatingPrompt question={question}>
         <ScaleButtons onSelect={onSelectRating} />
       </RevealedRatingPrompt>
     );
@@ -615,14 +609,14 @@ function AcceptRatingReveal({
 export function AcceptScreen({
   copy,
   labels,
-  ratingCopy,
+  question,
   onAnswer,
   onSelectRating,
   onContinueWithoutRating,
 }: {
   copy: ArcStageCopy;
   labels: YesNoLabels;
-  ratingCopy: ArcStageCopy | null;
+  question: string | null;
   onAnswer: (yes: boolean) => void;
   onSelectRating: (value: number) => void;
   onContinueWithoutRating: () => void;
@@ -640,7 +634,7 @@ export function AcceptScreen({
           }}
         />
       ) : (
-        <AcceptRatingReveal ratingCopy={ratingCopy} onSelectRating={onSelectRating} onContinueWithoutRating={onContinueWithoutRating} />
+        <AcceptRatingReveal question={question} onSelectRating={onSelectRating} onContinueWithoutRating={onContinueWithoutRating} />
       )}
     </View>
   );
@@ -672,23 +666,27 @@ export function TransitionCheckScreen({
  * live/ArcLiveRenderer.tsx's "regulate" case, which peeks the engine's
  * own regulate transition to decide whether a rating is even expected
  * next (it isn't when the loop-safety cap has been reached -- see
- * arc/arcEngine.ts's loopCapped -- in which case ratingCopy is null and
- * this renders the same plain Continue regulate always had). Nothing
- * (no rating, no Continue button) is shown until status.complete,
- * matching "the rating must not be visible during the additional
- * experiential period". Selecting a rating still writes
+ * arc/arcEngine.ts's loopCapped -- in which case question is null and
+ * this renders the same plain Continue regulate always had). question
+ * is the fixed, concise inline-only prompt from
+ * getInlineRequiredRatingQuestion("desiredState"/"intensity") --
+ * desired_state_check/sensation_check's OWN title+body copy is
+ * untouched and still used by their other, standalone entry points.
+ * Nothing (no rating, no Continue button) is shown until
+ * status.complete, matching "the rating must not be visible during the
+ * additional experiential period". Selecting a rating still writes
  * desiredStateRating/sensationIntensity through the exact same
  * apply*Answer paths as before -- see
  * live/LiveSessionScreen.tsx's onRegulationExperienceRating.
  */
 export function RegulationScreen({
   copy,
-  ratingCopy,
+  question,
   onContinue,
   onSelectRating,
 }: {
   copy: ArcStageCopy;
-  ratingCopy: ArcStageCopy | null;
+  question: string | null;
   onContinue: () => void;
   onSelectRating: (value: number) => void;
 }) {
@@ -699,8 +697,8 @@ export function RegulationScreen({
       <Text style={styles.title}>{copy.title}</Text>
       <RevealedInstructionLines segments={status.visibleSegments} />
       {status.complete &&
-        (ratingCopy ? (
-          <RevealedRatingPrompt ratingCopy={ratingCopy}>
+        (question ? (
+          <RevealedRatingPrompt question={question}>
             <ScaleButtons onSelect={onSelectRating} />
           </RevealedRatingPrompt>
         ) : (

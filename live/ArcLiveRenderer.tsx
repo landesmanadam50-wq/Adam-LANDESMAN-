@@ -13,7 +13,7 @@
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy } from "../arc/stageCopy.ts";
-import { getStageCopy, getYesNoLabels } from "../arc/stageCopy.ts";
+import { getInlineRequiredRatingQuestion, getStageCopy, getYesNoLabels } from "../arc/stageCopy.ts";
 import {
   getAvailableProactiveTargets,
   getAvailableReactiveExperiences,
@@ -151,24 +151,26 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       // its own separate arc_thought_presence_recheck page is now shown
       // inline on this same page instead (see live/screens.tsx's
       // PresenceExperienceScreen) -- arc_thought_presence_recheck is
-      // never itself rendered as the current stage anymore, but its
-      // copy is still reused verbatim for the inline rating prompt, and
-      // its own getNextArcStage transition (loop-back-if-still-low,
-      // capped by ARC_CONFIG.safety.maxLoopIterations, or continue) is
-      // still exactly what decides what happens after the rating is
-      // selected -- see live/LiveSessionScreen.tsx's
-      // onPresenceExperienceRating. key incorporates loopIterationCount
+      // never itself rendered as the current stage anymore, but its own
+      // getNextArcStage transition (loop-back-if-still-low, capped by
+      // ARC_CONFIG.safety.maxLoopIterations, or continue) is still
+      // exactly what decides what happens after the rating is selected
+      // -- see live/LiveSessionScreen.tsx's onPresenceExperienceRating.
+      // Visual-refinement task: the inline prompt itself is the fixed,
+      // concise getInlineRequiredRatingQuestion("presence") line, not
+      // arc_thought_presence_recheck's own title+body copy -- that
+      // copy is untouched and still used by its OTHER, standalone entry
+      // point (presence_check). key incorporates loopIterationCount
       // (not just stage) so a loop-back -- which re-enters this exact
       // same stage value -- still remounts and resets the timing/rating
       // reveal from scratch, the same way key={stage} alone already
       // does for every OTHER pair of genuinely different adjacent
       // stages above.
-      const ratingCopy = getStageCopy("arc_thought_presence_recheck", profile, session, activeLayers);
       return (
         <PresenceExperienceScreen
           key={`${stage}-${session.loopIterationCount}`}
           copy={copy}
-          ratingCopy={ratingCopy}
+          question={getInlineRequiredRatingQuestion("presence")}
           onSelectRating={props.onPresenceExperienceRating}
         />
       );
@@ -208,28 +210,29 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       // what decides whether a rating is even expected next: it isn't
       // once the loop-safety cap has been reached (accept's own
       // transition goes straight to "regulate" in that case, exactly as
-      // it always has) -- ratingCopy stays null then, and the screen
+      // it always has) -- question stays null then, and the screen
       // falls back to a plain Continue once the delay elapses.
-      // Otherwise sensation_check's own copy (already the "recheck"
-      // variant here, since sensationLocation/sensationIntensity are
-      // already set from the initial check) is reused verbatim for the
-      // inline rating prompt; sensation_check's own getNextArcStage
-      // transition still decides what happens after the rating is
-      // selected -- see live/LiveSessionScreen.tsx's
-      // onAcceptIntensityRating. Answering yes/no never itself advances
-      // the ArcStage anymore -- only the rating (or the no-rating
-      // Continue) does, so key={stage} alone (not loopIterationCount)
-      // is enough here: unlike Presence/Regulation, "accept" is never
-      // the stage looped back TO (its own loop-back target is "stay",
-      // a different stage value, which already remounts on its own).
+      // Otherwise the inline prompt is the fixed, concise
+      // getInlineRequiredRatingQuestion("intensity") line, not
+      // sensation_check's own title+body copy -- that copy is untouched
+      // and still used by its other, standalone entry points.
+      // sensation_check's own getNextArcStage transition still decides
+      // what happens after the rating is selected -- see
+      // live/LiveSessionScreen.tsx's onAcceptIntensityRating. Answering
+      // yes/no never itself advances the ArcStage anymore -- only the
+      // rating (or the no-rating Continue) does, so key={stage} alone
+      // (not loopIterationCount) is enough here: unlike
+      // Presence/Regulation, "accept" is never the stage looped back TO
+      // (its own loop-back target is "stay", a different stage value,
+      // which already remounts on its own).
       const peek = getNextArcStage("accept", session, profile, activeLayers);
-      const ratingCopy = peek.stage === "sensation_check" ? getStageCopy("sensation_check", profile, session, activeLayers) : null;
+      const question = peek.stage === "sensation_check" ? getInlineRequiredRatingQuestion("intensity") : null;
       return (
         <AcceptScreen
           key={stage}
           copy={copy}
           labels={getYesNoLabels(stage)}
-          ratingCopy={ratingCopy}
+          question={question}
           onAnswer={props.onAcceptAnswer}
           onSelectRating={props.onAcceptIntensityRating}
           onContinueWithoutRating={props.onAcceptContinueWithoutRating}
@@ -250,26 +253,32 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       // decides whether a rating is even expected next: it isn't once
       // the loop-safety cap has been reached (regulate's own transition
       // goes straight to "encode" in that case, exactly as it always
-      // has) -- ratingCopy stays null then, and the screen falls back
-      // to the same plain Continue regulate always had. Otherwise the
-      // peeked stage's own copy is reused verbatim for the inline
-      // rating prompt; that stage's own getNextArcStage transition
-      // (getProactiveStage/getReactiveStage, loop-back capped the same
-      // way) still decides what happens after the rating is selected --
-      // see live/LiveSessionScreen.tsx's onRegulationExperienceRating.
-      // key incorporates loopIterationCount for the same reason as
+      // has) -- question stays null then, and the screen falls back to
+      // the same plain Continue regulate always had. Otherwise the
+      // inline prompt is the fixed, concise
+      // getInlineRequiredRatingQuestion("desiredState"/"intensity")
+      // line, not desired_state_check's/sensation_check's own
+      // title+body copy -- that copy is untouched and still used by
+      // their other, standalone entry points. The peeked stage's own
+      // getNextArcStage transition (getProactiveStage/getReactiveStage,
+      // loop-back capped the same way) still decides what happens
+      // after the rating is selected -- see
+      // live/LiveSessionScreen.tsx's onRegulationExperienceRating. key
+      // incorporates loopIterationCount for the same reason as
       // arc_thought_expand_presence above: a loop back to "regulate"
       // re-enters this exact same stage value and must still remount.
       const peek = getNextArcStage("regulate", session, profile, activeLayers);
-      const ratingCopy =
-        peek.stage === "desired_state_check" || peek.stage === "sensation_check"
-          ? getStageCopy(peek.stage, profile, session, activeLayers)
-          : null;
+      const question =
+        peek.stage === "desired_state_check"
+          ? getInlineRequiredRatingQuestion("desiredState")
+          : peek.stage === "sensation_check"
+            ? getInlineRequiredRatingQuestion("intensity")
+            : null;
       return (
         <RegulationScreen
           key={`${stage}-${session.loopIterationCount}`}
           copy={copy}
-          ratingCopy={ratingCopy}
+          question={question}
           onContinue={props.onRegulateContinue}
           onSelectRating={props.onRegulationExperienceRating}
         />

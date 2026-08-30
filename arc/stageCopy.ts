@@ -70,6 +70,34 @@ export function getYesNoLabels(stage: ArcStage): YesNoLabels {
   }
 }
 
+export type InlineRequiredRatingKind = "presence" | "desiredState" | "intensity";
+
+/**
+ * Visual-refinement task: the ONE concise question line shown when each
+ * of the three REQUIRED inline ratings reveals -- Presence
+ * (arc_thought_expand_presence), Desired State Level (regulate,
+ * proactive), and the feeling/urge/interfering-state intensity recheck
+ * (regulate reactive branch, and the accept-triggered recheck) -- see
+ * live/screens.tsx's RevealedRatingPrompt and live/ArcLiveRenderer.tsx's
+ * "arc_thought_expand_presence"/"regulate"/"accept" cases. Deliberately
+ * its own fixed, short line, distinct from
+ * presence_check/arc_thought_presence_recheck/desired_state_check/
+ * sensation_check's own title+body copy (unchanged, still used by
+ * every OTHER -- standalone -- entry point into those same stages) --
+ * this text is used ONLY by these three specific inline reveals, per
+ * spec, never applied to any other rating in the app.
+ */
+export function getInlineRequiredRatingQuestion(kind: InlineRequiredRatingKind): string {
+  switch (kind) {
+    case "presence":
+      return "מה רמת הנוכחות שלך עכשיו?";
+    case "desiredState":
+      return "כמה אתה קרוב עכשיו למצב הרצוי?";
+    case "intensity":
+      return "מה עוצמת התחושה עכשיו?";
+  }
+}
+
 const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   trigger_selection: "triggerSelect",
   presence_check: "scale0to10",
