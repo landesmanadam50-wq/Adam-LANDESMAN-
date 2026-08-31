@@ -288,7 +288,7 @@ test("a reactive_emotion session targeting the IDENTITY layer (Discipline), walk
 
   const cueIndex = copy.body.indexOf("שמור את הראש ישר ויציב");
   const mantraIndex = copy.body.indexOf("אני ממושמע בפעולותיי");
-  assert.ok(cueIndex >= 0 && mantraIndex >= 0 && mantraIndex < cueIndex, "Discipline's mantra must precede its body-language cue (evidence-encoding task's requested sub-order)");
+  assert.ok(cueIndex >= 0 && mantraIndex >= 0 && cueIndex < mantraIndex, "Discipline's body-language cue must precede its mantra (final corrected sub-order)");
   assert.equal(containsInductionPattern(copy.body), false);
 
   // Continue the same real walk one more step, into "act" -- Action

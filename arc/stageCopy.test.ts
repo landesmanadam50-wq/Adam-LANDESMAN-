@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { getEvidenceLine, getInlineRequiredRatingQuestion, getStageCopy, getStageInputKind } from "./stageCopy.ts";
+import { getNextArcStage } from "./arcEngine.ts";
 import { createEmptyLiveState } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { containsInductionPattern } from "./instructions.ts";
@@ -460,7 +461,7 @@ test("encode uses the Short Encoding Regulation Cue when configured, not the Ful
   assert.ok(!copy.body.includes("הרפיית כתפיים + נשיפה איטית"), "Encoding must not use the longer Full Regulation Cue text when a short one is configured");
 });
 
-test("the Short Encoding Regulation Cue appears before the Mantra, and the Mantra appears before the Body-Language cue (evidence-encoding task's requested sub-order: Identity/Mantra now precedes Body-Language)", () => {
+test("the Short Encoding Regulation Cue appears before the Body-Language cue, and the Body-Language cue appears before the Mantra (final corrected sub-order: embodiment -> evidence -> identity)", () => {
   const p = profile({
     stateEncodingRegulationCue: "נשיפה רגועה",
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני חומל" },
@@ -470,8 +471,8 @@ test("the Short Encoding Regulation Cue appears before the Mantra, and the Mantr
   const cueIndex = copy.body.indexOf("כתפיים משוחררות");
   const mantraIndex = copy.body.indexOf("אני חומל");
   assert.ok(regulationIndex >= 0 && cueIndex >= 0 && mantraIndex >= 0);
-  assert.ok(regulationIndex < mantraIndex, "the Short Encoding Regulation Cue must precede the Mantra");
-  assert.ok(mantraIndex < cueIndex, "the Mantra must precede the Body-Language cue");
+  assert.ok(regulationIndex < cueIndex, "the Short Encoding Regulation Cue must precede the Body-Language cue");
+  assert.ok(cueIndex < mantraIndex, "the Body-Language cue must precede the Mantra");
 });
 
 test("no cue is invented in Encoding when neither a Short Encoding Regulation Cue nor a Full Regulation Cue is configured", () => {
@@ -645,24 +646,24 @@ test("Action Imagery uses different map-specific Body-Language cues for Focus an
   assert.ok(!identityAct.body.includes("עיניים פקוחות וממוקדות"), "Discipline's imagery must not leak Focus's cue");
 });
 
-test("encode's Identity/Mantra appears before the matching Body-Language cue, for either target (evidence-encoding task's requested sub-order)", () => {
+test("encode's Body-Language cue appears before the matching Identity/Mantra, for either target (final corrected sub-order: embodiment -> evidence -> identity)", () => {
   const p = twoTargetProfile();
 
   const stateCopy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "state" }), ["state", "identity"]);
   const stateCueIndex = stateCopy.body.indexOf("עיניים פקוחות וממוקדות");
   const stateMantraIndex = stateCopy.body.indexOf("אני ממוקד");
-  assert.ok(stateCueIndex >= 0 && stateMantraIndex >= 0 && stateMantraIndex < stateCueIndex, "Focus: mantra must precede the body-language cue");
+  assert.ok(stateCueIndex >= 0 && stateMantraIndex >= 0 && stateCueIndex < stateMantraIndex, "Focus: body-language cue must precede the mantra");
 
   const identityCopy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "identity" }), ["state", "identity"]);
   const identityCueIndex = identityCopy.body.indexOf("שמור את הראש ישר ויציב");
   const identityMantraIndex = identityCopy.body.indexOf("אני ממושמע בפעולותיי");
   assert.ok(
-    identityCueIndex >= 0 && identityMantraIndex >= 0 && identityMantraIndex < identityCueIndex,
-    "Discipline: mantra must precede the body-language cue"
+    identityCueIndex >= 0 && identityMantraIndex >= 0 && identityCueIndex < identityMantraIndex,
+    "Discipline: body-language cue must precede the mantra"
   );
 });
 
-test("encode preserves the full order for both targets: updated sensation -> maintain regulation -> identity/mantra -> body-language cue", () => {
+test("encode preserves the full order for both targets: updated sensation -> maintain regulation -> body-language cue -> identity/mantra", () => {
   const p = twoTargetProfile();
   for (const selectedTarget of ["state", "identity"] as const) {
     const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion", selectedTarget }), ["state", "identity"]);
@@ -672,8 +673,8 @@ test("encode preserves the full order for both targets: updated sensation -> mai
     const mantraIndex = selectedTarget === "state" ? copy.body.indexOf("אני ממוקד") : copy.body.indexOf("אני ממושמע בפעולותיי");
     assert.ok(sensationIndex === 0, `${selectedTarget}: sensation notice must come first`);
     assert.ok(regulationIndex > sensationIndex, `${selectedTarget}: regulation must follow the sensation notice`);
-    assert.ok(mantraIndex > regulationIndex, `${selectedTarget}: identity/mantra must follow regulation`);
-    assert.ok(cueIndex > mantraIndex, `${selectedTarget}: body-language cue must follow identity/mantra`);
+    assert.ok(cueIndex > regulationIndex, `${selectedTarget}: body-language cue must follow regulation`);
+    assert.ok(mantraIndex > cueIndex, `${selectedTarget}: identity/mantra must follow the body-language cue`);
   }
 });
 
@@ -792,7 +793,7 @@ test("Regulation has its own instruction segment and duration, separate from Sta
   assert.equal(copy.body, copy.segments?.[0].text, "body stays exactly the spoken instruction text, unaffected by the trailing placeholder");
 });
 
-test("Encoding preserves its exact 4-piece order (Updated Sensation -> Short Regulation Cue -> Mantra -> Body-Language) as four separate timed segments, plus a trailing dwell segment (the CURRENT target's own configured Encoding dwell, default 10s unconfigured here) -- evidence-encoding task's requested sub-order: Mantra now precedes Body-Language", () => {
+test("Encoding preserves its exact 4-piece order (Updated Sensation -> Short Regulation Cue -> Body-Language -> Mantra) as four separate timed segments, plus a trailing dwell segment (the CURRENT target's own configured Encoding dwell, default 10s unconfigured here) -- final corrected sub-order: Body-Language precedes Mantra (with evidence/memory-detail, when selected, sitting between them -- see the evidence-selection tests below)", () => {
   const p = profile({
     stateEncodingRegulationCue: "נשיפה רגועה",
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני בטוח כאן" },
@@ -803,10 +804,10 @@ test("Encoding preserves its exact 4-piece order (Updated Sensation -> Short Reg
   assert.equal(copy.segments![0].durationSeconds, INSTRUCTION_TIMING.encodeUpdatedSensation);
   assert.match(copy.segments![1].text, /נשיפה רגועה/);
   assert.equal(copy.segments![1].durationSeconds, INSTRUCTION_TIMING.encodeShortRegulationCue);
-  assert.match(copy.segments![2].text, /אני בטוח כאן/);
-  assert.equal(copy.segments![2].durationSeconds, INSTRUCTION_TIMING.encodeIdentityMantra);
-  assert.match(copy.segments![3].text, /כתפיים משוחררות/);
-  assert.equal(copy.segments![3].durationSeconds, INSTRUCTION_TIMING.encodeBodyLanguageCue);
+  assert.match(copy.segments![2].text, /כתפיים משוחררות/);
+  assert.equal(copy.segments![2].durationSeconds, INSTRUCTION_TIMING.encodeBodyLanguageCue);
+  assert.match(copy.segments![3].text, /אני בטוח כאן/);
+  assert.equal(copy.segments![3].durationSeconds, INSTRUCTION_TIMING.encodeIdentityMantra);
   assert.equal(copy.segments![4].text, "", "the trailing dwell segment carries no text of its own");
   assert.equal(copy.segments![4].durationSeconds, DEFAULT_DWELL_TIMES.encodingDwellSeconds);
   assert.equal(
@@ -958,6 +959,63 @@ test("a relevant selected evidence item appears BEFORE Identity/Mantra, using th
   assert.ok(mantraIndexInBody >= 0);
   assert.ok(evidenceIndexInBody < mantraIndexInBody, "evidence must precede Identity/Mantra");
   assert.ok(!copy.body.includes("הוכחה"), "must never use a clinical/argumentative label like \"הוכחה ש...\"");
+});
+
+test("FINAL CORRECTED ORDER: Body-Language appears BEFORE the evidence/Gratitude line -- embodiment first, then real personal evidence", () => {
+  const p = profile({ stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני חומל" } });
+  const copy = getStageCopy(
+    "encode",
+    p,
+    liveState({ triggerType: "reactive_emotion" }),
+    ["state"],
+    [evidenceRecord()]
+  );
+  const bodyLanguageIndex = copy.segments!.findIndex((s) => s.text.includes("כתפיים משוחררות"));
+  const evidenceIndex = copy.segments!.findIndex((s) => s.text.includes("משהו שכבר עשית"));
+  assert.ok(bodyLanguageIndex >= 0 && evidenceIndex >= 0, "both the body-language segment and the evidence segment must exist");
+  assert.ok(bodyLanguageIndex < evidenceIndex, "Body-Language must precede the evidence/Gratitude line");
+});
+
+test("FINAL CORRECTED ORDER, full chain in one profile: Body-Language -> evidence -> concrete memory detail -> Identity/Mantra, in that exact segment order", () => {
+  const p = profile({ stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני חומל" } });
+  const copy = getStageCopy(
+    "encode",
+    p,
+    liveState({ triggerType: "reactive_emotion" }),
+    ["state"],
+    [evidenceRecord({ memoryDetail: "שמתי לב שהכתפיים שלי נרגעו אחרי כמה שניות" })]
+  );
+  const bodyLanguageIndex = copy.segments!.findIndex((s) => s.text.includes("כתפיים משוחררות"));
+  const evidenceIndex = copy.segments!.findIndex((s) => s.text.includes("משהו שכבר עשית"));
+  const detailIndex = copy.segments!.findIndex((s) => s.text === "שמתי לב שהכתפיים שלי נרגעו אחרי כמה שניות");
+  const mantraIndex = copy.segments!.findIndex((s) => s.text.includes("אני חומל"));
+  assert.ok([bodyLanguageIndex, evidenceIndex, detailIndex, mantraIndex].every((i) => i >= 0), "all four pieces must be present");
+  assert.ok(bodyLanguageIndex < evidenceIndex, "Body-Language before evidence");
+  assert.ok(evidenceIndex < detailIndex, "evidence before concrete memory detail");
+  assert.ok(detailIndex < mantraIndex, "concrete memory detail before Identity/Mantra");
+});
+
+test("no-match fallback (no relevant evidence/Gratitude at all): Body-Language is immediately followed by Identity/Mantra, with nothing inserted between them", () => {
+  const p = profile({ stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני חומל" } });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"], []);
+  const bodyLanguageIndex = copy.segments!.findIndex((s) => s.text.includes("כתפיים משוחררות"));
+  const mantraIndex = copy.segments!.findIndex((s) => s.text.includes("אני חומל"));
+  assert.equal(mantraIndex, bodyLanguageIndex + 1, "Identity/Mantra must be the very next segment after Body-Language -- no evidence line, no filler");
+});
+
+test("Identity/Mantra (encode) always precedes Action Imagery (the separate, unchanged 'act' stage reached immediately after encode) -- ArcStage-level ordering is unaffected by the local Encoding sub-order change", () => {
+  const p = profile({
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני חומל" },
+  });
+  const state = liveState({ triggerType: "reactive_emotion" });
+  // encode's own copy contains Identity/Mantra.
+  const encodeCopy = getStageCopy("encode", p, state, ["state"]);
+  assert.ok(encodeCopy.body.includes("אני חומל"), "encode must still render Identity/Mantra");
+  // The engine's own unchanged transition: encode always advances to act
+  // next (Action Imagery lives inside "act" -- see arc/arcEngine.ts's
+  // resolveActPhase), never reordered by this task.
+  const next = getNextArcStage("encode", state, p, ["state"]);
+  assert.equal(next.stage, "act", "encode must still be immediately followed by act (Action Imagery/performing), unchanged");
 });
 
 test("a Gratitude-sourced evidence item uses the Gratitude lead-in, distinct from the behavioral-evidence one", () => {

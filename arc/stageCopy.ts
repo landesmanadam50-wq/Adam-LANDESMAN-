@@ -421,27 +421,29 @@ export function getStageCopy(
         buildProfile: profile,
       });
 
-      // Final Encoding order (evidence-encoding task): (1) notice the
-      // updated sensation -- neutrally, no assumption it improved, a
-      // large change/small change/no obvious change are all valid --
-      // then (2) the Short Encoding Regulation Cue, this target's own
-      // lightweight continuity anchor -- deliberately NOT the full
-      // Regulation process/instructions used at the "regulate" stage,
-      // just one short carry-over, to avoid overloading attention here
-      // -- then (3) a relevant real personal-evidence/Gratitude line,
-      // when one was selected (arc/evidence.ts), immediately followed
-      // by (4) that SAME record's own concrete memory detail, when it
-      // has one -- then (5) Identity/Mantra, grounded in whatever
-      // evidence just preceded it -- then (6) the Body-Language
-      // Encoding Cue. Evidence/memory-detail and Identity/Mantra
-      // deliberately now come BEFORE Body-Language (this task's one
-      // explicitly requested Encoding sub-order change; Body-Language
-      // used to precede Identity/Mantra here). Action Imagery is
-      // deliberately NOT here -- it lives in the "act" stage instead,
-      // where the currentAction it imagines is actually resolved (see
-      // that case's doc). Each piece is its own timed segment
-      // (arc/instructionTiming.ts) so this order reveals progressively
-      // rather than all at once.
+      // Final Encoding order (evidence-encoding task, corrected): (1)
+      // notice the updated sensation -- neutrally, no assumption it
+      // improved, a large change/small change/no obvious change are all
+      // valid -- then (2) the Short Encoding Regulation Cue, this
+      // target's own lightweight continuity anchor -- deliberately NOT
+      // the full Regulation process/instructions used at the "regulate"
+      // stage, just one short carry-over, to avoid overloading attention
+      // here -- then (3) the Body-Language Encoding Cue, the embodiment
+      // anchor -- then (4) a relevant real personal-evidence/Gratitude
+      // line, when one was selected (arc/evidence.ts), immediately
+      // followed by (5) that SAME record's own concrete memory detail,
+      // when it has one -- then (6) Identity/Mantra, grounded in
+      // whatever embodiment/evidence just preceded it. Body-Language
+      // deliberately comes BEFORE evidence/Identity here (the corrected
+      // sub-order: embodiment -> real personal evidence -> concrete
+      // supporting detail -> identity statement); evidence/memory-detail
+      // sit strictly between Body-Language and Identity/Mantra, never
+      // before Body-Language, never after Identity/Mantra. Action
+      // Imagery is deliberately NOT here -- it lives in the "act" stage
+      // instead, where the currentAction it imagines is actually
+      // resolved (see that case's doc). Each piece is its own timed
+      // segment (arc/instructionTiming.ts) so this order reveals
+      // progressively rather than all at once.
       const segments: InstructionSegment[] = [
         { text: "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה.", durationSeconds: INSTRUCTION_TIMING.encodeUpdatedSensation },
       ];
@@ -450,32 +452,6 @@ export function getStageCopy(
       const regulationCue = resolveEncodingRegulationCue(layer, profile);
       if (regulationCue) {
         segments.push({ text: `המשך עם ${regulationCue}.`, durationSeconds: INSTRUCTION_TIMING.encodeShortRegulationCue });
-        hasContinuityContent = true;
-      }
-
-      // Evidence-encoding task: a real past behavioral success or a
-      // relevant protocol-linked Gratitude entry, selected from the
-      // trainee's OWN existing history (arc/evidence.ts) -- never
-      // invented, never shown when nothing sufficiently relevant
-      // exists (#17). This never counts toward hasContinuityContent:
-      // that flag tracks whether any BUILD-configured Encoding cue
-      // exists, a separate question from whether session HISTORY
-      // happens to contain relevant evidence.
-      const evidenceContext = resolveEncodingEvidenceContext(layer, encoding, profile);
-      const selectedEvidence = selectEncodingEvidence(evidenceIndex, evidenceContext);
-      for (const item of selectedEvidence) {
-        segments.push({ text: getEvidenceLine(item), durationSeconds: INSTRUCTION_TIMING.encodeEvidence });
-        if (item.memoryDetail) {
-          // #9/#13: the SAME record's own concrete memory detail,
-          // immediately after its evidence line and before anything
-          // else -- never a different record's detail, never invented
-          // when absent.
-          segments.push({ text: item.memoryDetail, durationSeconds: INSTRUCTION_TIMING.encodeMemoryDetail });
-        }
-      }
-
-      if (encoding?.mantra) {
-        segments.push({ text: `חזור לעצמך: "${encoding.mantra}".`, durationSeconds: INSTRUCTION_TIMING.encodeIdentityMantra });
         hasContinuityContent = true;
       }
 
@@ -497,6 +473,33 @@ export function getStageCopy(
         // Desired State, independent of whether a regulation cue is
         // also being maintained.
         segments.push({ text: `עבור לשפת הגוף של ${encoding.target}.`, durationSeconds: INSTRUCTION_TIMING.encodeBodyLanguageCue });
+        hasContinuityContent = true;
+      }
+
+      // Evidence-encoding task (corrected order): a real past
+      // behavioral success or a relevant protocol-linked Gratitude
+      // entry, selected from the trainee's OWN existing history
+      // (arc/evidence.ts) -- never invented, never shown when nothing
+      // sufficiently relevant exists (#17). Comes strictly AFTER
+      // Body-Language and BEFORE Identity/Mantra. This never counts
+      // toward hasContinuityContent: that flag tracks whether any
+      // BUILD-configured Encoding cue exists, a separate question from
+      // whether session HISTORY happens to contain relevant evidence.
+      const evidenceContext = resolveEncodingEvidenceContext(layer, encoding, profile);
+      const selectedEvidence = selectEncodingEvidence(evidenceIndex, evidenceContext);
+      for (const item of selectedEvidence) {
+        segments.push({ text: getEvidenceLine(item), durationSeconds: INSTRUCTION_TIMING.encodeEvidence });
+        if (item.memoryDetail) {
+          // #9/#13: the SAME record's own concrete memory detail,
+          // immediately after its evidence line and before Identity/
+          // Mantra -- never a different record's detail, never invented
+          // when absent.
+          segments.push({ text: item.memoryDetail, durationSeconds: INSTRUCTION_TIMING.encodeMemoryDetail });
+        }
+      }
+
+      if (encoding?.mantra) {
+        segments.push({ text: `חזור לעצמך: "${encoding.mantra}".`, durationSeconds: INSTRUCTION_TIMING.encodeIdentityMantra });
         hasContinuityContent = true;
       }
 
