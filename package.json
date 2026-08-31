@@ -41,5 +41,8 @@
   "overrides": {
     "react-dom": "19.2.3"
   },
-  "private": true
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0 <25"
+  }
 }
