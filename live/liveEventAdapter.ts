@@ -30,6 +30,20 @@ export function applyTriggerSelection(session: ArcLiveState, triggerType: Trigge
   return { ...session, triggerType };
 }
 
+/**
+ * The trigger_context stage's own free-text answer -- session-specific
+ * only (ArcLiveState.triggerContext), never touching
+ * ArcBuildProfile.challengeContext/identityChallengeContext (the
+ * reusable, BUILD-configured context -- see arc/types.ts's
+ * ArcLiveState.triggerContext doc). Trimmed to null when left blank,
+ * same convention as applyAlternativeAction/CompleteScreen's Gratitude
+ * -- optional, never invented, never required.
+ */
+export function applyTriggerContext(session: ArcLiveState, text: string): ArcLiveState {
+  const trimmed = text.trim();
+  return { ...session, triggerContext: trimmed.length > 0 ? trimmed : null };
+}
+
 /** presence_check and arc_thought_presence_recheck both feed presenceRating; desired_state_check feeds desiredStateRating. Same "scale0to10" input kind, different field -- this is the one piece of stage-specific routing an adapter necessarily does. */
 export function applyScaleAnswer(stage: ArcStage, session: ArcLiveState, value: number): ArcLiveState {
   switch (stage) {

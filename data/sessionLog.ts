@@ -39,6 +39,17 @@ export interface SessionEvidenceContext {
   currentAction: string | null;
   interferingState: string | null;
   challengeContext: string | null;
+  /**
+   * Reactive-flow-strengthening task (#7, #8): the session-specific
+   * trigger the trainee typed on the "trigger_context" stage --
+   * ArcLiveState.triggerContext, carried forward for future review
+   * (recurring-trigger patterns, later relevance/context) -- never the
+   * BUILD-configured Challenge Context (challengeContext above), and
+   * never analyzed or acted on by this task. null for a proactive
+   * session (that stage is never reached) or when the trainee left it
+   * blank.
+   */
+  triggerContext: string | null;
 }
 
 export interface SessionLogEntry {

@@ -54,6 +54,7 @@ import {
   applySensationAnswer,
   applySuccessFocusChoice,
   applyTargetSelection,
+  applyTriggerContext,
   applyTriggerSelection,
   applyYesNoAnswer,
   hasSensationLocationResponse,
@@ -277,7 +278,7 @@ test("15. A single mapped Reactive experience is auto-resolved at trigger_select
   const session = applyTriggerSelection(createEmptyLiveState(), "reactive_emotion");
   const outcome = step("trigger_selection", session, p, activeLayers);
   assert.equal(outcome.session.selectedTarget, "state", "the one mapped experience is auto-selected");
-  assert.equal(outcome.stage, "presence_check");
+  assert.equal(outcome.stage, "trigger_context", "reactive sessions now route through the trigger recognition step first");
 });
 
 test("16. Two mapped Reactive experiences stay at trigger_selection until one is explicitly chosen, then resolve deterministically -- Craving never resolves to Focus's state map", () => {
@@ -295,7 +296,7 @@ test("16. Two mapped Reactive experiences stay at trigger_selection until one is
 
   const craving = applyTargetSelection(stayed.session, "identity");
   const resolved = step("trigger_selection", craving, p, activeLayers);
-  assert.equal(resolved.stage, "presence_check");
+  assert.equal(resolved.stage, "trigger_context", "reactive sessions now route through the trigger recognition step first");
   assert.equal(resolved.session.selectedTarget, "identity", "Craving resolves to the identity (Discipline) target, never state");
 });
 
@@ -1129,4 +1130,46 @@ test("success_focus's own engine transition is completely unaffected by successF
   const laterOutcome = getNextArcStage("success_focus", laterSession, pWithHabit, activeLayersWithHabit);
   const nowOutcome = getNextArcStage("success_focus", nowSession, pWithHabit, activeLayersWithHabit);
   assert.deepEqual(laterOutcome, nowOutcome, "the transition depends only on needsNegativeAction, never on successFocusChoice");
+});
+
+// --- Reactive-flow-strengthening task: applyTriggerContext (#1, #8) --
+// the session-specific trigger answer, deliberately separate from
+// ArcBuildProfile.challengeContext/identityChallengeContext (the
+// reusable, BUILD-configured context, which this adapter never reads
+// or writes).
+
+test("applyTriggerContext stores the trimmed trigger text in ArcLiveState.triggerContext only, never touching any BUILD/profile field", () => {
+  const session = createEmptyLiveState();
+  const answered = applyTriggerContext(session, "  ראיתי סרטון בטלפון  ");
+  assert.equal(answered.triggerContext, "ראיתי סרטון בטלפון", "trimmed, stored verbatim otherwise");
+});
+
+test("applyTriggerContext stores null for an empty/whitespace-only answer -- optional, never required, never invented", () => {
+  const session = createEmptyLiveState();
+  assert.equal(applyTriggerContext(session, "").triggerContext, null);
+  assert.equal(applyTriggerContext(session, "   ").triggerContext, null);
+});
+
+test("applyTriggerContext never advances currentArcStage by itself -- only advanceLiveSession does, same convention as every other applyXxx adapter", () => {
+  const session = createEmptyLiveState();
+  const answered = applyTriggerContext(session, "מישהו אמר לי משהו שהלחיץ אותי");
+  assert.equal(answered.currentArcStage, session.currentArcStage);
+});
+
+test("a real reactive session walk: trigger_selection -> trigger_context -> observer_pause -> preventive_action_check, the trigger answer preserved throughout and never merged into the BUILD Challenge Context", () => {
+  const p = profile({ statePreventiveAction: "לצאת לחמש דקות אוויר צח", challengeContext: "אחרי טעות" });
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  let session = applyTriggerSelection(createEmptyLiveState(), "reactive_emotion");
+  let hop = advanceLiveSession("trigger_selection", session, p, activeLayers);
+  assert.equal(hop.stage, "trigger_context");
+
+  session = applyTriggerContext(hop.session, "ראיתי סרטון בטלפון");
+  hop = advanceLiveSession("trigger_context", session, p, activeLayers);
+  assert.equal(hop.stage, "observer_pause");
+  assert.equal(hop.session.triggerContext, "ראיתי סרטון בטלפון", "the session-specific trigger answer is preserved across the hop");
+
+  hop = advanceLiveSession("observer_pause", hop.session, p, activeLayers);
+  assert.equal(hop.stage, "preventive_action_check");
+  assert.equal(hop.session.triggerContext, "ראיתי סרטון בטלפון", "still preserved");
+  assert.equal(p.challengeContext, "אחרי טעות", "BUILD's own Challenge Context is never overwritten by the session-specific trigger answer");
 });

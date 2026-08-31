@@ -68,7 +68,11 @@ test("STATE ONLY: a full reactive_emotion session walks through to completion wi
   let s = state({ triggerType: "reactive_emotion", presenceRating: 8 });
   let stage = getFirstArcStage();
 
-  stage = getNextArcStage(stage, s, p, activeLayers).stage; // trigger_selection -> presence_check (only one mapped experience)
+  stage = getNextArcStage(stage, s, p, activeLayers).stage; // trigger_selection -> trigger_context (only one mapped experience)
+  assert.equal(stage, "trigger_context");
+  stage = getNextArcStage(stage, s, p, activeLayers).stage; // trigger_context -> observer_pause
+  assert.equal(stage, "observer_pause");
+  stage = getNextArcStage(stage, s, p, activeLayers).stage; // observer_pause -> presence_check (no Preventive Action configured)
   assert.equal(stage, "presence_check");
   stage = getNextArcStage(stage, s, p, activeLayers).stage; // presence_check -> sensation_check (high presence, no ARC Thought)
   assert.equal(stage, "sensation_check");

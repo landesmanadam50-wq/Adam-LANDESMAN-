@@ -4,6 +4,23 @@ export type TriggerType = "reactive_emotion" | "reactive_urge" | "proactive";
 
 export type ArcStage =
   | "trigger_selection"
+  /**
+   * Reactive-only (#8 "Important Flow Distinction"): the session-specific
+   * "what triggered this right now" recognition, asked once the reactive
+   * target is resolved and before the existing Preventive Action -- see
+   * arc/arcEngine.ts's module doc and ArcLiveState.triggerContext below.
+   * Never reached for proactive sessions (Preserve Proactive Separation,
+   * unchanged).
+   */
+  | "trigger_context"
+  /**
+   * Reactive-only: brief observer-perspective + imagined-pause
+   * instruction, immediately after trigger_context and before the
+   * existing Preventive Action -- recognition-only, never asks the
+   * trainee to evoke/intensify the interfering state. See
+   * arc/stageCopy.ts's "observer_pause" case.
+   */
+  | "observer_pause"
   | "presence_check"
   | "arc_thought_awareness"
   | "arc_thought_combined_attention"
@@ -199,6 +216,21 @@ export interface ArcLiveState {
    */
   selectedTarget: DevelopmentLayer | null;
 
+  /**
+   * Reactive-flow-strengthening task (#1, #8): the session-specific
+   * free-text answer to "מה הפעיל אצלך עכשיו את הרגש או הדחף?" -- what
+   * specifically triggered THIS occurrence, right now. Deliberately
+   * separate from, and never written back onto, the BUILD-configured
+   * Challenge Context (ArcBuildProfile.challengeContext/
+   * identityChallengeContext) -- that stays the reusable/preconfigured
+   * context; this is the one-off, session-specific event. Optional
+   * (null when left blank -- the trainee is never forced to elaborate),
+   * set once on the "trigger_context" stage and never re-asked within
+   * the same session. See data/sessionLog.ts's SessionEvidenceContext
+   * for where this is safely carried forward at session completion.
+   */
+  triggerContext: string | null;
+
   presenceRating: number | null;
   sensationLocation: string | null;
   sensationIntensity: number | null;
@@ -301,6 +333,7 @@ export function createEmptyLiveState(): ArcLiveState {
   return {
     triggerType: null,
     selectedTarget: null,
+    triggerContext: null,
     presenceRating: null,
     sensationLocation: null,
     sensationIntensity: null,

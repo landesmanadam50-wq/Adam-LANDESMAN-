@@ -63,6 +63,7 @@ const disciplineContext = {
   currentAction: "התחלת את מה שתכננת",
   interferingState: "היסוס",
   challengeContext: "לפני שיחה קשה",
+  triggerContext: null,
 };
 
 const focusContext = {
@@ -73,6 +74,7 @@ const focusContext = {
   currentAction: null,
   interferingState: "פחד",
   challengeContext: "אחרי טעות",
+  triggerContext: null,
 };
 
 // --- Layer/context resolution ---------------------------------------------
@@ -95,6 +97,31 @@ test("resolveEncodingEvidenceContext/buildSessionEvidenceContext resolve the exa
   assert.equal(liveContext.targetLayer, sessionContext.targetLayer);
   assert.equal(liveContext.goal, sessionContext.goal);
   assert.equal(liveContext.habit, sessionContext.habit);
+});
+
+// --- Reactive-flow-strengthening task (#7, #8): buildSessionEvidenceContext's
+// own optional triggerContext parameter -- the session-specific trigger
+// text (ArcLiveState.triggerContext) carried straight through to storage,
+// entirely separate from profile.challengeContext/identityChallengeContext.
+
+test("buildSessionEvidenceContext carries the session-specific triggerContext straight through, verbatim, when provided", () => {
+  const p = profile();
+  const context = buildSessionEvidenceContext("state", p.stateEncoding, "פעולה כלשהי", p, "ראיתי סרטון בטלפון");
+  assert.equal(context.triggerContext, "ראיתי סרטון בטלפון");
+});
+
+test("buildSessionEvidenceContext defaults triggerContext to null when omitted -- every existing call site (before this task) stays valid unchanged", () => {
+  const p = profile();
+  const context = buildSessionEvidenceContext("state", p.stateEncoding, "פעולה כלשהי", p);
+  assert.equal(context.triggerContext, null);
+});
+
+test("triggerContext is never conflated with challengeContext -- the session-specific trigger and the BUILD-configured, reusable Challenge Context are always kept as two distinct fields", () => {
+  const p = profile({ challengeContext: "אחרי טעות" });
+  const context = buildSessionEvidenceContext("state", p.stateEncoding, "פעולה כלשהי", p, "ראיתי סרטון בטלפון");
+  assert.equal(context.challengeContext, "אחרי טעות", "BUILD's own Challenge Context, unchanged");
+  assert.equal(context.triggerContext, "ראיתי סרטון בטלפון", "the session-specific trigger, kept separate");
+  assert.notEqual(context.challengeContext, context.triggerContext);
 });
 
 // --- buildEvidenceIndex: derived from the ONE existing history store -----

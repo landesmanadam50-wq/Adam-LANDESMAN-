@@ -178,7 +178,16 @@ export function buildSessionEvidenceContext(
   layer: DevelopmentLayer,
   encoding: EncodingProfile | null,
   currentAction: string | null,
-  profile: ArcBuildProfile
+  profile: ArcBuildProfile,
+  /**
+   * Reactive-flow-strengthening task (#7): this session's own
+   * session-specific trigger text (ArcLiveState.triggerContext),
+   * carried straight through for future review -- never analyzed or
+   * used for evidence selection by this task (see this file's own
+   * anti-fabrication doc: nothing here infers or acts on it). Optional,
+   * defaulting to null, so every existing call site is unaffected.
+   */
+  triggerContext: string | null = null
 ): SessionEvidenceContext {
   const { identityLabel, interferingState, challengeContext } = resolveEvidenceContext(layer, encoding, profile);
   return {
@@ -189,6 +198,7 @@ export function buildSessionEvidenceContext(
     currentAction,
     interferingState,
     challengeContext,
+    triggerContext,
   };
 }
 

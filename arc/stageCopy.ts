@@ -34,6 +34,7 @@ import { resolveEncodingEvidenceContext, selectEncodingEvidence } from "./eviden
 
 export type ArcStageInputKind =
   | "triggerSelect"
+  | "triggerContext"
   | "scale0to10"
   | "sensationCheck"
   | "yesno"
@@ -133,8 +134,25 @@ export function getEvidenceLine(item: EvidenceRecord): string {
   return `${leadIn} ${item.text}`;
 }
 
+/**
+ * Reactive-flow-strengthening task (#5, #6): the brief reinforcement
+ * shown on the Preventive Action page -- reached only once the trainee
+ * has come through trigger_context/observer_pause, so this is never
+ * shown "immediately when the Reactive flow first opens" by
+ * construction (it lives on preventive_action_check's own copy, a
+ * stage those two always precede). Praises the trained behavior itself
+ * -- noticing, pausing, entering ARCHI, creating space before the
+ * automatic reaction -- never framed as eliminating/defeating/
+ * controlling the feeling or urge.
+ */
+export function getPreventiveActionReinforcement(): string {
+  return "כל הכבוד על שנכנסת ל־ARCHI ויצרת מרווח לפני התגובה.";
+}
+
 const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   trigger_selection: "triggerSelect",
+  trigger_context: "triggerContext",
+  observer_pause: "info",
   presence_check: "scale0to10",
   arc_thought_awareness: "info",
   arc_thought_combined_attention: "info",
@@ -206,6 +224,44 @@ export function getStageCopy(
         return { title: "מה כבר נמצא עכשיו?", body: "בחר את מה שהכי מתאים לרגע הזה.", segments: null };
       }
       return { title: "מה מביא אותך לכאן?", body: "בחר את מה שהכי מתאים לרגע הזה.", segments: null };
+
+    case "trigger_context":
+      // Reactive-flow-strengthening task (#1, #8): the session-specific
+      // "what triggered this right now" recognition -- a short free-text
+      // answer, deliberately distinct from, and never overwriting, the
+      // BUILD-configured Challenge Context (profile.challengeContext/
+      // identityChallengeContext, untouched by this stage). Optional --
+      // the trainee is never forced to elaborate; see
+      // live/screens.tsx's TriggerContextScreen.
+      return { title: "מה קרה עכשיו?", body: "מה הפעיל אצלך עכשיו את הרגש או הדחף?", segments: null };
+
+    case "observer_pause": {
+      // Reactive-flow-strengthening task (#2, #3): three progressive
+      // lines -- observer perspective, then the imagined pause, then an
+      // explicit safety/recognition line -- immediately followed by one
+      // plain, fixed reflection segment (arc/instructionTiming.ts's
+      // observerPauseReflection, NOT part of the per-trainee configurable
+      // dwell system -- see that file's doc). Purely recognition/
+      // rehearsal: never asks the trainee to re-evoke, hold, or
+      // intensify the interfering emotion/urge -- see #2's explicit
+      // "no need to re-evoke or strengthen" line below, included
+      // verbatim as its own segment (not just a doc comment) so it's
+      // always actually shown to the trainee.
+      const observerPerspective = "דמיין לרגע את מה שקרה כאילו אתה רואה את הסיטואציה מהצד, ואת עצמך בתוכה.";
+      const imaginedPause = "ראה את עצמך עוצר לכמה שניות לפני התגובה.";
+      const safetyRecognition = "אין צורך לעורר מחדש או לחזק את הרגש או הדחף — רק לראות את מה שקרה.";
+      const segments: InstructionSegment[] = [
+        { text: observerPerspective, durationSeconds: INSTRUCTION_TIMING.observerPerspective },
+        { text: imaginedPause, durationSeconds: INSTRUCTION_TIMING.observerPause },
+        { text: safetyRecognition, durationSeconds: INSTRUCTION_TIMING.observerSafetyRecognition },
+        { text: "", durationSeconds: INSTRUCTION_TIMING.observerPauseReflection },
+      ];
+      return {
+        title: "מרחק ועצירה",
+        body: [observerPerspective, imaginedPause, safetyRecognition].join(" "),
+        segments,
+      };
+    }
 
     case "presence_check": {
       const question = "עד כמה אתה נוכח כרגע, בסולם 1 עד 10?";

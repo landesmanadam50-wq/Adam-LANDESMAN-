@@ -160,6 +160,7 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "sensationIntensity",
     "sensationLocation",
     "successFocusChoice",
+    "triggerContext",
     "triggerType",
     "wantsPreventiveAction",
   ]);

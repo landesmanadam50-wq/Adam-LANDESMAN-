@@ -54,6 +54,7 @@ import {
   SuccessFocusDeferralScreen,
   SuccessFocusScreen,
   TransitionCheckScreen,
+  TriggerContextScreen,
   TriggerSelectScreen,
 } from "./screens.tsx";
 
@@ -79,6 +80,10 @@ export interface ArcLiveRendererProps {
   pendingCustomSensationLocation: string;
   pendingSensationLocationUnclear: boolean;
   successFocusMinutes: number | null;
+  /** Reactive-flow-strengthening task: the trigger_context stage's own pending free-text answer, not yet committed to session.triggerContext until Continue is pressed -- same "pending local state, committed on Continue" pattern as pendingAlternativeAction. */
+  pendingTriggerContext: string;
+  onChangeTriggerContext: (text: string) => void;
+  onTriggerContextContinue: () => void;
   onSelectTrigger: (trigger: TriggerType) => void;
   onScaleAnswer: (value: number) => void;
   onSelectSensationLocation: (location: string) => void;
@@ -144,6 +149,29 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
         />
       );
     }
+
+    case "trigger_context":
+      // Reactive-flow-strengthening task: session-specific free-text
+      // trigger recognition, reached only for reactive sessions (see
+      // arc/arcEngine.ts's "trigger_selection" case) -- never for
+      // proactive, which routes straight to presence_check unchanged.
+      return (
+        <TriggerContextScreen
+          copy={copy}
+          value={props.pendingTriggerContext}
+          onChangeText={props.onChangeTriggerContext}
+          onContinue={props.onTriggerContextContinue}
+        />
+      );
+
+    case "observer_pause":
+      // Reuses the existing InstructionScreen/TimedInstructionBody
+      // mechanism verbatim (same as arc_thought_awareness/
+      // arc_thought_combined_attention/preventive_action below) -- no
+      // new timed-reveal machinery, same Continue-available cue. key
+      // resets its own elapsed-time clock on every fresh mount, same
+      // reasoning as the three-stage group below.
+      return <InstructionScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
     case "presence_check":
     case "arc_thought_presence_recheck":

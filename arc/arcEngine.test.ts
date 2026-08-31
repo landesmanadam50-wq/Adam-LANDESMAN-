@@ -18,7 +18,7 @@ import {
   resolveTargetPreventiveAction,
 } from "./arcEngine.ts";
 import { createEmptyLiveState } from "./types.ts";
-import type { ArcBuildProfile, ArcLiveState, DevelopmentLayer } from "./types.ts";
+import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { ARC_CONFIG } from "./config.ts";
 
 const ALL_LAYERS: DevelopmentLayer[] = ["state", "identity", "habit"];
@@ -167,7 +167,7 @@ test("trigger_selection resolves once a Reactive experience is explicitly select
   });
 
   const distraction = state({ triggerType: "reactive_emotion", selectedTarget: "state" });
-  assert.equal(getNextArcStage("trigger_selection", distraction, p, ALL_LAYERS).stage, "presence_check");
+  assert.equal(getNextArcStage("trigger_selection", distraction, p, ALL_LAYERS).stage, "trigger_context");
   assert.equal(
     resolveEncodingTarget({
       activeLayers: ALL_LAYERS,
@@ -179,7 +179,7 @@ test("trigger_selection resolves once a Reactive experience is explicitly select
   );
 
   const craving = state({ triggerType: "reactive_emotion", selectedTarget: "identity" });
-  assert.equal(getNextArcStage("trigger_selection", craving, p, ALL_LAYERS).stage, "presence_check");
+  assert.equal(getNextArcStage("trigger_selection", craving, p, ALL_LAYERS).stage, "trigger_context");
   assert.equal(
     resolveEncodingTarget({
       activeLayers: ALL_LAYERS,
@@ -322,14 +322,19 @@ test("arc_thought_presence_recheck stops looping once the safety cap is hit and 
 // Preventive action -- resolved per-target, surfaced BEFORE ARC Thought (#3)
 // ---------------------------------------------------------------------------
 
-test("reactive_urge routes through preventive_action_check (from trigger_selection, before ARC Thought) only when the habit layer's Preventive Action is configured", () => {
+test("reactive_urge routes through preventive_action_check (from trigger_selection, via the reactive-flow-strengthening task's trigger_context -> observer_pause, before ARC Thought) only when the habit layer's Preventive Action is configured", () => {
   const s = state({ triggerType: "reactive_urge" });
 
+  // trigger_selection always routes a reactive session through
+  // trigger_context first now, regardless of Preventive Action config.
   const withPlan = profile({ preventiveAction: "לצאת להליכה" });
-  assert.equal(getNextArcStage("trigger_selection", s, withPlan, ALL_LAYERS).stage, "preventive_action_check");
+  assert.equal(getNextArcStage("trigger_selection", s, withPlan, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(getNextArcStage("trigger_context", s, withPlan, ALL_LAYERS).stage, "observer_pause");
+  assert.equal(getNextArcStage("observer_pause", s, withPlan, ALL_LAYERS).stage, "preventive_action_check");
 
   const withoutPlan = profile({ preventiveAction: null });
-  assert.equal(getNextArcStage("trigger_selection", s, withoutPlan, ALL_LAYERS).stage, "presence_check");
+  assert.equal(getNextArcStage("trigger_selection", s, withoutPlan, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(getNextArcStage("observer_pause", s, withoutPlan, ALL_LAYERS).stage, "presence_check");
 });
 
 test("preventive_action_check branches on wantsPreventiveAction, then both branches continue to presence_check -- never back to sensation_check", () => {
@@ -346,10 +351,11 @@ test("reactive_emotion resolves Preventive Action from the state layer's own fie
     preventiveAction: "פעולה של הרגל", // habit's -- must never leak into a state-layer session
     statePreventiveAction: "לצאת לחמש דקות אוויר צח",
   });
-  assert.equal(getNextArcStage("trigger_selection", s, withState, ALL_LAYERS).stage, "preventive_action_check");
+  assert.equal(getNextArcStage("trigger_selection", s, withState, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(getNextArcStage("observer_pause", s, withState, ALL_LAYERS).stage, "preventive_action_check");
 
   const withoutState = profile({ preventiveAction: "פעולה של הרגל", statePreventiveAction: null });
-  assert.equal(getNextArcStage("trigger_selection", s, withoutState, ALL_LAYERS).stage, "presence_check");
+  assert.equal(getNextArcStage("observer_pause", s, withoutState, ALL_LAYERS).stage, "presence_check");
 });
 
 test("reactive_emotion resolves Preventive Action from the identity layer's own field when the resolved target is identity", () => {
@@ -367,7 +373,8 @@ test("reactive_emotion resolves Preventive Action from the identity layer's own 
   // with exactly one mapped Reactive experience does via the adapter's
   // autoSelectSingleReactiveExperience (see live/liveEventAdapter.ts).
   const s = state({ triggerType: "reactive_emotion" });
-  assert.equal(getNextArcStage("trigger_selection", s, p, ALL_LAYERS).stage, "preventive_action_check");
+  assert.equal(getNextArcStage("trigger_selection", s, p, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(getNextArcStage("observer_pause", s, p, ALL_LAYERS).stage, "preventive_action_check");
 });
 
 test("state, identity, and habit Preventive Actions never leak into each other, even when all three are configured", () => {
@@ -653,4 +660,84 @@ test("resolveActPhase moves to 'imagery' once currentAction is resolved (a valid
 test("resolveActPhase moves directly to 'performing' once Action Imagery is completed -- no standalone Preparation phase in between", () => {
   assert.equal(resolveActPhase(true, null, true), "performing");
   assert.equal(resolveActPhase(false, "חלופה", true), "performing");
+});
+
+// --- Reactive-flow-strengthening task: trigger_context/observer_pause
+// insertion (#1-#4, #8, #9). Reactive-only, never reached by proactive
+// sessions ("Preserve Proactive Separation").
+
+test("reactive sessions (both reactive_urge and reactive_emotion) always route trigger_selection -> trigger_context -> observer_pause first, regardless of whether a Preventive Action is configured", () => {
+  const withPreventive = profile({ preventiveAction: "לצאת להליכה", statePreventiveAction: "לנשום עמוק" });
+  const withoutPreventive = profile({ preventiveAction: null, statePreventiveAction: null });
+
+  for (const p of [withPreventive, withoutPreventive]) {
+    const urge = state({ triggerType: "reactive_urge" });
+    assert.equal(getNextArcStage("trigger_selection", urge, p, ALL_LAYERS).stage, "trigger_context");
+
+    const emotion = state({ triggerType: "reactive_emotion", selectedTarget: "state" });
+    assert.equal(getNextArcStage("trigger_selection", emotion, p, ALL_LAYERS).stage, "trigger_context");
+  }
+});
+
+test("trigger_context always advances to observer_pause unconditionally -- an optional field, never blocking progression the way a required rating would", () => {
+  const p = profile();
+  const withText = state({ triggerType: "reactive_emotion", selectedTarget: "state", triggerContext: "ראיתי סרטון בטלפון" });
+  assert.equal(getNextArcStage("trigger_context", withText, p, ALL_LAYERS).stage, "observer_pause");
+
+  const withoutText = state({ triggerType: "reactive_emotion", selectedTarget: "state", triggerContext: null });
+  assert.equal(getNextArcStage("trigger_context", withoutText, p, ALL_LAYERS).stage, "observer_pause", "must never block on an empty/optional trigger answer");
+});
+
+test("observer_pause resolves the SAME target (layer) trigger_selection's own inline resolution used to compute directly -- reactive_urge always habit, reactive_emotion via selectedTarget/inference -- so the correct Preventive Action is retrieved next", () => {
+  const p = profile({ preventiveAction: "פעולת הרגל", statePreventiveAction: "פעולת מצב" });
+
+  const urge = state({ triggerType: "reactive_urge" });
+  const afterUrge = getNextArcStage("observer_pause", urge, p, ALL_LAYERS);
+  assert.equal(afterUrge.stage, "preventive_action_check", "reactive_urge resolves to habit's own Preventive Action");
+
+  const emotion = state({ triggerType: "reactive_emotion", selectedTarget: "state" });
+  const afterEmotion = getNextArcStage("observer_pause", emotion, p, ALL_LAYERS);
+  assert.equal(afterEmotion.stage, "preventive_action_check", "reactive_emotion (state target) resolves to state's own Preventive Action");
+});
+
+test("observer_pause falls through directly to presence_check when no Preventive Action is configured for the resolved target -- no duplicate/invented Preventive Action question", () => {
+  const p = profile({ preventiveAction: null, statePreventiveAction: null, identityPreventiveAction: null });
+  const emotion = state({ triggerType: "reactive_emotion", selectedTarget: "state" });
+  assert.equal(getNextArcStage("observer_pause", emotion, p, ALL_LAYERS).stage, "presence_check");
+});
+
+test("PROACTIVE FLOW UNCHANGED: a proactive session's trigger_selection still routes straight to presence_check -- trigger_context/observer_pause are never reached", () => {
+  const p = profile();
+  const proactive = state({ triggerType: "proactive" });
+  assert.equal(getNextArcStage("trigger_selection", proactive, p, ALL_LAYERS).stage, "presence_check");
+});
+
+test("existing downstream Reactive ARC progression is unchanged: from observer_pause onward, the exact same sensation_check -> stay/regulate -> encode -> act -> success_focus -> complete sequence the engine always had", () => {
+  const p = profile({ preventiveAction: null, statePreventiveAction: null, internalAction: "סריקת גוף" });
+  let s: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion", selectedTarget: "state" };
+  let stage: ArcStage = "trigger_selection";
+  const visitedStages: ArcStage[] = [];
+  let iterations = 0;
+  while (stage !== "complete" && iterations < 30) {
+    visitedStages.push(stage);
+    if (stage === "presence_check") s = { ...s, presenceRating: 8 }; // high presence -- skip ARC Thought
+    if (stage === "sensation_check") s = { ...s, sensationLocation: "חזה", sensationIntensity: 2 }; // low -> encode directly
+    const next = getNextArcStage(stage, s, p, ALL_LAYERS);
+    stage = next.stage;
+    s = { ...s, loopIterationCount: next.loopIterationCount };
+    iterations++;
+  }
+  visitedStages.push("complete");
+  assert.deepEqual(visitedStages, [
+    "trigger_selection",
+    "trigger_context",
+    "observer_pause",
+    "presence_check",
+    "sensation_check",
+    "encode",
+    "act",
+    "success_focus",
+    "negative_action", // habit layer active + profile.habit configured (base profile() default) -- unchanged existing behavior
+    "complete",
+  ]);
 });

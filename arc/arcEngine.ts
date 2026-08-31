@@ -23,10 +23,22 @@
  *        selectedTarget, or the one mapped experience if exactly one, or
  *        inferLayerFromTrigger's existing inference if none are mapped;
  *        proactive: resolved later, unchanged)
+ *     -> REACTIVE ONLY (reactive_urge/reactive_emotion; proactive skips
+ *        straight to presence_check, unchanged -- Preserve Proactive
+ *        Separation): reactive-flow-strengthening task --
+ *          trigger_context (session-specific "what triggered this right
+ *            now" free-text recognition, never overwriting BUILD's
+ *            Challenge Context -- see ArcLiveState.triggerContext)
+ *          -> observer_pause (brief, recognition-only observer-
+ *             perspective + imagined-pause instruction; never asks the
+ *             trainee to evoke/intensify the interfering state)
  *     -> (preventive_action_check -> preventive_action, only when that
  *        target's own Preventive Action is configured -- see
  *        resolveTargetPreventiveAction; never a global one, never before
- *        the target itself is resolved)
+ *        the target itself is resolved; preventive_action_check's own
+ *        copy carries the brief "you entered ARCHI and created a pause"
+ *        reinforcement, reached only once trigger_context/observer_pause
+ *        are behind the trainee)
  *     -> presence_check
  *     -> (ARC Thought, gated purely on presenceRating -- see
  *        shouldRunArcThought; triggerType/activeLayers never affect
@@ -489,7 +501,7 @@ export function getNextArcStage(
       if (state.triggerType === null) return result(current, state.loopIterationCount);
 
       if (state.triggerType === "reactive_urge") {
-        return result(afterReactiveTargetResolved("habit", profile), state.loopIterationCount);
+        return result("trigger_context", state.loopIterationCount);
       }
 
       if (state.triggerType === "reactive_emotion") {
@@ -498,12 +510,34 @@ export function getNextArcStage(
         if (needsReactiveStateSelection(state.triggerType, activeLayers, profile, state.selectedTarget)) {
           return result(current, state.loopIterationCount);
         }
-        const layer = state.selectedTarget ?? inferLayerFromTrigger(state.triggerType, activeLayers, profile);
-        return result(afterReactiveTargetResolved(layer, profile), state.loopIterationCount);
+        return result("trigger_context", state.loopIterationCount);
       }
 
       // proactive -- unaffected by this change, per "Preserve Proactive Separation".
       return result("presence_check", state.loopIterationCount);
+    }
+
+    // Reactive-flow-strengthening task: session-specific trigger
+    // recognition, always allowed to continue (an optional free-text
+    // field -- never blocks progression the way a required rating
+    // would). Reachable only from trigger_selection's reactive branches
+    // above, so triggerType is guaranteed reactive_urge/reactive_emotion
+    // here -- never reached by a proactive session.
+    case "trigger_context":
+      return result("observer_pause", state.loopIterationCount);
+
+    // Reactive-flow-strengthening task: the observer-perspective +
+    // imagined-pause instruction. Its own Continue is gated purely by
+    // arc/instructionTiming.ts's segment timing (live/screens.tsx's
+    // InstructionScreen, unchanged mechanism) -- this transition itself
+    // is unconditional once reached, exactly like "stay"'s own
+    // unconditional advance to "accept". Resolves `layer` the exact same
+    // way trigger_selection's own (now-removed) inline resolution did,
+    // so the target that receives the Preventive Action next is never
+    // recomputed differently.
+    case "observer_pause": {
+      const layer = state.triggerType === "reactive_urge" ? "habit" : (state.selectedTarget ?? inferLayerFromTrigger(state.triggerType, activeLayers, profile));
+      return result(afterReactiveTargetResolved(layer, profile), state.loopIterationCount);
     }
 
     case "presence_check":

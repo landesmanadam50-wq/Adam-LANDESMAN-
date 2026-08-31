@@ -113,6 +113,27 @@ export const INSTRUCTION_TIMING = {
   /** The generic "take a moment" fallback line, only shown when nothing else in Encoding was configured for this target. */
   encodeFallback: ENCODING_BASE_SECONDS.fallback + ENCODING_DURATION_INCREASE_SECONDS,
   actionImagery: 5,
+  /**
+   * Reactive-flow-strengthening task: the "observer_pause" stage's own
+   * three progressive lines (recognition-only observer perspective,
+   * imagined pause, then the explicit "no need to re-evoke/intensify"
+   * safety line), plus one trailing, plain, fixed reflection segment --
+   * deliberately NOT part of arc/dwellTimes.ts's per-trainee
+   * configurable dwell system (that system stays untouched per this
+   * task's "do not change dwell-time configuration" constraint): this
+   * reuses the SAME underlying instruction-timing/progressive-reveal/
+   * Continue-cue MECHANISM (getInstructionTimingStatus, a trailing
+   * empty-text segment, TimedInstructionBody) every dwell-gated screen
+   * already uses, just with one plain, non-configurable constant here
+   * instead of a new BUILD-configurable category -- exactly like
+   * INLINE_RATING_REVEAL_DELAY_SECONDS below already does for Presence.
+   * The trailing reflection segment IS, quite literally, the few
+   * seconds of pause being rehearsed.
+   */
+  observerPerspective: 5,
+  observerPause: 4,
+  observerSafetyRecognition: 4,
+  observerPauseReflection: 6,
 } as const;
 
 /**

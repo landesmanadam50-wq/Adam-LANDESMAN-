@@ -37,14 +37,22 @@ export const INDUCTION_PATTERN_DENYLIST: RegExp[] = [
   /תזכור/,
   /^זכור /,
   / זכור /,
-  // "imagine" is banned EXCEPT the one sanctioned Action Imagery phrasing
-  // ("imagine yourself performing [the desired action]", arc/stageCopy.ts's
-  // encode case) -- actionLabel there only ever sources from positive
-  // action fields (beneficialAction/internalAction/identityAction), never
-  // interferingState, so that specific phrasing can never evoke a
-  // difficult state. Any other "imagine" usage -- e.g. imagining a
-  // feeling/craving/distraction -- still trips this pattern.
-  /דמיין(?! את עצמך מבצע)/,
+  // "imagine" is banned EXCEPT two sanctioned phrasings: (1) Action
+  // Imagery ("imagine yourself performing [the desired action]",
+  // arc/stageCopy.ts's "act" case) -- actionLabel there only ever
+  // sources from positive action fields (beneficialAction/
+  // internalAction/identityAction), never interferingState, so it can
+  // never evoke a difficult state; and (2) the reactive-flow-
+  // strengthening task's observer_pause perspective-taking line
+  // ("imagine for a moment WHAT HAPPENED as if seeing the situation
+  // from outside" -- arc/stageCopy.ts's "observer_pause" case) --
+  // recognition of an event that already occurred, from an observer's
+  // distance, never an instruction to evoke/recreate/intensify the
+  // feeling itself; its own very next segment explicitly says so ("no
+  // need to re-evoke or strengthen"). Any other "imagine" usage -- e.g.
+  // imagining a feeling/craving/distraction directly -- still trips
+  // this pattern.
+  /דמיין(?! את עצמך מבצע| לרגע את מה שקרה)/,
   /תחזק את/,
   // "hold/keep X in awareness/mind/the head" -- covers "בתודעה"/"בראש"
   // in addition to "במודעות".

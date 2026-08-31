@@ -19,7 +19,7 @@ import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
 import { getInstructionTimingStatus } from "../arc/instructionTiming.ts";
 import type { InstructionSegment } from "../arc/instructionTiming.ts";
-import { getAcceptanceReadinessRecheckQuestion, getAcceptanceUnwillingnessAcknowledgment } from "../arc/stageCopy.ts";
+import { getAcceptanceReadinessRecheckQuestion, getAcceptanceUnwillingnessAcknowledgment, getPreventiveActionReinforcement } from "../arc/stageCopy.ts";
 import { formatRemainingTime, generateTimerRunId, getActionTimerStatusFromStartedAt } from "../arc/actionTimer.ts";
 import type { ActionTimerStatus } from "../arc/actionTimer.ts";
 import { cancelScheduledNotification, scheduleTimerCompletionNotification } from "../data/notifications.ts";
@@ -399,6 +399,43 @@ export function TriggerSelectScreen({
 }
 
 /**
+ * Reactive-flow-strengthening task (#1): the session-specific "what
+ * triggered this right now" recognition -- a short, entirely OPTIONAL
+ * free-text answer (Continue is always enabled, never blocked on this
+ * field, matching "brief recognition, not analysis"). Written only to
+ * ArcLiveState.triggerContext (live/liveEventAdapter.ts's
+ * applyTriggerContext) -- never to ArcBuildProfile.challengeContext/
+ * identityChallengeContext, which stay the reusable, BUILD-configured
+ * context, completely untouched by this screen.
+ */
+export function TriggerContextScreen({
+  copy,
+  value,
+  onChangeText,
+  onContinue,
+}: {
+  copy: ArcStageCopy;
+  value: string;
+  onChangeText: (text: string) => void;
+  onContinue: () => void;
+}) {
+  return (
+    <View>
+      <Title copy={copy} />
+      <TextInput
+        style={styles.textInput}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder="אפשר להשאיר ריק"
+        multiline
+        textAlign="right"
+      />
+      <PrimaryButton label="המשך" onPress={onContinue} />
+    </View>
+  );
+}
+
+/**
  * Explicit recognition chooser for which already-present mapped
  * experience (#4, #5, #6) the trainee recognizes -- e.g. "פיזור" vs
  * "תשוקה" -- generated from BUILD-ARC's own mappings via
@@ -485,6 +522,21 @@ export function InstructionScreen({ copy, onContinue }: { copy: ArcStageCopy; on
   return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
 }
 
+/**
+ * Reactive-flow-strengthening task (#4, #5, #6): still the exact
+ * existing BUILD-configured Preventive Action (copy.body, via
+ * arc/arcEngine.ts's resolveTargetPreventiveAction, unchanged) -- never
+ * a new open-ended "what could help" question. This stage is only ever
+ * reached, in the reactive flow, once the trainee has already been
+ * through trigger_context and observer_pause (see
+ * arc/arcEngine.ts's sequencing), so the reinforcement line below is
+ * never shown "immediately when the Reactive flow first opens" by
+ * construction -- placing it here, rather than gating it on any extra
+ * timer/flag, is what satisfies #6. It renders once via RevealedLine's
+ * own mount-only entrance animation (no replay on re-render, no
+ * separate celebration screen, never auto-advances -- the trainee still
+ * presses Continue/Yes/No whenever they choose to).
+ */
 export function PreventiveActionCheckScreen({
   copy,
   labels,
@@ -498,6 +550,7 @@ export function PreventiveActionCheckScreen({
     <View>
       <Title copy={copy} />
       <YesNoButtons labels={labels} onAnswer={onAnswer} />
+      <RevealedLine text={getPreventiveActionReinforcement()} />
     </View>
   );
 }

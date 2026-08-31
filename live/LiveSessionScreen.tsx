@@ -64,6 +64,7 @@ import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
   advanceLiveSession,
   applyAcceptanceWillingnessAnswer,
+  applyTriggerContext,
   applyActionCompletion,
   applyActionImageryCompleted,
   applyAlternativeAction,
@@ -95,6 +96,7 @@ export default function LiveSessionScreen() {
   const [pendingSensationLocation, setPendingSensationLocation] = useState("");
   const [pendingCustomSensationLocation, setPendingCustomSensationLocation] = useState("");
   const [pendingSensationLocationUnclear, setPendingSensationLocationUnclear] = useState(false);
+  const [pendingTriggerContext, setPendingTriggerContext] = useState("");
   const [pendingAlternativeAction, setPendingAlternativeAction] = useState("");
   const [pendingAlternativeActionDuration, setPendingAlternativeActionDuration] = useState<number | null>(null);
   const [successFocusMinutes, setSuccessFocusMinutes] = useState<number | null>(null);
@@ -150,6 +152,7 @@ export default function LiveSessionScreen() {
         setPendingSensationLocation("");
         setPendingCustomSensationLocation("");
         setPendingSensationLocationUnclear(false);
+        setPendingTriggerContext("");
         setPendingAlternativeAction("");
         setPendingAlternativeActionDuration(null);
         setSuccessFocusMinutes(null);
@@ -239,7 +242,7 @@ export default function LiveSessionScreen() {
         buildProfile: profile,
         selectedAction: finishedSession.selectedAction,
       });
-      context = buildSessionEvidenceContext(resolution.layer, resolution.encoding, resolution.actionLabel, profile);
+      context = buildSessionEvidenceContext(resolution.layer, resolution.encoding, resolution.actionLabel, profile, finishedSession.triggerContext);
     }
     appendSessionLogEntry({
       id: `${sessionStartedAt}_${finishedAt}`,
@@ -290,6 +293,7 @@ export default function LiveSessionScreen() {
     setPendingSensationLocation("");
     setPendingCustomSensationLocation("");
     setPendingSensationLocationUnclear(false);
+    setPendingTriggerContext("");
     setPendingAlternativeAction("");
     setPendingAlternativeActionDuration(null);
     setSuccessFocusMinutes(null);
@@ -336,6 +340,7 @@ export default function LiveSessionScreen() {
     setPendingSensationLocation("");
     setPendingCustomSensationLocation("");
     setPendingSensationLocationUnclear(false);
+    setPendingTriggerContext("");
     setPendingAlternativeAction("");
     setPendingAlternativeActionDuration(null);
     setSuccessFocusMinutes(null);
@@ -418,6 +423,9 @@ export default function LiveSessionScreen() {
           pendingCustomSensationLocation={pendingCustomSensationLocation}
           pendingSensationLocationUnclear={pendingSensationLocationUnclear}
           successFocusMinutes={successFocusMinutes}
+          pendingTriggerContext={pendingTriggerContext}
+          onChangeTriggerContext={setPendingTriggerContext}
+          onTriggerContextContinue={() => commitAdvance(applyTriggerContext(session, pendingTriggerContext))}
           onSelectTrigger={(trigger) => commitAdvance(applyTriggerSelection(session, trigger))}
           onScaleAnswer={(value) => commitAdvance(applyScaleAnswer(stage, session, value))}
           onSelectSensationLocation={(location) => {

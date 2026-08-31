@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getEvidenceLine, getInlineRequiredRatingQuestion, getStageCopy, getStageInputKind } from "./stageCopy.ts";
+import { getEvidenceLine, getInlineRequiredRatingQuestion, getPreventiveActionReinforcement, getStageCopy, getStageInputKind } from "./stageCopy.ts";
 import { getNextArcStage } from "./arcEngine.ts";
 import { createEmptyLiveState } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
@@ -47,7 +47,7 @@ function liveState(overrides: Partial<ArcLiveState> = {}): ArcLiveState {
 }
 
 const ALL_STAGES: ArcStage[] = [
-  "trigger_selection", "presence_check", "arc_thought_awareness", "arc_thought_combined_attention",
+  "trigger_selection", "trigger_context", "observer_pause", "presence_check", "arc_thought_awareness", "arc_thought_combined_attention",
   "arc_thought_expand_presence", "arc_thought_presence_recheck", "preventive_action_check", "preventive_action",
   "sensation_check", "stay", "accept", "reactive_transition_check", "regulate", "desired_state_check",
   "encode", "act", "success_focus", "complete",
@@ -1080,4 +1080,72 @@ test("evidence/memory-detail insertion never disturbs the trailing Encoding dwel
   const last = copy.segments![copy.segments!.length - 1];
   assert.equal(last.text, "", "the dwell segment is still the very last one, after evidence/detail/mantra/body-language");
   assert.equal(last.durationSeconds, DEFAULT_DWELL_TIMES.encodingDwellSeconds);
+});
+
+// --- Reactive-flow-strengthening task: trigger_context / observer_pause
+// copy (#1, #2, #3, #5, #6, #9), and the Preventive Action reinforcement
+// (#5, #6, #16).
+
+test("trigger_context asks the exact specified trigger question, as a free-text (non-blocking) stage", () => {
+  const p = profile();
+  const copy = getStageCopy("trigger_context", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.equal(copy.body, "מה הפעיל אצלך עכשיו את הרגש או הדחף?");
+  assert.equal(getStageInputKind("trigger_context"), "triggerContext");
+  assert.equal(copy.segments, null, "not a timed/gated stage -- the trainee is never blocked here");
+});
+
+test("observer_pause reveals the observer-perspective line, then the pause line, then the explicit safety/recognition line, in that exact order and exact wording", () => {
+  const p = profile();
+  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(copy.segments, "must be a timed/progressive-reveal screen, reusing the existing instruction-timing mechanism");
+  const texts = copy.segments!.map((s) => s.text).filter((t) => t.length > 0);
+  assert.deepEqual(texts, [
+    "דמיין לרגע את מה שקרה כאילו אתה רואה את הסיטואציה מהצד, ואת עצמך בתוכה.",
+    "ראה את עצמך עוצר לכמה שניות לפני התגובה.",
+    "אין צורך לעורר מחדש או לחזק את הרגש או הדחף — רק לראות את מה שקרה.",
+  ]);
+});
+
+test("observer_pause carries a trailing, fixed, non-configurable reflection segment -- the same underlying dwell/Continue-cue MECHANISM every other timed stage uses, without adding a new BUILD-configurable dwell category", () => {
+  const p = profile();
+  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  const last = copy.segments![copy.segments!.length - 1];
+  assert.equal(last.text, "");
+  assert.equal(last.durationSeconds, INSTRUCTION_TIMING.observerPauseReflection);
+});
+
+test("observer_pause's copy never trips the induction-pattern audit -- it is recognition/rehearsal only, never an instruction to evoke, hold, or intensify the interfering emotion/urge", () => {
+  const p = profile();
+  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.equal(containsInductionPattern(copy.body), false);
+  for (const forbidden of ["תחזק", "תחזיק", "עורר מחדש את", "השאר את הרגש פעיל"]) {
+    assert.ok(!copy.body.includes(forbidden), `must never contain: "${forbidden}"`);
+  }
+});
+
+test("trigger_context/observer_pause never reference profile.challengeContext/identityChallengeContext -- the session-specific recognition step is entirely separate from the BUILD-configured, reusable Challenge Context", () => {
+  const p = profile({ challengeContext: "אחרי טעות", identityChallengeContext: "לפני שיחה קשה" });
+  const triggerCopy = getStageCopy("trigger_context", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  const observerCopy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(!triggerCopy.body.includes("אחרי טעות") && !triggerCopy.body.includes("לפני שיחה קשה"));
+  assert.ok(!observerCopy.body.includes("אחרי טעות") && !observerCopy.body.includes("לפני שיחה קשה"));
+});
+
+test("preventive_action_check still presents the EXISTING BUILD-configured Preventive Action, and never the open-ended 'what could help reduce the chance of this happening again' question", () => {
+  const p = profile({ statePreventiveAction: "לצאת לחמש דקות אוויר צח" });
+  const copy = getStageCopy("preventive_action_check", p, liveState({ triggerType: "reactive_emotion", selectedTarget: "state" }), ["state"]);
+  assert.match(copy.body, /לצאת לחמש דקות אוויר צח/, "must present the exact configured Preventive Action");
+  assert.ok(!copy.body.includes("מה יכול לעזור לך לצמצם"), "must never ask the open-ended alternative-strategy question");
+});
+
+test("getPreventiveActionReinforcement returns the exact specified line", () => {
+  assert.equal(getPreventiveActionReinforcement(), "כל הכבוד על שנכנסת ל־ARCHI ויצרת מרווח לפני התגובה.");
+});
+
+test("the Preventive Action reinforcement never claims the feeling/urge was eliminated, defeated, or controlled -- it praises creating a pause, not removing the interfering state", () => {
+  const reinforcement = getPreventiveActionReinforcement();
+  for (const forbidden of ["ניצחת", "השתלטת", "נפטרת", "הכנעת", "ביטלת"]) {
+    assert.ok(!reinforcement.includes(forbidden), `must never contain: "${forbidden}"`);
+  }
+  assert.match(reinforcement, /מרווח לפני התגובה/, "must frame success as creating a pause before the automatic reaction");
 });
