@@ -1094,9 +1094,9 @@ test("trigger_context asks the exact specified trigger question, as a free-text 
   assert.equal(copy.segments, null, "not a timed/gated stage -- the trainee is never blocked here");
 });
 
-test("observer_pause reveals the observer-perspective line, then the pause line, then the explicit safety/recognition line, in that exact order and exact wording", () => {
+test("observer_pause (KNOWN trigger) reveals the observer-perspective-of-the-situation line, then the pause line, then the explicit safety/recognition line, in that exact order and exact wording -- the currently working known-trigger path, unregressed", () => {
   const p = profile();
-  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion", triggerKnown: true }), ["state"]);
   assert.ok(copy.segments, "must be a timed/progressive-reveal screen, reusing the existing instruction-timing mechanism");
   const texts = copy.segments!.map((s) => s.text).filter((t) => t.length > 0);
   assert.deepEqual(texts, [
@@ -1104,6 +1104,19 @@ test("observer_pause reveals the observer-perspective line, then the pause line,
     "ראה את עצמך עוצר לכמה שניות לפני התגובה.",
     "אין צורך לעורר מחדש או לחזק את הרגש או הדחף — רק לראות את מה שקרה.",
   ]);
+});
+
+test("observer_pause (UNKNOWN trigger) reveals only the shorter two-line sequence: observing ONESELF from the side (no situation/event referenced), then the same pause line -- never the situation-imagery or safety-recognition lines", () => {
+  const p = profile();
+  for (const triggerKnown of [false, null] as const) {
+    const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion", triggerKnown }), ["state"]);
+    const texts = copy.segments!.map((s) => s.text).filter((t) => t.length > 0);
+    assert.deepEqual(
+      texts,
+      ["דמיין את עצמך לרגע כאילו אתה רואה את עצמך מהצד.", "ראה את עצמך עוצר לכמה שניות לפני התגובה."],
+      `triggerKnown=${triggerKnown}`
+    );
+  }
 });
 
 test("observer_pause carries a trailing, fixed, non-configurable reflection segment -- the same underlying dwell/Continue-cue MECHANISM every other timed stage uses, without adding a new BUILD-configurable dwell category", () => {
@@ -1114,12 +1127,22 @@ test("observer_pause carries a trailing, fixed, non-configurable reflection segm
   assert.equal(last.durationSeconds, INSTRUCTION_TIMING.observerPauseReflection);
 });
 
-test("observer_pause's copy never trips the induction-pattern audit -- it is recognition/rehearsal only, never an instruction to evoke, hold, or intensify the interfering emotion/urge", () => {
+test("observer_pause's copy never trips the induction-pattern audit -- it is recognition/rehearsal only, never an instruction to evoke, hold, or intensify the interfering emotion/urge -- for both the known- and unknown-trigger variants", () => {
   const p = profile();
-  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
-  assert.equal(containsInductionPattern(copy.body), false);
-  for (const forbidden of ["תחזק", "תחזיק", "עורר מחדש את", "השאר את הרגש פעיל"]) {
-    assert.ok(!copy.body.includes(forbidden), `must never contain: "${forbidden}"`);
+  for (const triggerKnown of [true, false, null] as const) {
+    const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion", triggerKnown }), ["state"]);
+    assert.equal(containsInductionPattern(copy.body), false, `triggerKnown=${triggerKnown}`);
+    for (const forbidden of ["תחזק", "תחזיק", "עורר מחדש את", "השאר את הרגש פעיל"]) {
+      assert.ok(!copy.body.includes(forbidden), `triggerKnown=${triggerKnown} must never contain: "${forbidden}"`);
+    }
+  }
+});
+
+test("unknown-trigger observer_pause never invents or infers a triggering situation/event -- no imagery text references any specific event, only the trainee's own position", () => {
+  const p = profile();
+  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion", triggerKnown: false }), ["state"]);
+  for (const situationWord of ["מה שקרה", "הסיטואציה", "האירוע"]) {
+    assert.ok(!copy.body.includes(situationWord), `must never reference an unidentified situation/event: "${situationWord}"`);
   }
 });
 

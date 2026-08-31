@@ -236,29 +236,47 @@ export function getStageCopy(
       return { title: "מה קרה עכשיו?", body: "מה הפעיל אצלך עכשיו את הרגש או הדחף?", segments: null };
 
     case "observer_pause": {
-      // Reactive-flow-strengthening task (#2, #3): three progressive
-      // lines -- observer perspective, then the imagined pause, then an
-      // explicit safety/recognition line -- immediately followed by one
-      // plain, fixed reflection segment (arc/instructionTiming.ts's
-      // observerPauseReflection, NOT part of the per-trainee configurable
-      // dwell system -- see that file's doc). Purely recognition/
-      // rehearsal: never asks the trainee to re-evoke, hold, or
-      // intensify the interfering emotion/urge -- see #2's explicit
-      // "no need to re-evoke or strengthen" line below, included
-      // verbatim as its own segment (not just a doc comment) so it's
-      // always actually shown to the trainee.
-      const observerPerspective = "דמיין לרגע את מה שקרה כאילו אתה רואה את הסיטואציה מהצד, ואת עצמך בתוכה.";
+      // Reactive-flow-strengthening task (#2, #3), refined for the
+      // unknown-trigger case: when the trainee named a specific trigger
+      // (state.triggerKnown === true), the original three progressive
+      // lines -- observer perspective OF THE SITUATION, then the
+      // imagined pause, then an explicit safety/recognition line.
+      // Unknown-trigger refinement: when no specific trigger is known
+      // (triggerKnown === false -- a recognized "I don't know" answer,
+      // or the trainee left it blank), skip imagery of a situation that
+      // was never identified -- never invent or infer one (#3, #5) --
+      // and go straight to a shorter two-line sequence: observing
+      // ONESELF from the side (no situation/event referenced at all),
+      // then the same imagined pause. Both variants share the same
+      // trailing, fixed reflection segment (arc/instructionTiming.ts's
+      // observerPauseReflection, NOT part of the per-trainee
+      // configurable dwell system -- see that file's doc) and the same
+      // underlying progressive-reveal/Continue-cue mechanism -- no new
+      // screen, no new timing system.
+      const knownTriggerPerspective = "דמיין לרגע את מה שקרה כאילו אתה רואה את הסיטואציה מהצד, ואת עצמך בתוכה.";
+      const unknownTriggerPerspective = "דמיין את עצמך לרגע כאילו אתה רואה את עצמך מהצד.";
       const imaginedPause = "ראה את עצמך עוצר לכמה שניות לפני התגובה.";
       const safetyRecognition = "אין צורך לעורר מחדש או לחזק את הרגש או הדחף — רק לראות את מה שקרה.";
-      const segments: InstructionSegment[] = [
-        { text: observerPerspective, durationSeconds: INSTRUCTION_TIMING.observerPerspective },
-        { text: imaginedPause, durationSeconds: INSTRUCTION_TIMING.observerPause },
-        { text: safetyRecognition, durationSeconds: INSTRUCTION_TIMING.observerSafetyRecognition },
-        { text: "", durationSeconds: INSTRUCTION_TIMING.observerPauseReflection },
-      ];
+
+      const isKnownTrigger = state.triggerKnown === true;
+      const segments: InstructionSegment[] = isKnownTrigger
+        ? [
+            { text: knownTriggerPerspective, durationSeconds: INSTRUCTION_TIMING.observerPerspective },
+            { text: imaginedPause, durationSeconds: INSTRUCTION_TIMING.observerPause },
+            { text: safetyRecognition, durationSeconds: INSTRUCTION_TIMING.observerSafetyRecognition },
+          ]
+        : [
+            { text: unknownTriggerPerspective, durationSeconds: INSTRUCTION_TIMING.observerPerspective },
+            { text: imaginedPause, durationSeconds: INSTRUCTION_TIMING.observerPause },
+          ];
+      segments.push({ text: "", durationSeconds: INSTRUCTION_TIMING.observerPauseReflection });
+
       return {
         title: "מרחק ועצירה",
-        body: [observerPerspective, imaginedPause, safetyRecognition].join(" "),
+        body: segments
+          .map((segment) => segment.text)
+          .filter((text) => text.length > 0)
+          .join(" "),
         segments,
       };
     }

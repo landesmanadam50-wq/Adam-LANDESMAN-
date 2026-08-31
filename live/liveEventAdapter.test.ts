@@ -55,6 +55,7 @@ import {
   applySuccessFocusChoice,
   applyTargetSelection,
   applyTriggerContext,
+  isUnknownTriggerResponse,
   applyTriggerSelection,
   applyYesNoAnswer,
   hasSensationLocationResponse,
@@ -1172,4 +1173,112 @@ test("a real reactive session walk: trigger_selection -> trigger_context -> obse
   assert.equal(hop.stage, "preventive_action_check");
   assert.equal(hop.session.triggerContext, "ראיתי סרטון בטלפון", "still preserved");
   assert.equal(p.challengeContext, "אחרי טעות", "BUILD's own Challenge Context is never overwritten by the session-specific trigger answer");
+  assert.equal(hop.session.triggerKnown, true, "a specific trigger resolves triggerKnown true -- the currently working known-trigger path, unregressed");
+});
+
+// --- Unknown-trigger refinement (#1-#9): "לא יודע" and equivalents must
+// never block progression, force guessing, or fabricate imagery -- both
+// the known and unknown paths converge on the SAME existing BUILD
+// Preventive Action.
+
+test("isUnknownTriggerResponse recognizes the spec's own examples ('לא יודע', 'לא בטוח', 'אין לי מושג') and their grammatically-gendered counterparts, trimming whitespace/trailing punctuation", () => {
+  for (const text of ["לא יודע", "לא יודעת", "לא בטוח", "לא בטוחה", "אין לי מושג", "  לא יודע  ", "לא יודע.", "לא יודע!"]) {
+    assert.equal(isUnknownTriggerResponse(text), true, `must recognize: "${text}"`);
+  }
+});
+
+test("isUnknownTriggerResponse never misclassifies a genuine specific trigger that merely starts with 'לא' as unknown", () => {
+  for (const text of ["לא הצלחתי להירדם", "לא קיבלתי תשובה מהחבר שלי", "מישהו אמר לי משהו"]) {
+    assert.equal(isUnknownTriggerResponse(text), false, `must NOT recognize: "${text}"`);
+  }
+});
+
+test("applyTriggerContext resolves triggerKnown=false for a recognized unknown response, while still preserving the trainee's own raw text verbatim -- 'לא יודע' is never discarded or treated as a literal semantic trigger", () => {
+  const session = createEmptyLiveState();
+  const answered = applyTriggerContext(session, "לא יודע");
+  assert.equal(answered.triggerKnown, false);
+  assert.equal(answered.triggerContext, "לא יודע", "the raw response itself is preserved, not discarded");
+});
+
+test("applyTriggerContext also resolves triggerKnown=false for a blank answer -- equally no known trigger to imagine, never forcing a guess", () => {
+  const session = createEmptyLiveState();
+  assert.equal(applyTriggerContext(session, "").triggerKnown, false);
+  assert.equal(applyTriggerContext(session, "   ").triggerKnown, false);
+});
+
+test("applyTriggerContext resolves triggerKnown=true for a specific, non-empty, non-unknown answer", () => {
+  const session = createEmptyLiveState();
+  assert.equal(applyTriggerContext(session, "מישהו אמר לי משהו").triggerKnown, true);
+});
+
+test("an unknown-trigger answer never blocks progression: trigger_context still advances unconditionally to observer_pause, exactly as a known trigger does", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const unknownSession = applyTriggerContext(
+    applyTargetSelection(applyTriggerSelection(createEmptyLiveState(), "reactive_emotion"), "state"),
+    "לא יודע"
+  );
+  const hop = advanceLiveSession("trigger_context", unknownSession, p, activeLayers);
+  assert.equal(hop.stage, "observer_pause", "must never block or re-ask -- the trainee is never forced to guess a trigger");
+});
+
+test("both the known-trigger and unknown-trigger paths converge on the SAME existing BUILD Preventive Action stage -- no separate/different Preventive Action, no new open-ended strategy question", () => {
+  const p = profile({ statePreventiveAction: "לנשום עמוק חמש פעמים" });
+  const activeLayers: DevelopmentLayer[] = ["state"];
+
+  const knownSession = applyTriggerContext(
+    applyTargetSelection(applyTriggerSelection(createEmptyLiveState(), "reactive_emotion"), "state"),
+    "מישהו אמר לי משהו שהלחיץ אותי"
+  );
+  const knownAfterContext = advanceLiveSession("trigger_context", knownSession, p, activeLayers);
+  const knownAfterPause = advanceLiveSession("observer_pause", knownAfterContext.session, p, activeLayers);
+  assert.equal(knownAfterPause.stage, "preventive_action_check");
+
+  const unknownSession = applyTriggerContext(
+    applyTargetSelection(applyTriggerSelection(createEmptyLiveState(), "reactive_emotion"), "state"),
+    "לא יודע"
+  );
+  const unknownAfterContext = advanceLiveSession("trigger_context", unknownSession, p, activeLayers);
+  const unknownAfterPause = advanceLiveSession("observer_pause", unknownAfterContext.session, p, activeLayers);
+  assert.equal(unknownAfterPause.stage, "preventive_action_check");
+
+  // Same resolved Preventive Action copy for both -- the exact existing
+  // BUILD-configured one, regardless of which trigger path was taken.
+  const knownCopy = getStageCopy("preventive_action_check", p, knownAfterPause.session, activeLayers);
+  const unknownCopy = getStageCopy("preventive_action_check", p, unknownAfterPause.session, activeLayers);
+  assert.match(knownCopy.body, /לנשום עמוק חמש פעמים/);
+  assert.match(unknownCopy.body, /לנשום עמוק חמש פעמים/);
+  assert.equal(knownCopy.body, unknownCopy.body, "identical Preventive Action copy for both paths");
+});
+
+test("existing downstream ARC progression is unchanged for an unknown-trigger session: the exact same sensation_check onward sequence a known-trigger session reaches", () => {
+  const p = profile({ preventiveAction: null, statePreventiveAction: null, internalAction: "סריקת גוף" });
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  let session = applyTriggerContext(
+    applyTargetSelection(applyTriggerSelection(createEmptyLiveState(), "reactive_emotion"), "state"),
+    "לא בטוח"
+  );
+  let stage: ArcStage = "trigger_context";
+  const visited: ArcStage[] = ["trigger_selection", stage];
+  let iterations = 0;
+  while (stage !== "complete" && iterations < 30) {
+    if (stage === "presence_check") session = { ...session, presenceRating: 8 };
+    if (stage === "sensation_check") session = { ...session, sensationLocation: "חזה", sensationIntensity: 2 };
+    const hop = advanceLiveSession(stage, session, p, activeLayers);
+    session = hop.session;
+    stage = hop.stage;
+    visited.push(stage);
+    iterations++;
+  }
+  assert.deepEqual(visited, [
+    "trigger_selection",
+    "trigger_context",
+    "observer_pause",
+    "presence_check",
+    "sensation_check",
+    "encode",
+    "act",
+    "success_focus",
+    "complete",
+  ]);
 });

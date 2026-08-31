@@ -242,7 +242,14 @@ export default function LiveSessionScreen() {
         buildProfile: profile,
         selectedAction: finishedSession.selectedAction,
       });
-      context = buildSessionEvidenceContext(resolution.layer, resolution.encoding, resolution.actionLabel, profile, finishedSession.triggerContext);
+      context = buildSessionEvidenceContext(
+        resolution.layer,
+        resolution.encoding,
+        resolution.actionLabel,
+        profile,
+        finishedSession.triggerContext,
+        finishedSession.triggerKnown
+      );
     }
     appendSessionLogEntry({
       id: `${sessionStartedAt}_${finishedAt}`,

@@ -230,6 +230,21 @@ export interface ArcLiveState {
    * for where this is safely carried forward at session completion.
    */
   triggerContext: string | null;
+  /**
+   * Unknown-trigger refinement: the STRUCTURED signal for whether the
+   * trainee's trigger_context answer named a specific trigger (true) or
+   * was recognized as an "I don't know" response, or left blank (false)
+   * -- see live/liveEventAdapter.ts's isUnknownTriggerResponse/
+   * applyTriggerContext. null only before trigger_context has been
+   * answered at all (createEmptyLiveState's own initial value).
+   * "לא יודע" itself is never treated as if it were a literal semantic
+   * trigger -- triggerContext above still preserves exactly what the
+   * trainee typed, verbatim, but arc/stageCopy.ts's "observer_pause"
+   * case reads THIS field, not triggerContext's text, to decide which
+   * observer-imagery phrasing to show, so an unknown answer never gets
+   * treated as content to imagine.
+   */
+  triggerKnown: boolean | null;
 
   presenceRating: number | null;
   sensationLocation: string | null;
@@ -334,6 +349,7 @@ export function createEmptyLiveState(): ArcLiveState {
     triggerType: null,
     selectedTarget: null,
     triggerContext: null,
+    triggerKnown: null,
     presenceRating: null,
     sensationLocation: null,
     sensationIntensity: null,

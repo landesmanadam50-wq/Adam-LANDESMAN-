@@ -187,7 +187,14 @@ export function buildSessionEvidenceContext(
    * anti-fabrication doc: nothing here infers or acts on it). Optional,
    * defaulting to null, so every existing call site is unaffected.
    */
-  triggerContext: string | null = null
+  triggerContext: string | null = null,
+  /**
+   * Unknown-trigger refinement: this session's own structured
+   * ArcLiveState.triggerKnown, carried straight through alongside the
+   * raw triggerContext text above. Optional, defaulting to null, so
+   * every existing call site is unaffected.
+   */
+  triggerKnown: boolean | null = null
 ): SessionEvidenceContext {
   const { identityLabel, interferingState, challengeContext } = resolveEvidenceContext(layer, encoding, profile);
   return {
@@ -199,6 +206,7 @@ export function buildSessionEvidenceContext(
     interferingState,
     challengeContext,
     triggerContext,
+    triggerKnown,
   };
 }
 

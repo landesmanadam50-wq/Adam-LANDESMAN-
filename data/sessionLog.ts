@@ -50,6 +50,17 @@ export interface SessionEvidenceContext {
    * blank.
    */
   triggerContext: string | null;
+  /**
+   * Unknown-trigger refinement: the structured signal mirroring
+   * ArcLiveState.triggerKnown at session completion -- true when a
+   * specific trigger was named, false when the trainee's answer was
+   * recognized as "I don't know" (or equivalent) or left blank, null
+   * when trigger_context was never reached (a proactive session) or
+   * this entry predates this field. triggerContext above still
+   * preserves the trainee's own raw text either way -- this is only
+   * the derived, structured reading of it, never a replacement.
+   */
+  triggerKnown: boolean | null;
 }
 
 export interface SessionLogEntry {

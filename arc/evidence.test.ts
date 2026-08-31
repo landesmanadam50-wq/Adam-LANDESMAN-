@@ -64,6 +64,7 @@ const disciplineContext = {
   interferingState: "היסוס",
   challengeContext: "לפני שיחה קשה",
   triggerContext: null,
+  triggerKnown: null,
 };
 
 const focusContext = {
@@ -75,6 +76,7 @@ const focusContext = {
   interferingState: "פחד",
   challengeContext: "אחרי טעות",
   triggerContext: null,
+  triggerKnown: null,
 };
 
 // --- Layer/context resolution ---------------------------------------------

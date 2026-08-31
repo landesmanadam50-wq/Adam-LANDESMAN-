@@ -31,17 +31,59 @@ export function applyTriggerSelection(session: ArcLiveState, triggerType: Trigge
 }
 
 /**
+ * Unknown-trigger refinement: a small, fixed, deterministic set of
+ * "I don't know the trigger" responses -- matched exactly (after
+ * trimming surrounding whitespace and trailing punctuation), never by
+ * fuzzy/semantic guessing (this codebase has no NLP/AI service to do
+ * that honestly -- see arc/evidence.ts's own doc on the same
+ * principle). Covers the spec's own three examples plus their
+ * grammatically-gendered counterparts (Hebrew requires gender
+ * agreement, and a trainee of either gender should be recognized
+ * equally) -- nothing broader, so a genuine specific trigger that
+ * merely starts with "לא" (e.g. "לא הצלחתי להירדם") is never
+ * misclassified as unknown.
+ */
+const KNOWN_UNKNOWN_TRIGGER_RESPONSES = ["לא יודע", "לא יודעת", "לא בטוח", "לא בטוחה", "אין לי מושג"];
+
+function normalizeTriggerResponseForMatching(text: string): string {
+  return text.trim().replace(/[.!?׃]+$/g, "").trim();
+}
+
+/**
+ * Whether a trigger_context answer is one of the recognized "I don't
+ * know" responses (#2) -- exported so it's independently testable and
+ * so live/screens.tsx/live/liveEventAdapter.test.ts never have to
+ * duplicate this matching logic.
+ */
+export function isUnknownTriggerResponse(text: string): boolean {
+  return KNOWN_UNKNOWN_TRIGGER_RESPONSES.includes(normalizeTriggerResponseForMatching(text));
+}
+
+/**
  * The trigger_context stage's own free-text answer -- session-specific
  * only (ArcLiveState.triggerContext), never touching
  * ArcBuildProfile.challengeContext/identityChallengeContext (the
  * reusable, BUILD-configured context -- see arc/types.ts's
- * ArcLiveState.triggerContext doc). Trimmed to null when left blank,
- * same convention as applyAlternativeAction/CompleteScreen's Gratitude
- * -- optional, never invented, never required.
+ * ArcLiveState.triggerContext doc). The trainee's raw text is always
+ * preserved verbatim (trimmed), whatever it says -- "לא יודע" is never
+ * discarded or rewritten. Unknown-trigger refinement: also resolves
+ * the STRUCTURED ArcLiveState.triggerKnown signal a recognized "I
+ * don't know" response (or a blank answer -- there's equally no known
+ * trigger to imagine) resolves to false; any other non-empty answer
+ * resolves to true. arc/stageCopy.ts's "observer_pause" case reads
+ * ONLY this structured flag to choose its imagery, never triggerContext's
+ * raw text, so "לא יודע" itself is never treated as if it were a
+ * literal semantic trigger to imagine.
  */
 export function applyTriggerContext(session: ArcLiveState, text: string): ArcLiveState {
   const trimmed = text.trim();
-  return { ...session, triggerContext: trimmed.length > 0 ? trimmed : null };
+  if (trimmed.length === 0) {
+    return { ...session, triggerContext: null, triggerKnown: false };
+  }
+  if (isUnknownTriggerResponse(trimmed)) {
+    return { ...session, triggerContext: trimmed, triggerKnown: false };
+  }
+  return { ...session, triggerContext: trimmed, triggerKnown: true };
 }
 
 /** presence_check and arc_thought_presence_recheck both feed presenceRating; desired_state_check feeds desiredStateRating. Same "scale0to10" input kind, different field -- this is the one piece of stage-specific routing an adapter necessarily does. */
