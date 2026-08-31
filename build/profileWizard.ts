@@ -361,8 +361,15 @@ export function draftFromProfileAndSelection(
       profile.identityDwellTimes?.stopImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.stopImageryDwellSeconds
     ),
     habit: profile.habit ?? "",
+    // A profile saved before this field existed has it genuinely absent
+    // (`undefined`, not `null`) once JSON.parse'd -- data/storage.ts's
+    // loadProfile is a bare parse with no migration step (see that
+    // file's own doc). Checking only `!== null` let `undefined` through
+    // and rendered the literal string "undefined" in this TextInput; `??
+    // null` normalizes both "never configured" shapes to the same
+    // legacy-safe blank field.
     negativeActionBaseDurationMinutes:
-      profile.negativeActionBaseDurationMinutes !== null ? String(profile.negativeActionBaseDurationMinutes) : "",
+      (profile.negativeActionBaseDurationMinutes ?? null) !== null ? String(profile.negativeActionBaseDurationMinutes) : "",
     beneficialAction: profile.beneficialAction ?? "",
     hasPreventiveAction: profile.preventiveAction !== null,
     preventiveActionDescription: profile.preventiveAction ?? "",

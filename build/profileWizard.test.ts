@@ -17,6 +17,7 @@ import {
   IDENTITY_ARC_STEP_ORDER,
   type ProfileDraft,
 } from "./profileWizard.ts";
+import type { ArcBuildProfile } from "../arc/types.ts";
 
 function filledStateOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDraft {
   // "state" draft, but resolvesNeedsIdentity is always true when needsState is
@@ -509,6 +510,38 @@ test("draftFromProfileAndSelection round-trips a saved negativeActionBaseDuratio
   const neverSetProfile = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "" }));
   const reloadedNeverSet = draftFromProfileAndSelection(neverSetProfile, null);
   assert.equal(reloadedNeverSet.negativeActionBaseDurationMinutes, "");
+});
+
+// --- REGRESSION (legacy data): a profile saved before
+// negativeActionBaseDurationMinutes ever existed as a field at all has
+// it genuinely ABSENT -- `undefined`, not `null` -- once JSON.parse'd,
+// since data/storage.ts's loadProfile is a bare parse with no
+// migration step. draftFromProfileAndSelection used to check only
+// `!== null`, so an absent field rendered the literal string
+// "undefined" in the BUILD wizard's TextInput.
+
+test("REGRESSION: draftFromProfileAndSelection never renders the literal string \"undefined\" for a legacy profile where negativeActionBaseDurationMinutes is genuinely absent (not null)", () => {
+  const legacyProfile = {
+    ...buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "20" })),
+  } as ArcBuildProfile;
+  delete (legacyProfile as { negativeActionBaseDurationMinutes?: unknown }).negativeActionBaseDurationMinutes;
+  assert.equal("negativeActionBaseDurationMinutes" in legacyProfile, false, "sanity: the field is genuinely absent, not present-as-null");
+
+  const draft = draftFromProfileAndSelection(legacyProfile, null);
+  assert.equal(draft.negativeActionBaseDurationMinutes, "", "must render as a blank, editable field -- never the string \"undefined\"");
+  assert.notEqual(draft.negativeActionBaseDurationMinutes, "undefined");
+});
+
+test("REGRESSION: re-saving a legacy profile (negativeActionBaseDurationMinutes absent) through the BUILD wizard without touching that step persists null, never NaN or the string \"undefined\"", () => {
+  const legacyProfile = {
+    ...buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "20" })),
+  } as ArcBuildProfile;
+  delete (legacyProfile as { negativeActionBaseDurationMinutes?: unknown }).negativeActionBaseDurationMinutes;
+
+  const draft = draftFromProfileAndSelection(legacyProfile, null);
+  const resaved = buildProfileFromDraft(draft);
+  assert.equal(resaved.negativeActionBaseDurationMinutes, null);
+  assert.equal(Number.isNaN(resaved.negativeActionBaseDurationMinutes as unknown as number), false);
 });
 
 test("buildProfileFromDraft saves the state target's seven dwell values (coordinated timer/dwell task: presence + stop-imagery joined the original five), applying the correct defaults when left unedited", () => {
