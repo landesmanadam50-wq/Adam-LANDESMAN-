@@ -4,35 +4,54 @@ import assert from "node:assert/strict";
 import {
   getAvailableLiveTriggers,
   getAvailableProactiveTargets,
+  getAvailableReactiveExperiences,
+  needsCurrentActionResolution,
+  needsNegativeAction,
+  resolveActionDuration,
   getFirstArcStage,
   getNextArcStage,
-  getPreventiveActionSubStage,
+  needsReactiveStateSelection,
+  resolveActPhase,
+  resolveEncodingRegulationCue,
   resolveEncodingTarget,
   resolveLiveRoute,
+  resolveObserverPauseLayer,
+  resolveTargetPreventiveAction,
 } from "./arcEngine.ts";
 import { createEmptyLiveState } from "./types.ts";
-import type { ArcBuildProfile, ArcLiveState } from "./types.ts";
+import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { ARC_CONFIG } from "./config.ts";
-import type { ArcMap } from "./buildTypes.ts";
+
+const ALL_LAYERS: DevelopmentLayer[] = ["state", "identity", "habit"];
 
 function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
   return {
     programPath: "standard_3_week",
     identityActionNeeded: false,
+    goal: null,
     interferingState: "פחד",
+    challengeContext: null,
+    statePreventiveAction: null,
+    stateEncodingRegulationCue: null,
     supportiveState: "חמלה",
     stateEncoding: null,
     internalAction: "סריקת גוף",
+    stateDwellTimes: null,
     desiredIdentity: null,
+    identityChallengeContext: null,
     identityInterferingEmotion: null,
+    identityPreventiveAction: null,
+    identityEncodingRegulationCue: null,
     identityEncoding: null,
     identityAction: null,
+    identityDwellTimes: null,
     habit: "גלילה ברשת",
     beneficialAction: "לגשת ולפתוח שיחה",
     preventiveAction: null,
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
     successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
     ...overrides,
   };
 }
@@ -83,6 +102,94 @@ test("getAvailableProactiveTargets excludes a layer with data if the layer itsel
   const p = profile({ desiredIdentity: "אומץ", identityEncoding: null });
   const targets = getAvailableProactiveTargets(["state"], p); // identity not active
   assert.equal(targets.some((t) => t.layer === "identity"), false);
+});
+
+// ---------------------------------------------------------------------------
+// Reactive recognition chooser (#4, #5, #6, #16)
+// ---------------------------------------------------------------------------
+
+test("getAvailableReactiveExperiences is empty when nothing is mapped", () => {
+  const p = profile({ interferingState: null, identityInterferingEmotion: null });
+  assert.deepEqual(getAvailableReactiveExperiences(ALL_LAYERS, p), []);
+});
+
+test("getAvailableReactiveExperiences offers both state and identity experiences when both are mapped and active -- Distraction (state) and Craving (identity)", () => {
+  const p = profile({ interferingState: "פיזור", identityInterferingEmotion: "תשוקה" });
+  const experiences = getAvailableReactiveExperiences(ALL_LAYERS, p);
+  assert.deepEqual(
+    experiences.map((e) => e.layer),
+    ["state", "identity"]
+  );
+  assert.deepEqual(
+    experiences.map((e) => e.label),
+    ["פיזור", "תשוקה"]
+  );
+});
+
+test("getAvailableReactiveExperiences excludes a mapped experience whose layer isn't active", () => {
+  const p = profile({ interferingState: "פיזור", identityInterferingEmotion: "תשוקה" });
+  const experiences = getAvailableReactiveExperiences(["state"], p);
+  assert.deepEqual(
+    experiences.map((e) => e.layer),
+    ["state"]
+  );
+});
+
+test("needsReactiveStateSelection is false with fewer than two mapped experiences, or once a target is already selected", () => {
+  const zeroMapped = profile({ interferingState: null, identityInterferingEmotion: null });
+  assert.equal(needsReactiveStateSelection("reactive_emotion", ALL_LAYERS, zeroMapped, null), false);
+
+  const oneMapped = profile({ interferingState: "פיזור", identityInterferingEmotion: null });
+  assert.equal(needsReactiveStateSelection("reactive_emotion", ALL_LAYERS, oneMapped, null), false);
+
+  const twoMapped = profile({ interferingState: "פיזור", identityInterferingEmotion: "תשוקה" });
+  assert.equal(needsReactiveStateSelection("reactive_emotion", ALL_LAYERS, twoMapped, null), true);
+  assert.equal(needsReactiveStateSelection("reactive_emotion", ALL_LAYERS, twoMapped, "state"), false, "already resolved");
+});
+
+test("needsReactiveStateSelection is false for reactive_urge and proactive, regardless of how many experiences are mapped", () => {
+  const twoMapped = profile({ interferingState: "פיזור", identityInterferingEmotion: "תשוקה" });
+  assert.equal(needsReactiveStateSelection("reactive_urge", ALL_LAYERS, twoMapped, null), false);
+  assert.equal(needsReactiveStateSelection("proactive", ALL_LAYERS, twoMapped, null), false);
+});
+
+test("trigger_selection stays put (renders the chooser) while 2+ reactive experiences are mapped and none is chosen", () => {
+  const p = profile({ interferingState: "פיזור", identityInterferingEmotion: "תשוקה" });
+  const s = state({ triggerType: "reactive_emotion" });
+  assert.equal(getNextArcStage("trigger_selection", s, p, ALL_LAYERS).stage, "trigger_selection");
+});
+
+test("trigger_selection resolves once a Reactive experience is explicitly selected -- Distraction routes through the state (Focus) map, Craving through the identity (Discipline) map, never mixed", () => {
+  const p = profile({
+    interferingState: "פיזור",
+    supportiveState: "מיקוד",
+    identityInterferingEmotion: "תשוקה",
+    desiredIdentity: "משמעת",
+  });
+
+  const distraction = state({ triggerType: "reactive_emotion", selectedTarget: "state" });
+  assert.equal(getNextArcStage("trigger_selection", distraction, p, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(
+    resolveEncodingTarget({
+      activeLayers: ALL_LAYERS,
+      triggerType: "reactive_emotion",
+      selectedTarget: distraction.selectedTarget,
+      buildProfile: p,
+    }).layer,
+    "state"
+  );
+
+  const craving = state({ triggerType: "reactive_emotion", selectedTarget: "identity" });
+  assert.equal(getNextArcStage("trigger_selection", craving, p, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(
+    resolveEncodingTarget({
+      activeLayers: ALL_LAYERS,
+      triggerType: "reactive_emotion",
+      selectedTarget: craving.selectedTarget,
+      buildProfile: p,
+    }).layer,
+    "identity"
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -156,41 +263,47 @@ test("first stage is trigger_selection", () => {
   assert.equal(getFirstArcStage(), "trigger_selection");
 });
 
-test("trigger_selection always goes to presence_check", () => {
-  assert.equal(getNextArcStage("trigger_selection", state(), profile()).stage, "presence_check");
+test("trigger_selection stays put until a trigger type is recorded", () => {
+  assert.equal(getNextArcStage("trigger_selection", state(), profile(), ALL_LAYERS).stage, "trigger_selection");
+});
+
+test("trigger_selection routes proactive straight to presence_check, unaffected by any mapped Reactive experience or Preventive Action", () => {
+  const p = profile({ interferingState: "פיזור", identityInterferingEmotion: "תשוקה", statePreventiveAction: "פעולה" });
+  const s = state({ triggerType: "proactive" });
+  assert.equal(getNextArcStage("trigger_selection", s, p, ALL_LAYERS).stage, "presence_check");
 });
 
 test("high presence skips ARC Thought; low presence enters it", () => {
   const high = state({ triggerType: "reactive_emotion", presenceRating: 8 });
-  assert.equal(getNextArcStage("presence_check", high, profile()).stage, "sensation_check");
+  assert.equal(getNextArcStage("presence_check", high, profile(), ALL_LAYERS).stage, "sensation_check");
 
   const low = state({ triggerType: "reactive_emotion", presenceRating: 3 });
-  assert.equal(getNextArcStage("presence_check", low, profile()).stage, "arc_thought_awareness");
+  assert.equal(getNextArcStage("presence_check", low, profile(), ALL_LAYERS).stage, "arc_thought_awareness");
 });
 
 test("ARC Thought is a straight line through its first three stages", () => {
   const s = state({ triggerType: "reactive_urge", presenceRating: 3 });
   const p = profile();
-  assert.equal(getNextArcStage("arc_thought_awareness", s, p).stage, "arc_thought_combined_attention");
-  assert.equal(getNextArcStage("arc_thought_combined_attention", s, p).stage, "arc_thought_expand_presence");
-  assert.equal(getNextArcStage("arc_thought_expand_presence", s, p).stage, "arc_thought_presence_recheck");
+  assert.equal(getNextArcStage("arc_thought_awareness", s, p, ALL_LAYERS).stage, "arc_thought_combined_attention");
+  assert.equal(getNextArcStage("arc_thought_combined_attention", s, p, ALL_LAYERS).stage, "arc_thought_expand_presence");
+  assert.equal(getNextArcStage("arc_thought_expand_presence", s, p, ALL_LAYERS).stage, "arc_thought_presence_recheck");
 });
 
 test("arc_thought_presence_recheck returns to the stored route once presence recovers", () => {
   const p = profile();
   assert.equal(
-    getNextArcStage("arc_thought_presence_recheck", state({ triggerType: "reactive_emotion", presenceRating: 7 }), p).stage,
+    getNextArcStage("arc_thought_presence_recheck", state({ triggerType: "reactive_emotion", presenceRating: 7 }), p, ALL_LAYERS).stage,
     "sensation_check"
   );
   assert.equal(
-    getNextArcStage("arc_thought_presence_recheck", state({ triggerType: "proactive", presenceRating: 7 }), p).stage,
+    getNextArcStage("arc_thought_presence_recheck", state({ triggerType: "proactive", presenceRating: 7 }), p, ALL_LAYERS).stage,
     "desired_state_check"
   );
 });
 
 test("arc_thought_presence_recheck loops back to expand_presence, incrementing loopIterationCount, while presence stays low", () => {
   const s = state({ triggerType: "reactive_emotion", presenceRating: 4, loopIterationCount: 0 });
-  const outcome = getNextArcStage("arc_thought_presence_recheck", s, profile());
+  const outcome = getNextArcStage("arc_thought_presence_recheck", s, profile(), ALL_LAYERS);
   assert.equal(outcome.stage, "arc_thought_expand_presence");
   assert.equal(outcome.loopIterationCount, 1);
 });
@@ -201,93 +314,122 @@ test("arc_thought_presence_recheck stops looping once the safety cap is hit and 
     presenceRating: 4,
     loopIterationCount: ARC_CONFIG.safety.maxLoopIterations,
   });
-  const outcome = getNextArcStage("arc_thought_presence_recheck", s, profile());
+  const outcome = getNextArcStage("arc_thought_presence_recheck", s, profile(), ALL_LAYERS);
   assert.equal(outcome.stage, "sensation_check", "forced forward despite presence still being low");
   assert.equal(outcome.loopIterationCount, ARC_CONFIG.safety.maxLoopIterations, "does not increment past the cap");
 });
 
 // ---------------------------------------------------------------------------
-// Preventive action
+// Preventive action -- resolved per-target, surfaced BEFORE ARC Thought (#3)
 // ---------------------------------------------------------------------------
 
-test("reactive_urge routes through preventive_action_check only when a preventive action is configured", () => {
+test("reactive_urge routes through preventive_action_check (from trigger_selection, via the reactive-flow-strengthening task's trigger_context -> observer_pause, before ARC Thought) only when the habit layer's Preventive Action is configured", () => {
+  const s = state({ triggerType: "reactive_urge" });
+
+  // trigger_selection always routes a reactive session through
+  // trigger_context first now, regardless of Preventive Action config.
   const withPlan = profile({ preventiveAction: "לצאת להליכה" });
-  const s = state({ triggerType: "reactive_urge", presenceRating: 8 });
-  assert.equal(getNextArcStage("presence_check", s, withPlan).stage, "preventive_action_check");
+  assert.equal(getNextArcStage("trigger_selection", s, withPlan, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(getNextArcStage("trigger_context", s, withPlan, ALL_LAYERS).stage, "observer_pause");
+  assert.equal(getNextArcStage("observer_pause", s, withPlan, ALL_LAYERS).stage, "preventive_action_check");
 
   const withoutPlan = profile({ preventiveAction: null });
-  assert.equal(getNextArcStage("presence_check", s, withoutPlan).stage, "sensation_check");
+  assert.equal(getNextArcStage("trigger_selection", s, withoutPlan, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(getNextArcStage("observer_pause", s, withoutPlan, ALL_LAYERS).stage, "presence_check");
 });
 
-test("preventive_action_check branches on wantsPreventiveAction", () => {
+test("preventive_action_check branches on wantsPreventiveAction, then both branches continue to presence_check -- never back to sensation_check", () => {
   const p = profile({ preventiveAction: "לצאת להליכה" });
-  assert.equal(
-    getNextArcStage("preventive_action_check", state({ wantsPreventiveAction: true }), p).stage,
-    "preventive_action"
-  );
-  assert.equal(
-    getNextArcStage("preventive_action_check", state({ wantsPreventiveAction: false }), p).stage,
-    "sensation_check"
-  );
+  assert.equal(getNextArcStage("preventive_action_check", state({ wantsPreventiveAction: true }), p, ALL_LAYERS).stage, "preventive_action");
+  assert.equal(getNextArcStage("preventive_action_check", state({ wantsPreventiveAction: false }), p, ALL_LAYERS).stage, "presence_check");
+  assert.equal(getNextArcStage("preventive_action", state(), p, ALL_LAYERS).stage, "presence_check");
 });
 
-test("preventive_action always continues to sensation_check", () => {
-  assert.equal(getNextArcStage("preventive_action", state(), profile()).stage, "sensation_check");
+test("reactive_emotion resolves Preventive Action from the state layer's own field, never the habit layer's", () => {
+  const s = state({ triggerType: "reactive_emotion" }); // only one mapped experience -> resolves to "state"
+
+  const withState = profile({
+    preventiveAction: "פעולה של הרגל", // habit's -- must never leak into a state-layer session
+    statePreventiveAction: "לצאת לחמש דקות אוויר צח",
+  });
+  assert.equal(getNextArcStage("trigger_selection", s, withState, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(getNextArcStage("observer_pause", s, withState, ALL_LAYERS).stage, "preventive_action_check");
+
+  const withoutState = profile({ preventiveAction: "פעולה של הרגל", statePreventiveAction: null });
+  assert.equal(getNextArcStage("observer_pause", s, withoutState, ALL_LAYERS).stage, "presence_check");
 });
 
-test("reactive_emotion never routes through preventive action, even with one configured", () => {
-  const p = profile({ preventiveAction: "לצאת להליכה" });
-  const s = state({ triggerType: "reactive_emotion", presenceRating: 8 });
-  assert.equal(getNextArcStage("presence_check", s, p).stage, "sensation_check");
+test("reactive_emotion resolves Preventive Action from the identity layer's own field when the resolved target is identity", () => {
+  const p = profile({
+    interferingState: null,
+    supportiveState: null,
+    internalAction: null, // nothing configured for state -> inference must not land there
+    identityInterferingEmotion: "תשוקה",
+    desiredIdentity: "משמעת",
+    identityAction: "להתקשר לחבר טוב",
+    identityPreventiveAction: "להתקשר לחבר",
+  });
+  // No selectedTarget set explicitly -- resolved purely by inference
+  // (only identity has any data configured), same as a real session
+  // with exactly one mapped Reactive experience does via the adapter's
+  // autoSelectSingleReactiveExperience (see live/liveEventAdapter.ts).
+  const s = state({ triggerType: "reactive_emotion" });
+  assert.equal(getNextArcStage("trigger_selection", s, p, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(getNextArcStage("observer_pause", s, p, ALL_LAYERS).stage, "preventive_action_check");
+});
+
+test("state, identity, and habit Preventive Actions never leak into each other, even when all three are configured", () => {
+  const p = profile({
+    statePreventiveAction: "פעולה מונעת של מיקוד",
+    identityPreventiveAction: "פעולה מונעת של משמעת",
+    preventiveAction: "פעולה מונעת של הרגל",
+  });
+  assert.equal(resolveTargetPreventiveAction("state", p), "פעולה מונעת של מיקוד");
+  assert.equal(resolveTargetPreventiveAction("identity", p), "פעולה מונעת של משמעת");
+  assert.equal(resolveTargetPreventiveAction("habit", p), "פעולה מונעת של הרגל");
 });
 
 // ---------------------------------------------------------------------------
-// Preventive action -- ArcMap selection/recognition sub-steps
+// Encoding regulation -- a lightweight per-target Short Encoding
+// Regulation Cue, distinct from the Full Regulation Cue used during
+// Regulation itself
 // ---------------------------------------------------------------------------
 
-const mapWithContext: ArcMap = {
-  id: "map1",
-  desiredStateId: "d1",
-  interferingState: "ביקורת עצמית",
-  challengeContext: "אחרי טעות",
-  preventiveAction: "לעצור ולשים לב למה שכבר נוכח",
-};
-const mapNoContext: ArcMap = {
-  id: "map2",
-  desiredStateId: "d1",
-  interferingState: null,
-  challengeContext: null,
-  preventiveAction: "לעצור לפני תגובה אוטומטית",
-};
-
-test("getPreventiveActionSubStage asks to select an ArcMap when more than one exists and none is chosen", () => {
-  assert.equal(getPreventiveActionSubStage([mapWithContext, mapNoContext], null, null), "select_arc_map");
+test("an ARC Map can store both a Full Regulation Cue and its own Short Encoding Regulation Cue", () => {
+  const p = profile({ regulationTool: "הרפיית כתפיים + נשיפה איטית", stateEncodingRegulationCue: "נשיפה רגועה" });
+  assert.equal(p.regulationTool, "הרפיית כתפיים + נשיפה איטית", "the Full Regulation Cue is stored");
+  assert.equal(resolveEncodingRegulationCue("state", p), "נשיפה רגועה", "the target's own Short Encoding Regulation Cue is stored separately");
 });
 
-test("getPreventiveActionSubStage skips selection once an ArcMap has been chosen", () => {
-  assert.notEqual(getPreventiveActionSubStage([mapWithContext, mapNoContext], "map1", null), "select_arc_map");
+test("Focus and Discipline can have different Short Encoding Regulation Cues, never mixed", () => {
+  const p = profile({ stateEncodingRegulationCue: "נשיפה רגועה", identityEncodingRegulationCue: "כתפיים רפויות" });
+  assert.equal(resolveEncodingRegulationCue("state", p), "נשיפה רגועה");
+  assert.equal(resolveEncodingRegulationCue("identity", p), "כתפיים רפויות");
 });
 
-test("getPreventiveActionSubStage skips selection entirely when there's only one ArcMap", () => {
-  assert.notEqual(getPreventiveActionSubStage([mapWithContext], null, null), "select_arc_map");
+test("selecting 'use the same cue during Encoding' (no separate short cue configured) correctly reuses the Full Regulation Cue", () => {
+  const p = profile({ regulationTool: "כלי הוויסות המלא", stateEncodingRegulationCue: null, identityEncodingRegulationCue: null });
+  assert.equal(resolveEncodingRegulationCue("state", p), "כלי הוויסות המלא");
+  assert.equal(resolveEncodingRegulationCue("identity", p), "כלי הוויסות המלא");
 });
 
-test("getPreventiveActionSubStage asks to recognize the Challenge Context when the active map has one and it hasn't been answered", () => {
-  assert.equal(getPreventiveActionSubStage([mapWithContext], null, null), "recognize_challenge");
-  assert.equal(getPreventiveActionSubStage([mapWithContext, mapNoContext], "map1", null), "recognize_challenge");
+test("resolveEncodingRegulationCue never invents a cue when neither a short cue nor a Full Regulation Cue is configured", () => {
+  const p = profile({ regulationTool: null, stateEncodingRegulationCue: null, identityEncodingRegulationCue: null });
+  assert.equal(resolveEncodingRegulationCue("state", p), null);
+  assert.equal(resolveEncodingRegulationCue("identity", p), null);
 });
 
-test("getPreventiveActionSubStage goes straight to offer_action when the active map has no Challenge Context to recognize", () => {
-  assert.equal(getPreventiveActionSubStage([mapNoContext], null, null), "offer_action");
+test("resolveEncodingRegulationCue for habit always uses the Full Regulation Cue directly -- habit has no short cue of its own", () => {
+  const p = profile({ regulationTool: "כלי הוויסות המלא" });
+  assert.equal(resolveEncodingRegulationCue("habit", p), "כלי הוויסות המלא");
 });
 
-test("getPreventiveActionSubStage goes to offer_action once recognition has been answered, either way", () => {
-  assert.equal(getPreventiveActionSubStage([mapWithContext], null, true), "offer_action");
-  assert.equal(getPreventiveActionSubStage([mapWithContext], null, false), "offer_action");
-});
-
-test("getPreventiveActionSubStage is offer_action when there are no ArcMaps at all (legacy fallback)", () => {
-  assert.equal(getPreventiveActionSubStage([], null, null), "offer_action");
+test("a profile stored before this field existed resolves exactly like 'use the same cue' -- existing stored users remain backwards compatible", () => {
+  const legacyProfile = { ...profile({ regulationTool: "נשימה 4-7-8" }) } as ArcBuildProfile;
+  delete (legacyProfile as { stateEncodingRegulationCue?: unknown }).stateEncodingRegulationCue;
+  delete (legacyProfile as { identityEncodingRegulationCue?: unknown }).identityEncodingRegulationCue;
+  assert.equal(resolveEncodingRegulationCue("state", legacyProfile), "נשימה 4-7-8");
+  assert.equal(resolveEncodingRegulationCue("identity", legacyProfile), "נשימה 4-7-8");
 });
 
 // ---------------------------------------------------------------------------
@@ -296,33 +438,33 @@ test("getPreventiveActionSubStage is offer_action when there are no ArcMaps at a
 
 test("sensation_check branches into all four reactive intensity bands", () => {
   const p = profile();
-  assert.equal(getNextArcStage("sensation_check", state({ sensationIntensity: 9 }), p).stage, "stay");
-  assert.equal(getNextArcStage("sensation_check", state({ sensationIntensity: 7 }), p).stage, "reactive_transition_check");
-  assert.equal(getNextArcStage("sensation_check", state({ sensationIntensity: 5 }), p).stage, "regulate");
-  assert.equal(getNextArcStage("sensation_check", state({ sensationIntensity: 2 }), p).stage, "encode");
+  assert.equal(getNextArcStage("sensation_check", state({ sensationIntensity: 9 }), p, ALL_LAYERS).stage, "stay");
+  assert.equal(getNextArcStage("sensation_check", state({ sensationIntensity: 7 }), p, ALL_LAYERS).stage, "reactive_transition_check");
+  assert.equal(getNextArcStage("sensation_check", state({ sensationIntensity: 5 }), p, ALL_LAYERS).stage, "regulate");
+  assert.equal(getNextArcStage("sensation_check", state({ sensationIntensity: 2 }), p, ALL_LAYERS).stage, "encode");
 });
 
 test("stay always continues to accept", () => {
-  assert.equal(getNextArcStage("stay", state(), profile()).stage, "accept");
+  assert.equal(getNextArcStage("stay", state(), profile(), ALL_LAYERS).stage, "accept");
 });
 
 test("accept loops back to sensation_check (an intensity re-check), incrementing loopIterationCount", () => {
-  const outcome = getNextArcStage("accept", state({ loopIterationCount: 0 }), profile());
+  const outcome = getNextArcStage("accept", state({ loopIterationCount: 0 }), profile(), ALL_LAYERS);
   assert.equal(outcome.stage, "sensation_check");
   assert.equal(outcome.loopIterationCount, 1);
 });
 
 test("accept forces forward to regulate once the safety cap is hit", () => {
-  const outcome = getNextArcStage("accept", state({ loopIterationCount: ARC_CONFIG.safety.maxLoopIterations }), profile());
+  const outcome = getNextArcStage("accept", state({ loopIterationCount: ARC_CONFIG.safety.maxLoopIterations }), profile(), ALL_LAYERS);
   assert.equal(outcome.stage, "regulate");
 });
 
 test("reactive_transition_check advances to regulate when ready, loops back to stay when not", () => {
   const p = profile();
-  const ready = getNextArcStage("reactive_transition_check", state({ regulationReady: true, loopIterationCount: 0 }), p);
+  const ready = getNextArcStage("reactive_transition_check", state({ regulationReady: true, loopIterationCount: 0 }), p, ALL_LAYERS);
   assert.equal(ready.stage, "regulate");
 
-  const notReady = getNextArcStage("reactive_transition_check", state({ regulationReady: false, loopIterationCount: 0 }), p);
+  const notReady = getNextArcStage("reactive_transition_check", state({ regulationReady: false, loopIterationCount: 0 }), p, ALL_LAYERS);
   assert.equal(notReady.stage, "stay");
   assert.equal(notReady.loopIterationCount, 1);
 });
@@ -331,13 +473,14 @@ test("reactive_transition_check forces forward to regulate once the safety cap i
   const outcome = getNextArcStage(
     "reactive_transition_check",
     state({ regulationReady: false, loopIterationCount: ARC_CONFIG.safety.maxLoopIterations }),
-    profile()
+    profile(),
+    ALL_LAYERS
   );
   assert.equal(outcome.stage, "regulate");
 });
 
 test("regulate on the reactive path loops back to sensation_check for a re-check", () => {
-  const outcome = getNextArcStage("regulate", state({ triggerType: "reactive_emotion", loopIterationCount: 0 }), profile());
+  const outcome = getNextArcStage("regulate", state({ triggerType: "reactive_emotion", loopIterationCount: 0 }), profile(), ALL_LAYERS);
   assert.equal(outcome.stage, "sensation_check");
   assert.equal(outcome.loopIterationCount, 1);
 });
@@ -346,7 +489,8 @@ test("regulate on the reactive path forces forward to encode once the safety cap
   const outcome = getNextArcStage(
     "regulate",
     state({ triggerType: "reactive_emotion", loopIterationCount: ARC_CONFIG.safety.maxLoopIterations }),
-    profile()
+    profile(),
+    ALL_LAYERS
   );
   assert.equal(outcome.stage, "encode");
 });
@@ -357,12 +501,12 @@ test("regulate on the reactive path forces forward to encode once the safety cap
 
 test("desired_state_check branches by getProactiveStage's threshold", () => {
   const p = profile();
-  assert.equal(getNextArcStage("desired_state_check", state({ desiredStateRating: 3 }), p).stage, "regulate");
-  assert.equal(getNextArcStage("desired_state_check", state({ desiredStateRating: 7 }), p).stage, "encode");
+  assert.equal(getNextArcStage("desired_state_check", state({ desiredStateRating: 3 }), p, ALL_LAYERS).stage, "regulate");
+  assert.equal(getNextArcStage("desired_state_check", state({ desiredStateRating: 7 }), p, ALL_LAYERS).stage, "encode");
 });
 
 test("regulate on the proactive path loops back to desired_state_check, not sensation_check", () => {
-  const outcome = getNextArcStage("regulate", state({ triggerType: "proactive", loopIterationCount: 0 }), profile());
+  const outcome = getNextArcStage("regulate", state({ triggerType: "proactive", loopIterationCount: 0 }), profile(), ALL_LAYERS);
   assert.equal(outcome.stage, "desired_state_check");
   assert.equal(outcome.loopIterationCount, 1);
 });
@@ -371,7 +515,8 @@ test("regulate on the proactive path forces forward to encode once the safety ca
   const outcome = getNextArcStage(
     "regulate",
     state({ triggerType: "proactive", loopIterationCount: ARC_CONFIG.safety.maxLoopIterations }),
-    profile()
+    profile(),
+    ALL_LAYERS
   );
   assert.equal(outcome.stage, "encode");
 });
@@ -379,7 +524,7 @@ test("regulate on the proactive path forces forward to encode once the safety ca
 test("proactive never uses the reactive intensity thresholds", () => {
   // desiredStateRating 7 must be classified by getProactiveStage's threshold (5), not
   // getReactiveStage's (which would call 7 "reactive_transition_check", not a real stage here).
-  const outcome = getNextArcStage("desired_state_check", state({ desiredStateRating: 7 }), profile());
+  const outcome = getNextArcStage("desired_state_check", state({ desiredStateRating: 7 }), profile(), ALL_LAYERS);
   assert.notEqual(outcome.stage, "reactive_transition_check");
 });
 
@@ -387,14 +532,257 @@ test("proactive never uses the reactive intensity thresholds", () => {
 // Tail
 // ---------------------------------------------------------------------------
 
-test("the tail is a fixed line: encode -> act -> success_focus -> complete", () => {
+test("the tail is a fixed line: encode -> act -> success_focus -> negative_action -> complete, when the habit layer is active and a negative action is configured", () => {
+  const p = profile(); // default profile has habit configured (see needsNegativeAction)
+  const s = state();
+  assert.equal(getNextArcStage("encode", s, p, ALL_LAYERS).stage, "act");
+  assert.equal(getNextArcStage("act", s, p, ALL_LAYERS).stage, "success_focus");
+  assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "negative_action");
+  assert.equal(getNextArcStage("negative_action", s, p, ALL_LAYERS).stage, "complete");
+});
+
+test("the tail skips negative_action entirely, going straight to complete, when the habit layer isn't active this session (state/identity-only)", () => {
   const p = profile();
   const s = state();
-  assert.equal(getNextArcStage("encode", s, p).stage, "act");
-  assert.equal(getNextArcStage("act", s, p).stage, "success_focus");
-  assert.equal(getNextArcStage("success_focus", s, p).stage, "complete");
+  const layersWithoutHabit: DevelopmentLayer[] = ["state", "identity"];
+  assert.equal(getNextArcStage("success_focus", s, p, layersWithoutHabit).stage, "complete");
+});
+
+test("the tail skips negative_action when the habit layer is active but no negative action is configured (habit is null)", () => {
+  const p = profile({ habit: null });
+  const s = state();
+  assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "complete");
+});
+
+test("needsNegativeAction is true only when the habit layer is active AND a negative action is configured", () => {
+  const withHabit = profile({ habit: "גלילה ברשת" });
+  assert.equal(needsNegativeAction(["state", "identity", "habit"], withHabit), true);
+  assert.equal(needsNegativeAction(["state", "identity"], withHabit), false, "habit layer not active");
+
+  const withoutHabit = profile({ habit: null });
+  assert.equal(needsNegativeAction(["state", "identity", "habit"], withoutHabit), false, "no negative action configured");
+});
+
+test("negative_action always advances unconditionally to complete", () => {
+  const p = profile();
+  assert.equal(getNextArcStage("negative_action", state(), p, ALL_LAYERS).stage, "complete");
+  assert.equal(getNextArcStage("negative_action", state({ negativeActionStarted: true }), p, ALL_LAYERS).stage, "complete");
 });
 
 test("complete is terminal", () => {
-  assert.equal(getNextArcStage("complete", state(), profile()).stage, "complete");
+  assert.equal(getNextArcStage("complete", state(), profile(), ALL_LAYERS).stage, "complete");
+});
+
+// ---------------------------------------------------------------------------
+// Action choice -- planned action vs. a session-specific alternative
+// ---------------------------------------------------------------------------
+
+test("needsCurrentActionResolution is true until the trainee has confirmed the planned action or entered a valid alternative", () => {
+  assert.equal(needsCurrentActionResolution(false, null), true, "not yet asked");
+  assert.equal(needsCurrentActionResolution(true, null), false, "planned action confirmed (\"כן\")");
+  assert.equal(needsCurrentActionResolution(false, "5 דקות תרגילים בבית"), false, "a valid alternative was entered (\"לא\")");
+});
+
+test("getNextArcStage's act -> success_focus transition is unconditional, regardless of the Action-choice state -- routing itself is untouched by this feature", () => {
+  const p = profile();
+  assert.equal(getNextArcStage("act", state({ plannedActionConfirmed: false, selectedAction: null }), p, ALL_LAYERS).stage, "success_focus");
+  assert.equal(getNextArcStage("act", state({ plannedActionConfirmed: true }), p, ALL_LAYERS).stage, "success_focus");
+  assert.equal(getNextArcStage("act", state({ selectedAction: "חלופה" }), p, ALL_LAYERS).stage, "success_focus");
+});
+
+test("resolveActionDuration uses the alternative action's own session-specific duration when set", () => {
+  const p = profile({ actionDuration: 20 });
+  assert.equal(resolveActionDuration(5, p), 5);
+});
+
+test("resolveActionDuration falls back to the BUILD-level actionDuration when no session-specific duration was set", () => {
+  const p = profile({ actionDuration: 20 });
+  assert.equal(resolveActionDuration(null, p), 20);
+});
+
+test("resolveActionDuration never invents a duration when neither is set", () => {
+  const p = profile({ actionDuration: null });
+  assert.equal(resolveActionDuration(null, p), null);
+});
+
+// --- Timer-update task: the trainee's own live, in-session Beneficial
+// Action duration choice (5-10 minutes) sits between the alternative
+// action's own duration and the BUILD-level fallback in priority.
+
+test("resolveActionDuration prefers the live beneficialActionDurationMinutes choice over the BUILD-level actionDuration", () => {
+  const p = profile({ actionDuration: 20 });
+  assert.equal(resolveActionDuration(null, p, 7), 7);
+});
+
+test("resolveActionDuration still prefers the alternative action's own session-specific duration over the live beneficialActionDurationMinutes choice", () => {
+  const p = profile({ actionDuration: 20 });
+  assert.equal(resolveActionDuration(5, p, 7), 5, "the alternative-action path's own duration always wins -- it's never overridden by the planned-action-only live choice");
+});
+
+test("resolveActionDuration falls back to the BUILD-level actionDuration when neither the alternative nor the live choice is set", () => {
+  const p = profile({ actionDuration: 20 });
+  assert.equal(resolveActionDuration(null, p, null), 20);
+});
+
+test("resolveEncodingTarget: currentAction becomes the alternative action once selectedAction is set, and the planned BUILD action itself is never mutated", () => {
+  const p = profile({ internalAction: "לצאת להליכה של 20 דקות" });
+  const resolved = resolveEncodingTarget({
+    activeLayers: ["state"],
+    triggerType: "reactive_emotion",
+    selectedTarget: "state",
+    buildProfile: p,
+    selectedAction: "לעשות 5 דקות תרגילים בבית",
+  });
+  assert.equal(resolved.actionLabel, "לעשות 5 דקות תרגילים בבית", "currentAction is the alternative");
+  assert.equal(p.internalAction, "לצאת להליכה של 20 דקות", "the planned/BUILD action itself is untouched");
+});
+
+// --- resolveActPhase: the "act" stage's three sub-phases, in their
+// fixed, one-directional order -- see arc/instructionTiming.ts and
+// arc/actionTimer.ts for why Imagery timing and the actual Action
+// Timer must stay explicitly separate concepts. The standalone Action
+// Preparation sub-phase that used to sit between Imagery and
+// Performing is removed (LIVE-flow-update task) -- Imagery now goes
+// straight to Performing.
+
+test("resolveActPhase stays at 'choice' until currentAction is resolved", () => {
+  assert.equal(resolveActPhase(false, null, false), "choice");
+  assert.equal(resolveActPhase(false, null, true), "choice", "not yet resolved, even if the later flag is somehow set");
+});
+
+test("resolveActPhase moves to 'imagery' once currentAction is resolved (planned confirmed)", () => {
+  assert.equal(resolveActPhase(true, null, false), "imagery");
+});
+
+test("resolveActPhase moves to 'imagery' once currentAction is resolved (a valid alternative was entered)", () => {
+  assert.equal(resolveActPhase(false, "חלופה", false), "imagery");
+});
+
+test("resolveActPhase moves directly to 'performing' once Action Imagery is completed -- no standalone Preparation phase in between", () => {
+  assert.equal(resolveActPhase(true, null, true), "performing");
+  assert.equal(resolveActPhase(false, "חלופה", true), "performing");
+});
+
+// --- Reactive-flow-strengthening task: trigger_context/observer_pause
+// insertion (#1-#4, #8, #9). Reactive-only, never reached by proactive
+// sessions ("Preserve Proactive Separation").
+
+test("reactive sessions (both reactive_urge and reactive_emotion) always route trigger_selection -> trigger_context -> observer_pause first, regardless of whether a Preventive Action is configured", () => {
+  const withPreventive = profile({ preventiveAction: "לצאת להליכה", statePreventiveAction: "לנשום עמוק" });
+  const withoutPreventive = profile({ preventiveAction: null, statePreventiveAction: null });
+
+  for (const p of [withPreventive, withoutPreventive]) {
+    const urge = state({ triggerType: "reactive_urge" });
+    assert.equal(getNextArcStage("trigger_selection", urge, p, ALL_LAYERS).stage, "trigger_context");
+
+    const emotion = state({ triggerType: "reactive_emotion", selectedTarget: "state" });
+    assert.equal(getNextArcStage("trigger_selection", emotion, p, ALL_LAYERS).stage, "trigger_context");
+  }
+});
+
+test("trigger_context always advances to observer_pause unconditionally -- an optional field, never blocking progression the way a required rating would", () => {
+  const p = profile();
+  const withText = state({ triggerType: "reactive_emotion", selectedTarget: "state", triggerContext: "ראיתי סרטון בטלפון" });
+  assert.equal(getNextArcStage("trigger_context", withText, p, ALL_LAYERS).stage, "observer_pause");
+
+  const withoutText = state({ triggerType: "reactive_emotion", selectedTarget: "state", triggerContext: null });
+  assert.equal(getNextArcStage("trigger_context", withoutText, p, ALL_LAYERS).stage, "observer_pause", "must never block on an empty/optional trigger answer");
+});
+
+test("observer_pause resolves the SAME target (layer) trigger_selection's own inline resolution used to compute directly -- reactive_urge always habit, reactive_emotion via selectedTarget/inference -- so the correct Preventive Action is retrieved next", () => {
+  const p = profile({ preventiveAction: "פעולת הרגל", statePreventiveAction: "פעולת מצב" });
+
+  const urge = state({ triggerType: "reactive_urge" });
+  const afterUrge = getNextArcStage("observer_pause", urge, p, ALL_LAYERS);
+  assert.equal(afterUrge.stage, "preventive_action_check", "reactive_urge resolves to habit's own Preventive Action");
+
+  const emotion = state({ triggerType: "reactive_emotion", selectedTarget: "state" });
+  const afterEmotion = getNextArcStage("observer_pause", emotion, p, ALL_LAYERS);
+  assert.equal(afterEmotion.stage, "preventive_action_check", "reactive_emotion (state target) resolves to state's own Preventive Action");
+});
+
+test("observer_pause falls through directly to presence_check when no Preventive Action is configured for the resolved target -- no duplicate/invented Preventive Action question", () => {
+  const p = profile({ preventiveAction: null, statePreventiveAction: null, identityPreventiveAction: null });
+  const emotion = state({ triggerType: "reactive_emotion", selectedTarget: "state" });
+  assert.equal(getNextArcStage("observer_pause", emotion, p, ALL_LAYERS).stage, "presence_check");
+});
+
+test("PROACTIVE FLOW UNCHANGED: a proactive session's trigger_selection still routes straight to presence_check -- trigger_context/observer_pause are never reached", () => {
+  const p = profile();
+  const proactive = state({ triggerType: "proactive" });
+  assert.equal(getNextArcStage("trigger_selection", proactive, p, ALL_LAYERS).stage, "presence_check");
+});
+
+test("existing downstream Reactive ARC progression is unchanged: from observer_pause onward, the exact same sensation_check -> stay/regulate -> encode -> act -> success_focus -> complete sequence the engine always had", () => {
+  const p = profile({ preventiveAction: null, statePreventiveAction: null, internalAction: "סריקת גוף" });
+  let s: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion", selectedTarget: "state" };
+  let stage: ArcStage = "trigger_selection";
+  const visitedStages: ArcStage[] = [];
+  let iterations = 0;
+  while (stage !== "complete" && iterations < 30) {
+    visitedStages.push(stage);
+    if (stage === "presence_check") s = { ...s, presenceRating: 8 }; // high presence -- skip ARC Thought
+    if (stage === "sensation_check") s = { ...s, sensationLocation: "חזה", sensationIntensity: 2 }; // low -> encode directly
+    const next = getNextArcStage(stage, s, p, ALL_LAYERS);
+    stage = next.stage;
+    s = { ...s, loopIterationCount: next.loopIterationCount };
+    iterations++;
+  }
+  visitedStages.push("complete");
+  assert.deepEqual(visitedStages, [
+    "trigger_selection",
+    "trigger_context",
+    "observer_pause",
+    "presence_check",
+    "sensation_check",
+    "encode",
+    "act",
+    "success_focus",
+    "negative_action", // habit layer active + profile.habit configured (base profile() default) -- unchanged existing behavior
+    "complete",
+  ]);
+});
+
+// --- Coordinated timer/dwell task (Part 20-23, 46): resolveObserverPauseLayer
+// is shared between this file's own "observer_pause" transition case and
+// arc/stageCopy.ts's copy-building case, so both resolve the Stop-Imagery
+// dwell's layer identically for the same session.
+
+test("resolveObserverPauseLayer always resolves reactive_urge to 'habit', unambiguously, regardless of selectedTarget", () => {
+  assert.equal(resolveObserverPauseLayer("reactive_urge", null, ALL_LAYERS, profile()), "habit");
+  assert.equal(resolveObserverPauseLayer("reactive_urge", "state", ALL_LAYERS, profile()), "habit", "reactive_urge's target is always habit, never overridden by a stray selectedTarget");
+});
+
+test("resolveObserverPauseLayer prefers an already-resolved selectedTarget for reactive_emotion", () => {
+  assert.equal(resolveObserverPauseLayer("reactive_emotion", "identity", ALL_LAYERS, profile()), "identity");
+  assert.equal(resolveObserverPauseLayer("reactive_emotion", "state", ALL_LAYERS, profile()), "state");
+});
+
+test("resolveObserverPauseLayer falls back to inferLayerFromTrigger's own existing inference when selectedTarget is still null", () => {
+  const p = profile({
+    interferingState: null,
+    stateEncoding: null,
+    internalAction: null,
+    identityEncoding: null,
+    identityAction: null,
+    beneficialAction: null,
+  });
+  assert.equal(resolveObserverPauseLayer("reactive_emotion", null, ALL_LAYERS, p), "state", "the generic fallback when nothing at all is configured yet");
+});
+
+test("resolveObserverPauseLayer matches the engine's own 'observer_pause' transition case exactly -- the two must never diverge onto different layers for the same session", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state", "identity", "habit"];
+  for (const state of [
+    { triggerType: "reactive_urge" as const, selectedTarget: null },
+    { triggerType: "reactive_emotion" as const, selectedTarget: "identity" as const },
+    { triggerType: "reactive_emotion" as const, selectedTarget: null },
+  ]) {
+    const resolvedLayer = resolveObserverPauseLayer(state.triggerType, state.selectedTarget, activeLayers, p);
+    const session: ArcLiveState = { ...createEmptyLiveState(), triggerType: state.triggerType, selectedTarget: state.selectedTarget };
+    const outcome = getNextArcStage("observer_pause", session, p, activeLayers);
+    // The engine's own transition routes based on resolveTargetPreventiveAction(resolvedLayer, p) --
+    // cross-checking against the SAME resolver used directly proves they agree.
+    assert.equal(outcome.stage, resolveTargetPreventiveAction(resolvedLayer, p) !== null ? "preventive_action_check" : "presence_check");
+  }
 });

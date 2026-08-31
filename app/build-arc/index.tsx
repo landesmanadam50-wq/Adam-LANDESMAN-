@@ -1,5 +1,5 @@
-import ArcMapManagerScreen from "../../build/ArcMapManagerScreen.tsx";
+import ArcMapScreen from "../../build/ArcMapScreen.tsx";
 
 export default function BuildArc() {
-  return <ArcMapManagerScreen />;
+  return <ArcMapScreen />;
 }

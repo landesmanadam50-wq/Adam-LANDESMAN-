@@ -15,16 +15,12 @@ import type { ArcBuildProfile, ArcProgramProgress } from "../arc/types.ts";
 import type { ArcProgramSelection } from "../program/programTypes.ts";
 import { PROGRAM_DEFINITIONS } from "../program/config.ts";
 import type { SessionLogEntry } from "./sessionLog.ts";
-import type { ArcMap, BuildGoalProfile } from "../arc/buildTypes.ts";
-import { createGoalModelFromProfile, generateStableId } from "../arc/buildTypes.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
 const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
 const PROGRAM_PROGRESS_KEY = "archi.programProgress.v2";
 const SESSION_LOG_KEY = "archi.sessionLog.v1";
 const PILOT_STARTED_AT_KEY = "archi.pilotStartedAt.v1";
-const BUILD_GOAL_PROFILE_KEY = "archi.buildGoalProfile.v1";
-const ARC_MAPS_KEY = "archi.arcMaps.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -101,6 +97,31 @@ export async function appendSessionLogEntry(entry: SessionLogEntry): Promise<voi
 }
 
 /**
+ * Attaches an optional Gratitude note -- protocol-linked, per the
+ * evidence-encoding task (#4): "על מה אתה מוקיר תודה מתוך מה שקרה עכשיו
+ * בתרגול?" -- and, when the trainee also supplied one, ONE concrete
+ * memory detail from that SAME experience (#5), to the most recently
+ * logged session. Called after appendSessionLogEntry() already logged
+ * the session itself (so a completed session is never left unlogged
+ * just because the trainee is still on the Gratitude screen), once the
+ * trainee submits (or explicitly leaves blank) either field. Both are
+ * written together in this ONE call, onto this ONE SessionLogEntry --
+ * never two separate writes that could end up describing different
+ * sessions (#6/#13's same-source guarantee starts here). `memoryDetail`
+ * defaults to null so every pre-existing call site (there were none
+ * outside this task, but this keeps the signature backward-compatible
+ * regardless) keeps working unchanged. A no-op if the log is empty
+ * (defensive; shouldn't happen in practice since this is only ever
+ * called right after appendSessionLogEntry).
+ */
+export async function updateLastSessionLogEntryGratitude(gratitude: string | null, memoryDetail: string | null = null): Promise<void> {
+  const existing = await loadSessionLog();
+  if (existing.length === 0) return;
+  existing[existing.length - 1] = { ...existing[existing.length - 1], gratitude, gratitudeMemoryDetail: memoryDetail };
+  await AsyncStorage.setItem(SESSION_LOG_KEY, JSON.stringify(existing));
+}
+
+/**
  * The trainee's pilot clock starts the first time this is called (normally
  * right after BUILD saves their profile) and never moves after that --
  * editing the profile later doesn't reset it. Idempotent, so it's also
@@ -118,50 +139,124 @@ export async function getOrCreatePilotStartedAt(): Promise<string> {
   return now;
 }
 
-export async function loadBuildGoalProfile(): Promise<BuildGoalProfile | null> {
-  const raw = await AsyncStorage.getItem(BUILD_GOAL_PROFILE_KEY);
-  return raw ? (JSON.parse(raw) as BuildGoalProfile) : null;
+/**
+ * The shared timer-persistence model behind all three of ARCHI's real
+ * timed activities -- the Beneficial Action Timer ("act"'s "performing"
+ * sub-phase), the Success Focus / Success Coding Timer, and the
+ * Negative Action Timer. Each TimerType gets its OWN storage key
+ * (timerRunKey below), so the three timers can never read, overwrite,
+ * or complete one another -- starting a new Negative Action Timer run
+ * cannot touch a Beneficial Action run's record, even if one happened
+ * to still exist. This is deliberately its own storage category,
+ * separate from both PROFILE_KEY (persistent BUILD data -- e.g. the
+ * planned action/duration/base allowance -- never touched by this) and
+ * ArcLiveState (session-only, never persisted -- see
+ * live/LiveSessionScreen.tsx's module doc): a narrow, explicit
+ * exception to "session state is never persisted," whose only purpose
+ * is letting a real timer survive navigating away from LIVE, the app
+ * backgrounding/locking, or a full close/reopen, per
+ * arc/actionTimer.ts's getActionTimerStatusFromStartedAt.
+ *
+ * actionStartedAt is the absolute anchor everything is recomputed
+ * from; copyTitle/copyBody are a snapshot of the exact screen text at
+ * the moment the timer began, so resuming shows the same action/cue
+ * the trainee actually started with rather than re-deriving it from a
+ * necessarily incomplete reconstructed session. runId distinguishes
+ * this specific timer run from any other (past or future) run of the
+ * same timerType -- e.g. so a stale notification from an earlier
+ * Negative Action Timer run can never be mistaken for completing a
+ * newer one. notificationId is the scheduled local notification this
+ * run owns (see data/notifications.ts), cancelled once completion is
+ * handled so it can never fire a redundant/delayed completion signal.
+ * completedAt is the idempotency guard: null until completion has
+ * actually been processed (sound played, notification cancelled) --
+ * once set, it is never processed a second time for this run.
+ */
+export type TimerType = "beneficialAction" | "successCoding" | "negativeAction";
+
+export interface TimerRun {
+  timerType: TimerType;
+  runId: string;
+  actionStartedAt: string;
+  durationMinutes: number | null;
+  copyTitle: string;
+  copyBody: string;
+  notificationId: string | null;
+  completedAt: string | null;
 }
 
-export async function saveBuildGoalProfile(goalProfile: BuildGoalProfile): Promise<void> {
-  await AsyncStorage.setItem(BUILD_GOAL_PROFILE_KEY, JSON.stringify(goalProfile));
+function timerRunKey(timerType: TimerType): string {
+  return `archi.timerRun.v1.${timerType}`;
 }
 
-/** LIVE reads this (read-only) to find its active ArcMap -- see arc/buildTypes.ts's resolveActiveArcMap/applyActiveArcMap. Defaults to [] rather than null: "no ArcMaps yet" and "nothing stored yet" are the same thing to every caller. */
-export async function loadArcMaps(): Promise<ArcMap[]> {
-  const raw = await AsyncStorage.getItem(ARC_MAPS_KEY);
-  return raw ? (JSON.parse(raw) as ArcMap[]) : [];
+export async function loadTimerRun(timerType: TimerType): Promise<TimerRun | null> {
+  const raw = await AsyncStorage.getItem(timerRunKey(timerType));
+  return raw ? (JSON.parse(raw) as TimerRun) : null;
 }
 
-export async function saveArcMaps(arcMaps: ArcMap[]): Promise<void> {
-  await AsyncStorage.setItem(ARC_MAPS_KEY, JSON.stringify(arcMaps));
+/** Persists (or re-persists, e.g. once a notificationId or completedAt is resolved) this timer's current run -- always keyed by its own timerType, so this can never overwrite a different timer type's record. */
+export async function saveTimerRun(run: TimerRun): Promise<void> {
+  await AsyncStorage.setItem(timerRunKey(run.timerType), JSON.stringify(run));
+}
+
+/** Called once a timer's real activity is actually completed and acknowledged (or a brand-new session explicitly restarts) -- never on a routine LIVE-screen focus, which is exactly the event this record needs to survive. Only ever clears the ONE named timerType's record. */
+export async function clearTimerRun(timerType: TimerType): Promise<void> {
+  await AsyncStorage.removeItem(timerRunKey(timerType));
 }
 
 /**
- * Creates the BuildGoalProfile + first ArcMap from an existing
- * ArcBuildProfile's flat state fields, the first time this is called
- * for a given install -- idempotent, so it's safe to call defensively
- * (e.g. every time Home loads) without regenerating arcMapId/
- * desiredStateId on a later call. Existing users are migrated silently
- * from data they already entered; nobody is asked BUILD's questions
- * again.
- *
- * Only ever called from BUILD-adjacent/Home code, never from LIVE --
- * LIVE only reads via loadArcMaps()/loadBuildGoalProfile(), per the
- * "LIVE retrieves, it does not create" rule.
+ * A "come back later" reminder -- a distinct concept from TimerRun
+ * above (which times an activity already in progress): this persists
+ * the trainee's own intention for a FUTURE moment that hasn't happened
+ * yet, scheduled via data/notifications.ts's scheduleReminderNotification.
+ * Two independent kinds -- kind "focusSuccess" is the START ping for a
+ * future-scheduled Success Focus (see data/reminders.ts's
+ * scheduleFutureSuccessFocus, and TimerRun above for the paired
+ * "successCoding" run this ping's own moment feeds into) -- can never
+ * overwrite or be confused with a separately-scheduled future ARC
+ * session reminder (kind "arc", see app/index.tsx), and vice versa. At
+ * most one pending reminder per kind -- scheduling a new one for the
+ * same kind (data/reminders.ts's scheduleDeferredReminder/
+ * scheduleFutureSuccessFocus) always cancels and replaces whatever was
+ * pending for that kind first, so a trainee can never end up with two
+ * overlapping reminders of the same kind. notificationId is cleared
+ * alongside the record once the reminder is resolved (its notification
+ * fires and is handled, or the trainee replaces/cancels it) -- never
+ * left dangling to fire a redundant signal later.
  */
-export async function getOrCreateGoalModel(
-  profile: ArcBuildProfile
-): Promise<{ goalProfile: BuildGoalProfile; arcMaps: ArcMap[] } | null> {
-  const existingGoalProfile = await loadBuildGoalProfile();
-  if (existingGoalProfile) {
-    return { goalProfile: existingGoalProfile, arcMaps: await loadArcMaps() };
-  }
+export type ReminderKind = "focusSuccess" | "arc";
 
-  const created = createGoalModelFromProfile(profile, (kind) => generateStableId(kind === "desiredState" ? "state" : "arcmap"));
-  if (!created) return null;
+export interface PendingReminder {
+  kind: ReminderKind;
+  /** ISO timestamp of when this reminder is scheduled to fire. */
+  fireAt: string;
+  /**
+   * Only meaningful for kind "focusSuccess": true = "Focus Success with
+   * ARC" was chosen, false = "Focus Success without ARC". Always true
+   * for kind "arc" (a future ARC session is, by construction, "with
+   * ARC") -- kept on every record rather than a separate optional field
+   * so the shape stays uniform across both kinds.
+   */
+  arcRequested: boolean;
+  notificationId: string | null;
+  createdAt: string;
+}
 
-  await saveBuildGoalProfile(created.goalProfile);
-  await saveArcMaps(created.arcMaps);
-  return created;
+function pendingReminderKey(kind: ReminderKind): string {
+  return `archi.pendingReminder.v1.${kind}`;
+}
+
+export async function loadPendingReminder(kind: ReminderKind): Promise<PendingReminder | null> {
+  const raw = await AsyncStorage.getItem(pendingReminderKey(kind));
+  return raw ? (JSON.parse(raw) as PendingReminder) : null;
+}
+
+/** Always keyed by this reminder's own kind, so saving one kind's reminder can never overwrite the other's. */
+export async function savePendingReminder(reminder: PendingReminder): Promise<void> {
+  await AsyncStorage.setItem(pendingReminderKey(reminder.kind), JSON.stringify(reminder));
+}
+
+/** Called once a reminder's notification has actually fired and been handled, or when it's being replaced by a newly-scheduled one of the same kind. Only ever clears the ONE named kind's record. */
+export async function clearPendingReminder(kind: ReminderKind): Promise<void> {
+  await AsyncStorage.removeItem(pendingReminderKey(kind));
 }

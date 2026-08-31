@@ -10,9 +10,18 @@ export const PROGRAM_DEFINITIONS: Record<string, ProgramDefinition> = {
     id: "standard_3_week",
     totalWeeks: 3,
     weeks: [
-      { week: 1, activeLayers: ["state"], layersToBuild: ["state"] },
-      { week: 2, activeLayers: ["state", "identity"], layersToBuild: ["identity"] },
-      { week: 3, activeLayers: ["state", "identity", "habit"], layersToBuild: ["habit"] },
+      // negativeActionDurationScale: no real weekly Negative Action
+      // reduction schedule existed anywhere in this codebase prior to
+      // this field (confirmed by inspection -- there was no
+      // "negativeActionDurationByWeek" or equivalent). These three
+      // values are an illustrative, tunable default gradual-reduction
+      // schedule (full allowance in week 1, progressively smaller as
+      // the habit layer's work continues), not a real prescribed
+      // clinical schedule -- adjust freely. See
+      // program/engine.ts's resolveNegativeActionDuration.
+      { week: 1, activeLayers: ["state"], layersToBuild: ["state"], negativeActionDurationScale: 1 },
+      { week: 2, activeLayers: ["state", "identity"], layersToBuild: ["identity"], negativeActionDurationScale: 0.65 },
+      { week: 3, activeLayers: ["state", "identity", "habit"], layersToBuild: ["habit"], negativeActionDurationScale: 0.35 },
     ],
   },
 

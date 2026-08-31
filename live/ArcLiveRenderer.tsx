@@ -13,33 +13,52 @@
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import type { ArcStageCopy } from "../arc/stageCopy.ts";
-import { CHALLENGE_RECOGNITION_LABELS, getStageCopy, getYesNoLabels } from "../arc/stageCopy.ts";
-import { getAvailableProactiveTargets, getPreventiveActionSubStage, needsProactiveTargetSelection } from "../arc/arcEngine.ts";
-import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
-import type { ArcMap } from "../arc/buildTypes.ts";
-import { resolveSelectedArcMap } from "../arc/buildTypes.ts";
+import { getInlineRequiredRatingQuestion, getStageCopy, getYesNoLabels } from "../arc/stageCopy.ts";
+import {
+  getAvailableProactiveTargets,
+  getAvailableReactiveExperiences,
+  getNextArcStage,
+  isAcceptanceWillingnessLoopCapped,
+  needsProactiveTargetSelection,
+  needsReactiveStateSelection,
+  resolveActionDuration,
+  resolveActPhase,
+  resolveEncodingTarget,
+} from "../arc/arcEngine.ts";
+import { resolveDwellSecondsFor } from "../arc/dwellTimes.ts";
+import type { EvidenceRecord } from "../arc/evidence.ts";
+import type { TimerRun } from "../data/storage.ts";
+import type { DeferralOption } from "../data/reminders.ts";
 import {
   AcceptScreen,
+  ActionChoiceScreen,
+  ActionImageryScreen,
   ActionScreen,
-  ArcMapSelectionScreen,
-  ChallengeRecognitionScreen,
+  BeneficialActionDurationChoiceScreen,
   CompleteScreen,
   DesiredStateRatingScreen,
   EncodingScreen,
+  FutureSuccessFocusAskScreen,
+  FutureSuccessFocusScheduleScreen,
   InstructionScreen,
+  NegativeActionScreen,
+  NegativeActionStartScreen,
+  PresenceExperienceScreen,
   PresenceRatingScreen,
   PreventiveActionCheckScreen,
   ProactiveTargetScreen,
+  ReactiveStateSelectScreen,
   RegulationScreen,
   SensationRatingScreen,
   StayScreen,
-  SuccessFocusScreen,
+  SuccessFocusRetrospectiveScreen,
   TransitionCheckScreen,
+  TriggerContextScreen,
   TriggerSelectScreen,
 } from "./screens.tsx";
 
 const BODY_LOCATIONS = ["חזה", "בטן", "גרון", "כתפיים", "ראש"];
-const SUCCESS_FOCUS_MINUTES = [0, 5, 10, 15, 20];
+const ALTERNATIVE_ACTION_DURATION_MINUTES = [5, 10, 15, 20, 30];
 
 const TRIGGER_LABELS: Record<TriggerType, string> = {
   reactive_emotion: "אני מרגיש משהו שמפריע לי",
@@ -52,32 +71,70 @@ export interface ArcLiveRendererProps {
   session: ArcLiveState;
   profile: ArcBuildProfile;
   activeLayers: DevelopmentLayer[];
+  /** Evidence-encoding task: the trainee's derived personal-evidence index (arc/evidence.ts), forwarded straight into getStageCopy's "encode" case -- see that file's own doc. */
+  evidenceIndex: EvidenceRecord[];
   availableTriggers: TriggerType[];
-  arcMaps: ArcMap[];
   pendingSensationLocation: string;
-  successFocusMinutes: number | null;
+  pendingCustomSensationLocation: string;
+  pendingSensationLocationUnclear: boolean;
+  /** Reactive-flow-strengthening task: the trigger_context stage's own pending free-text answer, not yet committed to session.triggerContext until Continue is pressed -- same "pending local state, committed on Continue" pattern as pendingAlternativeAction. */
+  pendingTriggerContext: string;
+  onChangeTriggerContext: (text: string) => void;
+  onTriggerContextContinue: () => void;
   onSelectTrigger: (trigger: TriggerType) => void;
   onScaleAnswer: (value: number) => void;
   onSelectSensationLocation: (location: string) => void;
+  onChangeCustomSensationLocation: (text: string) => void;
+  onSelectSensationLocationUnclear: () => void;
   onSubmitSensationIntensity: (value: number) => void;
   onYesNoAnswer: (yes: boolean) => void;
   onSelectTarget: (target: DevelopmentLayer) => void;
-  onSelectArcMap: (arcMapId: string) => void;
-  onChallengeRecognitionAnswer: (yes: boolean) => void;
+  onSelectReactiveExperience: (target: DevelopmentLayer) => void;
   onGenericContinue: () => void;
   onRegulateContinue: () => void;
+  onPresenceExperienceRating: (value: number) => void;
+  onRegulationExperienceRating: (value: number) => void;
+  onAcceptWillingnessAnswer: (yes: boolean) => void;
+  onAcceptIntensityRating: (value: number) => void;
+  onAcceptContinueWithoutRating: () => void;
+  pendingAlternativeAction: string;
+  pendingAlternativeActionDuration: number | null;
+  onConfirmPlannedAction: () => void;
+  onChangeAlternativeAction: (text: string) => void;
+  onSelectAlternativeActionDuration: (minutes: number) => void;
+  onSubmitAlternativeAction: () => void;
+  onActionImageryContinue: () => void;
+  onSelectBeneficialActionDuration: (minutes: number) => void;
   onActionCompleted: () => void;
-  onSelectSuccessFocusMinutes: (minutes: number) => void;
-  onSuccessFocusContinue: () => void;
+  onSuccessFocusExtraMinutesSubmit: (minutes: number) => void;
+  onWantsFutureSuccessFocusAnswer: (yes: boolean) => void;
+  futureSuccessFocusScheduleOptions: DeferralOption[];
+  onScheduleFutureSuccessFocus: (option: DeferralOption, durationMinutes: number) => void;
+  negativeActionDurationMinutes: number | null;
+  onNegativeActionStart: () => void;
+  onNegativeActionCompleted: () => void;
+  resumedNegativeActionRun: TimerRun | null;
+  gratitudeText: string;
+  onChangeGratitudeText: (text: string) => void;
+  gratitudeMemoryDetailText: string;
+  onChangeGratitudeMemoryDetailText: (text: string) => void;
   onRestart: () => void;
 }
 
 export function ArcLiveRenderer(props: ArcLiveRendererProps) {
-  const { stage, session, profile, activeLayers, arcMaps } = props;
-  const copy: ArcStageCopy = getStageCopy(stage, profile, session, activeLayers, arcMaps);
+  const { stage, session, profile, activeLayers } = props;
+  const copy: ArcStageCopy = getStageCopy(stage, profile, session, activeLayers, props.evidenceIndex);
 
   switch (stage) {
-    case "trigger_selection":
+    case "trigger_selection": {
+      // Reactive recognition chooser: stays at trigger_selection (same
+      // interstitial pattern as desired_state_check's proactive-target
+      // picker below) while 2+ mapped reactive experiences exist and
+      // none is chosen yet -- see needsReactiveStateSelection.
+      if (needsReactiveStateSelection(session.triggerType, activeLayers, profile, session.selectedTarget)) {
+        const experiences = getAvailableReactiveExperiences(activeLayers, profile);
+        return <ReactiveStateSelectScreen copy={copy} experiences={experiences} onSelect={props.onSelectReactiveExperience} />;
+      }
       return (
         <TriggerSelectScreen
           copy={copy}
@@ -86,6 +143,30 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           onSelect={props.onSelectTrigger}
         />
       );
+    }
+
+    case "trigger_context":
+      // Reactive-flow-strengthening task: session-specific free-text
+      // trigger recognition, reached only for reactive sessions (see
+      // arc/arcEngine.ts's "trigger_selection" case) -- never for
+      // proactive, which routes straight to presence_check unchanged.
+      return (
+        <TriggerContextScreen
+          copy={copy}
+          value={props.pendingTriggerContext}
+          onChangeText={props.onChangeTriggerContext}
+          onContinue={props.onTriggerContextContinue}
+        />
+      );
+
+    case "observer_pause":
+      // Reuses the existing InstructionScreen/TimedInstructionBody
+      // mechanism verbatim (same as arc_thought_awareness/
+      // arc_thought_combined_attention/preventive_action below) -- no
+      // new timed-reveal machinery, same Continue-available cue. key
+      // resets its own elapsed-time clock on every fresh mount, same
+      // reasoning as the three-stage group below.
+      return <InstructionScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
     case "presence_check":
     case "arc_thought_presence_recheck":
@@ -93,30 +174,47 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
 
     case "arc_thought_awareness":
     case "arc_thought_combined_attention":
-    case "arc_thought_expand_presence":
     case "preventive_action":
-      return <InstructionScreen copy={copy} onContinue={props.onGenericContinue} />;
+      // key={stage}: these three adjacent stages all render this same
+      // InstructionScreen component -- without a key that changes per
+      // stage, React would reuse the same instance across the
+      // transition and its internal elapsed-time clock (useElapsedSeconds,
+      // in live/screens.tsx) would keep running instead of resetting.
+      // See arc/instructionTiming.ts's module doc, #9/#12.
+      return <InstructionScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
-    case "preventive_action_check": {
-      const subStage = getPreventiveActionSubStage(arcMaps, session.selectedArcMapId, session.challengeRecognized);
-
-      if (subStage === "select_arc_map") {
-        return <ArcMapSelectionScreen copy={copy} arcMaps={arcMaps} onSelect={props.onSelectArcMap} />;
-      }
-      if (subStage === "recognize_challenge") {
-        return <ChallengeRecognitionScreen copy={copy} labels={CHALLENGE_RECOGNITION_LABELS} onAnswer={props.onChallengeRecognitionAnswer} />;
-      }
-
-      const activeArcMap = resolveSelectedArcMap(arcMaps, session.selectedArcMapId);
-      const preventiveAction = activeArcMap?.preventiveAction ?? profile.preventiveAction;
-      if (preventiveAction === null) {
-        // Recognized the challenge (or there was nothing to recognize),
-        // but this particular ArcMap has no Preventive Action configured
-        // -- nothing to offer, so just move on.
-        return <InstructionScreen copy={copy} onContinue={props.onGenericContinue} />;
-      }
-      return <PreventiveActionCheckScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
+    case "arc_thought_expand_presence": {
+      // Timing-update task: the Presence Rating that used to live on
+      // its own separate arc_thought_presence_recheck page is now shown
+      // inline on this same page instead (see live/screens.tsx's
+      // PresenceExperienceScreen) -- arc_thought_presence_recheck is
+      // never itself rendered as the current stage anymore, but its own
+      // getNextArcStage transition (loop-back-if-still-low, capped by
+      // ARC_CONFIG.safety.maxLoopIterations, or continue) is still
+      // exactly what decides what happens after the rating is selected
+      // -- see live/LiveSessionScreen.tsx's onPresenceExperienceRating.
+      // Visual-refinement task: the inline prompt itself is the fixed,
+      // concise getInlineRequiredRatingQuestion("presence") line, not
+      // arc_thought_presence_recheck's own title+body copy -- that
+      // copy is untouched and still used by its OTHER, standalone entry
+      // point (presence_check). key incorporates loopIterationCount
+      // (not just stage) so a loop-back -- which re-enters this exact
+      // same stage value -- still remounts and resets the timing/rating
+      // reveal from scratch, the same way key={stage} alone already
+      // does for every OTHER pair of genuinely different adjacent
+      // stages above.
+      return (
+        <PresenceExperienceScreen
+          key={`${stage}-${session.loopIterationCount}`}
+          copy={copy}
+          question={getInlineRequiredRatingQuestion("presence")}
+          onSelectRating={props.onPresenceExperienceRating}
+        />
+      );
     }
+
+    case "preventive_action_check":
+      return <PreventiveActionCheckScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
 
     case "sensation_check": {
       const isHabitSensation = session.triggerType === "reactive_urge";
@@ -127,23 +225,122 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           showLocationPicker={!isHabitSensation && !isRecheck}
           locations={BODY_LOCATIONS}
           selectedLocation={props.pendingSensationLocation}
+          customLocation={props.pendingCustomSensationLocation}
+          locationUnclear={props.pendingSensationLocationUnclear}
           onSelectLocation={props.onSelectSensationLocation}
+          onChangeCustomLocation={props.onChangeCustomSensationLocation}
+          onSelectLocationUnclear={props.onSelectSensationLocationUnclear}
           onSelectIntensity={props.onSubmitSensationIntensity}
         />
       );
     }
 
     case "stay":
-      return <StayScreen copy={copy} onContinue={props.onGenericContinue} />;
+      return <StayScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
-    case "accept":
-      return <AcceptScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
+    case "accept": {
+      // Timing-update task: the intensity recheck that used to live on
+      // its own separate sensation_check page immediately after Accept
+      // is now shown inline on this same page instead (see
+      // live/screens.tsx's AcceptScreen). Peeking the engine's own real
+      // "accept" transition (unchanged, same getNextArcStage case) is
+      // what decides whether a rating is even expected next: it isn't
+      // once the loop-safety cap has been reached (accept's own
+      // transition goes straight to "regulate" in that case, exactly as
+      // it always has) -- question stays null then, and the screen
+      // falls back to a plain Continue once the dwell elapses.
+      // Otherwise the inline prompt is the fixed, concise
+      // getInlineRequiredRatingQuestion("intensity") line, not
+      // sensation_check's own title+body copy -- that copy is untouched
+      // and still used by its other, standalone entry points.
+      // sensation_check's own getNextArcStage transition still decides
+      // what happens after the rating is selected -- see
+      // live/LiveSessionScreen.tsx's onAcceptIntensityRating. Answering
+      // yes/no never itself advances the ArcStage anymore -- only the
+      // rating (or the no-rating Continue) does, so key={stage} alone
+      // (not loopIterationCount) is enough here: unlike
+      // Presence/Regulation, "accept" is never the stage looped back TO
+      // (its own loop-back target is "stay", a different stage value,
+      // which already remounts on its own) -- the NEW unwillingness
+      // sub-flow's own rounds instead remount individually via
+      // AcceptanceUnwillingnessRound's own key, inside the same
+      // AcceptScreen mount (see live/screens.tsx).
+      //
+      // Dwell-time task: the CURRENT target's own configured Acceptance
+      // dwell (arc/dwellTimes.ts) governs both the normal "כן" path and
+      // every round of the "לא" unwillingness sub-flow -- resolved once
+      // here, from the SAME layer resolution every other stage uses
+      // (never another target's configuration), and passed straight
+      // through to AcceptScreen.
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: session.triggerType,
+        selectedTarget: session.selectedTarget,
+        buildProfile: profile,
+      });
+      const acceptanceDwellSeconds = resolveDwellSecondsFor("acceptanceDwellSeconds", layer, profile);
+      const peek = getNextArcStage("accept", session, profile, activeLayers);
+      const question = peek.stage === "sensation_check" ? getInlineRequiredRatingQuestion("intensity") : null;
+      return (
+        <AcceptScreen
+          key={stage}
+          copy={copy}
+          labels={getYesNoLabels(stage)}
+          question={question}
+          acceptanceDwellSeconds={acceptanceDwellSeconds}
+          willingnessLoopCount={session.acceptanceWillingnessLoopCount}
+          willingnessCapped={isAcceptanceWillingnessLoopCapped(session.acceptanceWillingnessLoopCount)}
+          onWillingnessAnswer={props.onAcceptWillingnessAnswer}
+          onSelectRating={props.onAcceptIntensityRating}
+          onContinueWithoutRating={props.onAcceptContinueWithoutRating}
+        />
+      );
+    }
 
     case "reactive_transition_check":
       return <TransitionCheckScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
 
-    case "regulate":
-      return <RegulationScreen copy={copy} onContinue={props.onRegulateContinue} />;
+    case "regulate": {
+      // Timing-update task: the Desired State Level check (proactive)
+      // or intensity recheck (reactive) that used to live on its own
+      // separate page immediately after Regulation is now shown inline
+      // on this same page instead (see live/screens.tsx's
+      // RegulationScreen). Peeking the engine's own real "regulate"
+      // transition (unchanged, same getNextArcStage case) is what
+      // decides whether a rating is even expected next: it isn't once
+      // the loop-safety cap has been reached (regulate's own transition
+      // goes straight to "encode" in that case, exactly as it always
+      // has) -- question stays null then, and the screen falls back to
+      // the same plain Continue regulate always had. Otherwise the
+      // inline prompt is the fixed, concise
+      // getInlineRequiredRatingQuestion("desiredState"/"intensity")
+      // line, not desired_state_check's/sensation_check's own
+      // title+body copy -- that copy is untouched and still used by
+      // their other, standalone entry points. The peeked stage's own
+      // getNextArcStage transition (getProactiveStage/getReactiveStage,
+      // loop-back capped the same way) still decides what happens
+      // after the rating is selected -- see
+      // live/LiveSessionScreen.tsx's onRegulationExperienceRating. key
+      // incorporates loopIterationCount for the same reason as
+      // arc_thought_expand_presence above: a loop back to "regulate"
+      // re-enters this exact same stage value and must still remount.
+      const peek = getNextArcStage("regulate", session, profile, activeLayers);
+      const question =
+        peek.stage === "desired_state_check"
+          ? getInlineRequiredRatingQuestion("desiredState")
+          : peek.stage === "sensation_check"
+            ? getInlineRequiredRatingQuestion("intensity")
+            : null;
+      return (
+        <RegulationScreen
+          key={`${stage}-${session.loopIterationCount}`}
+          copy={copy}
+          question={question}
+          onContinue={props.onRegulateContinue}
+          onSelectRating={props.onRegulationExperienceRating}
+        />
+      );
+    }
 
     case "desired_state_check": {
       if (needsProactiveTargetSelection(session.triggerType, activeLayers, profile, session.selectedTarget)) {
@@ -154,24 +351,142 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
     }
 
     case "encode":
-      return <EncodingScreen copy={copy} onContinue={props.onGenericContinue} />;
+      return <EncodingScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
-    case "act":
-      return <ActionScreen copy={copy} onCompleted={props.onActionCompleted} />;
+    case "act": {
+      // Which of the "act" stage's three sub-phases to show -- same
+      // "stay at this ArcStage, render a conditional interstitial"
+      // pattern as trigger_selection's reactive chooser /
+      // desired_state_check's proactive-target picker, extended to a
+      // fixed one-directional sequence. See arc/arcEngine.ts's
+      // resolveActPhase doc. Each sub-phase is a distinct component, so
+      // switching between them already remounts (resetting any timing
+      // state) with no explicit key needed here. The standalone Action
+      // Preparation sub-phase that used to sit between imagery and
+      // performing is removed -- imagery goes straight to performing.
+      const actPhase = resolveActPhase(session.plannedActionConfirmed, session.selectedAction, session.actionImageryCompleted);
 
-    case "success_focus":
+      if (actPhase === "choice") {
+        return (
+          <ActionChoiceScreen
+            copy={copy}
+            alternativeText={props.pendingAlternativeAction}
+            alternativeDuration={props.pendingAlternativeActionDuration}
+            durationOptions={ALTERNATIVE_ACTION_DURATION_MINUTES}
+            onConfirmPlanned={props.onConfirmPlannedAction}
+            onChangeAlternativeText={props.onChangeAlternativeAction}
+            onSelectAlternativeDuration={props.onSelectAlternativeActionDuration}
+            onSubmitAlternative={props.onSubmitAlternativeAction}
+          />
+        );
+      }
+
+      if (actPhase === "imagery") {
+        return <ActionImageryScreen copy={copy} onContinue={props.onActionImageryContinue} />;
+      }
+
+      // actPhase === "performing": the actual timed Action. Timer-update
+      // task: the Beneficial Action Timer now uses a trainee-chosen
+      // duration (5-10 minutes) rather than silently reusing whatever
+      // was configured in BUILD -- but only on the PLANNED-action path
+      // (session.selectedAction === null); the alternative-action path
+      // already has its own session-specific duration, chosen back on
+      // ActionChoiceScreen, and is left completely alone. Until that
+      // choice is made, show BeneficialActionDurationChoiceScreen
+      // instead of starting the timer -- mirrors the established
+      // "stay at this ArcStage, render a conditional interstitial"
+      // pattern used throughout this switch, so no new ArcStage/timer
+      // system is introduced.
+      const needsBeneficialActionDuration = session.selectedAction === null && session.beneficialActionDurationMinutes === null;
+      if (needsBeneficialActionDuration) {
+        return <BeneficialActionDurationChoiceScreen copy={copy} onSelectDuration={props.onSelectBeneficialActionDuration} />;
+      }
+      // The Action Timer's duration is resolved independently of `copy`
+      // (which only carries display text) -- the same resolver
+      // Encoding/Imagery never call, since the timer must never start
+      // before this phase.
+      const durationMinutes = resolveActionDuration(session.selectedActionDuration, profile, session.beneficialActionDurationMinutes);
+      // resumedRun is never passed here: a resumed Beneficial Action
+      // Timer bypasses ArcLiveRenderer entirely (see
+      // live/LiveSessionScreen.tsx's module doc) since reconstructing
+      // this specific copy's triggerType/selectedTarget/selectedAction
+      // with full fidelity isn't reliably possible -- the resume path
+      // renders ActionScreen directly, from the persisted copy snapshot.
+      return <ActionScreen copy={copy} durationMinutes={durationMinutes} onCompleted={props.onActionCompleted} />;
+    }
+
+    case "success_focus": {
+      // Coordinated timer/dwell task (Part 2-4): the ARC protocol's
+      // success_focus stage is now a plain, three-step "stay at this
+      // stage, render a conditional interstitial" sub-flow -- the same
+      // established pattern used throughout this switch (proactive
+      // target picker, Action-choice screen, etc.) -- rather than the
+      // old now/later choice screen. No real timer starts here anymore
+      // at all: the Beneficial Action Timer's own completion bell was
+      // already the trainee's signal, and they were never required to
+      // touch ARCHI the instant it fired.
+      if (session.successFocusExtraMinutes === null) {
+        return <SuccessFocusRetrospectiveScreen copy={copy} onSubmit={props.onSuccessFocusExtraMinutesSubmit} />;
+      }
+      if (session.wantsFutureSuccessFocus === null) {
+        return <FutureSuccessFocusAskScreen onAnswer={props.onWantsFutureSuccessFocusAnswer} />;
+      }
+      if (session.wantsFutureSuccessFocus === true) {
+        return (
+          <FutureSuccessFocusScheduleScreen
+            options={props.futureSuccessFocusScheduleOptions}
+            onConfirm={props.onScheduleFutureSuccessFocus}
+          />
+        );
+      }
+      // wantsFutureSuccessFocus === false: nothing left to ask -- the
+      // session continues through the existing downstream flow, exactly
+      // as before this task (live/LiveSessionScreen.tsx's
+      // onWantsFutureSuccessFocusAnswer commits the advance immediately
+      // on "לא", so this branch is never actually rendered in practice,
+      // kept only as a safe, well-defined fallback).
+      return null;
+    }
+
+    case "negative_action": {
+      // The trainee's own predefined negative/interfering action
+      // (profile.habit, via copy) -- see arc/arcEngine.ts's
+      // needsNegativeAction for when this stage is even reached, and
+      // arc/types.ts's ArcLiveState.negativeActionStarted for why this
+      // stage (unlike Beneficial Action/Success Focus) needs an
+      // explicit "begin" screen: the Negative Action Timer never
+      // auto-starts. Same resume reasoning as success_focus: this
+      // stage's copy never depends on triggerType/selectedTarget/
+      // selectedAction, so a resumed run flows through normally.
+      if (!session.negativeActionStarted) {
+        return (
+          <NegativeActionStartScreen
+            copy={copy}
+            durationMinutes={props.negativeActionDurationMinutes}
+            onStart={props.onNegativeActionStart}
+          />
+        );
+      }
       return (
-        <SuccessFocusScreen
+        <NegativeActionScreen
           copy={copy}
-          minutesOptions={SUCCESS_FOCUS_MINUTES}
-          selectedMinutes={props.successFocusMinutes}
-          onSelectMinutes={props.onSelectSuccessFocusMinutes}
-          reinforcementText={props.successFocusMinutes !== null ? getSuccessFocusReinforcement(props.successFocusMinutes) : ""}
-          onContinue={props.onSuccessFocusContinue}
+          durationMinutes={props.negativeActionDurationMinutes}
+          resumedRun={props.resumedNegativeActionRun}
+          onCompleted={props.onNegativeActionCompleted}
         />
       );
+    }
 
     case "complete":
-      return <CompleteScreen copy={copy} onRestart={props.onRestart} />;
+      return (
+        <CompleteScreen
+          copy={copy}
+          gratitudeText={props.gratitudeText}
+          onChangeGratitudeText={props.onChangeGratitudeText}
+          gratitudeMemoryDetailText={props.gratitudeMemoryDetailText}
+          onChangeGratitudeMemoryDetailText={props.onChangeGratitudeMemoryDetailText}
+          onRestart={props.onRestart}
+        />
+      );
   }
 }

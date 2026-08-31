@@ -2,21 +2,20 @@
   "name": "archi",
   "version": "1.0.0",
   "main": "expo-router/entry",
-  "engines": {
-    "node": ">=22.13.0",
-    "npm": ">=10.0.0"
-  },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "babel-preset-expo": "~57.0.0",
-    "expo": "~57.0.16",
+    "expo": "~57.0.18",
+    "expo-asset": "~57.0.15",
+    "expo-audio": "~57.0.4",
     "expo-constants": "~57.0.14",
-    "expo-linking": "~57.0.7",
-    "expo-router": "~57.0.16",
+    "expo-linking": "~57.0.8",
+    "expo-notifications": "~57.0.15",
+    "expo-router": "~57.0.17",
     "expo-status-bar": "~57.0.1",
-    "expo-updates": "~57.0.17",
+    "expo-updates": "~57.0.19",
     "react": "19.2.3",
-    "react-native": "0.86.2",
+    "react-native": "0.86.3",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
@@ -29,18 +28,18 @@
     "eslint-config-expo": "~57.0.2",
     "typescript": "~6.0.3"
   },
-  "overrides": {
-    "react-dom": "19.2.3"
-  },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "node --experimental-transform-types --test data/*.test.ts build/*.test.ts arc/*.test.ts program/*.test.ts live/*.test.ts",
+    "test": "node --experimental-transform-types --test arc/*.test.ts program/*.test.ts live/*.test.ts data/*.test.ts build/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "deploy:preview": "npx eas-cli update --branch preview",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "deploy:preview": "eas update --branch preview"
+  },
+  "overrides": {
+    "react-dom": "19.2.3"
   },
   "private": true
 }
