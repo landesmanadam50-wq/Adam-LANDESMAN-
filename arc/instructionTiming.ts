@@ -63,6 +63,9 @@ const ENCODING_BASE_SECONDS = {
   bodyLanguageCue: 4,
   identityMantra: 4,
   fallback: 4,
+  /** Evidence-encoding task: the two new pieces (personal-evidence line and its concrete memory detail, when present -- arc/evidence.ts) get the same per-piece base as every other Encoding sub-piece, kept consistent rather than inventing a bespoke value. */
+  evidence: 4,
+  memoryDetail: 4,
 } as const;
 
 /** Timing-update task: every individual Encoding step's duration increases by exactly +7s over its previous duration -- never applied to any non-Encoding stage. Preserved as-is by the later UX/timing update below, which layers its own increase on top rather than replacing this one. */
@@ -101,6 +104,10 @@ export const INSTRUCTION_TIMING = {
   regulate: 10,
   encodeUpdatedSensation: ENCODING_BASE_SECONDS.updatedSensation + ENCODING_DURATION_INCREASE_SECONDS,
   encodeShortRegulationCue: ENCODING_BASE_SECONDS.shortRegulationCue + ENCODING_DURATION_INCREASE_SECONDS,
+  /** Evidence-encoding task: a relevant real past behavioral-evidence or protocol-linked-Gratitude line, when one was selected -- see arc/evidence.ts's selectEncodingEvidence. Appears before Identity/Mantra (see the "encode" case's new sub-order). */
+  encodeEvidence: ENCODING_BASE_SECONDS.evidence + ENCODING_DURATION_INCREASE_SECONDS,
+  /** The user's own concrete memory detail from that SAME selected evidence/Gratitude record, when one was stored -- appears immediately after encodeEvidence and before Identity/Mantra, never on its own. */
+  encodeMemoryDetail: ENCODING_BASE_SECONDS.memoryDetail + ENCODING_DURATION_INCREASE_SECONDS,
   encodeBodyLanguageCue: ENCODING_BASE_SECONDS.bodyLanguageCue + ENCODING_DURATION_INCREASE_SECONDS,
   encodeIdentityMantra: ENCODING_BASE_SECONDS.identityMantra + ENCODING_DURATION_INCREASE_SECONDS,
   /** The generic "take a moment" fallback line, only shown when nothing else in Encoding was configured for this target. */

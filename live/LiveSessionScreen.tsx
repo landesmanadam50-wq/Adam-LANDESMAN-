@@ -42,14 +42,17 @@ import { Stack, router, useFocusEffect } from "expo-router";
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
-import { getFirstArcStage } from "../arc/arcEngine.ts";
+import { getFirstArcStage, resolveEncodingTarget } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
+import { buildEvidenceIndex, buildSessionEvidenceContext } from "../arc/evidence.ts";
+import type { EvidenceRecord } from "../arc/evidence.ts";
 import { getProgramDefinition, resolveNegativeActionDuration } from "../program/engine.ts";
 import {
   loadProfile,
   loadProgramProgress,
   loadProgramSelection,
   saveProgramProgress,
+  loadSessionLog,
   appendSessionLogEntry,
   updateLastSessionLogEntryGratitude,
   loadTimerRun,
@@ -97,6 +100,16 @@ export default function LiveSessionScreen() {
   const [successFocusMinutes, setSuccessFocusMinutes] = useState<number | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
   const [gratitudeText, setGratitudeText] = useState("");
+  const [gratitudeMemoryDetailText, setGratitudeMemoryDetailText] = useState("");
+  /**
+   * Evidence-encoding task: derived once per session load from the
+   * trainee's EXISTING session log (arc/evidence.ts's buildEvidenceIndex)
+   * -- never a second persisted store. Loaded fresh every time this
+   * screen gains focus, same as profile/activeLayers, so a Gratitude/
+   * memory-detail entry saved at the end of the PREVIOUS session is
+   * available as evidence starting with THIS one.
+   */
+  const [evidenceIndex, setEvidenceIndex] = useState<EvidenceRecord[]>([]);
   // Resumed timer runs -- see this file's module doc. At most one is
   // ever non-null at a time. resumedBeneficialActionRun bypasses the
   // normal render pipeline entirely (below); the other two flow
@@ -123,7 +136,8 @@ export default function LiveSessionScreen() {
         loadTimerRun("beneficialAction"),
         loadTimerRun("successCoding"),
         loadTimerRun("negativeAction"),
-      ]).then(([loadedProfile, loadedProgress, , beneficialActionRun, successCodingRun, negativeActionRun]) => {
+        loadSessionLog(),
+      ]).then(([loadedProfile, loadedProgress, , beneficialActionRun, successCodingRun, negativeActionRun, sessionLog]) => {
         if (cancelled) return;
         if (!loadedProfile || !loadedProgress) {
           router.replace("/build");
@@ -132,6 +146,7 @@ export default function LiveSessionScreen() {
         setProfile(loadedProfile);
         setActiveLayers(loadedProgress.activeLayers);
         setCurrentProgramWeek(loadedProgress.currentProgramWeek);
+        setEvidenceIndex(buildEvidenceIndex(sessionLog));
         setPendingSensationLocation("");
         setPendingCustomSensationLocation("");
         setPendingSensationLocationUnclear(false);
@@ -139,6 +154,7 @@ export default function LiveSessionScreen() {
         setPendingAlternativeActionDuration(null);
         setSuccessFocusMinutes(null);
         setGratitudeText("");
+        setGratitudeMemoryDetailText("");
 
         if (beneficialActionRun) {
           setResumedBeneficialActionRun(beneficialActionRun);
@@ -205,12 +221,33 @@ export default function LiveSessionScreen() {
 
   const finalizeSession = (finishedSession: ArcLiveState) => {
     const finishedAt = new Date().toISOString();
+    // Evidence-encoding task: this session's own resolved context,
+    // captured once here via the SAME resolver Encoding/Act already
+    // used throughout this session (arc/arcEngine.ts's
+    // resolveEncodingTarget) -- never re-derived or guessed. `profile`
+    // is guaranteed non-null by the time finalizeSession is reachable
+    // (commitAdvance's own guard above), but this closure doesn't carry
+    // that narrowing, so it's re-checked defensively; a null profile
+    // (never expected in practice) simply logs no context, same as any
+    // legacy entry.
+    let context = null;
+    if (profile) {
+      const resolution = resolveEncodingTarget({
+        activeLayers,
+        triggerType: finishedSession.triggerType,
+        selectedTarget: finishedSession.selectedTarget,
+        buildProfile: profile,
+        selectedAction: finishedSession.selectedAction,
+      });
+      context = buildSessionEvidenceContext(resolution.layer, resolution.encoding, resolution.actionLabel, profile);
+    }
     appendSessionLogEntry({
       id: `${sessionStartedAt}_${finishedAt}`,
       startedAt: sessionStartedAt,
       finishedAt,
       success: finishedSession.realActionCompleted,
       fall: false, // see README: no interfering-action-window stage exists in this ArcStage list yet
+      context,
     });
 
     loadProgramProgress().then((freshProgress) => {
@@ -262,13 +299,27 @@ export default function LiveSessionScreen() {
   };
 
   const restart = () => {
-    // Reinforcement's optional Gratitude entry (#10): attached to the
-    // just-finalized session log entry here, decoupled from
-    // finalizeSession() itself so a completed session is always logged
-    // immediately on reaching "complete" -- never lost if the trainee
-    // navigates away before typing anything.
+    // Reinforcement's optional, now protocol-linked Gratitude entry
+    // (#10, evidence-encoding task #4/#5): attached to the just-
+    // finalized session log entry here, decoupled from finalizeSession()
+    // itself so a completed session is always logged immediately on
+    // reaching "complete" -- never lost if the trainee navigates away
+    // before typing anything. The concrete memory detail is saved in
+    // this SAME call, onto this SAME entry, so the two can never end up
+    // describing different sessions (#6/#13).
     const trimmedGratitude = gratitudeText.trim();
-    updateLastSessionLogEntryGratitude(trimmedGratitude.length > 0 ? trimmedGratitude : null);
+    const trimmedMemoryDetail = gratitudeMemoryDetailText.trim();
+    updateLastSessionLogEntryGratitude(
+      trimmedGratitude.length > 0 ? trimmedGratitude : null,
+      trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null
+    ).then(() => {
+      // Rebuilds the evidence index so a "סשן חדש" restart within this
+      // SAME screen instance (no navigation, so useFocusEffect above
+      // doesn't re-run) can immediately surface what was just saved --
+      // otherwise it would only appear starting from the NEXT time this
+      // screen gains focus.
+      loadSessionLog().then((log) => setEvidenceIndex(buildEvidenceIndex(log)));
+    });
 
     // Defensive: by the time restart() is reachable every timer's
     // anchor should already be cleared (commitAdvance clears each one
@@ -290,6 +341,7 @@ export default function LiveSessionScreen() {
     setSuccessFocusMinutes(null);
     setSessionStartedAt(new Date().toISOString());
     setGratitudeText("");
+    setGratitudeMemoryDetailText("");
   };
 
   if (!profile) {
@@ -343,7 +395,7 @@ export default function LiveSessionScreen() {
     );
   }
 
-  const copy = getStageCopy(stage, profile, session, activeLayers);
+  const copy = getStageCopy(stage, profile, session, activeLayers, evidenceIndex);
   const availableTriggers = getAvailableLiveTriggers(activeLayers);
   const negativeActionDurationMinutes = resolveNegativeActionDuration(
     currentProgramWeek,
@@ -360,6 +412,7 @@ export default function LiveSessionScreen() {
           session={session}
           profile={profile}
           activeLayers={activeLayers}
+          evidenceIndex={evidenceIndex}
           availableTriggers={availableTriggers}
           pendingSensationLocation={pendingSensationLocation}
           pendingCustomSensationLocation={pendingCustomSensationLocation}
@@ -479,6 +532,8 @@ export default function LiveSessionScreen() {
           resumedNegativeActionRun={resumedNegativeActionRun}
           gratitudeText={gratitudeText}
           onChangeGratitudeText={setGratitudeText}
+          gratitudeMemoryDetailText={gratitudeMemoryDetailText}
+          onChangeGratitudeMemoryDetailText={setGratitudeMemoryDetailText}
           onRestart={restart}
         />
       </ScrollView>

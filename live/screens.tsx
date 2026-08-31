@@ -1306,26 +1306,41 @@ export function NegativeActionStartScreen({
  * Reinforcement's completion screen, extended with an optional written
  * Gratitude entry -- reuses this same existing completion/storage flow
  * rather than a standalone gratitude architecture (see
- * data/storage.ts's updateLastSessionLogEntryGratitude). The text field
- * is entirely optional: onRestart always fires, whatever gratitudeText
+ * data/storage.ts's updateLastSessionLogEntryGratitude). Both fields
+ * are entirely optional: onRestart always fires, whatever either field
  * currently holds (including empty), and LiveSessionScreen.tsx decides
- * whether that's worth persisting.
+ * whether either is worth persisting.
+ *
+ * Evidence-encoding task (#4/#5): the Gratitude prompt is now
+ * protocol-linked -- specifically about something from THIS ARC
+ * experience, not a random/general Gratitude -- and, once the trainee
+ * has written something, a second question asks for ONE concrete
+ * memory detail from that SAME experience. The memory-detail field only
+ * appears once Gratitude has non-empty text (a simple, honest
+ * "after you enter X, Y appears" sequencing -- see #5), never before;
+ * both are saved together onto the SAME session log entry (see
+ * data/storage.ts's updateLastSessionLogEntryGratitude), never
+ * inferred or fabricated when left blank.
  */
 export function CompleteScreen({
   copy,
   gratitudeText,
   onChangeGratitudeText,
+  gratitudeMemoryDetailText,
+  onChangeGratitudeMemoryDetailText,
   onRestart,
 }: {
   copy: ArcStageCopy;
   gratitudeText: string;
   onChangeGratitudeText: (text: string) => void;
+  gratitudeMemoryDetailText: string;
+  onChangeGratitudeMemoryDetailText: (text: string) => void;
   onRestart: () => void;
 }) {
   return (
     <View>
       <Title copy={copy} />
-      <Text style={styles.body}>על מה אתה מוקיר תודה עכשיו?</Text>
+      <Text style={styles.body}>על מה אתה מוקיר תודה מתוך מה שקרה עכשיו בתרגול?</Text>
       <TextInput
         style={styles.textInput}
         value={gratitudeText}
@@ -1334,6 +1349,19 @@ export function CompleteScreen({
         multiline
         textAlign="right"
       />
+      {gratitudeText.trim().length > 0 && (
+        <View>
+          <Text style={styles.body}>מה פרט אחד שאתה זוכר מהרגע הזה?</Text>
+          <TextInput
+            style={styles.textInput}
+            value={gratitudeMemoryDetailText}
+            onChangeText={onChangeGratitudeMemoryDetailText}
+            placeholder="אפשר להשאיר ריק"
+            multiline
+            textAlign="right"
+          />
+        </View>
+      )}
       <PrimaryButton label="סשן חדש" onPress={onRestart} />
     </View>
   );

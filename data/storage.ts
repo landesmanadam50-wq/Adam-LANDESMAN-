@@ -97,18 +97,27 @@ export async function appendSessionLogEntry(entry: SessionLogEntry): Promise<voi
 }
 
 /**
- * Attaches an optional Gratitude note to the most recently logged
- * session -- called after appendSessionLogEntry() already logged the
- * session itself (so a completed session is never left unlogged just
- * because the trainee is still on the Gratitude screen), once the
- * trainee submits (or explicitly leaves blank) the Gratitude entry.
- * A no-op if the log is empty (defensive; shouldn't happen in practice
- * since this is only ever called right after appendSessionLogEntry).
+ * Attaches an optional Gratitude note -- protocol-linked, per the
+ * evidence-encoding task (#4): "על מה אתה מוקיר תודה מתוך מה שקרה עכשיו
+ * בתרגול?" -- and, when the trainee also supplied one, ONE concrete
+ * memory detail from that SAME experience (#5), to the most recently
+ * logged session. Called after appendSessionLogEntry() already logged
+ * the session itself (so a completed session is never left unlogged
+ * just because the trainee is still on the Gratitude screen), once the
+ * trainee submits (or explicitly leaves blank) either field. Both are
+ * written together in this ONE call, onto this ONE SessionLogEntry --
+ * never two separate writes that could end up describing different
+ * sessions (#6/#13's same-source guarantee starts here). `memoryDetail`
+ * defaults to null so every pre-existing call site (there were none
+ * outside this task, but this keeps the signature backward-compatible
+ * regardless) keeps working unchanged. A no-op if the log is empty
+ * (defensive; shouldn't happen in practice since this is only ever
+ * called right after appendSessionLogEntry).
  */
-export async function updateLastSessionLogEntryGratitude(gratitude: string | null): Promise<void> {
+export async function updateLastSessionLogEntryGratitude(gratitude: string | null, memoryDetail: string | null = null): Promise<void> {
   const existing = await loadSessionLog();
   if (existing.length === 0) return;
-  existing[existing.length - 1] = { ...existing[existing.length - 1], gratitude };
+  existing[existing.length - 1] = { ...existing[existing.length - 1], gratitude, gratitudeMemoryDetail: memoryDetail };
   await AsyncStorage.setItem(SESSION_LOG_KEY, JSON.stringify(existing));
 }
 

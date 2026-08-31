@@ -29,6 +29,8 @@ import {
 import type { InstructionSegment } from "./instructionTiming.ts";
 import { INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "./instructionTiming.ts";
 import { resolveDwellSecondsFor, withTrailingDwellSegment } from "./dwellTimes.ts";
+import type { EvidenceRecord } from "./evidence.ts";
+import { resolveEncodingEvidenceContext, selectEncodingEvidence } from "./evidence.ts";
 
 export type ArcStageInputKind =
   | "triggerSelect"
@@ -118,6 +120,19 @@ export function getAcceptanceReadinessRecheckQuestion(): string {
   return "האם אתה מוכן עכשיו לאפשר לתחושה להיות כפי שהיא?";
 }
 
+/**
+ * Evidence-encoding task: the natural-language lead-in for a selected
+ * personal-evidence/Gratitude item (arc/evidence.ts), never a
+ * clinical/argumentative label like "הוכחה שאתה..." (#16). The item's
+ * own stored text always follows verbatim, unrephrased -- this
+ * function only ever prepends a short, calm lead-in; it never alters
+ * the evidence text itself.
+ */
+export function getEvidenceLine(item: EvidenceRecord): string {
+  const leadIn = item.sourceType === "beneficial_action" ? "משהו שכבר עשית:" : "משהו שהערכת בעצמך:";
+  return `${leadIn} ${item.text}`;
+}
+
 const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   trigger_selection: "triggerSelect",
   presence_check: "scale0to10",
@@ -170,7 +185,16 @@ export function getStageCopy(
   stage: ArcStage,
   profile: ArcBuildProfile,
   state: ArcLiveState,
-  activeLayers: DevelopmentLayer[]
+  activeLayers: DevelopmentLayer[],
+  /**
+   * Evidence-encoding task: the trainee's derived personal-evidence
+   * index (arc/evidence.ts's buildEvidenceIndex, built once from
+   * data/sessionLog.ts's existing history by the I/O layer and passed
+   * straight through) -- only ever read by the "encode" case below.
+   * Optional and defaults to empty so every other stage, and every
+   * existing caller/test of this function, is completely unaffected.
+   */
+  evidenceIndex: EvidenceRecord[] = []
 ): ArcStageCopy {
   switch (stage) {
     case "trigger_selection":
@@ -397,21 +421,27 @@ export function getStageCopy(
         buildProfile: profile,
       });
 
-      // Final Encoding order: (1) notice the updated sensation --
-      // neutrally, no assumption it improved, a large change/small
-      // change/no obvious change are all valid -- then (2) the Short
-      // Encoding Regulation Cue, this target's own lightweight
-      // continuity anchor -- deliberately NOT the full Regulation
-      // process/instructions used at the "regulate" stage, just one
-      // short carry-over, to avoid overloading attention here -- then
-      // (3) the Body-Language Encoding Cue, then (4) Identity/Mantra --
-      // intentionally activated only here, never earlier. Action
-      // Imagery is deliberately NOT here -- it lives in the "act" stage
-      // instead, where the currentAction it imagines is actually
-      // resolved (see that case's doc). Each piece is its own timed
-      // segment (arc/instructionTiming.ts) so this exact 4-piece order
-      // reveals progressively rather than all at once, same text as
-      // before, no piece's presence/absence logic changed.
+      // Final Encoding order (evidence-encoding task): (1) notice the
+      // updated sensation -- neutrally, no assumption it improved, a
+      // large change/small change/no obvious change are all valid --
+      // then (2) the Short Encoding Regulation Cue, this target's own
+      // lightweight continuity anchor -- deliberately NOT the full
+      // Regulation process/instructions used at the "regulate" stage,
+      // just one short carry-over, to avoid overloading attention here
+      // -- then (3) a relevant real personal-evidence/Gratitude line,
+      // when one was selected (arc/evidence.ts), immediately followed
+      // by (4) that SAME record's own concrete memory detail, when it
+      // has one -- then (5) Identity/Mantra, grounded in whatever
+      // evidence just preceded it -- then (6) the Body-Language
+      // Encoding Cue. Evidence/memory-detail and Identity/Mantra
+      // deliberately now come BEFORE Body-Language (this task's one
+      // explicitly requested Encoding sub-order change; Body-Language
+      // used to precede Identity/Mantra here). Action Imagery is
+      // deliberately NOT here -- it lives in the "act" stage instead,
+      // where the currentAction it imagines is actually resolved (see
+      // that case's doc). Each piece is its own timed segment
+      // (arc/instructionTiming.ts) so this order reveals progressively
+      // rather than all at once.
       const segments: InstructionSegment[] = [
         { text: "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה.", durationSeconds: INSTRUCTION_TIMING.encodeUpdatedSensation },
       ];
@@ -420,6 +450,32 @@ export function getStageCopy(
       const regulationCue = resolveEncodingRegulationCue(layer, profile);
       if (regulationCue) {
         segments.push({ text: `המשך עם ${regulationCue}.`, durationSeconds: INSTRUCTION_TIMING.encodeShortRegulationCue });
+        hasContinuityContent = true;
+      }
+
+      // Evidence-encoding task: a real past behavioral success or a
+      // relevant protocol-linked Gratitude entry, selected from the
+      // trainee's OWN existing history (arc/evidence.ts) -- never
+      // invented, never shown when nothing sufficiently relevant
+      // exists (#17). This never counts toward hasContinuityContent:
+      // that flag tracks whether any BUILD-configured Encoding cue
+      // exists, a separate question from whether session HISTORY
+      // happens to contain relevant evidence.
+      const evidenceContext = resolveEncodingEvidenceContext(layer, encoding, profile);
+      const selectedEvidence = selectEncodingEvidence(evidenceIndex, evidenceContext);
+      for (const item of selectedEvidence) {
+        segments.push({ text: getEvidenceLine(item), durationSeconds: INSTRUCTION_TIMING.encodeEvidence });
+        if (item.memoryDetail) {
+          // #9/#13: the SAME record's own concrete memory detail,
+          // immediately after its evidence line and before anything
+          // else -- never a different record's detail, never invented
+          // when absent.
+          segments.push({ text: item.memoryDetail, durationSeconds: INSTRUCTION_TIMING.encodeMemoryDetail });
+        }
+      }
+
+      if (encoding?.mantra) {
+        segments.push({ text: `חזור לעצמך: "${encoding.mantra}".`, durationSeconds: INSTRUCTION_TIMING.encodeIdentityMantra });
         hasContinuityContent = true;
       }
 
@@ -441,11 +497,6 @@ export function getStageCopy(
         // Desired State, independent of whether a regulation cue is
         // also being maintained.
         segments.push({ text: `עבור לשפת הגוף של ${encoding.target}.`, durationSeconds: INSTRUCTION_TIMING.encodeBodyLanguageCue });
-        hasContinuityContent = true;
-      }
-
-      if (encoding?.mantra) {
-        segments.push({ text: `חזור לעצמך: "${encoding.mantra}".`, durationSeconds: INSTRUCTION_TIMING.encodeIdentityMantra });
         hasContinuityContent = true;
       }
 

@@ -26,6 +26,7 @@ import {
   resolveEncodingTarget,
 } from "../arc/arcEngine.ts";
 import { resolveDwellSecondsFor } from "../arc/dwellTimes.ts";
+import type { EvidenceRecord } from "../arc/evidence.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
 import type { TimerRun } from "../data/storage.ts";
 import type { DeferralOption } from "../data/reminders.ts";
@@ -71,6 +72,8 @@ export interface ArcLiveRendererProps {
   session: ArcLiveState;
   profile: ArcBuildProfile;
   activeLayers: DevelopmentLayer[];
+  /** Evidence-encoding task: the trainee's derived personal-evidence index (arc/evidence.ts), forwarded straight into getStageCopy's "encode" case -- see that file's own doc. */
+  evidenceIndex: EvidenceRecord[];
   availableTriggers: TriggerType[];
   pendingSensationLocation: string;
   pendingCustomSensationLocation: string;
@@ -113,12 +116,14 @@ export interface ArcLiveRendererProps {
   resumedNegativeActionRun: TimerRun | null;
   gratitudeText: string;
   onChangeGratitudeText: (text: string) => void;
+  gratitudeMemoryDetailText: string;
+  onChangeGratitudeMemoryDetailText: (text: string) => void;
   onRestart: () => void;
 }
 
 export function ArcLiveRenderer(props: ArcLiveRendererProps) {
   const { stage, session, profile, activeLayers } = props;
-  const copy: ArcStageCopy = getStageCopy(stage, profile, session, activeLayers);
+  const copy: ArcStageCopy = getStageCopy(stage, profile, session, activeLayers, props.evidenceIndex);
 
   switch (stage) {
     case "trigger_selection": {
@@ -455,6 +460,8 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           copy={copy}
           gratitudeText={props.gratitudeText}
           onChangeGratitudeText={props.onChangeGratitudeText}
+          gratitudeMemoryDetailText={props.gratitudeMemoryDetailText}
+          onChangeGratitudeMemoryDetailText={props.onChangeGratitudeMemoryDetailText}
           onRestart={props.onRestart}
         />
       );
