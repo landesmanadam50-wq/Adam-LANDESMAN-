@@ -44,15 +44,15 @@ test("resolveReminderFireDate defaults `now` to the real current time when omitt
 // --- resolveReminderRoute: which entry point a tapped reminder leads
 // to (#4 "opening the reminder resumes/opens the appropriate flow", #5
 // "opening it should lead toward the relevant ARC entry point").
+// Coordinated timer/dwell task (Part 6): "focusSuccess" now always
+// resolves to /focus-success, since it's always the start ping for a
+// specific, already-scheduled future Success Focus with its own
+// persisted duration/timing -- never a fresh, unrelated LIVE session.
 
 test("a future ARC reminder always routes to /live", () => {
-  assert.equal(resolveReminderRoute("arc", true), "/live");
+  assert.equal(resolveReminderRoute("arc"), "/live");
 });
 
-test("a deferred Focus Success reminder WITH ARC routes to /live -- the relevant ARC entry point", () => {
-  assert.equal(resolveReminderRoute("focusSuccess", true), "/live");
-});
-
-test("a deferred Focus Success reminder WITHOUT ARC routes to the standalone Focus Success screen, not /live", () => {
-  assert.equal(resolveReminderRoute("focusSuccess", false), "/focus-success");
+test("a scheduled Success Focus start reminder always routes to the standalone Focus Success screen, which resumes the exact persisted run -- never to a fresh /live session", () => {
+  assert.equal(resolveReminderRoute("focusSuccess"), "/focus-success");
 });

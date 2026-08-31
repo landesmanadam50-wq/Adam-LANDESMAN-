@@ -105,6 +105,43 @@ test("getActionTimerStatusFromStartedAt matches getActionTimerStatus given the e
   assert.deepEqual(fromAnchor, fromElapsed);
 });
 
+// --- Coordinated timer/dwell task (Part 5-9, 42): a future-scheduled
+// Success Focus reuses this EXACT function unmodified, anchored to a
+// plannedStartAt that is still in the FUTURE at scheduling time (see
+// data/reminders.ts's scheduleFutureSuccessFocus) -- these tests prove
+// the absolute-time semantics already correctly cover that case with
+// zero new logic: a `now` before actionStartedAt never goes negative
+// (never "extra" remaining time, just the full duration), and the
+// exact spec's own 18:00-18:05 worked example.
+
+test("a FUTURE actionStartedAt (a scheduled run whose start time hasn't arrived yet) reports the full duration remaining, never negative elapsed time and never already complete", () => {
+  const plannedStartAt = new Date("2024-01-01T18:00:00.000Z").toISOString();
+  const beforeStart = getActionTimerStatusFromStartedAt(plannedStartAt, 5, new Date("2024-01-01T17:55:00.000Z").getTime());
+  assert.equal(beforeStart.complete, false);
+  assert.equal(beforeStart.remainingSeconds, 300, "the full 5 minutes -- opening before the scheduled start shows it as not yet begun, never negative or complete");
+});
+
+test("the exact spec worked example: a run scheduled 18:00-18:05, opened at 18:02, shows approximately 3 minutes remaining -- never a fresh 5-minute timer", () => {
+  const plannedStartAt = new Date("2024-01-01T18:00:00.000Z").toISOString();
+  const openedAt1802 = getActionTimerStatusFromStartedAt(plannedStartAt, 5, new Date("2024-01-01T18:02:00.000Z").getTime());
+  assert.equal(openedAt1802.complete, false);
+  assert.equal(openedAt1802.remainingSeconds, 180, "exactly 3 minutes remaining -- 5 minutes minus the 2 that already elapsed since the real 18:00 start, never restarted");
+});
+
+test("the exact spec worked example: opening the same 18:00-18:05 run at 18:07 (after it ended) restores it as already complete -- never a fresh timer, endsAt never shifts forward", () => {
+  const plannedStartAt = new Date("2024-01-01T18:00:00.000Z").toISOString();
+  const openedAt1807 = getActionTimerStatusFromStartedAt(plannedStartAt, 5, new Date("2024-01-01T18:07:00.000Z").getTime());
+  assert.equal(openedAt1807.complete, true);
+  assert.equal(openedAt1807.remainingSeconds, 0);
+});
+
+test("opening a future-scheduled run exactly AT its plannedStartAt behaves identically to a timer that was actually started right now -- the full duration remaining, counting down from that exact instant", () => {
+  const plannedStartAt = new Date("2024-01-01T18:00:00.000Z").toISOString();
+  const atStart = getActionTimerStatusFromStartedAt(plannedStartAt, 5, new Date("2024-01-01T18:00:00.000Z").getTime());
+  assert.equal(atStart.complete, false);
+  assert.equal(atStart.remainingSeconds, 300);
+});
+
 // --- generateTimerRunId: distinguishes one timer run from another of
 // the SAME timerType, so a stale notification/reconciliation event
 // from an earlier run can never be mistaken for a newer one -- see

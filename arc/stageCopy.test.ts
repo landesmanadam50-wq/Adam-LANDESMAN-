@@ -6,7 +6,7 @@ import { getNextArcStage } from "./arcEngine.ts";
 import { createEmptyLiveState } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { containsInductionPattern } from "./instructions.ts";
-import { INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "./instructionTiming.ts";
+import { INSTRUCTION_TIMING } from "./instructionTiming.ts";
 import { DEFAULT_DWELL_TIMES } from "./dwellTimes.ts";
 import type { EvidenceRecord } from "./evidence.ts";
 
@@ -751,14 +751,20 @@ test("ARC Thought's awareness/combined-attention sub-stages each carry exactly o
   assert.equal(combined.segments?.[0].durationSeconds, INSTRUCTION_TIMING.arcThoughtCombinedAttention);
 });
 
-test("arc_thought_expand_presence carries its own instruction segment plus a trailing, empty-text INLINE_RATING_REVEAL_DELAY_SECONDS placeholder -- the inline-merged Presence Rating's reveal gate", () => {
+test("arc_thought_expand_presence carries its own instruction segment plus a trailing dwell segment sized from the CURRENT layer's own configured Presence dwell (default 8s, unconfigured here) -- the inline-merged Presence Rating's reveal gate (coordinated timer/dwell task)", () => {
   const expand = getStageCopy("arc_thought_expand_presence", profile(), liveState(), ["state"]);
-  assert.equal(expand.segments?.length, 2, "the instruction segment plus the trailing rating-reveal-delay segment");
+  assert.equal(expand.segments?.length, 2, "the instruction segment plus the trailing dwell segment");
   assert.equal(expand.segments?.[0].durationSeconds, INSTRUCTION_TIMING.arcThoughtExpandPresence);
   assert.equal(expand.segments?.[0].text.length > 0, true, "the real instruction text stays on the first segment");
-  assert.equal(expand.segments?.[1].durationSeconds, INLINE_RATING_REVEAL_DELAY_SECONDS);
-  assert.equal(expand.segments?.[1].text, "", "the trailing placeholder carries no text of its own");
-  assert.equal(expand.body, expand.segments?.[0].text, "body stays exactly the spoken instruction text, unaffected by the trailing placeholder");
+  assert.equal(expand.segments?.[1].durationSeconds, DEFAULT_DWELL_TIMES.presenceDwellSeconds);
+  assert.equal(expand.segments?.[1].text, "", "the trailing dwell segment carries no text of its own");
+  assert.equal(expand.body, expand.segments?.[0].text, "body stays exactly the spoken instruction text, unaffected by the trailing dwell segment");
+});
+
+test("arc_thought_expand_presence's trailing dwell honors a customized Presence dwell for the active state layer, distinct from the default -- proves it's a real per-trainee configured value, not a hard-coded constant", () => {
+  const p = profile({ stateDwellTimes: { presenceDwellSeconds: 15 } });
+  const expand = getStageCopy("arc_thought_expand_presence", p, liveState(), ["state"]);
+  assert.equal(expand.segments?.[1].durationSeconds, 15);
 });
 
 test("Stay/Presence reveals the current-sensation segment first, then the natural-breath segment, then a trailing dwell segment sized from the CURRENT target's own configured Sensation/Awareness dwell (default 8s, unconfigured here) -- the exact spec example, 4s then 8s then the dwell", () => {
@@ -788,7 +794,7 @@ test("Regulation has its own instruction segment and duration, separate from Sta
   assert.equal(copy.segments?.length, 2, "the instruction segment plus the trailing dwell segment");
   assert.equal(copy.segments?.[0].durationSeconds, INSTRUCTION_TIMING.regulate);
   assert.notEqual(INSTRUCTION_TIMING.regulate, INSTRUCTION_TIMING.stayCurrentSensation, "sanity: Regulation's timing config is its own, not reused from Stay");
-  assert.equal(copy.segments?.[1].durationSeconds, DEFAULT_DWELL_TIMES.regulationDwellSeconds, "the flat INLINE_RATING_REVEAL_DELAY_SECONDS this trailing segment used to carry is now this stage's own configurable Regulation dwell");
+  assert.equal(copy.segments?.[1].durationSeconds, DEFAULT_DWELL_TIMES.regulationDwellSeconds, "the trailing segment is this stage's own configurable Regulation dwell");
   assert.equal(copy.segments?.[1].text, "", "the trailing placeholder carries no text of its own");
   assert.equal(copy.body, copy.segments?.[0].text, "body stays exactly the spoken instruction text, unaffected by the trailing placeholder");
 });
@@ -1119,12 +1125,26 @@ test("observer_pause (UNKNOWN trigger) reveals only the shorter two-line sequenc
   }
 });
 
-test("observer_pause carries a trailing, fixed, non-configurable reflection segment -- the same underlying dwell/Continue-cue MECHANISM every other timed stage uses, without adding a new BUILD-configurable dwell category", () => {
+test("observer_pause carries a trailing dwell segment sized from the CURRENT layer's own configured Stop-Imagery dwell (default 8s, unconfigured here) -- coordinated timer/dwell task: no longer a fixed constant, but the same underlying dwell/Continue-cue mechanism every other timed stage uses", () => {
   const p = profile();
   const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
   const last = copy.segments![copy.segments!.length - 1];
   assert.equal(last.text, "");
-  assert.equal(last.durationSeconds, INSTRUCTION_TIMING.observerPauseReflection);
+  assert.equal(last.durationSeconds, DEFAULT_DWELL_TIMES.stopImageryDwellSeconds);
+});
+
+test("observer_pause's trailing dwell honors a customized Stop-Imagery dwell for the current reactive session's own resolved layer, distinct from the default", () => {
+  const p = profile({ stateDwellTimes: { stopImageryDwellSeconds: 20 } });
+  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  const last = copy.segments![copy.segments!.length - 1];
+  assert.equal(last.durationSeconds, 20);
+});
+
+test("observer_pause's trailing dwell resolves the HABIT layer's dwell (always the default, habit has no ARC Map of its own) for a reactive_urge session, never a state/identity value that happens to be configured", () => {
+  const p = profile({ stateDwellTimes: { stopImageryDwellSeconds: 99 }, identityDwellTimes: { stopImageryDwellSeconds: 99 } });
+  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_urge" }), ["habit"]);
+  const last = copy.segments![copy.segments!.length - 1];
+  assert.equal(last.durationSeconds, DEFAULT_DWELL_TIMES.stopImageryDwellSeconds);
 });
 
 test("observer_pause's copy never trips the induction-pattern audit -- it is recognition/rehearsal only, never an instruction to evoke, hold, or intensify the interfering emotion/urge -- for both the known- and unknown-trigger variants", () => {
@@ -1171,4 +1191,17 @@ test("the Preventive Action reinforcement never claims the feeling/urge was elim
     assert.ok(!reinforcement.includes(forbidden), `must never contain: "${forbidden}"`);
   }
   assert.match(reinforcement, /מרווח לפני התגובה/, "must frame success as creating a pause before the automatic reaction");
+});
+
+// --- Coordinated timer/dwell task (Part 2-3): success_focus's copy is
+// now the RETROSPECTIVE question, with the exact spec title/wording --
+// never "עכשיו"/"מאוחר יותר" anywhere in this copy.
+
+test("success_focus carries the exact spec title and retrospective question, never the old now/later choice text", () => {
+  const copy = getStageCopy("success_focus", profile(), liveState(), ["habit"]);
+  assert.equal(copy.title, "מיקוד הצלחה");
+  assert.equal(copy.body, "כמה זמן המשכת בפעולה המיטיבה מעבר לזמן שתכננת?");
+  assert.ok(!copy.body.includes("עכשיו"));
+  assert.ok(!copy.body.includes("מאוחר יותר"));
+  assert.equal(copy.segments, null, "no instruction-timing gate on this plain retrospective question");
 });

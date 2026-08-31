@@ -481,6 +481,27 @@ function afterReactiveTargetResolved(layer: DevelopmentLayer, profile: ArcBuildP
   return resolveTargetPreventiveAction(layer, profile) !== null ? "preventive_action_check" : "presence_check";
 }
 
+/**
+ * The single resolver for which DevelopmentLayer the "observer_pause"
+ * stage's Stop-Imagery dwell (coordinated timer/dwell task, Part 20-23)
+ * is configured under -- shared by this file's own "observer_pause"
+ * transition case below AND arc/stageCopy.ts's "observer_pause" copy
+ * case, so the two can never diverge onto different layers for the
+ * SAME session. Mirrors exactly what the transition case always
+ * computed inline before this task: reactive_urge always resolves to
+ * "habit" (unambiguous); every other reactive trigger uses
+ * selectedTarget when already chosen, else falls back to
+ * inferLayerFromTrigger's own existing inference.
+ */
+export function resolveObserverPauseLayer(
+  triggerType: TriggerType | null,
+  selectedTarget: DevelopmentLayer | null,
+  activeLayers: DevelopmentLayer[],
+  profile: ArcBuildProfile
+): DevelopmentLayer {
+  return triggerType === "reactive_urge" ? "habit" : (selectedTarget ?? inferLayerFromTrigger(triggerType, activeLayers, profile));
+}
+
 function afterArcThought(triggerType: TriggerType | null): ArcStage {
   if (triggerType === null) return "sensation_check";
   return getRouteAfterPresence(triggerType) === "proactive" ? "desired_state_check" : "sensation_check";
@@ -536,7 +557,7 @@ export function getNextArcStage(
     // so the target that receives the Preventive Action next is never
     // recomputed differently.
     case "observer_pause": {
-      const layer = state.triggerType === "reactive_urge" ? "habit" : (state.selectedTarget ?? inferLayerFromTrigger(state.triggerType, activeLayers, profile));
+      const layer = resolveObserverPauseLayer(state.triggerType, state.selectedTarget, activeLayers, profile);
       return result(afterReactiveTargetResolved(layer, profile), state.loopIterationCount);
     }
 

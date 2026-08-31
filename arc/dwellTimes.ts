@@ -47,6 +47,8 @@ export const DEFAULT_DWELL_TIMES: DwellTimes = {
   regulationDwellSeconds: 12,
   encodingDwellSeconds: 10,
   actionImageryDwellSeconds: 8,
+  presenceDwellSeconds: 8,
+  stopImageryDwellSeconds: 8,
 };
 
 /**
@@ -92,6 +94,53 @@ export function clampDwellSeconds(value: number, fallback: number = MIN_DWELL_SE
 export function resolveDwellSecondsFor(kind: keyof DwellTimes, layer: DevelopmentLayer, profile: ArcBuildProfile): number {
   const overrides = layer === "state" ? profile.stateDwellTimes : layer === "identity" ? profile.identityDwellTimes : null;
   return overrides?.[kind] ?? DEFAULT_DWELL_TIMES[kind];
+}
+
+/**
+ * Coordinated timer/dwell task (Part 16-18): Presence dwell's own
+ * resolution, distinct from resolveDwellSecondsFor above because a
+ * specific target LAYER often isn't resolved yet by the time Presence
+ * (arc_thought_expand_presence) is reached -- reactive_urge sessions
+ * never set selectedTarget (their target is implicitly "habit", which
+ * has no dwell config of its own), and proactive sessions only resolve
+ * their target later, at desired_state_check, well after Presence.
+ * Reported precedence (see the task's own "preserve/report the exact
+ * rule" escape hatch): the state layer's own configured Presence dwell
+ * wins first (when the state layer is active this program week and has
+ * one configured), then the identity layer's own (same condition),
+ * then the 8s default -- independent of which specific layer THIS
+ * session eventually resolves to, since that resolution frequently
+ * hasn't happened yet at Presence time. A layer that isn't active this
+ * program week is never consulted, even if a value happens to be
+ * configured for it (a leftover from an earlier or later program week).
+ */
+export function resolvePresenceDwellSeconds(profile: ArcBuildProfile, activeLayers: DevelopmentLayer[]): number {
+  if (activeLayers.includes("state") && profile.stateDwellTimes?.presenceDwellSeconds !== undefined && profile.stateDwellTimes?.presenceDwellSeconds !== null) {
+    return profile.stateDwellTimes.presenceDwellSeconds;
+  }
+  if (activeLayers.includes("identity") && profile.identityDwellTimes?.presenceDwellSeconds !== undefined && profile.identityDwellTimes?.presenceDwellSeconds !== null) {
+    return profile.identityDwellTimes.presenceDwellSeconds;
+  }
+  return DEFAULT_DWELL_TIMES.presenceDwellSeconds;
+}
+
+/**
+ * Unified dwell-completion task (Part 31-36): whether a stage's own
+ * instruction segments end in a genuine, configured dwell period --
+ * the generic signal live/screens.tsx uses to decide whether the
+ * subtle dwell-completion cue applies at all, rather than a fragile
+ * per-stage name list (per the task's own "use the dwell architecture
+ * itself as the source of truth" guidance). A trailing empty-text
+ * segment is, by construction, only ever produced by
+ * withTrailingDwellSegment above -- no real instruction line is ever
+ * empty -- so this is a reliable, generic marker: a plain
+ * instruction-only stage (e.g. arc_thought_awareness, which has no
+ * dwell of its own) never ends in an empty-text segment, and so never
+ * triggers the cue merely because its own instruction-reveal timing
+ * completed and Continue became available.
+ */
+export function hasTrailingDwellSegment(segments: InstructionSegment[]): boolean {
+  return segments.length > 0 && segments[segments.length - 1].text === "";
 }
 
 /**

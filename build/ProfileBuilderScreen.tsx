@@ -30,6 +30,7 @@ import {
 const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   goal: "מה תרצה להשיג? (לאן אתה רוצה להתקדם)",
   habit: "מה ההרגל שתרצה לעבוד עליו?",
+  negativeActionDuration: "כמה זמן, בדקות, לאפשר להרגל הזה? (רשות)",
   beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע במקומו? (ההרגל הרצוי)",
   needsState: "האם יש מצב פנימי (כמו רוגע, ביטחון או חמלה) שתרצה לפתח ולחזק?",
   needsIdentityImmediately: "לעבוד גם על זהות מקבילה כבר מההתחלה?",
@@ -154,6 +155,22 @@ export default function ProfileBuilderScreen() {
               disabled={!isOptionalTextStep && (draft[textField] as string).trim().length === 0}
               onPress={() => goNext(draft)}
             >
+              <Text style={styles.buttonText}>המשך</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {step === "negativeActionDuration" && (
+          <View>
+            <TextInput
+              style={styles.textInput}
+              value={draft.negativeActionBaseDurationMinutes}
+              onChangeText={(value) => setDraft({ ...draft, negativeActionBaseDurationMinutes: value.replace(/[^0-9]/g, "") })}
+              keyboardType="numeric"
+              placeholder="אפשר להשאיר ריק"
+              textAlign="right"
+            />
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => goNext(draft)}>
               <Text style={styles.buttonText}>המשך</Text>
             </Pressable>
           </View>

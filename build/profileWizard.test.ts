@@ -72,10 +72,15 @@ test("first BUILD-GOAL step is goal for a fresh draft", () => {
   assert.equal(getFirstProfileStep(createEmptyDraft(), GOAL_STEP_ORDER), "goal");
 });
 
-test("goal is followed by habit, then beneficialAction, then needsState", () => {
+test("goal is followed by habit, then negativeActionDuration, then beneficialAction, then needsState -- coordinated timer/dwell task (Part 12): negativeActionDuration sits right after habit, the ONE place the current target Habit's real timer duration is configured", () => {
   const draft = { ...createEmptyDraft(), goal: "x" };
   assert.equal(getNextProfileStep("goal", draft, GOAL_STEP_ORDER), "habit");
-  assert.equal(getNextProfileStep("habit", { ...draft, habit: "x" }, GOAL_STEP_ORDER), "beneficialAction");
+  assert.equal(getNextProfileStep("habit", { ...draft, habit: "x" }, GOAL_STEP_ORDER), "negativeActionDuration");
+  assert.equal(
+    getNextProfileStep("negativeActionDuration", { ...draft, habit: "x" }, GOAL_STEP_ORDER),
+    "beneficialAction",
+    "negativeActionDuration is optional -- never blocks reaching beneficialAction whether or not it was filled in"
+  );
   assert.equal(getNextProfileStep("beneficialAction", { ...draft, habit: "x", beneficialAction: "x" }, GOAL_STEP_ORDER), "needsState");
 });
 
@@ -477,7 +482,36 @@ test("createEmptyDraft's five dwell fields per target default to the exact speci
   assert.equal(draft.identityActionImageryDwellSeconds, "8");
 });
 
-test("buildProfileFromDraft saves the state target's five dwell values, applying the correct defaults when left unedited", () => {
+// --- Coordinated timer/dwell task (Part 12, 43): the current target
+// Habit's own real timer base duration, configured in GOAL BUILD --
+// the ONE place this is set; LIVE never asks for it again.
+
+test("buildProfileFromDraft leaves negativeActionBaseDurationMinutes null when the step is left blank -- fully optional, exactly like it always has been", () => {
+  const p = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "" }));
+  assert.equal(p.negativeActionBaseDurationMinutes, null);
+});
+
+test("buildProfileFromDraft parses a valid entered minutes value for negativeActionBaseDurationMinutes", () => {
+  const p = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "20" }));
+  assert.equal(p.negativeActionBaseDurationMinutes, 20);
+});
+
+test("buildProfileFromDraft treats a zero/negative/unparseable negativeActionBaseDurationMinutes as null rather than saving a nonsensical timer duration", () => {
+  assert.equal(buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "0" })).negativeActionBaseDurationMinutes, null);
+  assert.equal(buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "-5" })).negativeActionBaseDurationMinutes, null);
+});
+
+test("draftFromProfileAndSelection round-trips a saved negativeActionBaseDurationMinutes back into the draft's string field, and back to '' when null", () => {
+  const savedProfile = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "15" }));
+  const reloaded = draftFromProfileAndSelection(savedProfile, null);
+  assert.equal(reloaded.negativeActionBaseDurationMinutes, "15");
+
+  const neverSetProfile = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "" }));
+  const reloadedNeverSet = draftFromProfileAndSelection(neverSetProfile, null);
+  assert.equal(reloadedNeverSet.negativeActionBaseDurationMinutes, "");
+});
+
+test("buildProfileFromDraft saves the state target's seven dwell values (coordinated timer/dwell task: presence + stop-imagery joined the original five), applying the correct defaults when left unedited", () => {
   const p = buildProfileFromDraft(filledStateOnlyDraft());
   assert.deepEqual(p.stateDwellTimes, {
     sensationDwellSeconds: 8,
@@ -485,10 +519,12 @@ test("buildProfileFromDraft saves the state target's five dwell values, applying
     regulationDwellSeconds: 12,
     encodingDwellSeconds: 10,
     actionImageryDwellSeconds: 8,
+    presenceDwellSeconds: 8,
+    stopImageryDwellSeconds: 8,
   });
 });
 
-test("buildProfileFromDraft saves a state target's CUSTOMIZED dwell values exactly as entered -- the spec's own worked example for תשוקה", () => {
+test("buildProfileFromDraft saves a state target's CUSTOMIZED dwell values exactly as entered -- the spec's own worked example for תשוקה, extended with presence/stop-imagery", () => {
   const p = buildProfileFromDraft(
     filledStateOnlyDraft({
       stateSensationDwellSeconds: "8",
@@ -496,6 +532,8 @@ test("buildProfileFromDraft saves a state target's CUSTOMIZED dwell values exact
       stateRegulationDwellSeconds: "12",
       stateEncodingDwellSeconds: "10",
       stateActionImageryDwellSeconds: "8",
+      statePresenceDwellSeconds: "12",
+      stateStopImageryDwellSeconds: "6",
     })
   );
   assert.deepEqual(p.stateDwellTimes, {
@@ -504,6 +542,8 @@ test("buildProfileFromDraft saves a state target's CUSTOMIZED dwell values exact
     regulationDwellSeconds: 12,
     encodingDwellSeconds: 10,
     actionImageryDwellSeconds: 8,
+    presenceDwellSeconds: 12,
+    stopImageryDwellSeconds: 6,
   });
 });
 

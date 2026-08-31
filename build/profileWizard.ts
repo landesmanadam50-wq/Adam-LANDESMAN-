@@ -74,6 +74,16 @@ function isKnownLegacyProgramPath(programPath: string): programPath is KnownProg
 export type ProfileStep =
   | "goal"
   | "habit"
+  /**
+   * Coordinated timer/dwell task (Part 12): the current target Habit's
+   * own real timer duration -- the ONE place this is configured (LIVE
+   * never asks for it again; see arc/types.ts's
+   * ArcBuildProfile.negativeActionBaseDurationMinutes doc). Optional,
+   * exactly like it always has been: a trainee can leave it blank,
+   * meaning no Negative Action Timer duration gates that stage this
+   * program, same as every profile before this step existed.
+   */
+  | "negativeActionDuration"
   | "beneficialAction"
   | "needsState"
   | "needsIdentityImmediately"
@@ -116,6 +126,7 @@ export type ProfileStep =
 export const GOAL_STEP_ORDER: ProfileStep[] = [
   "goal",
   "habit",
+  "negativeActionDuration",
   "beneficialAction",
   "needsState",
   "needsIdentityImmediately",
@@ -197,6 +208,9 @@ export interface ProfileDraft {
   stateRegulationDwellSeconds: string;
   stateEncodingDwellSeconds: string;
   stateActionImageryDwellSeconds: string;
+  /** Coordinated timer/dwell task (Part 16-18, 20-23): the state layer's own Presence/Stop-Imagery dwell, parallel to the five original dwell fields above -- same string-for-TextInput-binding convention. */
+  statePresenceDwellSeconds: string;
+  stateStopImageryDwellSeconds: string;
 
   desiredIdentity: string;
   identityChallengeContext: string;
@@ -213,8 +227,13 @@ export interface ProfileDraft {
   identityRegulationDwellSeconds: string;
   identityEncodingDwellSeconds: string;
   identityActionImageryDwellSeconds: string;
+  /** Parallel to statePresenceDwellSeconds/stateStopImageryDwellSeconds -- never mixed with them. */
+  identityPresenceDwellSeconds: string;
+  identityStopImageryDwellSeconds: string;
 
   habit: string;
+  /** Coordinated timer/dwell task (Part 12): the current target Habit's own base timer allowance, in minutes -- kept as a string for direct TextInput binding, same convention as the dwell-seconds fields above. Optional: blank -> null (no Negative Action Timer duration configured, same as every profile before this step existed). */
+  negativeActionBaseDurationMinutes: string;
   beneficialAction: string;
   hasPreventiveAction: boolean | null;
   preventiveActionDescription: string;
@@ -242,6 +261,8 @@ export function createEmptyDraft(): ProfileDraft {
     stateRegulationDwellSeconds: String(DEFAULT_DWELL_TIMES.regulationDwellSeconds),
     stateEncodingDwellSeconds: String(DEFAULT_DWELL_TIMES.encodingDwellSeconds),
     stateActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.actionImageryDwellSeconds),
+    statePresenceDwellSeconds: String(DEFAULT_DWELL_TIMES.presenceDwellSeconds),
+    stateStopImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.stopImageryDwellSeconds),
     desiredIdentity: "",
     identityChallengeContext: "",
     identityInterferingEmotion: "",
@@ -255,7 +276,10 @@ export function createEmptyDraft(): ProfileDraft {
     identityRegulationDwellSeconds: String(DEFAULT_DWELL_TIMES.regulationDwellSeconds),
     identityEncodingDwellSeconds: String(DEFAULT_DWELL_TIMES.encodingDwellSeconds),
     identityActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.actionImageryDwellSeconds),
+    identityPresenceDwellSeconds: String(DEFAULT_DWELL_TIMES.presenceDwellSeconds),
+    identityStopImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.stopImageryDwellSeconds),
     habit: "",
+    negativeActionBaseDurationMinutes: "",
     beneficialAction: "",
     hasPreventiveAction: null,
     preventiveActionDescription: "",
@@ -311,6 +335,10 @@ export function draftFromProfileAndSelection(
     stateActionImageryDwellSeconds: String(
       profile.stateDwellTimes?.actionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.actionImageryDwellSeconds
     ),
+    statePresenceDwellSeconds: String(profile.stateDwellTimes?.presenceDwellSeconds ?? DEFAULT_DWELL_TIMES.presenceDwellSeconds),
+    stateStopImageryDwellSeconds: String(
+      profile.stateDwellTimes?.stopImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.stopImageryDwellSeconds
+    ),
     desiredIdentity: profile.desiredIdentity ?? "",
     identityChallengeContext: profile.identityChallengeContext ?? "",
     identityInterferingEmotion: profile.identityInterferingEmotion ?? "",
@@ -326,7 +354,15 @@ export function draftFromProfileAndSelection(
     identityActionImageryDwellSeconds: String(
       profile.identityDwellTimes?.actionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.actionImageryDwellSeconds
     ),
+    identityPresenceDwellSeconds: String(
+      profile.identityDwellTimes?.presenceDwellSeconds ?? DEFAULT_DWELL_TIMES.presenceDwellSeconds
+    ),
+    identityStopImageryDwellSeconds: String(
+      profile.identityDwellTimes?.stopImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.stopImageryDwellSeconds
+    ),
     habit: profile.habit ?? "",
+    negativeActionBaseDurationMinutes:
+      profile.negativeActionBaseDurationMinutes !== null ? String(profile.negativeActionBaseDurationMinutes) : "",
     beneficialAction: profile.beneficialAction ?? "",
     hasPreventiveAction: profile.preventiveAction !== null,
     preventiveActionDescription: profile.preventiveAction ?? "",
@@ -456,13 +492,15 @@ function parseDwellField(text: string, fallback: number): number {
   return clampDwellSeconds(Number(trimmed), fallback);
 }
 
-/** Builds a full DwellTimes set (never a partial one) from this target's five draft fields -- always saved as a complete set once BUILD-ARC's "זמן שהייה" step is reached, so resolveDwellSecondsFor's own per-field fallback (arc/dwellTimes.ts) is really only ever exercised for a profile that never visited this step at all. */
+/** Builds a full DwellTimes set (never a partial one) from this target's seven draft fields -- always saved as a complete set once BUILD-ARC's "זמן שהייה" step is reached, so resolveDwellSecondsFor's own per-field fallback (arc/dwellTimes.ts) is really only ever exercised for a profile that never visited this step at all. Coordinated timer/dwell task: extended with presence/stopImagery, parallel to the original five. */
 function dwellTimesFromDraft(draft: {
   sensation: string;
   acceptance: string;
   regulation: string;
   encoding: string;
   actionImagery: string;
+  presence: string;
+  stopImagery: string;
 }): DwellTimes {
   return {
     sensationDwellSeconds: parseDwellField(draft.sensation, DEFAULT_DWELL_TIMES.sensationDwellSeconds),
@@ -470,7 +508,17 @@ function dwellTimesFromDraft(draft: {
     regulationDwellSeconds: parseDwellField(draft.regulation, DEFAULT_DWELL_TIMES.regulationDwellSeconds),
     encodingDwellSeconds: parseDwellField(draft.encoding, DEFAULT_DWELL_TIMES.encodingDwellSeconds),
     actionImageryDwellSeconds: parseDwellField(draft.actionImagery, DEFAULT_DWELL_TIMES.actionImageryDwellSeconds),
+    presenceDwellSeconds: parseDwellField(draft.presence, DEFAULT_DWELL_TIMES.presenceDwellSeconds),
+    stopImageryDwellSeconds: parseDwellField(draft.stopImagery, DEFAULT_DWELL_TIMES.stopImageryDwellSeconds),
   };
+}
+
+/** Parses the current target Habit's own base timer allowance (Part 12) -- blank/unparseable stays null (no Negative Action Timer duration configured), a valid positive number is used as-is. Deliberately NOT clamped through arc/dwellTimes.ts's dwell bounds -- this is a real action-timer minutes value, a different concept from an experiential dwell in seconds. */
+function parseNegativeActionBaseDurationMinutes(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
 }
 
 function buildEncodingProfile(target: string, mantra: string, bodyLanguageCue: string): EncodingProfile | null {
@@ -567,6 +615,8 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
           regulation: draft.stateRegulationDwellSeconds,
           encoding: draft.stateEncodingDwellSeconds,
           actionImagery: draft.stateActionImageryDwellSeconds,
+          presence: draft.statePresenceDwellSeconds,
+          stopImagery: draft.stateStopImageryDwellSeconds,
         })
       : null,
 
@@ -590,6 +640,8 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
           regulation: draft.identityRegulationDwellSeconds,
           encoding: draft.identityEncodingDwellSeconds,
           actionImagery: draft.identityActionImageryDwellSeconds,
+          presence: draft.identityPresenceDwellSeconds,
+          stopImagery: draft.identityStopImageryDwellSeconds,
         })
       : null,
 
@@ -600,6 +652,6 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     regulationTool: draft.regulationTool.trim(),
     actionDuration: null,
     successFocusDuration: null,
-    negativeActionBaseDurationMinutes: null,
+    negativeActionBaseDurationMinutes: parseNegativeActionBaseDurationMinutes(draft.negativeActionBaseDurationMinutes),
   };
 }

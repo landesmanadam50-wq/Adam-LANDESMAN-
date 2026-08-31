@@ -4,13 +4,15 @@ import assert from "node:assert/strict";
 import {
   clampDwellSeconds,
   DEFAULT_DWELL_TIMES,
+  hasTrailingDwellSegment,
   isValidDwellSeconds,
   MAX_DWELL_SECONDS,
   MIN_DWELL_SECONDS,
   resolveDwellSecondsFor,
+  resolvePresenceDwellSeconds,
   withTrailingDwellSegment,
 } from "./dwellTimes.ts";
-import type { ArcBuildProfile, DwellTimes } from "./types.ts";
+import type { ArcBuildProfile, DevelopmentLayer, DwellTimes } from "./types.ts";
 import type { InstructionSegment } from "./instructionTiming.ts";
 
 function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
@@ -47,13 +49,15 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
 
 // --- B: five default dwell values -------------------------------------
 
-test("DEFAULT_DWELL_TIMES has exactly the five specified default values", () => {
+test("DEFAULT_DWELL_TIMES has exactly the seven specified default values (coordinated timer/dwell task: presence + stop-imagery joined the original five)", () => {
   const expected: DwellTimes = {
     sensationDwellSeconds: 8,
     acceptanceDwellSeconds: 8,
     regulationDwellSeconds: 12,
     encodingDwellSeconds: 10,
     actionImageryDwellSeconds: 8,
+    presenceDwellSeconds: 8,
+    stopImageryDwellSeconds: 8,
   };
   assert.deepEqual(DEFAULT_DWELL_TIMES, expected);
 });
@@ -171,4 +175,82 @@ test("the dwell boundary is a clean 'segments finished -> dwell begins' composit
   assert.equal(textTimed[1].durationSeconds, 10, "the dwell segment's own duration is independent of how the instruction's duration was determined");
   assert.equal(voiceTimed[1].durationSeconds, 10, "same dwell value, regardless of the instruction-timing source feeding segment 0");
   assert.notEqual(textTimed[0].durationSeconds, voiceTimed[0].durationSeconds, "only the instruction segment's own duration would ever differ between a text-timing and a voice-timing caller");
+});
+
+// --- Coordinated timer/dwell task (Part 45): Presence dwell resolution.
+// Distinct from resolveDwellSecondsFor since a specific layer isn't
+// always resolved yet by the time Presence is reached -- see
+// resolvePresenceDwellSeconds's own doc for the reported precedence:
+// state's own configured value first (when state is active), then
+// identity's (when identity is active), then the 8s default.
+
+test("resolvePresenceDwellSeconds defaults to 8s when neither layer has a customized value", () => {
+  const p = profile();
+  assert.equal(resolvePresenceDwellSeconds(p, ["state", "identity"]), DEFAULT_DWELL_TIMES.presenceDwellSeconds);
+  assert.equal(DEFAULT_DWELL_TIMES.presenceDwellSeconds, 8);
+});
+
+test("resolvePresenceDwellSeconds uses the active state layer's own customized Presence dwell -- the spec's own worked example: \"אני רגוע\" (identity) -> 12s vs \"תשוקה\" (state) -> 15s, each independently configured", () => {
+  const p = profile({ stateDwellTimes: { presenceDwellSeconds: 15 } });
+  assert.equal(resolvePresenceDwellSeconds(p, ["state"]), 15);
+});
+
+test("resolvePresenceDwellSeconds falls back to the active identity layer's own customized Presence dwell when state has none configured", () => {
+  const p = profile({ identityDwellTimes: { presenceDwellSeconds: 12 } });
+  assert.equal(resolvePresenceDwellSeconds(p, ["identity"]), 12);
+});
+
+test("resolvePresenceDwellSeconds: different Identities/States can be configured with entirely different Presence dwell values, resolved independently -- state's own value wins over identity's when BOTH are active and BOTH are configured (reported precedence)", () => {
+  const p = profile({ stateDwellTimes: { presenceDwellSeconds: 15 }, identityDwellTimes: { presenceDwellSeconds: 6 } });
+  assert.equal(resolvePresenceDwellSeconds(p, ["state", "identity"]), 15, "state's own configured value wins first, per the reported precedence");
+});
+
+test("resolvePresenceDwellSeconds never consults a layer that isn't active this program week, even if a value happens to be configured for it", () => {
+  const p = profile({ stateDwellTimes: { presenceDwellSeconds: 15 } });
+  assert.equal(resolvePresenceDwellSeconds(p, ["identity"]), DEFAULT_DWELL_TIMES.presenceDwellSeconds, "state isn't active this program week -- its configured value must never be consulted");
+});
+
+test("resolvePresenceDwellSeconds is deterministic -- the exact same inputs always resolve to the exact same value", () => {
+  const p = profile({ stateDwellTimes: { presenceDwellSeconds: 20 } });
+  const activeLayers: DevelopmentLayer[] = ["state", "identity"];
+  assert.equal(resolvePresenceDwellSeconds(p, activeLayers), resolvePresenceDwellSeconds(p, activeLayers));
+});
+
+test("resolvePresenceDwellSeconds treats a legacy profile with stateDwellTimes/identityDwellTimes entirely missing (undefined, pre-feature data) exactly like null -- safe 8s default, no migration step required", () => {
+  const legacy = profile();
+  delete (legacy as { stateDwellTimes?: unknown }).stateDwellTimes;
+  delete (legacy as { identityDwellTimes?: unknown }).identityDwellTimes;
+  assert.equal(resolvePresenceDwellSeconds(legacy, ["state", "identity"]), DEFAULT_DWELL_TIMES.presenceDwellSeconds);
+});
+
+// --- Coordinated timer/dwell task (Part 20-23): Stop-Imagery joins the
+// original five dwell categories via the SAME resolveDwellSecondsFor
+// mechanism -- these tests mirror the existing per-category coverage
+// above for the new field specifically.
+
+test("resolveDwellSecondsFor resolves stopImageryDwellSeconds to the 8s default when unconfigured, and to the CURRENT layer's own customized value when set", () => {
+  const unconfigured = profile();
+  assert.equal(resolveDwellSecondsFor("stopImageryDwellSeconds", "state", unconfigured), DEFAULT_DWELL_TIMES.stopImageryDwellSeconds);
+  assert.equal(DEFAULT_DWELL_TIMES.stopImageryDwellSeconds, 8);
+
+  const configured = profile({ identityDwellTimes: { stopImageryDwellSeconds: 20 } });
+  assert.equal(resolveDwellSecondsFor("stopImageryDwellSeconds", "identity", configured), 20);
+  assert.equal(resolveDwellSecondsFor("stopImageryDwellSeconds", "state", configured), DEFAULT_DWELL_TIMES.stopImageryDwellSeconds, "never leaks identity's value onto state");
+});
+
+// --- Unified dwell-completion task (Part 31-36): hasTrailingDwellSegment
+// is the generic, structural signal live/screens.tsx uses to decide
+// whether the subtle dwell-completion cue applies at all.
+
+test("hasTrailingDwellSegment is true exactly when the last segment's text is empty (the withTrailingDwellSegment contract), regardless of how many real instruction segments precede it", () => {
+  assert.equal(hasTrailingDwellSegment(withTrailingDwellSegment([{ text: "a", durationSeconds: 4 }], 8)), true);
+  assert.equal(
+    hasTrailingDwellSegment(withTrailingDwellSegment([{ text: "a", durationSeconds: 4 }, { text: "b", durationSeconds: 4 }], 8)),
+    true
+  );
+});
+
+test("hasTrailingDwellSegment is false for a plain instruction-only stage's segments -- no dwell was ever appended, so its own instruction-reveal completion is never mistaken for a dwell completion", () => {
+  assert.equal(hasTrailingDwellSegment([{ text: "a", durationSeconds: 5 }]), false);
+  assert.equal(hasTrailingDwellSegment([]), false, "an empty segments array (an untimed/immediate stage) is trivially not a dwell either");
 });

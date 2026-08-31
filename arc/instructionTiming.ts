@@ -84,11 +84,15 @@ const ENCODING_DURATION_INCREASE_SECONDS = 7;
  * five entries below, replaced by arc/stageCopy.ts appending a
  * withTrailingDwellSegment (arc/dwellTimes.ts) sized from the current
  * ARC state's own configuration, once, after the instruction segments
- * below. It stays fully intact for the three ARC Thought/Presence
- * entries (arcThoughtAwareness/CombinedAttention/ExpandPresence):
- * Presence isn't one of the five configurable dwell categories, and the
- * Presence technique itself is explicitly unchanged by the dwell-time
- * task. Encoding's own separate +7s per-step increase
+ * below. It stays fully intact for all three ARC Thought/Presence
+ * entries (arcThoughtAwareness/CombinedAttention/ExpandPresence) --
+ * this is INSTRUCTION-reveal pacing for the guided Presence practice
+ * itself, never touched by the dwell-time task(s); coordinated
+ * timer/dwell task (Part 16-19) adds Presence's OWN post-instruction
+ * dwell separately, as one more trailing withTrailingDwellSegment on
+ * arc_thought_expand_presence specifically (see arc/stageCopy.ts),
+ * layered strictly AFTER this flat +15s instruction-pacing increase,
+ * never replacing or double-counting it. Encoding's own separate +7s per-step increase
  * (ENCODING_DURATION_INCREASE_SECONDS) is untouched either way -- it's
  * instruction-reveal pacing, not a post-instruction dwell, so it's
  * outside this task's scope regardless of which stage it's on.
@@ -115,40 +119,21 @@ export const INSTRUCTION_TIMING = {
   actionImagery: 5,
   /**
    * Reactive-flow-strengthening task: the "observer_pause" stage's own
-   * three progressive lines (recognition-only observer perspective,
-   * imagined pause, then the explicit "no need to re-evoke/intensify"
-   * safety line), plus one trailing, plain, fixed reflection segment --
-   * deliberately NOT part of arc/dwellTimes.ts's per-trainee
-   * configurable dwell system (that system stays untouched per this
-   * task's "do not change dwell-time configuration" constraint): this
-   * reuses the SAME underlying instruction-timing/progressive-reveal/
-   * Continue-cue MECHANISM (getInstructionTimingStatus, a trailing
-   * empty-text segment, TimedInstructionBody) every dwell-gated screen
-   * already uses, just with one plain, non-configurable constant here
-   * instead of a new BUILD-configurable category -- exactly like
-   * INLINE_RATING_REVEAL_DELAY_SECONDS below already does for Presence.
-   * The trailing reflection segment IS, quite literally, the few
-   * seconds of pause being rehearsed.
+   * progressive lines (recognition-only observer perspective, imagined
+   * pause, then -- for a known trigger -- the explicit "no need to
+   * re-evoke/intensify" safety line). Coordinated timer/dwell task
+   * (Part 20-23): the trailing reflection period that used to be one
+   * more plain, fixed constant here is now the per-trainee configurable
+   * Stop-Imagery dwell instead (DwellTimes.stopImageryDwellSeconds,
+   * arc/dwellTimes.ts) -- resolved and appended by arc/stageCopy.ts's
+   * "observer_pause" case via withTrailingDwellSegment, exactly like
+   * every other dwell-gated stage, rather than a fixed observerPauseReflection
+   * value here.
    */
   observerPerspective: 5,
   observerPause: 4,
   observerSafetyRecognition: 4,
-  observerPauseReflection: 6,
 } as const;
-
-/**
- * Timing-update task: the additional page-local delay, on top of a
- * screen's own instruction timing, before an inline rating/check that
- * used to live on its own separate page is allowed to reveal on the
- * SAME page -- see arc/stageCopy.ts's "arc_thought_expand_presence" and
- * "regulate" cases (the only two stages this applies to) and
- * live/screens.tsx's PresenceExperienceScreen/RegulationScreen. Modeled
- * as one more trailing, empty-text InstructionSegment appended to those
- * stages' own segments array, so getInstructionTimingStatus's existing
- * `complete` flag -- unchanged -- is the single source of truth for
- * "reveal the rating now" with no new timing primitive needed.
- */
-export const INLINE_RATING_REVEAL_DELAY_SECONDS = 15;
 
 export interface InstructionTimingStatus {
   /** Every segment revealed so far, in order -- cumulative, never shrinks as elapsedSeconds grows. */

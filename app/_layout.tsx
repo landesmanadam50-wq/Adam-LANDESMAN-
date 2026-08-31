@@ -22,9 +22,8 @@ function handleReminderResponse(response: Notifications.NotificationResponse | n
   const data = response.notification.request.content.data;
   if (data?.isReminder !== true) return; // Not one of ours (or a timer-completion notification, which never navigates anywhere).
   const kind = data.kind as ReminderKind;
-  const arcRequested = data.arcRequested === true;
   cancelPendingReminder(kind);
-  router.push(resolveReminderRoute(kind, arcRequested));
+  router.push(resolveReminderRoute(kind));
 }
 
 export default function RootLayout() {

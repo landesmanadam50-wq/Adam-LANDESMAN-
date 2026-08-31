@@ -20,6 +20,7 @@ import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveE
 import { getInstructionTimingStatus } from "../arc/instructionTiming.ts";
 import type { InstructionSegment } from "../arc/instructionTiming.ts";
 import { getAcceptanceReadinessRecheckQuestion, getAcceptanceUnwillingnessAcknowledgment, getPreventiveActionReinforcement } from "../arc/stageCopy.ts";
+import { hasTrailingDwellSegment } from "../arc/dwellTimes.ts";
 import { formatRemainingTime, generateTimerRunId, getActionTimerStatusFromStartedAt } from "../arc/actionTimer.ts";
 import type { ActionTimerStatus } from "../arc/actionTimer.ts";
 import { cancelScheduledNotification, scheduleTimerCompletionNotification } from "../data/notifications.ts";
@@ -316,6 +317,24 @@ function useContinueAvailableCue(complete: boolean): void {
 }
 
 /**
+ * Unified dwell-completion task (Part 31-36): the cue must fire only
+ * for a stage's own REAL, configured/resolved experiential dwell --
+ * never merely because an instruction-only stage's own reveal timing
+ * finished and Continue became available (that's an instruction-reveal
+ * event, not a dwell event -- e.g. arc_thought_awareness/
+ * arc_thought_combined_attention/preventive_action, which have no
+ * dwell of their own at all). Callers pass BOTH copy.segments (to
+ * detect, via arc/dwellTimes.ts's hasTrailingDwellSegment, whether this
+ * stage's segments genuinely end in a dwell period) and the timing
+ * status's own `complete` flag; the cue only ever fires when both are
+ * true. A caller with no segments at all (copy.segments === null, an
+ * immediate/untimed screen) trivially never fires this either.
+ */
+function useDwellCompletionCue(segments: InstructionSegment[] | null, complete: boolean): void {
+  useContinueAvailableCue((segments !== null && hasTrailingDwellSegment(segments)) && complete);
+}
+
+/**
  * Shared renderer for every progressive timed-instruction screen
  * (the ARC Thought sub-stages, Stay/Presence, Regulation, Encoding,
  * plus the "act" stage's Imagery and Preparation sub-phases): when
@@ -340,7 +359,7 @@ function TimedInstructionBody({
 }) {
   const elapsedSeconds = useElapsedSeconds();
   const status = copy.segments ? getInstructionTimingStatus(copy.segments, elapsedSeconds) : null;
-  useContinueAvailableCue(status?.complete ?? false);
+  useDwellCompletionCue(copy.segments, status?.complete ?? false);
 
   if (!copy.segments || !status) {
     return (
@@ -493,6 +512,12 @@ export function PresenceRatingScreen({ copy, onSelect }: { copy: ArcStageCopy; o
  * value still writes presenceRating through the exact same
  * applyScaleAnswer path as before -- see
  * live/LiveSessionScreen.tsx's onPresenceExperienceRating.
+ * Coordinated timer/dwell task (Part 19): the trailing segment is now a
+ * genuine per-trainee configurable Presence dwell (arc/dwellTimes.ts),
+ * so the subtle dwell-completion cue fires here too -- exactly once,
+ * the instant that dwell completes -- via the same useDwellCompletionCue
+ * every other dwell-gated screen in this file already uses (this
+ * screen never fired it before this task).
  */
 export function PresenceExperienceScreen({
   copy,
@@ -505,6 +530,7 @@ export function PresenceExperienceScreen({
 }) {
   const elapsedSeconds = useElapsedSeconds();
   const status = getInstructionTimingStatus(copy.segments ?? [], elapsedSeconds);
+  useDwellCompletionCue(copy.segments, status.complete);
   return (
     <View>
       <Text style={styles.title}>{copy.title}</Text>
@@ -682,8 +708,9 @@ function AcceptRatingReveal({
   onContinueWithoutRating: () => void;
 }) {
   const elapsedSeconds = useElapsedSeconds();
-  const status = getInstructionTimingStatus([{ text: "", durationSeconds: acceptanceDwellSeconds }], elapsedSeconds);
-  useContinueAvailableCue(status.complete);
+  const segments: InstructionSegment[] = [{ text: "", durationSeconds: acceptanceDwellSeconds }];
+  const status = getInstructionTimingStatus(segments, elapsedSeconds);
+  useDwellCompletionCue(segments, status.complete);
   if (!status.complete) {
     return null;
   }
@@ -735,7 +762,7 @@ function AcceptanceUnwillingnessRound({
     { text: "", durationSeconds: acceptanceDwellSeconds },
   ];
   const status = getInstructionTimingStatus(segments, elapsedSeconds);
-  useContinueAvailableCue(status.complete);
+  useDwellCompletionCue(segments, status.complete);
 
   const cappedHandledRef = useRef(false);
   useEffect(() => {
@@ -897,7 +924,7 @@ export function RegulationScreen({
 }) {
   const elapsedSeconds = useElapsedSeconds();
   const status = getInstructionTimingStatus(copy.segments ?? [], elapsedSeconds);
-  useContinueAvailableCue(status.complete);
+  useDwellCompletionCue(copy.segments, status.complete);
   return (
     <View>
       <Text style={styles.title}>{copy.title}</Text>
@@ -1052,7 +1079,7 @@ export function ActionImageryScreen({ copy, onContinue }: { copy: ArcStageCopy; 
   return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
 }
 
-const BENEFICIAL_ACTION_DURATION_OPTIONS = [5, 6, 7, 8, 9, 10];
+const BENEFICIAL_ACTION_DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 /**
  * LIVE-flow-update task: replaces the old standalone Action Preparation
@@ -1063,11 +1090,13 @@ const BENEFICIAL_ACTION_DURATION_OPTIONS = [5, 6, 7, 8, 9, 10];
  * one-tap duration choice, reusing the same chip-picker interaction
  * already used throughout this app (BUILD's duration chips, Success
  * Focus's minutes chips, ActionChoiceScreen's own alternative-duration
- * chips) -- 5 to 10 minutes, per spec. Selecting a chip both records the
- * choice and immediately proceeds -- the real Action Timer starts the
- * moment ActionScreen next mounts with that resolved duration (see
- * live/ArcLiveRenderer.tsx's "act" case), exactly mirroring how
- * Beneficial Action already auto-starts with no separate "begin" tap.
+ * chips). Coordinated timer/dwell task (Part 1): 1 to 10 minutes, no
+ * 5-minute floor -- widened from the original 5-10 minute range.
+ * Selecting a chip both records the choice and immediately proceeds --
+ * the real Action Timer starts the moment ActionScreen next mounts
+ * with that resolved duration (see live/ArcLiveRenderer.tsx's "act"
+ * case), exactly mirroring how Beneficial Action already auto-starts
+ * with no separate "begin" tap.
  */
 export function BeneficialActionDurationChoiceScreen({
   copy,
@@ -1079,7 +1108,7 @@ export function BeneficialActionDurationChoiceScreen({
   return (
     <View>
       <Title copy={copy} />
-      <Text style={styles.body}>כמה זמן תרצה להקדיש לפעולה, בין 5 ל-10 דקות?</Text>
+      <Text style={styles.body}>כמה זמן תרצה להקדיש לפעולה, בין 1 ל-10 דקות?</Text>
       <View style={styles.chipRow}>
         {BENEFICIAL_ACTION_DURATION_OPTIONS.map((minutes) => (
           <Pressable key={minutes} style={styles.chip} onPress={() => onSelectDuration(minutes)}>
@@ -1136,65 +1165,87 @@ export function ActionScreen({
   );
 }
 
+const SUCCESS_FOCUS_EXTRA_MINUTES_OPTIONS = [0, 5, 10, 15, 20, 30];
+
 /**
- * Reminder/timer-update task: Success Focus is no longer forced
- * immediately -- this is the first thing the success_focus stage shows,
- * before the timer/chip-picker flow ever starts (so useTimerRun below
- * is never even called on the "later" path -- the Success Coding timer
- * genuinely never starts this session). "עכשיו" leads straight into the
- * existing, completely unchanged SuccessFocusScreen flow below;
- * "מאוחר יותר" leads to SuccessFocusDeferralScreen instead.
+ * Coordinated timer/dwell task (Part 2-3): the first thing success_focus
+ * shows now -- the RETROSPECTIVE question ("כמה זמן המשכת בפעולה
+ * המיטיבה מעבר לזמן שתכננת?", copy already carries the exact spec
+ * title/body -- see arc/stageCopy.ts's "success_focus" case). No "עכשיו"/
+ * "מאוחר יותר" here at all: the trainee was never required to touch
+ * ARCHI the instant the Beneficial Action Timer ended (they could keep
+ * performing it), so this simply asks how much longer they estimate
+ * they continued once they DO return. 0 is a fully valid, explicit
+ * answer -- reuses the same compact chip-picker pattern already used
+ * throughout this app rather than a free-text numeric field, and never
+ * infers/invents a value on the trainee's behalf.
  */
-export function SuccessFocusChoiceScreen({ copy, onChoose }: { copy: ArcStageCopy; onChoose: (choice: "now" | "later") => void }) {
+export function SuccessFocusRetrospectiveScreen({ copy, onSubmit }: { copy: ArcStageCopy; onSubmit: (minutes: number) => void }) {
   return (
     <View>
       <Title copy={copy} />
-      <View style={styles.buttonRow}>
-        <Pressable style={styles.button} onPress={() => onChoose("now")}>
-          <Text style={styles.buttonText}>עכשיו</Text>
-        </Pressable>
-        <Pressable style={styles.button} onPress={() => onChoose("later")}>
-          <Text style={styles.buttonText}>מאוחר יותר</Text>
-        </Pressable>
+      <View style={styles.chipRow}>
+        {SUCCESS_FOCUS_EXTRA_MINUTES_OPTIONS.map((minutes) => (
+          <Pressable key={minutes} style={styles.chip} onPress={() => onSubmit(minutes)}>
+            <Text style={styles.buttonText}>{minutes} דק'</Text>
+          </Pressable>
+        ))}
       </View>
     </View>
   );
 }
 
 /**
- * Reminder/timer-update task: the deferred-Focus-Success flow (#4).
- * Reuses the same chip-picker interaction as every duration/minutes
- * chooser elsewhere in this app -- no date/time-picker dependency was
- * added; the trainee picks from a small set of preset relative offsets
- * (data/reminders.ts's DEFERRAL_OPTIONS) instead of an arbitrary
- * calendar date/time. Both the offset AND the ARC/no-ARC intention must
- * be chosen before "קבע תזכורת" is enabled -- mirrors
- * ActionChoiceScreen's/SensationRatingScreen's own "can't continue
- * until every required piece is answered" gating. onConfirm schedules
- * exactly one reminder (live/LiveSessionScreen.tsx's
- * onDeferSuccessFocus, via data/reminders.ts's scheduleDeferredReminder
- * -- which itself cancels any previously-pending one of the same kind
- * first, so this can never create a duplicate) and then lets the
- * session progress normally past success_focus, exactly as choosing
- * "now" and finishing the timer flow would have.
+ * Coordinated timer/dwell task (Part 4): shown once the retrospective
+ * answer is recorded -- "האם תרצה לבצע מיקוד הצלחה נוסף בהמשך?", plain
+ * Yes/No. Never "עכשיו או מאוחר יותר?" and never "עם ARC או בלי?" here
+ * -- both belonged to the old design this task replaces. "לא" lets the
+ * session continue through the existing downstream flow with no
+ * scheduling; "כן" opens FutureSuccessFocusScheduleScreen below.
  */
-export function SuccessFocusDeferralScreen({
-  copy,
+export function FutureSuccessFocusAskScreen({ onAnswer }: { onAnswer: (yes: boolean) => void }) {
+  return (
+    <View>
+      <Text style={styles.title}>האם תרצה לבצע מיקוד הצלחה נוסף בהמשך?</Text>
+      <YesNoButtons labels={{ yes: "כן", no: "לא" }} onAnswer={onAnswer} />
+    </View>
+  );
+}
+
+const FUTURE_SUCCESS_FOCUS_DURATION_OPTIONS = [5, 10, 15, 20, 30];
+
+/**
+ * Coordinated timer/dwell task (Part 4-7): a clear, exact scheduling
+ * choice without any native date/time-picker dependency (none exists in
+ * this project, and none is added for this feature -- matching
+ * arc/reminders.ts's own established approach). Reuses the existing
+ * relative-offset shortcuts (DEFERRAL_OPTIONS, already resolving to one
+ * concrete absolute Date via resolveReminderFireDate) as the start-time
+ * choice -- explicitly permitted by spec ("existing shortcuts may
+ * remain if useful, but they must resolve to one concrete
+ * plannedStartAt"), which they already do -- plus a duration chip row,
+ * the same compact pattern used throughout this app. Both must be
+ * chosen before "קבע" is enabled, mirroring every other "can't continue
+ * until every required piece is answered" screen in this file.
+ * onConfirm resolves plannedStartAt/durationMinutes into one concrete
+ * scheduled run -- see live/LiveSessionScreen.tsx's
+ * onScheduleFutureSuccessFocus.
+ */
+export function FutureSuccessFocusScheduleScreen({
   options,
   onConfirm,
 }: {
-  copy: ArcStageCopy;
   options: DeferralOption[];
-  onConfirm: (option: DeferralOption, withArc: boolean) => void;
+  onConfirm: (option: DeferralOption, durationMinutes: number) => void;
 }) {
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
-  const [withArc, setWithArc] = useState<boolean | null>(null);
+  const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const selectedOption = options.find((option) => option.id === selectedOptionId) ?? null;
 
   return (
     <View>
-      <Title copy={copy} />
-      <Text style={styles.body}>מתי תרצה לקבל תזכורת?</Text>
+      <Text style={styles.title}>מתי תרצה להתחיל, ולכמה זמן?</Text>
+      <Text style={styles.body}>מתי להתחיל?</Text>
       <View style={styles.chipRow}>
         {options.map((option) => (
           <Pressable
@@ -1206,42 +1257,45 @@ export function SuccessFocusDeferralScreen({
           </Pressable>
         ))}
       </View>
-      <Text style={styles.body}>עם ARC או בלי?</Text>
+      <Text style={styles.body}>לכמה זמן?</Text>
       <View style={styles.chipRow}>
-        <Pressable style={[styles.chip, withArc === true && styles.chipSelected]} onPress={() => setWithArc(true)}>
-          <Text style={styles.buttonText}>התמקדות בהצלחה עם ARC</Text>
-        </Pressable>
-        <Pressable style={[styles.chip, withArc === false && styles.chipSelected]} onPress={() => setWithArc(false)}>
-          <Text style={styles.buttonText}>התמקדות בהצלחה בלי ARC</Text>
-        </Pressable>
+        {FUTURE_SUCCESS_FOCUS_DURATION_OPTIONS.map((minutes) => (
+          <Pressable
+            key={minutes}
+            style={[styles.chip, selectedDuration === minutes && styles.chipSelected]}
+            onPress={() => setSelectedDuration(minutes)}
+          >
+            <Text style={styles.buttonText}>{minutes} דק'</Text>
+          </Pressable>
+        ))}
       </View>
       <PrimaryButton
-        label="קבע תזכורת"
+        label="קבע"
         onPress={() => {
-          if (selectedOption !== null && withArc !== null) onConfirm(selectedOption, withArc);
+          if (selectedOption !== null && selectedDuration !== null) onConfirm(selectedOption, selectedDuration);
         }}
-        disabled={selectedOption === null || withArc === null}
+        disabled={selectedOption === null || selectedDuration === null}
       />
     </View>
   );
 }
 
 /**
- * Success Focus / Success Coding -- the same existing stage/data model,
- * now extended with a timer (timerType "successCoding") rather than a
- * new duplicate concept. Unlike the Negative Action Timer, this one
- * starts automatically the moment the stage is entered (no explicit
- * "begin" button), mirroring the Beneficial Action Timer's own
- * auto-start once its preceding sub-phase completes. successFocusDuration
- * === null (the default for every existing profile -- there is no
- * BUILD UI for it yet, same as actionDuration before it) means the
- * timer resolves as immediately complete, so this screen's existing
- * psychological content -- the minutes-focused chip picker and
- * reinforcement text -- is reached exactly as before this feature
- * existed, with nothing new gating it. Only reached after the trainee
- * chose "עכשיו" on SuccessFocusChoiceScreen above (or this run is being
- * resumed from an already-in-progress Success Coding timer) -- never
- * forced immediately.
+ * Success Focus / Success Coding -- the standalone, immediate-timer
+ * flow (timerType "successCoding"). Coordinated timer/dwell task: the
+ * ARC protocol's own success_focus stage no longer uses this component
+ * at all (see SuccessFocusRetrospectiveScreen/FutureSuccessFocusAskScreen/
+ * FutureSuccessFocusScheduleScreen above for its new retrospective +
+ * future-scheduling sub-flow); this screen is kept, unchanged, as the
+ * standalone "Focus Success right now" entry point (app/focus-success.tsx,
+ * reached directly from Home or by resuming a scheduled future Success
+ * Focus once its start time arrives) -- starts automatically the moment
+ * it mounts (no explicit "begin" button), mirroring the Beneficial
+ * Action Timer's own auto-start once its preceding sub-phase completes.
+ * durationMinutes === null means the timer resolves as immediately
+ * complete, so this screen's existing psychological content -- the
+ * minutes-focused chip picker and reinforcement text -- is reached with
+ * nothing gating it, exactly as before this feature existed.
  */
 export function SuccessFocusScreen({
   copy,

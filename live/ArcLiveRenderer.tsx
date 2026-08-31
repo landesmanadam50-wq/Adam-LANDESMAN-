@@ -27,7 +27,6 @@ import {
 } from "../arc/arcEngine.ts";
 import { resolveDwellSecondsFor } from "../arc/dwellTimes.ts";
 import type { EvidenceRecord } from "../arc/evidence.ts";
-import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
 import type { TimerRun } from "../data/storage.ts";
 import type { DeferralOption } from "../data/reminders.ts";
 import {
@@ -39,6 +38,8 @@ import {
   CompleteScreen,
   DesiredStateRatingScreen,
   EncodingScreen,
+  FutureSuccessFocusAskScreen,
+  FutureSuccessFocusScheduleScreen,
   InstructionScreen,
   NegativeActionScreen,
   NegativeActionStartScreen,
@@ -50,16 +51,13 @@ import {
   RegulationScreen,
   SensationRatingScreen,
   StayScreen,
-  SuccessFocusChoiceScreen,
-  SuccessFocusDeferralScreen,
-  SuccessFocusScreen,
+  SuccessFocusRetrospectiveScreen,
   TransitionCheckScreen,
   TriggerContextScreen,
   TriggerSelectScreen,
 } from "./screens.tsx";
 
 const BODY_LOCATIONS = ["חזה", "בטן", "גרון", "כתפיים", "ראש"];
-const SUCCESS_FOCUS_MINUTES = [0, 5, 10, 15, 20];
 const ALTERNATIVE_ACTION_DURATION_MINUTES = [5, 10, 15, 20, 30];
 
 const TRIGGER_LABELS: Record<TriggerType, string> = {
@@ -79,7 +77,6 @@ export interface ArcLiveRendererProps {
   pendingSensationLocation: string;
   pendingCustomSensationLocation: string;
   pendingSensationLocationUnclear: boolean;
-  successFocusMinutes: number | null;
   /** Reactive-flow-strengthening task: the trigger_context stage's own pending free-text answer, not yet committed to session.triggerContext until Continue is pressed -- same "pending local state, committed on Continue" pattern as pendingAlternativeAction. */
   pendingTriggerContext: string;
   onChangeTriggerContext: (text: string) => void;
@@ -109,12 +106,10 @@ export interface ArcLiveRendererProps {
   onActionImageryContinue: () => void;
   onSelectBeneficialActionDuration: (minutes: number) => void;
   onActionCompleted: () => void;
-  onSuccessFocusChoice: (choice: "now" | "later") => void;
-  onSelectSuccessFocusMinutes: (minutes: number) => void;
-  onSuccessFocusContinue: () => void;
-  deferralOptions: DeferralOption[];
-  onDeferSuccessFocus: (option: DeferralOption, withArc: boolean) => void;
-  resumedSuccessCodingRun: TimerRun | null;
+  onSuccessFocusExtraMinutesSubmit: (minutes: number) => void;
+  onWantsFutureSuccessFocusAnswer: (yes: boolean) => void;
+  futureSuccessFocusScheduleOptions: DeferralOption[];
+  onScheduleFutureSuccessFocus: (option: DeferralOption, durationMinutes: number) => void;
   negativeActionDurationMinutes: number | null;
   onNegativeActionStart: () => void;
   onNegativeActionCompleted: () => void;
@@ -421,36 +416,36 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
     }
 
     case "success_focus": {
-      // Reminder/timer-update task: Success Focus is no longer forced
-      // immediately -- see live/screens.tsx's SuccessFocusChoiceScreen/
-      // SuccessFocusDeferralScreen. session.successFocusChoice is
-      // pre-set to "now" when resuming an already-in-progress Success
-      // Coding timer (see live/LiveSessionScreen.tsx's resume handling)
-      // so a resumed run never re-asks the now/later question.
-      if (session.successFocusChoice === null) {
-        return <SuccessFocusChoiceScreen copy={copy} onChoose={props.onSuccessFocusChoice} />;
+      // Coordinated timer/dwell task (Part 2-4): the ARC protocol's
+      // success_focus stage is now a plain, three-step "stay at this
+      // stage, render a conditional interstitial" sub-flow -- the same
+      // established pattern used throughout this switch (proactive
+      // target picker, Action-choice screen, etc.) -- rather than the
+      // old now/later choice screen. No real timer starts here anymore
+      // at all: the Beneficial Action Timer's own completion bell was
+      // already the trainee's signal, and they were never required to
+      // touch ARCHI the instant it fired.
+      if (session.successFocusExtraMinutes === null) {
+        return <SuccessFocusRetrospectiveScreen copy={copy} onSubmit={props.onSuccessFocusExtraMinutesSubmit} />;
       }
-      if (session.successFocusChoice === "later") {
-        return <SuccessFocusDeferralScreen copy={copy} options={props.deferralOptions} onConfirm={props.onDeferSuccessFocus} />;
+      if (session.wantsFutureSuccessFocus === null) {
+        return <FutureSuccessFocusAskScreen onAnswer={props.onWantsFutureSuccessFocusAnswer} />;
       }
-      // "now": the existing, completely unchanged flow. Unlike "act"'s
-      // Beneficial Action Timer, this stage's copy never depends on
-      // triggerType/selectedTarget/selectedAction -- so a resumed run
-      // can safely flow through the normal pipeline here (see
-      // live/LiveSessionScreen.tsx's resume handling), rather than
-      // needing its own bypass.
-      return (
-        <SuccessFocusScreen
-          copy={copy}
-          durationMinutes={profile.successFocusDuration}
-          resumedRun={props.resumedSuccessCodingRun}
-          minutesOptions={SUCCESS_FOCUS_MINUTES}
-          selectedMinutes={props.successFocusMinutes}
-          onSelectMinutes={props.onSelectSuccessFocusMinutes}
-          reinforcementText={props.successFocusMinutes !== null ? getSuccessFocusReinforcement(props.successFocusMinutes) : ""}
-          onContinue={props.onSuccessFocusContinue}
-        />
-      );
+      if (session.wantsFutureSuccessFocus === true) {
+        return (
+          <FutureSuccessFocusScheduleScreen
+            options={props.futureSuccessFocusScheduleOptions}
+            onConfirm={props.onScheduleFutureSuccessFocus}
+          />
+        );
+      }
+      // wantsFutureSuccessFocus === false: nothing left to ask -- the
+      // session continues through the existing downstream flow, exactly
+      // as before this task (live/LiveSessionScreen.tsx's
+      // onWantsFutureSuccessFocusAnswer commits the advance immediately
+      // on "לא", so this branch is never actually rendered in practice,
+      // kept only as a safe, well-defined fallback).
+      return null;
     }
 
     case "negative_action": {

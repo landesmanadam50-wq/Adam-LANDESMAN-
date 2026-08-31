@@ -34,7 +34,7 @@ import {
 import { createEmptyLiveState } from "../arc/types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
 import { getInlineRequiredRatingQuestion, getStageCopy } from "../arc/stageCopy.ts";
-import { getInstructionTimingStatus, INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "../arc/instructionTiming.ts";
+import { getInstructionTimingStatus, INSTRUCTION_TIMING } from "../arc/instructionTiming.ts";
 import { DEFAULT_DWELL_TIMES } from "../arc/dwellTimes.ts";
 import { isAcceptanceWillingnessLoopCapped } from "../arc/arcEngine.ts";
 import { ARC_CONFIG } from "../arc/config.ts";
@@ -52,7 +52,8 @@ import {
   applyRegulationToolUsed,
   applyScaleAnswer,
   applySensationAnswer,
-  applySuccessFocusChoice,
+  applySuccessFocusExtraMinutes,
+  applyWantsFutureSuccessFocus,
   applyTargetSelection,
   applyTriggerContext,
   isUnknownTriggerResponse,
@@ -435,6 +436,19 @@ test("29b. applyBeneficialActionDurationSelected records the live duration choic
   assert.equal(after.currentArcStage, before.currentArcStage, "the ArcStage itself is never advanced by this call");
 });
 
+test("coordinated timer/dwell task (Part 1): applyBeneficialActionDurationSelected accepts every integer minute from 1 through 10, including the new 1-minute floor with no 5-minute minimum any more", () => {
+  const before = createEmptyLiveState();
+  for (let minutes = 1; minutes <= 10; minutes++) {
+    const after = applyBeneficialActionDurationSelected(before, minutes);
+    assert.equal(after.beneficialActionDurationMinutes, minutes, `minute value ${minutes} must be selectable and stored as-is`);
+  }
+  // resolveActionDuration then resolves this exact value, unchanged --
+  // the real Action Timer (arc/actionTimer.ts) is duration-agnostic and
+  // already handles any positive minute count correctly.
+  const oneMinute = applyBeneficialActionDurationSelected(before, 1);
+  assert.equal(resolveActionDuration(null, profile(), oneMinute.beneficialActionDurationMinutes), 1);
+});
+
 test("31. a fresh session starts with the act-phase flag false and no live Beneficial Action duration chosen -- Imagery is never pre-completed", () => {
   const state = createEmptyLiveState();
   assert.equal(state.actionImageryCompleted, false);
@@ -655,7 +669,10 @@ test("BUG REGRESSION: the arc_thought_expand_presence (\"הרחבה\") screen re
   assert.ok(copy.segments, "must be a timed/segmented screen, not the untimed 'segments: null' shape that renders an immediate Continue");
 
   const instructionSeconds = INSTRUCTION_TIMING.arcThoughtExpandPresence;
-  const totalRevealSeconds = instructionSeconds + INLINE_RATING_REVEAL_DELAY_SECONDS;
+  // Coordinated timer/dwell task: the trailing reveal segment is now this
+  // layer's own configured Presence dwell (arc/dwellTimes.ts) -- the
+  // default here, since `p` never customized presenceDwellSeconds.
+  const totalRevealSeconds = instructionSeconds + DEFAULT_DWELL_TIMES.presenceDwellSeconds;
 
   // 1/2. Rating is absent for the entire base instruction duration, and...
   assert.equal(getInstructionTimingStatus(copy.segments, 0).complete, false, "hidden at t=0");
@@ -845,6 +862,100 @@ test("the willingness sub-flow has a defined, safe exit once capped -- three 'no
   assert.equal(isAcceptanceWillingnessLoopCapped(session.acceptanceWillingnessLoopCount), true, "capped after exactly maxLoopIterations rounds -- no unbounded loop");
 });
 
+// --- Coordinated timer/dwell task (Part 24-29): Acceptance regression
+// fix. BUG: "accept" is reachable more than once within a single
+// session (accept -> sensation_check -> stay -> accept), and
+// acceptanceWillingnessLoopCount/acceptanceNeeded were never reset on
+// a fresh re-entry -- so an initial "כן" on a SECOND visit could still
+// render straight into unwillingness/retry copy, because
+// AcceptScreen's render condition (willingnessLoopCount > 0) was
+// reading a stale, session-wide running total instead of "did the
+// trainee say 'לא' THIS visit". advanceLiveSession now resets both
+// fields exactly when the ArcStage transitions freshly INTO "accept".
+
+test("advanceLiveSession resets acceptanceWillingnessLoopCount/acceptanceNeeded to a clean baseline on every fresh entry into 'accept', even when the incoming session carries a stale, non-zero value from an earlier visit", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const staleSession: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "reactive_emotion",
+    selectedTarget: "state",
+    acceptanceWillingnessLoopCount: 2, // stale carryover from an earlier visit to "accept"
+    acceptanceNeeded: true,
+  };
+  const hop = advanceLiveSession("stay", staleSession, p, activeLayers); // "stay" always transitions into "accept"
+  assert.equal(hop.stage, "accept", "sanity: stay always advances into accept");
+  assert.equal(hop.session.acceptanceWillingnessLoopCount, 0, "a fresh entry into accept must never inherit a stale willingness-loop count");
+  assert.equal(hop.session.acceptanceNeeded, null, "a fresh entry into accept must never inherit a stale NO-path flag");
+});
+
+test("advanceLiveSession never resets acceptanceWillingnessLoopCount for a transition that does NOT land on 'accept' -- the reset is scoped to fresh entry into accept specifically", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["habit"];
+  const session: ArcLiveState = {
+    ...createEmptyLiveState(),
+    triggerType: "reactive_urge",
+    sensationLocation: null,
+    sensationIntensity: 2, // encoding-zone intensity -> routes to "encode", never "accept"
+    acceptanceWillingnessLoopCount: 2,
+    acceptanceNeeded: true,
+  };
+  const hop = advanceLiveSession("sensation_check", session, p, activeLayers);
+  assert.notEqual(hop.stage, "accept");
+  assert.equal(hop.session.acceptanceWillingnessLoopCount, 2, "untouched -- this transition never entered accept");
+  assert.equal(hop.session.acceptanceNeeded, true, "untouched -- this transition never entered accept");
+});
+
+test("REGRESSION: a full second visit to 'accept' within the same session starts with a clean acceptanceWillingnessLoopCount of 0 -- an initial 'כן' on that second visit renders the plain first question, never unwillingness/retry copy, exactly like the FIRST visit's initial 'כן' would", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  let session: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion", selectedTarget: "state" };
+  let stage: ArcStage = "sensation_check";
+
+  // First visit to accept: answer "לא" once (starts the unwillingness
+  // sub-flow), then eventually "כן" to resolve and proceed, rate
+  // intensity back into "stay" territory so the walk revisits accept.
+  session = { ...session, sensationLocation: "חזה", sensationIntensity: 9 }; // stayMinIntensity -> "stay"
+  let hop = step(stage, session, p, activeLayers);
+  stage = hop.stage;
+  session = hop.session;
+  assert.equal(stage, "stay", "sanity: high intensity routes to stay first");
+
+  hop = step(stage, session, p, activeLayers); // stay -> accept (FIRST visit)
+  stage = hop.stage;
+  session = hop.session;
+  assert.equal(stage, "accept");
+  assert.equal(session.acceptanceWillingnessLoopCount, 0, "sanity: the first-ever visit also starts clean");
+
+  session = applyAcceptanceWillingnessAnswer(session, false); // "לא" -- one unwillingness round
+  assert.equal(session.acceptanceWillingnessLoopCount, 1);
+  session = applyAcceptanceWillingnessAnswer(session, true); // retry "כן" -- resolves into the normal path
+
+  // Rate the intensity recheck low enough to reach the Encoding Zone
+  // (never re-entering accept THIS time), completing this first visit.
+  // accept -> sensation_check is its own hop; sensation_check then
+  // classifies the just-set intensity on the NEXT hop.
+  hop = step("accept", { ...session, sensationLocation: "חזה", sensationIntensity: 2 }, p, activeLayers);
+  assert.equal(hop.stage, "sensation_check", "sanity: accept always hops to sensation_check first");
+  hop = step(hop.stage, hop.session, p, activeLayers);
+  stage = hop.stage;
+  session = hop.session;
+  assert.equal(stage, "encode", "first visit resolves through the Encoding Zone, never looping back to accept again this pass");
+
+  // Simulate the session later revisiting "stay" (a completely separate
+  // walk, or a later loop -- what matters is that "accept" is entered
+  // FRESH again with the exact same stale acceptanceWillingnessLoopCount
+  // still sitting on the session, unless advanceLiveSession resets it).
+  const secondVisitHop = advanceLiveSession("stay", session, p, activeLayers);
+  assert.equal(secondVisitHop.stage, "accept", "second fresh entry into accept");
+  assert.equal(
+    secondVisitHop.session.acceptanceWillingnessLoopCount,
+    0,
+    "REGRESSION GUARD: the second visit must start clean -- AcceptScreen's willingnessLoopCount===0 render condition (the plain initial yes/no question) depends on exactly this"
+  );
+  assert.equal(secondVisitHop.session.acceptanceNeeded, null, "REGRESSION GUARD: no stale NO-path flag leaks into the second visit either");
+});
+
 test("Feeling/intensity merge: once the loop-safety cap is reached, accept's own transition (peeked by live/ArcLiveRenderer.tsx before offering a rating) goes straight to regulate -- no rating is asked for, matching the pre-merge capped behavior", () => {
   const p = profile();
   const activeLayers: DevelopmentLayer[] = ["state"];
@@ -902,7 +1013,10 @@ test("visual refinement: at the exact moment the Presence rating becomes availab
   assert.ok(copy.segments);
 
   const instructionSeconds = INSTRUCTION_TIMING.arcThoughtExpandPresence;
-  const totalRevealSeconds = instructionSeconds + INLINE_RATING_REVEAL_DELAY_SECONDS;
+  // Coordinated timer/dwell task: the trailing reveal segment is now this
+  // layer's own configured Presence dwell (arc/dwellTimes.ts) -- the
+  // default here, since `p` never customized presenceDwellSeconds.
+  const totalRevealSeconds = instructionSeconds + DEFAULT_DWELL_TIMES.presenceDwellSeconds;
   const atReveal = getInstructionTimingStatus(copy.segments, totalRevealSeconds);
   assert.equal(atReveal.complete, true, "reveal timing itself is unchanged by this purely-presentational update");
 
@@ -1107,30 +1221,60 @@ test("the Beneficial Action duration choice is only ever needed on the PLANNED-a
   assert.equal(needsBeneficialActionDuration(alternative), false, "alternative-action path already has its own duration -- the live picker is never asked");
 });
 
-test("applySuccessFocusChoice records the choice and touches nothing else", () => {
+// --- Coordinated timer/dwell task (Part 2-4): Success Focus's new
+// retrospective + future-scheduling sub-flow. The old now/later choice
+// (applySuccessFocusChoice) is gone -- Success Focus is never forced
+// immediately, and the trainee is never asked "עכשיו או מאוחר יותר?".
+
+test("applySuccessFocusExtraMinutes records the retrospective answer and touches nothing else -- 0 is a fully valid, explicit answer, distinct from null", () => {
   const before = createEmptyLiveState();
-  const now = applySuccessFocusChoice(before, "now");
-  assert.equal(now.successFocusChoice, "now");
-  assert.equal(now.currentArcStage, before.currentArcStage, "never advances the ArcStage itself");
+  const zero = applySuccessFocusExtraMinutes(before, 0);
+  assert.equal(zero.successFocusExtraMinutes, 0);
+  assert.notEqual(zero.successFocusExtraMinutes, null, "0 is an explicit answer, never conflated with 'not yet answered'");
+  assert.equal(zero.currentArcStage, before.currentArcStage, "never advances the ArcStage itself");
 
-  const later = applySuccessFocusChoice(before, "later");
-  assert.equal(later.successFocusChoice, "later");
+  const fifteen = applySuccessFocusExtraMinutes(before, 15);
+  assert.equal(fifteen.successFocusExtraMinutes, 15);
 });
 
-test("a fresh session starts with successFocusChoice null -- Success Focus is never forced immediately", () => {
-  assert.equal(createEmptyLiveState().successFocusChoice, null);
+test("applyWantsFutureSuccessFocus records the yes/no answer and touches nothing else", () => {
+  const before = createEmptyLiveState();
+  const yes = applyWantsFutureSuccessFocus(before, true);
+  assert.equal(yes.wantsFutureSuccessFocus, true);
+  assert.equal(yes.currentArcStage, before.currentArcStage, "never advances the ArcStage itself");
+
+  const no = applyWantsFutureSuccessFocus(before, false);
+  assert.equal(no.wantsFutureSuccessFocus, false);
 });
 
-test("success_focus's own engine transition is completely unaffected by successFocusChoice -- deferring Focus Success still reaches negative_action/complete exactly as choosing 'now' would", () => {
+test("a fresh session starts with successFocusExtraMinutes and wantsFutureSuccessFocus both null -- Success Focus is never forced immediately and the retrospective question is asked before the future-scheduling question", () => {
+  const fresh = createEmptyLiveState();
+  assert.equal(fresh.successFocusExtraMinutes, null);
+  assert.equal(fresh.wantsFutureSuccessFocus, null);
+});
+
+test("success_focus's own engine transition is completely unaffected by successFocusExtraMinutes/wantsFutureSuccessFocus -- both are UI-side sub-flow state only; the real transition depends solely on needsNegativeAction", () => {
   const pWithHabit = profile();
   const activeLayersWithHabit: DevelopmentLayer[] = ["habit"];
 
-  const laterSession: ArcLiveState = { ...createEmptyLiveState(), successFocusChoice: "later", actionReached: true, realActionCompleted: true };
-  const nowSession: ArcLiveState = { ...createEmptyLiveState(), successFocusChoice: "now", actionReached: true, realActionCompleted: true };
+  const declinedSession: ArcLiveState = {
+    ...createEmptyLiveState(),
+    successFocusExtraMinutes: 10,
+    wantsFutureSuccessFocus: false,
+    actionReached: true,
+    realActionCompleted: true,
+  };
+  const scheduledSession: ArcLiveState = {
+    ...createEmptyLiveState(),
+    successFocusExtraMinutes: 0,
+    wantsFutureSuccessFocus: true,
+    actionReached: true,
+    realActionCompleted: true,
+  };
 
-  const laterOutcome = getNextArcStage("success_focus", laterSession, pWithHabit, activeLayersWithHabit);
-  const nowOutcome = getNextArcStage("success_focus", nowSession, pWithHabit, activeLayersWithHabit);
-  assert.deepEqual(laterOutcome, nowOutcome, "the transition depends only on needsNegativeAction, never on successFocusChoice");
+  const declinedOutcome = getNextArcStage("success_focus", declinedSession, pWithHabit, activeLayersWithHabit);
+  const scheduledOutcome = getNextArcStage("success_focus", scheduledSession, pWithHabit, activeLayersWithHabit);
+  assert.deepEqual(declinedOutcome, scheduledOutcome, "the transition depends only on needsNegativeAction, never on the retrospective/future-scheduling sub-flow answers");
 });
 
 // --- Reactive-flow-strengthening task: applyTriggerContext (#1, #8) --

@@ -52,14 +52,27 @@ export type ReminderRoute = "/live" | "/focus-success";
  * "opening it should lead toward the relevant ARC entry point"). Mid-
  * session LIVE state is never persisted (see
  * live/LiveSessionScreen.tsx's module doc) -- there is no partial ARC
- * protocol to "resume" here, only a fresh entry point to open -- so
- * both "arc" reminders and "focusSuccess with ARC" reminders correctly
- * lead to a fresh LIVE session (the relevant ARC entry point); only
- * "focusSuccess without ARC" leads to the standalone Focus Success
- * screen (app/focus-success.tsx), which starts the SAME Success Focus
- * timer directly, without requiring the full protocol.
+ * protocol to "resume" here, only a fresh entry point to open -- so an
+ * "arc" reminder leads to a fresh LIVE session (the relevant ARC entry
+ * point).
+ *
+ * Coordinated timer/dwell task (Part 6): a "focusSuccess" reminder is
+ * now ALWAYS the start ping for a specific, already-scheduled future
+ * Success Focus (data/reminders.ts's scheduleFutureSuccessFocus) with
+ * its own persisted duration/timing (a TimerRun, resolvable by its own
+ * runId) -- so it always routes to the standalone Focus Success screen
+ * (app/focus-success.tsx), which resumes that EXACT persisted run,
+ * never through unrelated HOME/BUILD/LIVE setup screens and never into
+ * a brand-new LIVE session that has no relationship to what was
+ * scheduled. The old "with ARC" distinction that used to route a
+ * "focusSuccess" reminder into a fresh /live session no longer applies
+ * -- the new scheduling flow never offers an "עם ARC או בלי" choice at
+ * all, so this no longer takes an arcRequested parameter (kept
+ * unconditionally true on every PendingReminder of kind "arc" itself,
+ * per that type's own doc, so it was never actually a real branch
+ * either way).
  */
-export function resolveReminderRoute(kind: ReminderKind, arcRequested: boolean): ReminderRoute {
-  if (kind === "focusSuccess" && !arcRequested) return "/focus-success";
+export function resolveReminderRoute(kind: ReminderKind): ReminderRoute {
+  if (kind === "focusSuccess") return "/focus-success";
   return "/live";
 }

@@ -209,18 +209,20 @@ export async function clearTimerRun(timerType: TimerType): Promise<void> {
  * above (which times an activity already in progress): this persists
  * the trainee's own intention for a FUTURE moment that hasn't happened
  * yet, scheduled via data/notifications.ts's scheduleReminderNotification.
- * Two independent kinds, exactly like TimerType's three independent
- * timers -- deferring Success Focus (see live/screens.tsx's
- * SuccessFocusChoiceScreen) can never overwrite or be confused with a
- * separately-scheduled future ARC session reminder (see app/index.tsx),
- * and vice versa. At most one pending reminder per kind -- scheduling a
- * new one for the same kind (data/reminders.ts's scheduleDeferredReminder)
- * always cancels and replaces whatever was pending for that kind first,
- * so a trainee can never end up with two overlapping reminders of the
- * same kind. notificationId is cleared alongside the record once the
- * reminder is resolved (its notification fires and is handled, or the
- * trainee replaces/cancels it) -- never left dangling to fire a
- * redundant signal later.
+ * Two independent kinds -- kind "focusSuccess" is the START ping for a
+ * future-scheduled Success Focus (see data/reminders.ts's
+ * scheduleFutureSuccessFocus, and TimerRun above for the paired
+ * "successCoding" run this ping's own moment feeds into) -- can never
+ * overwrite or be confused with a separately-scheduled future ARC
+ * session reminder (kind "arc", see app/index.tsx), and vice versa. At
+ * most one pending reminder per kind -- scheduling a new one for the
+ * same kind (data/reminders.ts's scheduleDeferredReminder/
+ * scheduleFutureSuccessFocus) always cancels and replaces whatever was
+ * pending for that kind first, so a trainee can never end up with two
+ * overlapping reminders of the same kind. notificationId is cleared
+ * alongside the record once the reminder is resolved (its notification
+ * fires and is handled, or the trainee replaces/cancels it) -- never
+ * left dangling to fire a redundant signal later.
  */
 export type ReminderKind = "focusSuccess" | "arc";
 

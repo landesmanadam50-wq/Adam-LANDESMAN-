@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getInstructionTimingStatus, INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "./instructionTiming.ts";
+import { getInstructionTimingStatus, INSTRUCTION_TIMING } from "./instructionTiming.ts";
 import type { InstructionSegment } from "./instructionTiming.ts";
 
 test("a single segment is visible from t=0 and stays incomplete until its duration elapses", () => {
@@ -85,7 +85,7 @@ test("every Encoding step's duration is its previous 4-second duration plus exac
   }
 });
 
-test("the three ARC Thought/Presence stages still carry the +15s UX/timing-update increase (Presence is untouched by the dwell-time task); the five now-configurable-dwell stages (Stay/Regulation/Encoding/Action-Imagery) reverted to their base, pre-increase durations, with a personal dwell appended separately instead (arc/dwellTimes.ts); the real Action Timer isn't part of this table at all", () => {
+test("the three ARC Thought/Presence stages still carry the +15s UX/timing-update increase in their own INSTRUCTION_TIMING value (this is instruction-reveal pacing, distinct from the separate, per-trainee configurable Presence dwell arc/stageCopy.ts now appends on top for arc_thought_expand_presence -- see arc/dwellTimes.ts); the five originally-configurable-dwell stages (Stay/Regulation/Encoding/Action-Imagery) reverted to their base, pre-increase durations, with a personal dwell appended separately instead (arc/dwellTimes.ts); the real Action Timer isn't part of this table at all", () => {
   const EXPERIENTIAL_TIME_INCREASE_SECONDS = 15;
   const presenceValues: Record<string, number> = {
     arcThoughtAwareness: 5,
@@ -123,41 +123,39 @@ test("the three ARC Thought/Presence stages still carry the +15s UX/timing-updat
   assert.ok(!("negativeActionDuration" in INSTRUCTION_TIMING));
 });
 
-test("the inline-rating reveal delay is a distinct, unaffected constant from the +15s experiential-time increase -- still exactly 15s, never itself increased", () => {
-  assert.equal(INLINE_RATING_REVEAL_DELAY_SECONDS, 15);
-});
+// --- Coordinated timer/dwell task: the inline-rating reveal gate is now
+// a per-trainee configurable DWELL (arc/dwellTimes.ts's
+// withTrailingDwellSegment), not a fixed constant -- these tests
+// exercise the same generic "trailing empty-text segment gates the
+// rating reveal" mechanic getInstructionTimingStatus already provides,
+// with an arbitrary example dwell value, since the specific duration
+// used is no longer this module's own concern.
 
-// --- Timing-update task: the inline-rating reveal gate. The merged
-// Presence/Regulation pages (arc/stageCopy.ts) each append one trailing,
-// empty-text segment of INLINE_RATING_REVEAL_DELAY_SECONDS on top of
-// their own real instruction segment(s) -- getInstructionTimingStatus's
-// existing `complete` flag is what live/screens.tsx's
-// PresenceExperienceScreen/RegulationScreen gate the inline rating's
-// visibility on, so these tests exercise that exact shape directly.
-
-test("the inline rating stays hidden (not complete) for the entire base instruction duration -- it only reveals after the additional 15s on top", () => {
+test("the inline rating stays hidden (not complete) for the entire base instruction duration -- it only reveals after the trailing dwell segment on top", () => {
   const instructionDurationSeconds = 5;
+  const exampleDwellSeconds = 15;
   const segments: InstructionSegment[] = [
     { text: "widen the visual field", durationSeconds: instructionDurationSeconds },
-    { text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS },
+    { text: "", durationSeconds: exampleDwellSeconds },
   ];
 
   const atInstructionEnd = getInstructionTimingStatus(segments, instructionDurationSeconds);
   assert.equal(atInstructionEnd.complete, false, "instruction time alone must not reveal the rating");
 
-  const midway = getInstructionTimingStatus(segments, instructionDurationSeconds + INLINE_RATING_REVEAL_DELAY_SECONDS - 0.1);
-  assert.equal(midway.complete, false, "still hidden one tick before the full instruction+15s has elapsed");
+  const midway = getInstructionTimingStatus(segments, instructionDurationSeconds + exampleDwellSeconds - 0.1);
+  assert.equal(midway.complete, false, "still hidden one tick before the full instruction+dwell has elapsed");
 
-  const revealed = getInstructionTimingStatus(segments, instructionDurationSeconds + INLINE_RATING_REVEAL_DELAY_SECONDS);
-  assert.equal(revealed.complete, true, "revealed exactly once instruction time PLUS the additional 15s have both elapsed");
+  const revealed = getInstructionTimingStatus(segments, instructionDurationSeconds + exampleDwellSeconds);
+  assert.equal(revealed.complete, true, "revealed exactly once instruction time PLUS the trailing dwell have both elapsed");
 });
 
-test("the trailing rating-reveal-delay segment never contributes visible text -- only the real instruction segment(s) do", () => {
+test("the trailing dwell segment never contributes visible text -- only the real instruction segment(s) do", () => {
+  const exampleDwellSeconds = 15;
   const segments: InstructionSegment[] = [
     { text: "notice the sensation now", durationSeconds: 10 },
-    { text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS },
+    { text: "", durationSeconds: exampleDwellSeconds },
   ];
-  const status = getInstructionTimingStatus(segments, 10 + INLINE_RATING_REVEAL_DELAY_SECONDS);
+  const status = getInstructionTimingStatus(segments, 10 + exampleDwellSeconds);
   const visibleText = status.visibleSegments
     .map((s) => s.text)
     .filter((t) => t.length > 0)

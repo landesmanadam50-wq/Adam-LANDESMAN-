@@ -248,14 +248,29 @@ export function applyBeneficialActionDurationSelected(session: ArcLiveState, min
 }
 
 /**
- * The Success Focus stage's own now/later choice
- * (live/screens.tsx's SuccessFocusChoiceScreen) -- never advances the
- * ArcStage itself (still "success_focus"); only decides which of that
- * stage's sub-views renders next (the existing timer/chip-picker flow,
- * or the deferral picker).
+ * Coordinated timer/dwell task (Part 2-3): the Success Focus stage's
+ * own RETROSPECTIVE answer -- "כמה זמן המשכת בפעולה המיטיבה מעבר לזמן
+ * שתכננת?" (live/screens.tsx's SuccessFocusRetrospectiveScreen). Never
+ * advances the ArcStage itself (still "success_focus"); only unlocks
+ * the next sub-view (the future-Success-Focus Yes/No question). 0 is a
+ * fully valid, explicitly-submitted answer -- distinct from null
+ * ("not yet answered"), never conflated with it.
  */
-export function applySuccessFocusChoice(session: ArcLiveState, choice: "now" | "later"): ArcLiveState {
-  return { ...session, successFocusChoice: choice };
+export function applySuccessFocusExtraMinutes(session: ArcLiveState, minutes: number): ArcLiveState {
+  return { ...session, successFocusExtraMinutes: minutes };
+}
+
+/**
+ * Coordinated timer/dwell task (Part 4): "האם תרצה לבצע מיקוד הצלחה
+ * נוסף בהמשך?" -- never advances the ArcStage itself (still
+ * "success_focus"); only decides which of that stage's sub-views
+ * renders next (straight through to the existing downstream flow on
+ * "לא", or the future-scheduling sub-screen on "כן" -- see
+ * live/screens.tsx's FutureSuccessFocusAskScreen/
+ * FutureSuccessFocusScheduleScreen).
+ */
+export function applyWantsFutureSuccessFocus(session: ArcLiveState, yes: boolean): ArcLiveState {
+  return { ...session, wantsFutureSuccessFocus: yes };
 }
 
 /**
@@ -341,6 +356,24 @@ export function advanceLiveSession(
     loopIterationCount: outcome.loopIterationCount,
     actionReached: resolvedSession.actionReached || outcome.stage === "act",
   };
+  // Acceptance regression fix (#24-#29): "accept" is only ever entered
+  // FRESH -- arc/arcEngine.ts's "stay" case is its one and only source
+  // (no case ever transitions FROM "accept" back TO "accept": the
+  // willingness Yes/No answer itself never calls advanceLiveSession at
+  // all -- see applyAcceptanceWillingnessAnswer -- so this never fires
+  // mid-visit, only on a genuine new visit). Reset the unwillingness
+  // sub-flow's own state here so a LATER visit within the SAME session
+  // (reachable via accept -> sensation_check -> stay -> accept) never
+  // inherits a stale willingness-loop count/flag from an EARLIER visit:
+  // that stale carryover was the exact bug -- an initial "כן" on a
+  // later visit could render straight into unwillingness/retry copy
+  // because AcceptScreen's own render condition (willingnessLoopCount
+  // > 0) was reading a session-wide running total instead of "did the
+  // trainee say 'לא' THIS visit". Previous NO must never leak into a
+  // later YES; every fresh Acceptance entry must start clean.
+  if (outcome.stage === "accept") {
+    nextSession = { ...nextSession, acceptanceNeeded: null, acceptanceWillingnessLoopCount: 0 };
+  }
   nextSession = autoSelectSingleProactiveTarget(nextSession, outcome.stage, activeLayers, profile);
   return { session: nextSession, stage: outcome.stage };
 }

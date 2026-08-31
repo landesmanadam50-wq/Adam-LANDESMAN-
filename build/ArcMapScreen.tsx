@@ -23,13 +23,15 @@ import type { DwellTimes } from "../arc/types.ts";
 
 type ArcTarget = "state" | "identity";
 
-/** BUILD-ARC's "זמן שהייה" step (#F): the five configurable dwell categories, in display order, each paired with the draft field it edits for whichever target (state/identity) is currently being configured. */
+/** BUILD-ARC's "זמן שהייה" step (#F): the configurable dwell categories, in display order, each paired with the draft field it edits for whichever target (state/identity) is currently being configured. Coordinated timer/dwell task (Part 17, 20): extended with Presence and Stop-Imagery dwell, parallel to the original five. */
 const DWELL_ROWS: { key: keyof DwellTimes; label: string }[] = [
   { key: "sensationDwellSeconds", label: "תחושה / מודעות" },
   { key: "acceptanceDwellSeconds", label: "קבלה" },
   { key: "regulationDwellSeconds", label: "ויסות" },
   { key: "encodingDwellSeconds", label: "קידוד / שפת גוף" },
   { key: "actionImageryDwellSeconds", label: "דמיון פעולה" },
+  { key: "presenceDwellSeconds", label: "נוכחות" },
+  { key: "stopImageryDwellSeconds", label: "דמיון עצירה" },
 ];
 
 /** Maps a dwell category + the currently-edited target to its ProfileDraft field name (e.g. "state" + "sensationDwellSeconds" -> "stateSensationDwellSeconds") -- keeps DWELL_ROWS itself target-agnostic rather than duplicating it per target. */

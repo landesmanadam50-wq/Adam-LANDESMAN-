@@ -159,10 +159,11 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "selectedTarget",
     "sensationIntensity",
     "sensationLocation",
-    "successFocusChoice",
+    "successFocusExtraMinutes",
     "triggerContext",
     "triggerKnown",
     "triggerType",
+    "wantsFutureSuccessFocus",
     "wantsPreventiveAction",
   ]);
 });
@@ -454,9 +455,10 @@ test("a reactive_urge session with the habit layer active, walked end to end thr
       state = { ...state, plannedActionConfirmed: true, actionImageryCompleted: true };
     }
     if (stage === "success_focus") {
-      // Skip the now/later choice this test isn't about -- proceed
-      // through the existing "now" flow.
-      state = { ...state, successFocusChoice: "now" };
+      // Skip the retrospective/future-scheduling sub-flow this test
+      // isn't about -- proceed straight through with no future Success
+      // Focus scheduled.
+      state = { ...state, successFocusExtraMinutes: 0, wantsFutureSuccessFocus: false };
     }
     if (stage === "negative_action") {
       state = { ...state, negativeActionStarted: true };

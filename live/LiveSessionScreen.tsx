@@ -74,7 +74,8 @@ import {
   applyRegulationToolUsed,
   applyScaleAnswer,
   applySensationAnswer,
-  applySuccessFocusChoice,
+  applySuccessFocusExtraMinutes,
+  applyWantsFutureSuccessFocus,
   applyTargetSelection,
   applyTriggerSelection,
   applyYesNoAnswer,
@@ -82,7 +83,7 @@ import {
   resolveSensationLocation,
 } from "./liveEventAdapter.ts";
 import { getAvailableLiveTriggers } from "../arc/arcEngine.ts";
-import { DEFERRAL_OPTIONS, scheduleDeferredReminder } from "../data/reminders.ts";
+import { DEFERRAL_OPTIONS, scheduleFutureSuccessFocus } from "../data/reminders.ts";
 import type { DeferralOption } from "../data/reminders.ts";
 import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
 import { ActionScreen } from "./screens.tsx";
@@ -99,7 +100,6 @@ export default function LiveSessionScreen() {
   const [pendingTriggerContext, setPendingTriggerContext] = useState("");
   const [pendingAlternativeAction, setPendingAlternativeAction] = useState("");
   const [pendingAlternativeActionDuration, setPendingAlternativeActionDuration] = useState<number | null>(null);
-  const [successFocusMinutes, setSuccessFocusMinutes] = useState<number | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
   const [gratitudeText, setGratitudeText] = useState("");
   const [gratitudeMemoryDetailText, setGratitudeMemoryDetailText] = useState("");
@@ -112,14 +112,17 @@ export default function LiveSessionScreen() {
    * available as evidence starting with THIS one.
    */
   const [evidenceIndex, setEvidenceIndex] = useState<EvidenceRecord[]>([]);
-  // Resumed timer runs -- see this file's module doc. At most one is
-  // ever non-null at a time. resumedBeneficialActionRun bypasses the
-  // normal render pipeline entirely (below); the other two flow
-  // through the normal ArcLiveRenderer pipeline instead, since
-  // success_focus/negative_action's copy never depends on
-  // triggerType/selectedTarget/selectedAction the way "act"'s does.
+  // Resumed timer run -- see this file's module doc. Coordinated
+  // timer/dwell task: the "successCoding" TimerRun the OLD success_focus
+  // "now" flow used to resume mid-protocol no longer exists -- that
+  // flow was removed (see live/ArcLiveRenderer.tsx's "success_focus"
+  // case); a "successCoding" TimerRun is now created ONLY by the
+  // future-scheduling sub-flow (data/reminders.ts's
+  // scheduleFutureSuccessFocus), which is exclusively resolved via its
+  // own dedicated deep-link screen (app/focus-success.tsx), never by
+  // re-entering a fresh LIVE session here -- so LiveSessionScreen no
+  // longer checks for or resumes it at all.
   const [resumedBeneficialActionRun, setResumedBeneficialActionRun] = useState<TimerRun | null>(null);
-  const [resumedSuccessCodingRun, setResumedSuccessCodingRun] = useState<TimerRun | null>(null);
   const [resumedNegativeActionRun, setResumedNegativeActionRun] = useState<TimerRun | null>(null);
 
   useFocusEffect(
@@ -128,18 +131,25 @@ export default function LiveSessionScreen() {
       // loadProgramSelection() is loaded for completeness (per the LIVE
       // load contract) even though today's routing only needs
       // activeLayers, which loadProgramProgress() already derives from
-      // ProgramDefinition -- see program/engine.ts. The three
+      // ProgramDefinition -- see program/engine.ts. The two
       // loadTimerRun() calls are the one exception to "always start
-      // fresh" -- see this file's module doc.
+      // fresh" -- see this file's module doc. Coordinated timer/dwell
+      // task: loadTimerRun("successCoding") is deliberately NOT among
+      // them any more -- a "successCoding" TimerRun now only ever
+      // exists as a future-scheduled Success Focus (data/reminders.ts's
+      // scheduleFutureSuccessFocus), which is exclusively resumed via
+      // its own dedicated deep-link screen (app/focus-success.tsx);
+      // treating it as "this LIVE session's own in-progress timer"
+      // would incorrectly hijack a brand-new session into that
+      // unrelated future run.
       Promise.all([
         loadProfile(),
         loadProgramProgress(),
         loadProgramSelection(),
         loadTimerRun("beneficialAction"),
-        loadTimerRun("successCoding"),
         loadTimerRun("negativeAction"),
         loadSessionLog(),
-      ]).then(([loadedProfile, loadedProgress, , beneficialActionRun, successCodingRun, negativeActionRun, sessionLog]) => {
+      ]).then(([loadedProfile, loadedProgress, , beneficialActionRun, negativeActionRun, sessionLog]) => {
         if (cancelled) return;
         if (!loadedProfile || !loadedProgress) {
           router.replace("/build");
@@ -155,47 +165,18 @@ export default function LiveSessionScreen() {
         setPendingTriggerContext("");
         setPendingAlternativeAction("");
         setPendingAlternativeActionDuration(null);
-        setSuccessFocusMinutes(null);
         setGratitudeText("");
         setGratitudeMemoryDetailText("");
 
         if (beneficialActionRun) {
           setResumedBeneficialActionRun(beneficialActionRun);
-          setResumedSuccessCodingRun(null);
           setResumedNegativeActionRun(null);
           setSessionStartedAt(beneficialActionRun.actionStartedAt);
           return;
         }
 
-        if (successCodingRun) {
-          setResumedBeneficialActionRun(null);
-          setResumedSuccessCodingRun(successCodingRun);
-          setResumedNegativeActionRun(null);
-          setSessionStartedAt(successCodingRun.actionStartedAt);
-          // Rejoins the normal pipeline at success_focus, the same
-          // stage the unconditional act -> success_focus transition
-          // would have already reached. actionReached/realActionCompleted
-          // are asserted true because success_focus is only reachable
-          // after "act" genuinely completed -- Training Day credit
-          // stays correct if this resumed session goes on to complete.
-          // successFocusChoice is pre-set to "now" -- a real Success
-          // Coding timer is already running, so the now/later choice
-          // (only relevant before the timer starts) must never be
-          // re-asked here.
-          setSession({
-            ...createEmptyLiveState(),
-            currentArcStage: "success_focus",
-            actionReached: true,
-            realActionCompleted: true,
-            successFocusChoice: "now",
-          });
-          setStage("success_focus");
-          return;
-        }
-
         if (negativeActionRun) {
           setResumedBeneficialActionRun(null);
-          setResumedSuccessCodingRun(null);
           setResumedNegativeActionRun(negativeActionRun);
           setSessionStartedAt(negativeActionRun.actionStartedAt);
           setSession({
@@ -210,7 +191,6 @@ export default function LiveSessionScreen() {
         }
 
         setResumedBeneficialActionRun(null);
-        setResumedSuccessCodingRun(null);
         setResumedNegativeActionRun(null);
         setSession(createEmptyLiveState());
         setStage(getFirstArcStage());
@@ -286,14 +266,16 @@ export default function LiveSessionScreen() {
   const commitAdvance = (patchedSession: ArcLiveState, transitionStage: ArcStage = stage) => {
     if (!profile) return;
     const { session: nextSession, stage: nextStage } = advanceLiveSession(transitionStage, patchedSession, profile, activeLayers);
-    // Each timer's persisted run is cleared the moment its own stage is
-    // left -- the only way out of any of the three is its real activity
-    // actually completing (act -> success_focus, success_focus ->
-    // negative_action/complete, negative_action -> complete are all
-    // unconditional in arc/arcEngine.ts once reached). Never clears a
-    // DIFFERENT timer type's run.
+    // Each real timer's persisted run is cleared the moment its own
+    // stage is left -- the only way out of either is its real activity
+    // actually completing (act -> success_focus, negative_action ->
+    // complete are both unconditional in arc/arcEngine.ts once
+    // reached). Never clears a DIFFERENT timer type's run. Coordinated
+    // timer/dwell task: success_focus no longer starts a "successCoding"
+    // TimerRun during the protocol at all (see this file's module doc
+    // and live/ArcLiveRenderer.tsx's "success_focus" case), so there is
+    // nothing of that type to clear on leaving this stage any more.
     if (stage === "act" && nextStage !== "act") clearTimerRun("beneficialAction");
-    if (stage === "success_focus" && nextStage !== "success_focus") clearTimerRun("successCoding");
     if (stage === "negative_action" && nextStage !== "negative_action") clearTimerRun("negativeAction");
     setSession(nextSession);
     setStage(nextStage);
@@ -303,7 +285,6 @@ export default function LiveSessionScreen() {
     setPendingTriggerContext("");
     setPendingAlternativeAction("");
     setPendingAlternativeActionDuration(null);
-    setSuccessFocusMinutes(null);
     if (nextStage === "complete") {
       finalizeSession(nextSession);
     }
@@ -332,15 +313,17 @@ export default function LiveSessionScreen() {
       loadSessionLog().then((log) => setEvidenceIndex(buildEvidenceIndex(log)));
     });
 
-    // Defensive: by the time restart() is reachable every timer's
+    // Defensive: by the time restart() is reachable every real timer's
     // anchor should already be cleared (commitAdvance clears each one
     // the moment its own stage is left), but never let a stale one
-    // leak into the next session regardless.
+    // leak into the next session regardless. Never clears "successCoding"
+    // here -- that TimerRun (when one exists) belongs to a
+    // future-scheduled Success Focus the trainee deliberately set up,
+    // owned entirely by data/reminders.ts's scheduleFutureSuccessFocus/
+    // cancelFutureSuccessFocus, never by starting a fresh LIVE session.
     clearTimerRun("beneficialAction");
-    clearTimerRun("successCoding");
     clearTimerRun("negativeAction");
     setResumedBeneficialActionRun(null);
-    setResumedSuccessCodingRun(null);
     setResumedNegativeActionRun(null);
     setSession(createEmptyLiveState());
     setStage(getFirstArcStage());
@@ -350,7 +333,6 @@ export default function LiveSessionScreen() {
     setPendingTriggerContext("");
     setPendingAlternativeAction("");
     setPendingAlternativeActionDuration(null);
-    setSuccessFocusMinutes(null);
     setSessionStartedAt(new Date().toISOString());
     setGratitudeText("");
     setGratitudeMemoryDetailText("");
@@ -429,7 +411,6 @@ export default function LiveSessionScreen() {
           pendingSensationLocation={pendingSensationLocation}
           pendingCustomSensationLocation={pendingCustomSensationLocation}
           pendingSensationLocationUnclear={pendingSensationLocationUnclear}
-          successFocusMinutes={successFocusMinutes}
           pendingTriggerContext={pendingTriggerContext}
           onChangeTriggerContext={setPendingTriggerContext}
           onTriggerContextContinue={() => commitAdvance(applyTriggerContext(session, pendingTriggerContext))}
@@ -519,28 +500,33 @@ export default function LiveSessionScreen() {
           onActionImageryContinue={() => setSession(applyActionImageryCompleted(session))}
           onSelectBeneficialActionDuration={(minutes) => setSession(applyBeneficialActionDurationSelected(session, minutes))}
           onActionCompleted={() => commitAdvance(applyActionCompletion(session, true))}
-          onSuccessFocusChoice={(choice) => setSession(applySuccessFocusChoice(session, choice))}
-          onSelectSuccessFocusMinutes={(minutes) => setSuccessFocusMinutes(minutes)}
-          onSuccessFocusContinue={() => commitAdvance(session)}
-          deferralOptions={DEFERRAL_OPTIONS}
-          onDeferSuccessFocus={(option, withArc) => {
-            // Schedules exactly one reminder for this kind
-            // (data/reminders.ts's scheduleDeferredReminder replaces
-            // any previously-pending "focusSuccess" reminder first, so
-            // this can never create a duplicate) and lets the session
-            // progress past success_focus exactly as choosing "now" and
-            // finishing the timer flow would have -- the Success Coding
-            // timer itself is never started for this session.
-            scheduleDeferredReminder({
-              kind: "focusSuccess",
-              option,
-              arcRequested: withArc,
-              title: "התמקדות בהצלחה",
-              body: withArc ? "זמן להתמקדות בהצלחה עם ARC." : "זמן להתמקדות בהצלחה.",
-            });
+          onSuccessFocusExtraMinutesSubmit={(minutes) => setSession(applySuccessFocusExtraMinutes(session, minutes))}
+          onWantsFutureSuccessFocusAnswer={(yes) => {
+            const patched = applyWantsFutureSuccessFocus(session, yes);
+            // "לא": nothing left to ask -- continue through the existing
+            // downstream flow immediately, exactly like every other
+            // "stay at this stage" interstitial's terminal "no" branch.
+            // "כן": stay on this stage -- FutureSuccessFocusScheduleScreen
+            // renders next (see live/ArcLiveRenderer.tsx).
+            if (yes) {
+              setSession(patched);
+            } else {
+              commitAdvance(patched);
+            }
+          }}
+          futureSuccessFocusScheduleOptions={DEFERRAL_OPTIONS}
+          onScheduleFutureSuccessFocus={(option, durationMinutes) => {
+            // Persists+schedules the future run (data/reminders.ts's
+            // scheduleFutureSuccessFocus reuses the existing PendingReminder
+            // for the start ping and TimerRun for the future-anchored
+            // completion timer, cancelling any previously-scheduled one
+            // first -- never a duplicate/orphaned notification), then
+            // lets the session progress past success_focus exactly as
+            // before this task -- scheduling never blocks finishing
+            // this session.
+            scheduleFutureSuccessFocus({ option, durationMinutes });
             commitAdvance(session);
           }}
-          resumedSuccessCodingRun={resumedSuccessCodingRun}
           negativeActionDurationMinutes={negativeActionDurationMinutes}
           onNegativeActionStart={() => setSession(applyNegativeActionStarted(session))}
           onNegativeActionCompleted={() => commitAdvance(session)}

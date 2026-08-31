@@ -15,6 +15,7 @@ import {
   resolveEncodingRegulationCue,
   resolveEncodingTarget,
   resolveLiveRoute,
+  resolveObserverPauseLayer,
   resolveTargetPreventiveAction,
 } from "./arcEngine.ts";
 import { createEmptyLiveState } from "./types.ts";
@@ -740,4 +741,48 @@ test("existing downstream Reactive ARC progression is unchanged: from observer_p
     "negative_action", // habit layer active + profile.habit configured (base profile() default) -- unchanged existing behavior
     "complete",
   ]);
+});
+
+// --- Coordinated timer/dwell task (Part 20-23, 46): resolveObserverPauseLayer
+// is shared between this file's own "observer_pause" transition case and
+// arc/stageCopy.ts's copy-building case, so both resolve the Stop-Imagery
+// dwell's layer identically for the same session.
+
+test("resolveObserverPauseLayer always resolves reactive_urge to 'habit', unambiguously, regardless of selectedTarget", () => {
+  assert.equal(resolveObserverPauseLayer("reactive_urge", null, ALL_LAYERS, profile()), "habit");
+  assert.equal(resolveObserverPauseLayer("reactive_urge", "state", ALL_LAYERS, profile()), "habit", "reactive_urge's target is always habit, never overridden by a stray selectedTarget");
+});
+
+test("resolveObserverPauseLayer prefers an already-resolved selectedTarget for reactive_emotion", () => {
+  assert.equal(resolveObserverPauseLayer("reactive_emotion", "identity", ALL_LAYERS, profile()), "identity");
+  assert.equal(resolveObserverPauseLayer("reactive_emotion", "state", ALL_LAYERS, profile()), "state");
+});
+
+test("resolveObserverPauseLayer falls back to inferLayerFromTrigger's own existing inference when selectedTarget is still null", () => {
+  const p = profile({
+    interferingState: null,
+    stateEncoding: null,
+    internalAction: null,
+    identityEncoding: null,
+    identityAction: null,
+    beneficialAction: null,
+  });
+  assert.equal(resolveObserverPauseLayer("reactive_emotion", null, ALL_LAYERS, p), "state", "the generic fallback when nothing at all is configured yet");
+});
+
+test("resolveObserverPauseLayer matches the engine's own 'observer_pause' transition case exactly -- the two must never diverge onto different layers for the same session", () => {
+  const p = profile();
+  const activeLayers: DevelopmentLayer[] = ["state", "identity", "habit"];
+  for (const state of [
+    { triggerType: "reactive_urge" as const, selectedTarget: null },
+    { triggerType: "reactive_emotion" as const, selectedTarget: "identity" as const },
+    { triggerType: "reactive_emotion" as const, selectedTarget: null },
+  ]) {
+    const resolvedLayer = resolveObserverPauseLayer(state.triggerType, state.selectedTarget, activeLayers, p);
+    const session: ArcLiveState = { ...createEmptyLiveState(), triggerType: state.triggerType, selectedTarget: state.selectedTarget };
+    const outcome = getNextArcStage("observer_pause", session, p, activeLayers);
+    // The engine's own transition routes based on resolveTargetPreventiveAction(resolvedLayer, p) --
+    // cross-checking against the SAME resolver used directly proves they agree.
+    assert.equal(outcome.stage, resolveTargetPreventiveAction(resolvedLayer, p) !== null ? "preventive_action_check" : "presence_check");
+  }
 });

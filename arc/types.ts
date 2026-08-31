@@ -74,6 +74,28 @@ export interface DwellTimes {
   regulationDwellSeconds: number;
   encodingDwellSeconds: number;
   actionImageryDwellSeconds: number;
+  /**
+   * Coordinated timer/dwell task (Part 16-19): how long, after the
+   * Presence instruction (arc_thought_expand_presence) finishes
+   * revealing, before the subtle dwell cue fires and the inline
+   * Presence rating appears. Resolved differently from the five stages
+   * above -- see arc/dwellTimes.ts's resolvePresenceDwellSeconds --
+   * since a specific target layer isn't always resolved yet by the time
+   * Presence is reached (reactive_urge/proactive sessions). Still
+   * stored on the same per-ARC-map stateDwellTimes/identityDwellTimes
+   * sets below, never a separate configuration structure.
+   */
+  presenceDwellSeconds: number;
+  /**
+   * Coordinated timer/dwell task (Part 20-23): "זמן שהייה בדמיון
+   * העצירה" -- how long, after the Reactive observer/pause instruction
+   * (observer_pause) finishes revealing, before the subtle dwell cue
+   * fires and the existing Preventive Action becomes available.
+   * Resolved via the SAME resolveDwellSecondsFor mechanism as the five
+   * original categories, from the CURRENT reactive session's own
+   * resolved layer -- see arc/arcEngine.ts's resolveObserverPauseLayer.
+   */
+  stopImageryDwellSeconds: number;
 }
 
 export interface ArcBuildProfile {
@@ -172,10 +194,16 @@ export interface ArcBuildProfile {
    * reduction factor -- see program/engine.ts's
    * resolveNegativeActionDuration, which is the one place that scaling
    * happens; this field itself is never reduced or rewritten week to
-   * week. null (the default for every existing profile) means no
-   * Negative Action Timer duration was ever configured, so the
-   * negative_action stage never gates on a timer -- consistent with
-   * how actionDuration/successFocusDuration already behave when unset.
+   * week. null (the default when never configured) means no Negative
+   * Action Timer duration was ever configured, so the negative_action
+   * stage never gates on a timer -- consistent with how
+   * actionDuration/successFocusDuration already behave when unset.
+   * Coordinated timer/dwell task (Part 12): this is the ONE source of
+   * truth for the current target Habit's real timer duration -- set via
+   * BUILD-GOAL's own "negativeActionDuration" step (build/profileWizard.ts),
+   * remaining optional there exactly like it always has been; LIVE never
+   * asks for this duration again, it only resolves it (see
+   * program/engine.ts's resolveNegativeActionDuration).
    */
   negativeActionBaseDurationMinutes: number | null;
 }
@@ -283,7 +311,9 @@ export interface ArcLiveState {
   actionImageryCompleted: boolean;
   /**
    * The trainee's own live, in-session choice of Beneficial Action
-   * duration (5-10 minutes) -- see live/screens.tsx's
+   * duration (1-10 minutes -- coordinated timer/dwell task, Part 1:
+   * widened from the original 5-10 minute range, no minimum floor
+   * anymore) -- see live/screens.tsx's
    * BeneficialActionDurationChoiceScreen and
    * arc/arcEngine.ts's resolveActionDuration. Null until chosen; only
    * ever asked on the PLANNED-action path (the alternative-action path
@@ -306,15 +336,26 @@ export interface ArcLiveState {
   negativeActionStarted: boolean;
 
   /**
-   * Whether the trainee chose to do Success Focus now (proceeds through
-   * the existing timer + minutes-picker + reinforcement flow, entirely
-   * unchanged) or defer it to a later time (schedules ONE reminder
-   * instead of running the timer this session -- see
-   * data/storage.ts's PendingReminder and data/notifications.ts's
-   * scheduleReminderNotification). Null until chosen -- see
-   * live/screens.tsx's SuccessFocusChoiceScreen.
+   * Coordinated timer/dwell task (Part 2-4): the RETROSPECTIVE answer
+   * to "כמה זמן המשכת בפעולה המיטיבה מעבר לזמן שתכננת?" -- how many
+   * extra minutes, beyond the Beneficial Action Timer's own configured
+   * duration, the trainee estimates they kept going before returning to
+   * ARCHI. Never inferred/invented: null means "not yet answered" (the
+   * retrospective screen is still showing), NOT zero -- 0 is a fully
+   * valid, explicitly-submitted answer ("I didn't continue any
+   * longer"). See live/screens.tsx's SuccessFocusRetrospectiveScreen.
    */
-  successFocusChoice: "now" | "later" | null;
+  successFocusExtraMinutes: number | null;
+  /**
+   * Coordinated timer/dwell task (Part 4): "האם תרצה לבצע מיקוד הצלחה
+   * נוסף בהמשך?" -- asked only after successFocusExtraMinutes has been
+   * recorded. null = not yet answered; false = continue the existing
+   * downstream flow with no scheduling; true = the future-scheduling
+   * sub-screen (date/time shortcut + duration) is shown next. See
+   * live/screens.tsx's FutureSuccessFocusAskScreen/
+   * FutureSuccessFocusScheduleScreen.
+   */
+  wantsFutureSuccessFocus: boolean | null;
 
   acceptanceNeeded: boolean | null;
   /**
@@ -362,7 +403,8 @@ export function createEmptyLiveState(): ArcLiveState {
     actionImageryCompleted: false,
     beneficialActionDurationMinutes: null,
     negativeActionStarted: false,
-    successFocusChoice: null,
+    successFocusExtraMinutes: null,
+    wantsFutureSuccessFocus: null,
     acceptanceNeeded: null,
     acceptanceWillingnessLoopCount: 0,
     regulationReady: null,

@@ -17,6 +17,7 @@ import {
   resolveActPhase,
   resolveEncodingRegulationCue,
   resolveEncodingTarget,
+  resolveObserverPauseLayer,
   resolveTargetPreventiveAction,
 } from "./arcEngine.ts";
 import {
@@ -27,8 +28,8 @@ import {
   getInterferingStateRecognitionPrompt,
 } from "./instructions.ts";
 import type { InstructionSegment } from "./instructionTiming.ts";
-import { INLINE_RATING_REVEAL_DELAY_SECONDS, INSTRUCTION_TIMING } from "./instructionTiming.ts";
-import { resolveDwellSecondsFor, withTrailingDwellSegment } from "./dwellTimes.ts";
+import { INSTRUCTION_TIMING } from "./instructionTiming.ts";
+import { resolveDwellSecondsFor, resolvePresenceDwellSeconds, withTrailingDwellSegment } from "./dwellTimes.ts";
 import type { EvidenceRecord } from "./evidence.ts";
 import { resolveEncodingEvidenceContext, selectEncodingEvidence } from "./evidence.ts";
 
@@ -247,19 +248,26 @@ export function getStageCopy(
       // was never identified -- never invent or infer one (#3, #5) --
       // and go straight to a shorter two-line sequence: observing
       // ONESELF from the side (no situation/event referenced at all),
-      // then the same imagined pause. Both variants share the same
-      // trailing, fixed reflection segment (arc/instructionTiming.ts's
-      // observerPauseReflection, NOT part of the per-trainee
-      // configurable dwell system -- see that file's doc) and the same
-      // underlying progressive-reveal/Continue-cue mechanism -- no new
-      // screen, no new timing system.
+      // then the same imagined pause. Coordinated timer/dwell task
+      // (Part 20-23): both variants now share the SAME trailing,
+      // per-trainee configurable Stop-Imagery dwell (stopImageryDwellSeconds,
+      // arc/dwellTimes.ts) instead of a fixed reflection constant --
+      // resolved from the CURRENT reactive session's own layer (see
+      // arc/arcEngine.ts's resolveObserverPauseLayer, shared with that
+      // file's own "observer_pause" transition case so the two never
+      // diverge) -- and the same underlying progressive-reveal/
+      // Continue-cue mechanism -- no new screen, no new timing system.
+      // The existing Preventive Action only becomes available once this
+      // dwell completes, via the SAME Continue-gating mechanism every
+      // other dwell-gated stage already uses (arc/instructionTiming.ts's
+      // getInstructionTimingStatus) -- no separate gating logic needed.
       const knownTriggerPerspective = "דמיין לרגע את מה שקרה כאילו אתה רואה את הסיטואציה מהצד, ואת עצמך בתוכה.";
       const unknownTriggerPerspective = "דמיין את עצמך לרגע כאילו אתה רואה את עצמך מהצד.";
       const imaginedPause = "ראה את עצמך עוצר לכמה שניות לפני התגובה.";
       const safetyRecognition = "אין צורך לעורר מחדש או לחזק את הרגש או הדחף — רק לראות את מה שקרה.";
 
       const isKnownTrigger = state.triggerKnown === true;
-      const segments: InstructionSegment[] = isKnownTrigger
+      const instructionSegments: InstructionSegment[] = isKnownTrigger
         ? [
             { text: knownTriggerPerspective, durationSeconds: INSTRUCTION_TIMING.observerPerspective },
             { text: imaginedPause, durationSeconds: INSTRUCTION_TIMING.observerPause },
@@ -269,7 +277,10 @@ export function getStageCopy(
             { text: unknownTriggerPerspective, durationSeconds: INSTRUCTION_TIMING.observerPerspective },
             { text: imaginedPause, durationSeconds: INSTRUCTION_TIMING.observerPause },
           ];
-      segments.push({ text: "", durationSeconds: INSTRUCTION_TIMING.observerPauseReflection });
+
+      const observerPauseLayer = resolveObserverPauseLayer(state.triggerType, state.selectedTarget, activeLayers, profile);
+      const stopImageryDwellSeconds = resolveDwellSecondsFor("stopImageryDwellSeconds", observerPauseLayer, profile);
+      const segments = withTrailingDwellSegment(instructionSegments, stopImageryDwellSeconds);
 
       return {
         title: "מרחק ועצירה",
@@ -311,17 +322,23 @@ export function getStageCopy(
       // arc_thought_presence_recheck's own separate page is now shown
       // inline on THIS page instead (see live/screens.tsx's
       // PresenceExperienceScreen) once this instruction's own timing
-      // PLUS the additional INLINE_RATING_REVEAL_DELAY_SECONDS have
-      // both elapsed -- modeled as one trailing, empty-text segment so
-      // getInstructionTimingStatus's existing `complete` flag stays the
-      // single source of truth for "reveal the rating now". body stays
-      // just the spoken instruction text; the trailing segment carries
-      // no text of its own.
+      // PLUS a trailing dwell have both elapsed -- modeled as one
+      // trailing, empty-text segment so getInstructionTimingStatus's
+      // existing `complete` flag stays the single source of truth for
+      // "reveal the rating now". body stays just the spoken instruction
+      // text; the trailing segment carries no text of its own.
+      // Coordinated timer/dwell task (Part 16-19): the old flat,
+      // fixed 15s placeholder here is replaced by the per-trainee
+      // configurable Presence dwell (presenceDwellSeconds,
+      // arc/dwellTimes.ts's resolvePresenceDwellSeconds) -- this is the
+      // one hard-coded Presence dwell the task's own #19 asked to
+      // replace; the instruction's OWN duration
+      // (INSTRUCTION_TIMING.arcThoughtExpandPresence, including its
+      // separate, unrelated +15s instruction-pacing increase) is left
+      // completely untouched, never counted as dwell time.
       const text = getExpandPresenceInstruction();
-      const segments: InstructionSegment[] = [
-        { text, durationSeconds: INSTRUCTION_TIMING.arcThoughtExpandPresence },
-        { text: "", durationSeconds: INLINE_RATING_REVEAL_DELAY_SECONDS },
-      ];
+      const presenceDwellSeconds = resolvePresenceDwellSeconds(profile, activeLayers);
+      const segments = withTrailingDwellSegment([{ text, durationSeconds: INSTRUCTION_TIMING.arcThoughtExpandPresence }], presenceDwellSeconds);
       return { title: "הרחבה", body: text, segments };
     }
 
@@ -439,11 +456,10 @@ export function getStageCopy(
       // Dwell-time task: the rating now reveals once this instruction's
       // own timing PLUS the CURRENT target's own configured Regulation
       // dwell (arc/dwellTimes.ts) have both elapsed -- this stage's own
-      // dedicated dwell category, which replaces the flat
-      // INLINE_RATING_REVEAL_DELAY_SECONDS this trailing segment used to
-      // carry (that constant is now used only by
-      // arc_thought_expand_presence above, an unrelated, unchanged
-      // Presence concept).
+      // dedicated dwell category (regulationDwellSeconds), independent
+      // of Presence's own separate configurable dwell
+      // (presenceDwellSeconds) used only by arc_thought_expand_presence
+      // above.
       const { layer } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
@@ -694,7 +710,15 @@ export function getStageCopy(
     }
 
     case "success_focus":
-      return { title: "התמקדות בהצלחה", body: "כמה דקות נוספות המשכת מעבר לפעולה המקורית?", segments: null };
+      // Coordinated timer/dwell task (Part 2-3): Success Focus is now
+      // the natural, RETROSPECTIVE continuation of the Beneficial
+      // Action -- the trainee is never forced to touch ARCHI the moment
+      // the Beneficial Action Timer ends; whenever they DO return
+      // (tapping "עשיתי את זה"), this is the first thing they see. Exact
+      // spec title/question (never "עכשיו"/"מאוחר יותר" here -- see
+      // live/screens.tsx's SuccessFocusRetrospectiveScreen/
+      // FutureSuccessFocusAskScreen for the rest of this sub-flow).
+      return { title: "מיקוד הצלחה", body: "כמה זמן המשכת בפעולה המיטיבה מעבר לזמן שתכננת?", segments: null };
 
     case "negative_action": {
       // The trainee's own predefined interfering/negative behavior
