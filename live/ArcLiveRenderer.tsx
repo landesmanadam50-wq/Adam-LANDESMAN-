@@ -256,16 +256,30 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       // and still used by its other, standalone entry points.
       // sensation_check's own getNextArcStage transition still decides
       // what happens after the rating is selected -- see
-      // live/LiveSessionScreen.tsx's onAcceptIntensityRating. Answering
-      // yes/no never itself advances the ArcStage anymore -- only the
-      // rating (or the no-rating Continue) does, so key={stage} alone
-      // (not loopIterationCount) is enough here: unlike
-      // Presence/Regulation, "accept" is never the stage looped back TO
-      // (its own loop-back target is "stay", a different stage value,
-      // which already remounts on its own) -- the NEW unwillingness
-      // sub-flow's own rounds instead remount individually via
-      // AcceptanceUnwillingnessRound's own key, inside the same
-      // AcceptScreen mount (see live/screens.tsx).
+      // live/LiveSessionScreen.tsx's onAcceptIntensityRating.
+      //
+      // BUGFIX: "accept" IS revisited within a session -- the reactive
+      // stay/accept round trip (arc/arcEngine.ts: "stay" -> "accept" ->
+      // "sensation_check", re-classified, and back to "stay" -> "accept"
+      // again whenever intensity is still in the "stay" tier) re-enters
+      // this exact same ArcStage value more than once. A previous
+      // version of this comment claimed "accept is never the stage
+      // looped back to" and keyed this screen on `stage` alone -- since
+      // that key is the same literal string "accept" on every visit,
+      // React never remounted AcceptScreen on a revisit, so its
+      // internal `resolved` state (live/screens.tsx) stayed stuck at
+      // `true` from the FIRST visit: the willingness question silently
+      // never appeared again, and the still-mounted AcceptRatingReveal's
+      // own dwell clock (running continuously since round 1) reported
+      // "already complete" instead of timing the new round. Keying on
+      // loopIterationCount too -- exactly like arc_thought_expand_presence
+      // and "regulate" below already do for the same reason -- forces a
+      // fresh mount (fresh `resolved` state, fresh dwell clock) on every
+      // real revisit; loopIterationCount is incremented by the "accept"
+      // case's own transition each time it's left, so it's guaranteed to
+      // differ between successive visits. The unwillingness sub-flow's
+      // own rounds still remount individually via AcceptanceUnwillingnessRound's
+      // own key, inside whichever AcceptScreen mount is current.
       //
       // Dwell-time task: the CURRENT target's own configured Acceptance
       // dwell (arc/dwellTimes.ts) governs both the normal "כן" path and
@@ -284,7 +298,7 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       const question = peek.stage === "sensation_check" ? getInlineRequiredRatingQuestion("intensity") : null;
       return (
         <AcceptScreen
-          key={stage}
+          key={`${stage}-${session.loopIterationCount}`}
           copy={copy}
           labels={getYesNoLabels(stage)}
           question={question}

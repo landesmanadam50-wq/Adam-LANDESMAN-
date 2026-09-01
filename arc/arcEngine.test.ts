@@ -459,6 +459,82 @@ test("accept forces forward to regulate once the safety cap is hit", () => {
   assert.equal(outcome.stage, "regulate");
 });
 
+// --- REGRESSION (LIVE Acceptance stage bug fix): "accept" IS revisited
+// within a single session -- the reactive stay/accept round trip
+// (stay -> accept -> sensation_check -> [still "stay" tier] -> stay ->
+// accept again) re-enters this exact ArcStage value more than once
+// whenever intensity is still classified "stay" after one Acceptance
+// round. live/ArcLiveRenderer.tsx used to key AcceptScreen on `stage`
+// alone, which is the identical literal "accept" on every visit --
+// React never remounted the screen on a revisit, so its own internal
+// `resolved` state (live/screens.tsx) stayed stuck true from the FIRST
+// visit and the willingness question silently never appeared again.
+// The fix keys on `${stage}-${session.loopIterationCount}` instead
+// (matching arc_thought_expand_presence/regulate's own established
+// pattern for the same class of bug) -- these tests pin the underlying
+// data property that fix depends on: loopIterationCount must genuinely
+// differ between successive "accept" visits, and the stay/accept round
+// trip must actually be reachable, not merely hypothetical.
+
+test("loopIterationCount genuinely differs between successive 'accept' visits in the same session -- the data property AcceptScreen's remount key (live/ArcLiveRenderer.tsx) depends on", () => {
+  const p = profile();
+  // Round 1: stay -> accept.
+  const firstAccept = getNextArcStage("stay", state({ loopIterationCount: 0 }), p, ALL_LAYERS);
+  assert.equal(firstAccept.stage, "accept");
+  const firstAcceptLoopCount = firstAccept.loopIterationCount;
+
+  // Leaving "accept" (the trainee accepts, or the recheck rating is
+  // submitted) increments loopIterationCount and re-classifies via
+  // sensation_check -- simulate staying in the "stay" tier again.
+  const afterFirstAccept = getNextArcStage("accept", state({ loopIterationCount: firstAcceptLoopCount }), p, ALL_LAYERS);
+  assert.equal(afterFirstAccept.stage, "sensation_check");
+  const reclassified = getNextArcStage(
+    "sensation_check",
+    state({ loopIterationCount: afterFirstAccept.loopIterationCount, sensationIntensity: 9 }),
+    p,
+    ALL_LAYERS
+  );
+  assert.equal(reclassified.stage, "stay", "sanity: intensity 9 stays in the 'stay' tier -- accept is genuinely revisited");
+
+  // Round 2: stay -> accept again.
+  const secondAccept = getNextArcStage("stay", state({ loopIterationCount: reclassified.loopIterationCount }), p, ALL_LAYERS);
+  assert.equal(secondAccept.stage, "accept");
+
+  assert.notEqual(
+    secondAccept.loopIterationCount,
+    firstAcceptLoopCount,
+    "loopIterationCount must differ between the two 'accept' visits so a key built from it forces a real remount"
+  );
+});
+
+test("a full reactive session can revisit 'accept' multiple times before intensity finally drops out of the 'stay' tier, each visit at a distinct loopIterationCount", () => {
+  const p = profile();
+  let stage: ArcStage = "stay";
+  let s: ArcLiveState = state({ loopIterationCount: 0 });
+  const acceptVisitLoopCounts: number[] = [];
+  let iterations = 0;
+
+  while (stage !== "regulate" && iterations < 20) {
+    if (stage === "accept") acceptVisitLoopCounts.push(s.loopIterationCount);
+    if (stage === "sensation_check") {
+      // Stay elevated for the first two re-checks, then drop to the
+      // "regulate" tier so the loop actually terminates.
+      s = { ...s, sensationIntensity: acceptVisitLoopCounts.length < 3 ? 9 : 5 };
+    }
+    const next = getNextArcStage(stage, s, p, ALL_LAYERS);
+    stage = next.stage;
+    s = { ...s, loopIterationCount: next.loopIterationCount };
+    iterations++;
+  }
+
+  assert.ok(acceptVisitLoopCounts.length >= 3, "sanity: 'accept' must actually be revisited multiple times in this walk");
+  assert.equal(
+    new Set(acceptVisitLoopCounts).size,
+    acceptVisitLoopCounts.length,
+    "every visit to 'accept' must have its own distinct loopIterationCount -- never two visits sharing the same value, which would fail to force a remount"
+  );
+});
+
 test("reactive_transition_check advances to regulate when ready, loops back to stay when not", () => {
   const p = profile();
   const ready = getNextArcStage("reactive_transition_check", state({ regulationReady: true, loopIterationCount: 0 }), p, ALL_LAYERS);
