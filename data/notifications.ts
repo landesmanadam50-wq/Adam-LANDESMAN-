@@ -180,6 +180,8 @@ export interface ScheduleReminderNotificationInput {
   body: string;
   /** Only meaningful for kind "focusSuccess" -- see data/storage.ts's PendingReminder. Carried into the notification's data payload so tapping it (data/reminders.ts's handleReminderNotificationResponse) knows which flow to open, without re-reading persisted state that may have since changed. */
   arcRequested: boolean;
+  /** Only meaningful for kind "routine" (data/storage.ts's ScheduledRoutine) -- which specific routine this notification belongs to, so tapping it (app/_layout.tsx's handleReminderResponse) opens the correct routine's LIVE flow rather than a generic one. Omitted for every other kind. */
+  routineId?: string;
 }
 
 /**
@@ -209,7 +211,12 @@ export async function scheduleReminderNotification(input: ScheduleReminderNotifi
       content: {
         title: input.title,
         body: input.body,
-        data: { [REMINDER_DATA_FLAG]: true, kind: input.kind, arcRequested: input.arcRequested },
+        data: {
+          [REMINDER_DATA_FLAG]: true,
+          kind: input.kind,
+          arcRequested: input.arcRequested,
+          ...(input.routineId !== undefined ? { routineId: input.routineId } : {}),
+        },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,

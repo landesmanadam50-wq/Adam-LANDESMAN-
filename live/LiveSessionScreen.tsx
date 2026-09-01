@@ -38,7 +38,7 @@
 import { useCallback, useState } from "react";
 import { ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Stack, router, useFocusEffect } from "expo-router";
+import { Stack, router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
@@ -46,6 +46,7 @@ import { getFirstArcStage, resolveEncodingTarget } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
 import { buildEvidenceIndex, buildSessionEvidenceContext } from "../arc/evidence.ts";
 import type { EvidenceRecord } from "../arc/evidence.ts";
+import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
 import { getProgramDefinition, resolveNegativeActionDuration } from "../program/engine.ts";
 import {
   loadProfile,
@@ -57,8 +58,10 @@ import {
   updateLastSessionLogEntryGratitude,
   loadTimerRun,
   clearTimerRun,
+  loadScheduledRoutines,
+  appendRoutineOccurrenceCompletion,
 } from "../data/storage.ts";
-import type { TimerRun } from "../data/storage.ts";
+import type { ScheduledRoutine, TimerRun } from "../data/storage.ts";
 import { recordValidLiveCompletion } from "../program/progress.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
@@ -86,9 +89,13 @@ import { getAvailableLiveTriggers } from "../arc/arcEngine.ts";
 import { DEFERRAL_OPTIONS, scheduleFutureSuccessFocus } from "../data/reminders.ts";
 import type { DeferralOption } from "../data/reminders.ts";
 import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
-import { ActionScreen } from "./screens.tsx";
+import { ActionScreen, SuccessFocusScreen } from "./screens.tsx";
+
+const ROUTINE_SUCCESS_FOCUS_MINUTES = [0, 5, 10, 15, 20];
 
 export default function LiveSessionScreen() {
+  const { routineId: routineIdParam } = useLocalSearchParams<{ routineId?: string }>();
+  const routineId = typeof routineIdParam === "string" ? routineIdParam : null;
   const [profile, setProfile] = useState<ArcBuildProfile | null>(null);
   const [activeLayers, setActiveLayers] = useState<DevelopmentLayer[]>([]);
   const [currentProgramWeek, setCurrentProgramWeek] = useState(1);
@@ -124,6 +131,31 @@ export default function LiveSessionScreen() {
   // longer checks for or resumes it at all.
   const [resumedBeneficialActionRun, setResumedBeneficialActionRun] = useState<TimerRun | null>(null);
   const [resumedNegativeActionRun, setResumedNegativeActionRun] = useState<TimerRun | null>(null);
+  /**
+   * Multiple Scheduled ARC + Success Focus Routines: the ONE routine
+   * this session is for (resolved from the routineId route param, or --
+   * on resuming an in-progress routineSuccessFocus TimerRun -- from
+   * that run's own relatedRoutineId, which is authoritative regardless
+   * of what param this focus happened to arrive with; see the
+   * useFocusEffect below). null for every ordinary, non-routine LIVE
+   * session -- everything routine-specific below is gated on this being
+   * non-null.
+   */
+  const [routine, setRoutine] = useState<ScheduledRoutine | null>(null);
+  /**
+   * "arc": the normal protocol, rendered via ArcLiveRenderer exactly as
+   * for any other session, including its own unchanged CompleteScreen.
+   * "successFocus": required execution order's final two steps for a
+   * routine-launched session -- reached either by resuming an
+   * in-progress routineSuccessFocus TimerRun (useFocusEffect below) or
+   * by the trainee continuing past CompleteScreen (restart() below) --
+   * bypasses ArcLiveRenderer entirely and renders SuccessFocusScreen
+   * directly, the same bypass pattern already used for
+   * resumedBeneficialActionRun.
+   */
+  const [routinePhase, setRoutinePhase] = useState<"arc" | "successFocus">("arc");
+  const [resumedRoutineSuccessFocusRun, setResumedRoutineSuccessFocusRun] = useState<TimerRun | null>(null);
+  const [routineSuccessFocusSelectedMinutes, setRoutineSuccessFocusSelectedMinutes] = useState<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -148,8 +180,17 @@ export default function LiveSessionScreen() {
         loadProgramSelection(),
         loadTimerRun("beneficialAction"),
         loadTimerRun("negativeAction"),
+        // Multiple Scheduled ARC + Success Focus Routines: a routine's
+        // own post-ARC Success Focus timer, resumed here the same way
+        // beneficialAction/negativeAction already are -- see this
+        // file's module doc's "narrow, explicit exception" and
+        // data/storage.ts's TimerRun.relatedRoutineId. Still deliberately
+        // NOT loadTimerRun("successCoding") -- that stays exclusively
+        // owned by the future-scheduled deep link (app/focus-success.tsx).
+        loadTimerRun("routineSuccessFocus"),
         loadSessionLog(),
-      ]).then(([loadedProfile, loadedProgress, , beneficialActionRun, negativeActionRun, sessionLog]) => {
+        loadScheduledRoutines(),
+      ]).then(([loadedProfile, loadedProgress, , beneficialActionRun, negativeActionRun, routineSuccessFocusRun, sessionLog, routines]) => {
         if (cancelled) return;
         if (!loadedProfile || !loadedProgress) {
           router.replace("/build");
@@ -167,6 +208,30 @@ export default function LiveSessionScreen() {
         setPendingAlternativeActionDuration(null);
         setGratitudeText("");
         setGratitudeMemoryDetailText("");
+        setRoutineSuccessFocusSelectedMinutes(null);
+
+        // The persisted run's own relatedRoutineId is authoritative over
+        // the routineId this focus happened to arrive with -- e.g.
+        // resuming after the app was backgrounded mid-routine-Success-
+        // Focus and reopened via Home, with no routineId param at all.
+        const resolvedRoutineId = routineSuccessFocusRun?.relatedRoutineId ?? routineId;
+        const matchedRoutine = resolvedRoutineId ? (routines.find((item) => item.id === resolvedRoutineId) ?? null) : null;
+        setRoutine(matchedRoutine);
+
+        if (routineSuccessFocusRun && matchedRoutine) {
+          setResumedRoutineSuccessFocusRun(routineSuccessFocusRun);
+          setResumedBeneficialActionRun(null);
+          setResumedNegativeActionRun(null);
+          setRoutinePhase("successFocus");
+          return;
+        }
+        // A routineSuccessFocus run with no matching routine (the
+        // routine was deleted mid-run) has nothing left to resume into
+        // -- clear it defensively rather than leaving it persisted
+        // forever with no path that will ever pick it back up.
+        if (routineSuccessFocusRun) clearTimerRun("routineSuccessFocus");
+        setResumedRoutineSuccessFocusRun(null);
+        setRoutinePhase("arc");
 
         if (beneficialActionRun) {
           setResumedBeneficialActionRun(beneficialActionRun);
@@ -199,7 +264,7 @@ export default function LiveSessionScreen() {
       return () => {
         cancelled = true;
       };
-    }, [])
+    }, [routineId])
   );
 
   const finalizeSession = (finishedSession: ArcLiveState) => {
@@ -325,6 +390,25 @@ export default function LiveSessionScreen() {
     clearTimerRun("negativeAction");
     setResumedBeneficialActionRun(null);
     setResumedNegativeActionRun(null);
+
+    if (routine) {
+      // Multiple Scheduled ARC + Success Focus Routines' required
+      // execution order: "ARC completion -> Success Focus -> Success
+      // Focus timer -> Routine completed". The ARC protocol itself
+      // (including its own unchanged CompleteScreen/Gratitude step) is
+      // already done by the time this is reachable for a routine-
+      // launched session -- continue into THIS routine's own post-ARC
+      // Success Focus timer instead of starting a brand-new session.
+      // Occurrence completion isn't recorded until that timer's own
+      // "המשך" is pressed (see the routinePhase === "successFocus"
+      // render branch below), never here.
+      setGratitudeText("");
+      setGratitudeMemoryDetailText("");
+      setRoutineSuccessFocusSelectedMinutes(null);
+      setRoutinePhase("successFocus");
+      return;
+    }
+
     setSession(createEmptyLiveState());
     setStage(getFirstArcStage());
     setPendingSensationLocation("");
@@ -342,6 +426,55 @@ export default function LiveSessionScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <Stack.Screen options={{ title: "ARCHI LIVE" }} />
+      </SafeAreaView>
+    );
+  }
+
+  // Multiple Scheduled ARC + Success Focus Routines: this routine-
+  // launched session has finished its ARC protocol and is now in (or
+  // resuming) its own post-ARC Success Focus timer step -- the required
+  // execution order's final two steps ("Success Focus -> Success Focus
+  // timer -> Routine completed"). Bypasses ArcLiveRenderer entirely,
+  // same reasoning as resumedBeneficialActionRun below: nothing about
+  // this step depends on the ARC session's own stage/state.
+  if (routinePhase === "successFocus" && routine) {
+    const routineCopy = { title: "התמקדות בהצלחה", body: `שגרה: ${routine.title}`, segments: null };
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: `ARCHI LIVE — ${routine.title}` }} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <SuccessFocusScreen
+            copy={routineCopy}
+            durationMinutes={routine.successFocusDurationMinutes}
+            resumedRun={resumedRoutineSuccessFocusRun}
+            timerType="routineSuccessFocus"
+            relatedRoutineId={routine.id}
+            minutesOptions={ROUTINE_SUCCESS_FOCUS_MINUTES}
+            selectedMinutes={routineSuccessFocusSelectedMinutes}
+            onSelectMinutes={setRoutineSuccessFocusSelectedMinutes}
+            reinforcementText={
+              routineSuccessFocusSelectedMinutes !== null ? getSuccessFocusReinforcement(routineSuccessFocusSelectedMinutes) : ""
+            }
+            onContinue={() => {
+              // Independent per-occurrence completion (spec: "Completing
+              // one routine must never complete another routine" /
+              // "Independent completion state for each scheduled
+              // occurrence"): keyed by THIS routine's own id and today's
+              // local calendar date -- never affects any other routine or
+              // any other day's occurrence of this same routine.
+              clearTimerRun("routineSuccessFocus");
+              appendRoutineOccurrenceCompletion({
+                routineId: routine.id,
+                occurrenceDateLocal: todayLocalDateString(),
+                completedAt: new Date().toISOString(),
+              });
+              setResumedRoutineSuccessFocusRun(null);
+              setRoutinePhase("arc");
+              setRoutineSuccessFocusSelectedMinutes(null);
+              router.replace("/routines");
+            }}
+          />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -535,6 +668,7 @@ export default function LiveSessionScreen() {
           onChangeGratitudeText={setGratitudeText}
           gratitudeMemoryDetailText={gratitudeMemoryDetailText}
           onChangeGratitudeMemoryDetailText={setGratitudeMemoryDetailText}
+          restartLabel={routine ? "המשך להתמקדות בהצלחה" : undefined}
           onRestart={restart}
         />
       </ScrollView>

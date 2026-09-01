@@ -111,7 +111,8 @@ function useTimerRun(
   timerType: TimerType,
   copy: ArcStageCopy,
   durationMinutes: number | null,
-  resumedRun?: TimerRun | null
+  resumedRun?: TimerRun | null,
+  relatedRoutineId?: string | null
 ): { status: ActionTimerStatus; actionStartedAt: string } {
   const [runId] = useState(() => resumedRun?.runId ?? generateTimerRunId());
   const [actionStartedAt] = useState(() => resumedRun?.actionStartedAt ?? new Date().toISOString());
@@ -129,6 +130,7 @@ function useTimerRun(
       copyBody: copy.body,
       notificationId: null,
       completedAt: null,
+      relatedRoutineId: relatedRoutineId ?? null,
     };
     saveTimerRun(baseRun); // Persisted immediately, before the notification round-trip below resolves.
     if (durationMinutes !== null) {
@@ -158,6 +160,7 @@ function useTimerRun(
       copyBody: copy.body,
       notificationId: notificationIdRef.current,
       completedAt: new Date().toISOString(),
+      relatedRoutineId: resumedRun?.relatedRoutineId ?? relatedRoutineId ?? null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.complete]);
@@ -1296,11 +1299,22 @@ export function FutureSuccessFocusScheduleScreen({
  * complete, so this screen's existing psychological content -- the
  * minutes-focused chip picker and reinforcement text -- is reached with
  * nothing gating it, exactly as before this feature existed.
+ *
+ * timerType defaults to "successCoding" (every pre-existing call site
+ * omits it, unchanged). Multiple Scheduled ARC + Success Focus Routines
+ * passes "routineSuccessFocus" instead -- a routine's post-ARC Success
+ * Focus step is a DIFFERENT concurrent-capable timer than the
+ * standalone/deferred "successCoding" run app/focus-success.tsx owns
+ * exclusively (see that file's + data/reminders.ts's docs): reusing
+ * "successCoding" here would risk this step silently overwriting an
+ * unrelated, already-scheduled future Success Focus's persisted run.
  */
 export function SuccessFocusScreen({
   copy,
   durationMinutes,
   resumedRun,
+  timerType = "successCoding",
+  relatedRoutineId,
   minutesOptions,
   selectedMinutes,
   onSelectMinutes,
@@ -1310,13 +1324,16 @@ export function SuccessFocusScreen({
   copy: ArcStageCopy;
   durationMinutes: number | null;
   resumedRun?: TimerRun | null;
+  timerType?: TimerType;
+  /** Only meaningful alongside timerType "routineSuccessFocus" -- see data/storage.ts's TimerRun.relatedRoutineId. */
+  relatedRoutineId?: string | null;
   minutesOptions: number[];
   selectedMinutes: number | null;
   onSelectMinutes: (minutes: number) => void;
   reinforcementText: string;
   onContinue: () => void;
 }) {
-  const { status } = useTimerRun("successCoding", copy, durationMinutes, resumedRun);
+  const { status } = useTimerRun(timerType, copy, durationMinutes, resumedRun, relatedRoutineId);
 
   if (!status.complete) {
     return (
@@ -1435,6 +1452,7 @@ export function CompleteScreen({
   onChangeGratitudeText,
   gratitudeMemoryDetailText,
   onChangeGratitudeMemoryDetailText,
+  restartLabel = "סשן חדש",
   onRestart,
 }: {
   copy: ArcStageCopy;
@@ -1442,6 +1460,8 @@ export function CompleteScreen({
   onChangeGratitudeText: (text: string) => void;
   gratitudeMemoryDetailText: string;
   onChangeGratitudeMemoryDetailText: (text: string) => void;
+  /** Multiple Scheduled ARC + Success Focus Routines: a routine-launched session shows "המשך להתמקדות בהצלחה" here instead of "סשן חדש" -- onRestart, for that same session, continues into the routine's own post-ARC Success Focus timer rather than starting a brand-new session (see live/LiveSessionScreen.tsx's restart()). Every other, non-routine caller omits this and keeps the original label/behavior unchanged. */
+  restartLabel?: string;
   onRestart: () => void;
 }) {
   return (
