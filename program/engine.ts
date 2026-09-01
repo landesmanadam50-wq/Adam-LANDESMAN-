@@ -1,6 +1,6 @@
 import { PROGRAM_DEFINITIONS } from "./config.ts";
 import type { ProgramDefinition, ProgramWeekDefinition } from "./programTypes.ts";
-import type { DevelopmentLayer } from "../arc/types.ts";
+import type { ArcBuildProfile, DevelopmentLayer } from "../arc/types.ts";
 
 export function getProgramDefinition(programPath: string): ProgramDefinition {
   const definition = PROGRAM_DEFINITIONS[programPath];
@@ -80,6 +80,9 @@ export function isLayerActive(
  * this function is never re-invoked to "correct" an already-running or
  * already-completed timer.
  */
+export const NEGATIVE_ACTION_MIN_DURATION_MINUTES = 1;
+export const NEGATIVE_ACTION_MAX_DURATION_MINUTES = 15;
+
 export function resolveNegativeActionDuration(
   currentProgramWeek: number,
   program: ProgramDefinition,
@@ -88,5 +91,49 @@ export function resolveNegativeActionDuration(
   if (baseDurationMinutes === null || baseDurationMinutes === undefined) return null;
   const weekDefinition = getCurrentWeekDefinition(program, currentProgramWeek);
   const scale = weekDefinition?.negativeActionDurationScale ?? 1;
-  return Math.round(baseDurationMinutes * scale);
+  const resolved = Math.round(baseDurationMinutes * scale);
+  // Negative Action reduction task: every resolved weekly duration must
+  // stay within the valid 1-15 minute range BUILD now restricts entry
+  // to -- clamped here (not just at BUILD entry time) so a legacy
+  // profile whose base allowance was configured before this 1-15
+  // restriction existed (e.g. 20 or 30 minutes) can never resolve to an
+  // out-of-range weekly duration either, at any scale/week.
+  return Math.min(Math.max(resolved, NEGATIVE_ACTION_MIN_DURATION_MINUTES), NEGATIVE_ACTION_MAX_DURATION_MINUTES);
+}
+
+/**
+ * Negative Action reduction task: whether this OPTIONAL habit-reduction
+ * tool is enabled for this program at all -- decoupled from any
+ * DevelopmentLayer/activeLayers routing (see arc/types.ts's
+ * ArcBuildProfile.negativeActionReductionEnabled doc). A profile stored
+ * before this field existed has it genuinely absent (`undefined`, not
+ * `false`) once JSON.parse'd -- data/storage.ts's loadProfile is a bare
+ * parse with no migration step, the same class of legacy-absent-field
+ * situation resolveNegativeActionDuration's own baseDurationMinutes
+ * parameter already handles. Rather than silently treating that legacy
+ * absence as "disabled" (which would take the tool away from a trainee
+ * who had already configured and been using it), it falls back to the
+ * OLD implicit signal: a base duration was already configured. A
+ * genuinely fresh profile that never configured a duration either
+ * falls back to false -- never enabled by default.
+ */
+export function isNegativeActionReductionEnabled(profile: ArcBuildProfile): boolean {
+  const explicit = profile.negativeActionReductionEnabled;
+  if (explicit === true || explicit === false) return explicit;
+  return profile.negativeActionBaseDurationMinutes !== null && profile.negativeActionBaseDurationMinutes !== undefined;
+}
+
+/**
+ * Whether the standalone Negative Action Timer (app/negative-action.tsx)
+ * should be offered at all: the tool must be enabled AND a real,
+ * non-empty negative action must actually be configured (habit) --
+ * mirrors "Show the action... before starting", never a timer with
+ * nothing to name. Deliberately does NOT require a configured duration:
+ * a null/unresolved duration still resolves safely (NegativeActionScreen
+ * treats it as immediately complete, exactly like every other timed
+ * screen in this app), so the tool stays available and legacy-safe
+ * either way.
+ */
+export function isNegativeActionAvailable(profile: ArcBuildProfile): boolean {
+  return isNegativeActionReductionEnabled(profile) && profile.habit !== null && profile.habit.trim().length > 0;
 }

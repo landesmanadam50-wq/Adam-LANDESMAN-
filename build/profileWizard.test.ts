@@ -35,7 +35,9 @@ function filledStateOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
     desiredIdentity: "אומץ",
     identityChallengeContext: "לפני שיחה קשה",
     identityInterferingEmotion: "פחד",
+    negativeActionReductionEnabled: true,
     habit: "גלילה ברשת",
+    negativeActionBaseDurationMinutes: 10,
     beneficialAction: "לגשת ולפתוח שיחה",
     regulationTool: "נשימה 4-7-8",
     hasPreventiveAction: false,
@@ -59,7 +61,9 @@ function filledHabitOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
     goal: "ללמוד ביעילות",
     needsState: false,
     needsIdentityExplicit: false,
+    negativeActionReductionEnabled: true,
     habit: "גלילה ברשת",
+    negativeActionBaseDurationMinutes: 10,
     beneficialAction: "לגשת ולפתוח שיחה",
     regulationTool: "נשימה 4-7-8",
     hasPreventiveAction: false,
@@ -73,16 +77,28 @@ test("first BUILD-GOAL step is goal for a fresh draft", () => {
   assert.equal(getFirstProfileStep(createEmptyDraft(), GOAL_STEP_ORDER), "goal");
 });
 
-test("goal is followed by habit, then negativeActionDuration, then beneficialAction, then needsState -- coordinated timer/dwell task (Part 12): negativeActionDuration sits right after habit, the ONE place the current target Habit's real timer duration is configured", () => {
+test("goal is followed by negativeActionEnabledAsk -- the explicit opt-in for the optional Negative Action Timer tool, asked before habit/negativeActionDuration", () => {
   const draft = { ...createEmptyDraft(), goal: "x" };
-  assert.equal(getNextProfileStep("goal", draft, GOAL_STEP_ORDER), "habit");
+  assert.equal(getNextProfileStep("goal", draft, GOAL_STEP_ORDER), "negativeActionEnabledAsk");
+});
+
+test("answering negativeActionEnabledAsk 'לא' (false) skips both habit and negativeActionDuration entirely, going straight to beneficialAction", () => {
+  const draft = { ...createEmptyDraft(), goal: "x", negativeActionReductionEnabled: false };
+  assert.equal(getNextProfileStep("negativeActionEnabledAsk", draft, GOAL_STEP_ORDER), "beneficialAction");
+});
+
+test("answering negativeActionEnabledAsk 'כן' (true) walks habit, then negativeActionDuration, then beneficialAction -- coordinated timer/dwell task (Part 12): negativeActionDuration sits right after habit, the ONE place the current target Habit's real timer duration is configured", () => {
+  const draft = { ...createEmptyDraft(), goal: "x", negativeActionReductionEnabled: true };
+  assert.equal(getNextProfileStep("negativeActionEnabledAsk", draft, GOAL_STEP_ORDER), "habit");
   assert.equal(getNextProfileStep("habit", { ...draft, habit: "x" }, GOAL_STEP_ORDER), "negativeActionDuration");
   assert.equal(
-    getNextProfileStep("negativeActionDuration", { ...draft, habit: "x" }, GOAL_STEP_ORDER),
-    "beneficialAction",
-    "negativeActionDuration is optional -- never blocks reaching beneficialAction whether or not it was filled in"
+    getNextProfileStep("negativeActionDuration", { ...draft, habit: "x", negativeActionBaseDurationMinutes: 10 }, GOAL_STEP_ORDER),
+    "beneficialAction"
   );
-  assert.equal(getNextProfileStep("beneficialAction", { ...draft, habit: "x", beneficialAction: "x" }, GOAL_STEP_ORDER), "needsState");
+  assert.equal(
+    getNextProfileStep("beneficialAction", { ...draft, habit: "x", negativeActionBaseDurationMinutes: 10, beneficialAction: "x" }, GOAL_STEP_ORDER),
+    "needsState"
+  );
 });
 
 test("needsState=true skips needsIdentityExplicit and asks needsIdentityImmediately instead", () => {
@@ -135,7 +151,8 @@ test("accepting preventive action enters its description step", () => {
 
 test("getPreviousProfileStep mirrors getNextProfileStep, skipping hidden steps", () => {
   const draft = filledHabitOnlyDraft();
-  assert.equal(getPreviousProfileStep("habit", draft, GOAL_STEP_ORDER), "goal");
+  assert.equal(getPreviousProfileStep("habit", draft, GOAL_STEP_ORDER), "negativeActionEnabledAsk");
+  assert.equal(getPreviousProfileStep("negativeActionEnabledAsk", draft, GOAL_STEP_ORDER), "goal");
   assert.equal(getPreviousProfileStep("goal", draft, GOAL_STEP_ORDER), null);
 });
 
@@ -483,65 +500,115 @@ test("createEmptyDraft's five dwell fields per target default to the exact speci
   assert.equal(draft.identityActionImageryDwellSeconds, "8");
 });
 
-// --- Coordinated timer/dwell task (Part 12, 43): the current target
-// Habit's own real timer base duration, configured in GOAL BUILD --
-// the ONE place this is set; LIVE never asks for it again.
+// --- Negative Action reduction task: the optional habit-reduction
+// tool -- free-text negative action (habit) + 1-15 minute duration
+// (negativeActionBaseDurationMinutes), both gated on the explicit
+// negativeActionEnabledAsk opt-in, configured in GOAL BUILD -- the ONE
+// place this is set; LIVE never asks for it again.
 
-test("buildProfileFromDraft leaves negativeActionBaseDurationMinutes null when the step is left blank -- fully optional, exactly like it always has been", () => {
-  const p = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "" }));
-  assert.equal(p.negativeActionBaseDurationMinutes, null);
+test("buildProfileFromDraft persists both habit and negativeActionBaseDurationMinutes when the tool is enabled and both are filled in", () => {
+  const p = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionReductionEnabled: true, habit: "גלילה ברשת", negativeActionBaseDurationMinutes: 10 }));
+  assert.equal(p.negativeActionReductionEnabled, true);
+  assert.equal(p.habit, "גלילה ברשת");
+  assert.equal(p.negativeActionBaseDurationMinutes, 10);
 });
 
-test("buildProfileFromDraft parses a valid entered minutes value for negativeActionBaseDurationMinutes", () => {
-  const p = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "20" }));
-  assert.equal(p.negativeActionBaseDurationMinutes, 20);
+test("buildProfileFromDraft clears both habit and negativeActionBaseDurationMinutes to null when the tool is disabled, even if they were previously filled in", () => {
+  const p = buildProfileFromDraft(
+    filledStateOnlyDraft({ negativeActionReductionEnabled: false, habit: "גלילה ברשת", negativeActionBaseDurationMinutes: 10 })
+  );
+  assert.equal(p.negativeActionReductionEnabled, false);
+  assert.equal(p.habit, null, "disabling the tool must clear the negative action text, never leave a stale hidden value");
+  assert.equal(p.negativeActionBaseDurationMinutes, null, "disabling the tool must clear the duration too");
 });
 
-test("buildProfileFromDraft treats a zero/negative/unparseable negativeActionBaseDurationMinutes as null rather than saving a nonsensical timer duration", () => {
-  assert.equal(buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "0" })).negativeActionBaseDurationMinutes, null);
-  assert.equal(buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "-5" })).negativeActionBaseDurationMinutes, null);
+test("isGoalDraftComplete requires an explicit negativeActionReductionEnabled answer, and -- once enabled -- both habit and a chosen duration", () => {
+  assert.equal(isGoalDraftComplete(filledStateOnlyDraft({ negativeActionReductionEnabled: null })), false, "must be explicitly answered");
+  assert.equal(isGoalDraftComplete(filledStateOnlyDraft({ negativeActionReductionEnabled: true, habit: "" })), false, "enabled but no action written");
+  assert.equal(
+    isGoalDraftComplete(filledStateOnlyDraft({ negativeActionReductionEnabled: true, habit: "גלילה ברשת", negativeActionBaseDurationMinutes: null })),
+    false,
+    "enabled but no duration chosen"
+  );
+  assert.equal(isGoalDraftComplete(filledStateOnlyDraft({ negativeActionReductionEnabled: false })), true, "disabled -- habit/duration are irrelevant");
 });
 
-test("draftFromProfileAndSelection round-trips a saved negativeActionBaseDurationMinutes back into the draft's string field, and back to '' when null", () => {
-  const savedProfile = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "15" }));
+test("buildProfileFromDraft clamps any duration into the valid 1-15 range rather than saving an out-of-range value", () => {
+  assert.equal(
+    buildProfileFromDraft(filledStateOnlyDraft({ negativeActionReductionEnabled: true, negativeActionBaseDurationMinutes: 30 })).negativeActionBaseDurationMinutes,
+    15
+  );
+  assert.equal(
+    buildProfileFromDraft(filledStateOnlyDraft({ negativeActionReductionEnabled: true, negativeActionBaseDurationMinutes: 0 })).negativeActionBaseDurationMinutes,
+    1
+  );
+});
+
+test("draftFromProfileAndSelection round-trips a saved habit/negativeActionBaseDurationMinutes/negativeActionReductionEnabled", () => {
+  const savedProfile = buildProfileFromDraft(
+    filledStateOnlyDraft({ negativeActionReductionEnabled: true, habit: "גלילה ברשת", negativeActionBaseDurationMinutes: 15 })
+  );
   const reloaded = draftFromProfileAndSelection(savedProfile, null);
-  assert.equal(reloaded.negativeActionBaseDurationMinutes, "15");
+  assert.equal(reloaded.negativeActionReductionEnabled, true);
+  assert.equal(reloaded.habit, "גלילה ברשת");
+  assert.equal(reloaded.negativeActionBaseDurationMinutes, 15);
 
-  const neverSetProfile = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "" }));
-  const reloadedNeverSet = draftFromProfileAndSelection(neverSetProfile, null);
-  assert.equal(reloadedNeverSet.negativeActionBaseDurationMinutes, "");
+  const disabledProfile = buildProfileFromDraft(filledStateOnlyDraft({ negativeActionReductionEnabled: false }));
+  const reloadedDisabled = draftFromProfileAndSelection(disabledProfile, null);
+  assert.equal(reloadedDisabled.negativeActionReductionEnabled, false);
+  assert.equal(reloadedDisabled.habit, "");
+  assert.equal(reloadedDisabled.negativeActionBaseDurationMinutes, null);
+});
+
+test("draftFromProfileAndSelection clamps a legacy out-of-range negativeActionBaseDurationMinutes (configured before the 1-15 restriction existed) into the valid range", () => {
+  const legacyProfile = { ...buildProfileFromDraft(filledStateOnlyDraft()), negativeActionBaseDurationMinutes: 30 } as ArcBuildProfile;
+  const reloaded = draftFromProfileAndSelection(legacyProfile, null);
+  assert.equal(reloaded.negativeActionBaseDurationMinutes, 15, "clamped down to the current maximum, never left out of range");
 });
 
 // --- REGRESSION (legacy data): a profile saved before
-// negativeActionBaseDurationMinutes ever existed as a field at all has
-// it genuinely ABSENT -- `undefined`, not `null` -- once JSON.parse'd,
-// since data/storage.ts's loadProfile is a bare parse with no
-// migration step. draftFromProfileAndSelection used to check only
-// `!== null`, so an absent field rendered the literal string
-// "undefined" in the BUILD wizard's TextInput.
+// negativeActionReductionEnabled/negativeActionBaseDurationMinutes ever
+// existed as fields at all has them genuinely ABSENT -- `undefined`,
+// not `null`/`false` -- once JSON.parse'd, since data/storage.ts's
+// loadProfile is a bare parse with no migration step.
+// draftFromProfileAndSelection used to check only `!== null` for the
+// duration, so an absent field rendered the literal string "undefined"
+// in the BUILD wizard's TextInput.
 
 test("REGRESSION: draftFromProfileAndSelection never renders the literal string \"undefined\" for a legacy profile where negativeActionBaseDurationMinutes is genuinely absent (not null)", () => {
   const legacyProfile = {
-    ...buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "20" })),
+    ...buildProfileFromDraft(filledStateOnlyDraft({ negativeActionReductionEnabled: true, negativeActionBaseDurationMinutes: 10 })),
   } as ArcBuildProfile;
   delete (legacyProfile as { negativeActionBaseDurationMinutes?: unknown }).negativeActionBaseDurationMinutes;
   assert.equal("negativeActionBaseDurationMinutes" in legacyProfile, false, "sanity: the field is genuinely absent, not present-as-null");
 
   const draft = draftFromProfileAndSelection(legacyProfile, null);
-  assert.equal(draft.negativeActionBaseDurationMinutes, "", "must render as a blank, editable field -- never the string \"undefined\"");
-  assert.notEqual(draft.negativeActionBaseDurationMinutes, "undefined");
+  assert.equal(draft.negativeActionBaseDurationMinutes, null, "must render as unselected -- never the string \"undefined\", never NaN");
 });
 
-test("REGRESSION: re-saving a legacy profile (negativeActionBaseDurationMinutes absent) through the BUILD wizard without touching that step persists null, never NaN or the string \"undefined\"", () => {
+test("REGRESSION: re-saving a fully legacy profile (both negativeActionReductionEnabled and negativeActionBaseDurationMinutes genuinely absent, as before this feature existed at all) through the BUILD wizard without touching either step persists null/false, never NaN or the string \"undefined\"", () => {
   const legacyProfile = {
-    ...buildProfileFromDraft(filledStateOnlyDraft({ negativeActionBaseDurationMinutes: "20" })),
+    ...buildProfileFromDraft(filledStateOnlyDraft({ negativeActionReductionEnabled: false })),
   } as ArcBuildProfile;
+  delete (legacyProfile as { negativeActionReductionEnabled?: unknown }).negativeActionReductionEnabled;
   delete (legacyProfile as { negativeActionBaseDurationMinutes?: unknown }).negativeActionBaseDurationMinutes;
 
   const draft = draftFromProfileAndSelection(legacyProfile, null);
+  assert.equal(draft.negativeActionReductionEnabled, false, "neither field was ever configured -- defaults to disabled, not silently enabled");
   const resaved = buildProfileFromDraft(draft);
   assert.equal(resaved.negativeActionBaseDurationMinutes, null);
   assert.equal(Number.isNaN(resaved.negativeActionBaseDurationMinutes as unknown as number), false);
+});
+
+test("REGRESSION: a legacy profile where negativeActionReductionEnabled is genuinely absent (undefined, not false) falls back to whether a duration was already configured -- a trainee who was already using the tool keeps access to it", () => {
+  const legacyProfile = {
+    ...buildProfileFromDraft(filledStateOnlyDraft({ negativeActionReductionEnabled: true, habit: "גלילה ברשת", negativeActionBaseDurationMinutes: 10 })),
+  } as ArcBuildProfile;
+  delete (legacyProfile as { negativeActionReductionEnabled?: unknown }).negativeActionReductionEnabled;
+
+  const draft = draftFromProfileAndSelection(legacyProfile, null);
+  assert.equal(draft.negativeActionReductionEnabled, true, "already had a duration configured -- must not silently lose access to the tool");
+  assert.equal(draft.habit, "גלילה ברשת");
 });
 
 test("buildProfileFromDraft saves the state target's seven dwell values (coordinated timer/dwell task: presence + stop-imagery joined the original five), applying the correct defaults when left unedited", () => {

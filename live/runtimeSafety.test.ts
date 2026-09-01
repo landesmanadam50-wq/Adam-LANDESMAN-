@@ -56,6 +56,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     actionDuration: null,
     successFocusDuration: null,
     negativeActionBaseDurationMinutes: null,
+    negativeActionReductionEnabled: true,
     ...overrides,
   };
 }
@@ -432,9 +433,16 @@ test("a reactive_urge session, walked to 'act' through the real engine, that cho
   assert.equal(p.beneficialAction, "לצאת להליכה של 20 דקות");
 });
 
-test("a reactive_urge session with the habit layer active, walked end to end through the real engine, follows Beneficial Action -> Success Focus -> Negative Action -> complete, never any other order", () => {
+// Negative Action reduction task: the main routine is always ARC ->
+// Success Focus -> completion, walked here through the real engine
+// exactly as live/LiveSessionScreen.tsx does -- the optional Negative
+// Action Timer is never automatically inserted, regardless of
+// activeLayers or whether a negative action is configured/enabled.
+
+test("a reactive_urge session with the habit layer active and Negative Action reduction enabled, walked end to end through the real engine, follows Beneficial Action -> Success Focus -> complete directly -- Negative Action is never automatically inserted", () => {
   const p = profile({
     habit: "גלילה ברשת", // the predefined negative/interfering action
+    negativeActionReductionEnabled: true,
     beneficialAction: "לצאת להליכה של 20 דקות",
     preventiveAction: null,
   });
@@ -460,9 +468,6 @@ test("a reactive_urge session with the habit layer active, walked end to end thr
       // Focus scheduled.
       state = { ...state, successFocusExtraMinutes: 0, wantsFutureSuccessFocus: false };
     }
-    if (stage === "negative_action") {
-      state = { ...state, negativeActionStarted: true };
-    }
     const next = getNextArcStage(stage, state, p, activeLayers);
     stage = next.stage;
     state = { ...state, loopIterationCount: next.loopIterationCount };
@@ -472,23 +477,26 @@ test("a reactive_urge session with the habit layer active, walked end to end thr
 
   const actIndex = visitedStages.indexOf("act");
   const successFocusIndex = visitedStages.indexOf("success_focus");
-  const negativeActionIndex = visitedStages.indexOf("negative_action");
   const completeIndex = visitedStages.indexOf("complete");
 
-  assert.ok(actIndex >= 0 && successFocusIndex >= 0 && negativeActionIndex >= 0 && completeIndex >= 0, "sanity: every stage in the sequence must actually be reached");
+  assert.ok(actIndex >= 0 && successFocusIndex >= 0 && completeIndex >= 0, "sanity: every stage in the sequence must actually be reached");
   assert.ok(actIndex < successFocusIndex, "Beneficial Action (act) must come before Success Focus");
-  assert.ok(successFocusIndex < negativeActionIndex, "Success Focus must come before Negative Action");
-  assert.ok(negativeActionIndex < completeIndex, "Negative Action must come before complete");
-
-  // Explicitly rule out the forbidden orderings named in the spec.
-  assert.ok(!(negativeActionIndex < successFocusIndex), "must never produce Negative Action before Success Focus");
-  assert.ok(!(negativeActionIndex < actIndex), "must never produce Negative Action before Beneficial Action");
+  assert.ok(successFocusIndex < completeIndex, "Success Focus must come before complete");
+  assert.equal(successFocusIndex + 1, completeIndex, "Success Focus must continue DIRECTLY into complete -- no stage (Negative Action included) is ever inserted between them");
+  assert.ok(!visitedStages.includes("negative_action"), "must never produce Negative Action automatically after ARC or Success Focus, even with the habit layer active and a negative action configured and enabled");
 });
 
-test("a session where the habit layer is never active skips negative_action entirely -- success_focus goes straight to complete, exactly as before this feature existed", () => {
-  const p = profile({ habit: "גלילה ברשת" }); // configured, but irrelevant -- habit layer never active this session
-  const activeLayers: DevelopmentLayer[] = ["state"];
+test("success_focus continues straight to complete regardless of activeLayers, habit configuration, or whether Negative Action reduction is enabled -- it is never required to complete the main routine", () => {
   const state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
-  const next = getNextArcStage("success_focus", state, p, activeLayers);
-  assert.equal(next.stage, "complete");
+  const cases: Array<{ activeLayers: DevelopmentLayer[]; overrides: Partial<ArcBuildProfile> }> = [
+    { activeLayers: ["state"], overrides: { habit: "גלילה ברשת", negativeActionReductionEnabled: true } },
+    { activeLayers: ["habit"], overrides: { habit: null, negativeActionReductionEnabled: false } },
+    { activeLayers: ["habit"], overrides: { habit: "גלילה ברשת", negativeActionReductionEnabled: false } },
+    { activeLayers: ["habit"], overrides: { habit: "גלילה ברשת", negativeActionReductionEnabled: true } },
+  ];
+  for (const { activeLayers, overrides } of cases) {
+    const p = profile(overrides);
+    const next = getNextArcStage("success_focus", state, p, activeLayers);
+    assert.equal(next.stage, "complete", `activeLayers=${activeLayers.join("+")}, overrides=${JSON.stringify(overrides)}`);
+  }
 });

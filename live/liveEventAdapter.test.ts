@@ -93,6 +93,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     actionDuration: null,
     successFocusDuration: null,
     negativeActionBaseDurationMinutes: null,
+    negativeActionReductionEnabled: false,
     ...overrides,
   };
 }
@@ -1253,7 +1254,7 @@ test("a fresh session starts with successFocusExtraMinutes and wantsFutureSucces
   assert.equal(fresh.wantsFutureSuccessFocus, null);
 });
 
-test("success_focus's own engine transition is completely unaffected by successFocusExtraMinutes/wantsFutureSuccessFocus -- both are UI-side sub-flow state only; the real transition depends solely on needsNegativeAction", () => {
+test("success_focus's own engine transition is completely unaffected by successFocusExtraMinutes/wantsFutureSuccessFocus -- both are UI-side sub-flow state only; the real transition always continues unconditionally to complete", () => {
   const pWithHabit = profile();
   const activeLayersWithHabit: DevelopmentLayer[] = ["habit"];
 
@@ -1274,7 +1275,8 @@ test("success_focus's own engine transition is completely unaffected by successF
 
   const declinedOutcome = getNextArcStage("success_focus", declinedSession, pWithHabit, activeLayersWithHabit);
   const scheduledOutcome = getNextArcStage("success_focus", scheduledSession, pWithHabit, activeLayersWithHabit);
-  assert.deepEqual(declinedOutcome, scheduledOutcome, "the transition depends only on needsNegativeAction, never on the retrospective/future-scheduling sub-flow answers");
+  assert.deepEqual(declinedOutcome, scheduledOutcome, "the transition never depends on the retrospective/future-scheduling sub-flow answers");
+  assert.equal(declinedOutcome.stage, "complete", "success_focus always continues straight to complete -- Negative Action reduction task");
 });
 
 // --- Reactive-flow-strengthening task: applyTriggerContext (#1, #8) --

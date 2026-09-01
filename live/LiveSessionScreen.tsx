@@ -18,21 +18,26 @@
  * confirmed real action -- an abandoned session never reaches that call.
  *
  * One narrow, explicit exception to "never resumes a stale session":
- * a real timer already in progress -- the Beneficial Action Timer
- * ("act"'s "performing" sub-phase), the Success Focus / Success Coding
- * Timer, or the Negative Action Timer. Each is its own independently
- * persisted data/storage.ts TimerRun (actionStartedAt, plus a snapshot
- * of its exact display text), so any ONE of them surviving navigating
- * away and back, the app backgrounding/locking, or a full close/reopen
- * is a narrow, explicit exception to "session state is never
- * persisted" -- see the three resumedXRun states below and
- * arc/actionTimer.ts's getActionTimerStatusFromStartedAt. Nothing else
- * about the session (ratings, encoding text, routing) is reconstructed
- * or persisted; every other stage still starts over exactly as before.
- * At most one of the three timer types is ever actually running at a
- * time (they're sequential, and each is cleared the moment its stage
- * is left -- see commitAdvance), so finding one during resume is
- * unambiguous.
+ * a real timer already in progress that THIS screen owns -- the
+ * Beneficial Action Timer ("act"'s "performing" sub-phase), or a
+ * routine's own post-ARC Success Focus timer (Multiple Scheduled ARC +
+ * Success Focus Routines). Each is its own independently persisted
+ * data/storage.ts TimerRun (actionStartedAt, plus a snapshot of its
+ * exact display text), so either one surviving navigating away and
+ * back, the app backgrounding/locking, or a full close/reopen is a
+ * narrow, explicit exception to "session state is never persisted" --
+ * see the resumedXRun states below and arc/actionTimer.ts's
+ * getActionTimerStatusFromStartedAt. The standalone Success Focus
+ * ("successCoding") and Negative Action ("negativeAction") timers are
+ * deliberately NOT resumed here -- each is exclusively owned and
+ * resumed by its own standalone deep-link screen (app/focus-success.tsx,
+ * app/negative-action.tsx respectively), never by re-entering a fresh
+ * LIVE session. Nothing else about the session (ratings, encoding text,
+ * routing) is reconstructed or persisted; every other stage still
+ * starts over exactly as before. At most one of this screen's own
+ * timer types is ever actually running at a time (they're sequential,
+ * and each is cleared the moment its stage is left -- see
+ * commitAdvance), so finding one during resume is unambiguous.
  */
 
 import { useCallback, useState } from "react";
@@ -47,7 +52,6 @@ import { getStageCopy } from "../arc/stageCopy.ts";
 import { buildEvidenceIndex, buildSessionEvidenceContext } from "../arc/evidence.ts";
 import type { EvidenceRecord } from "../arc/evidence.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
-import { getProgramDefinition, resolveNegativeActionDuration } from "../program/engine.ts";
 import {
   loadProfile,
   loadProgramProgress,
@@ -98,7 +102,6 @@ export default function LiveSessionScreen() {
   const routineId = typeof routineIdParam === "string" ? routineIdParam : null;
   const [profile, setProfile] = useState<ArcBuildProfile | null>(null);
   const [activeLayers, setActiveLayers] = useState<DevelopmentLayer[]>([]);
-  const [currentProgramWeek, setCurrentProgramWeek] = useState(1);
   const [session, setSession] = useState<ArcLiveState>(() => createEmptyLiveState());
   const [stage, setStage] = useState<ArcStage>("trigger_selection");
   const [pendingSensationLocation, setPendingSensationLocation] = useState("");
@@ -128,9 +131,15 @@ export default function LiveSessionScreen() {
   // scheduleFutureSuccessFocus), which is exclusively resolved via its
   // own dedicated deep-link screen (app/focus-success.tsx), never by
   // re-entering a fresh LIVE session here -- so LiveSessionScreen no
-  // longer checks for or resumes it at all.
+  // longer checks for or resumes it at all. Negative Action reduction
+  // task: a "negativeAction" TimerRun is no longer checked for or
+  // resumed here either -- the main routine never reaches
+  // "negative_action" any more (arc/arcEngine.ts's "success_focus" case
+  // always continues straight to "complete"), and that timer type is
+  // now exclusively owned by its own standalone deep-link screen
+  // (app/negative-action.tsx), the same "one timer type, one exclusive
+  // owner" pattern "successCoding" already established.
   const [resumedBeneficialActionRun, setResumedBeneficialActionRun] = useState<TimerRun | null>(null);
-  const [resumedNegativeActionRun, setResumedNegativeActionRun] = useState<TimerRun | null>(null);
   /**
    * Multiple Scheduled ARC + Success Focus Routines: the ONE routine
    * this session is for (resolved from the routineId route param, or --
@@ -179,18 +188,20 @@ export default function LiveSessionScreen() {
         loadProgramProgress(),
         loadProgramSelection(),
         loadTimerRun("beneficialAction"),
-        loadTimerRun("negativeAction"),
         // Multiple Scheduled ARC + Success Focus Routines: a routine's
         // own post-ARC Success Focus timer, resumed here the same way
-        // beneficialAction/negativeAction already are -- see this
-        // file's module doc's "narrow, explicit exception" and
-        // data/storage.ts's TimerRun.relatedRoutineId. Still deliberately
-        // NOT loadTimerRun("successCoding") -- that stays exclusively
-        // owned by the future-scheduled deep link (app/focus-success.tsx).
+        // beneficialAction already is -- see this file's module doc's
+        // "narrow, explicit exception" and data/storage.ts's
+        // TimerRun.relatedRoutineId. Still deliberately NOT
+        // loadTimerRun("successCoding") -- that stays exclusively owned
+        // by the future-scheduled deep link (app/focus-success.tsx) --
+        // nor loadTimerRun("negativeAction"), exclusively owned by
+        // app/negative-action.tsx (see the resumedBeneficialActionRun
+        // state doc above).
         loadTimerRun("routineSuccessFocus"),
         loadSessionLog(),
         loadScheduledRoutines(),
-      ]).then(([loadedProfile, loadedProgress, , beneficialActionRun, negativeActionRun, routineSuccessFocusRun, sessionLog, routines]) => {
+      ]).then(([loadedProfile, loadedProgress, , beneficialActionRun, routineSuccessFocusRun, sessionLog, routines]) => {
         if (cancelled) return;
         if (!loadedProfile || !loadedProgress) {
           router.replace("/build");
@@ -198,7 +209,6 @@ export default function LiveSessionScreen() {
         }
         setProfile(loadedProfile);
         setActiveLayers(loadedProgress.activeLayers);
-        setCurrentProgramWeek(loadedProgress.currentProgramWeek);
         setEvidenceIndex(buildEvidenceIndex(sessionLog));
         setPendingSensationLocation("");
         setPendingCustomSensationLocation("");
@@ -221,7 +231,6 @@ export default function LiveSessionScreen() {
         if (routineSuccessFocusRun && matchedRoutine) {
           setResumedRoutineSuccessFocusRun(routineSuccessFocusRun);
           setResumedBeneficialActionRun(null);
-          setResumedNegativeActionRun(null);
           setRoutinePhase("successFocus");
           return;
         }
@@ -235,28 +244,11 @@ export default function LiveSessionScreen() {
 
         if (beneficialActionRun) {
           setResumedBeneficialActionRun(beneficialActionRun);
-          setResumedNegativeActionRun(null);
           setSessionStartedAt(beneficialActionRun.actionStartedAt);
           return;
         }
 
-        if (negativeActionRun) {
-          setResumedBeneficialActionRun(null);
-          setResumedNegativeActionRun(negativeActionRun);
-          setSessionStartedAt(negativeActionRun.actionStartedAt);
-          setSession({
-            ...createEmptyLiveState(),
-            currentArcStage: "negative_action",
-            negativeActionStarted: true,
-            actionReached: true,
-            realActionCompleted: true,
-          });
-          setStage("negative_action");
-          return;
-        }
-
         setResumedBeneficialActionRun(null);
-        setResumedNegativeActionRun(null);
         setSession(createEmptyLiveState());
         setStage(getFirstArcStage());
         setSessionStartedAt(new Date().toISOString());
@@ -331,17 +323,20 @@ export default function LiveSessionScreen() {
   const commitAdvance = (patchedSession: ArcLiveState, transitionStage: ArcStage = stage) => {
     if (!profile) return;
     const { session: nextSession, stage: nextStage } = advanceLiveSession(transitionStage, patchedSession, profile, activeLayers);
-    // Each real timer's persisted run is cleared the moment its own
-    // stage is left -- the only way out of either is its real activity
-    // actually completing (act -> success_focus, negative_action ->
-    // complete are both unconditional in arc/arcEngine.ts once
-    // reached). Never clears a DIFFERENT timer type's run. Coordinated
-    // timer/dwell task: success_focus no longer starts a "successCoding"
-    // TimerRun during the protocol at all (see this file's module doc
-    // and live/ArcLiveRenderer.tsx's "success_focus" case), so there is
-    // nothing of that type to clear on leaving this stage any more.
+    // The Beneficial Action Timer's persisted run is cleared the moment
+    // "act" is left -- the only way out is the real activity actually
+    // completing (act -> success_focus is unconditional in
+    // arc/arcEngine.ts once reached). Never clears a DIFFERENT timer
+    // type's run. Coordinated timer/dwell task: success_focus no longer
+    // starts a "successCoding" TimerRun during the protocol at all (see
+    // this file's module doc and live/ArcLiveRenderer.tsx's
+    // "success_focus" case). Negative Action reduction task: there is
+    // no "negativeAction" TimerRun to clear here either any more --
+    // "negative_action" is never a stage this screen's own state
+    // machine reaches (success_focus always continues straight to
+    // complete); that timer type is exclusively owned and cleared by
+    // its own standalone screen (app/negative-action.tsx).
     if (stage === "act" && nextStage !== "act") clearTimerRun("beneficialAction");
-    if (stage === "negative_action" && nextStage !== "negative_action") clearTimerRun("negativeAction");
     setSession(nextSession);
     setStage(nextStage);
     setPendingSensationLocation("");
@@ -386,10 +381,13 @@ export default function LiveSessionScreen() {
     // future-scheduled Success Focus the trainee deliberately set up,
     // owned entirely by data/reminders.ts's scheduleFutureSuccessFocus/
     // cancelFutureSuccessFocus, never by starting a fresh LIVE session.
+    // Negative Action reduction task: never clears "negativeAction"
+    // here either, for the exact same reason -- that TimerRun (when one
+    // exists) belongs to the trainee's own standalone, independently-
+    // started Negative Action Timer (app/negative-action.tsx), which a
+    // fresh/restarted main LIVE session must never interrupt or discard.
     clearTimerRun("beneficialAction");
-    clearTimerRun("negativeAction");
     setResumedBeneficialActionRun(null);
-    setResumedNegativeActionRun(null);
 
     if (routine) {
       // Multiple Scheduled ARC + Success Focus Routines' required
@@ -524,11 +522,6 @@ export default function LiveSessionScreen() {
 
   const copy = getStageCopy(stage, profile, session, activeLayers, evidenceIndex);
   const availableTriggers = getAvailableLiveTriggers(activeLayers);
-  const negativeActionDurationMinutes = resolveNegativeActionDuration(
-    currentProgramWeek,
-    getProgramDefinition(profile.programPath),
-    profile.negativeActionBaseDurationMinutes
-  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -660,10 +653,18 @@ export default function LiveSessionScreen() {
             scheduleFutureSuccessFocus({ option, durationMinutes });
             commitAdvance(session);
           }}
-          negativeActionDurationMinutes={negativeActionDurationMinutes}
+          // Negative Action reduction task: "negative_action" is never
+          // actually reached by this screen's own state machine any
+          // more (arc/arcEngine.ts's "success_focus" case always
+          // continues straight to "complete") -- these two props exist
+          // only because ArcLiveRenderer's switch must stay exhaustive
+          // over every ArcStage; null is a safe, valid, never-exercised
+          // default for this now-unreachable case. See
+          // app/negative-action.tsx for the real, standalone tool.
+          negativeActionDurationMinutes={null}
           onNegativeActionStart={() => setSession(applyNegativeActionStarted(session))}
           onNegativeActionCompleted={() => commitAdvance(session)}
-          resumedNegativeActionRun={resumedNegativeActionRun}
+          resumedNegativeActionRun={null}
           gratitudeText={gratitudeText}
           onChangeGratitudeText={setGratitudeText}
           gratitudeMemoryDetailText={gratitudeMemoryDetailText}

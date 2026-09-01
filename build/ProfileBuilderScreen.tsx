@@ -26,11 +26,18 @@ import {
   type ProfileDraft,
   type ProfileStep,
 } from "./profileWizard.ts";
+import { NEGATIVE_ACTION_MAX_DURATION_MINUTES, NEGATIVE_ACTION_MIN_DURATION_MINUTES } from "../program/engine.ts";
+
+const NEGATIVE_ACTION_DURATION_OPTIONS: number[] = Array.from(
+  { length: NEGATIVE_ACTION_MAX_DURATION_MINUTES - NEGATIVE_ACTION_MIN_DURATION_MINUTES + 1 },
+  (_, index) => NEGATIVE_ACTION_MIN_DURATION_MINUTES + index
+);
 
 const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   goal: "מה תרצה להשיג? (לאן אתה רוצה להתקדם)",
-  habit: "מה ההרגל שתרצה לעבוד עליו?",
-  negativeActionDuration: "כמה זמן, בדקות, לאפשר להרגל הזה? (רשות)",
+  negativeActionEnabledAsk: "האם תרצה להפעיל כלי לצמצום פעולה שלילית? (רשות)",
+  habit: "מה הפעולה השלילית שתרצה לצמצם?",
+  negativeActionDuration: "כמה זמן, בדקות, לאפשר לפעולה הזו? (1 עד 15 דקות)",
   beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע במקומו? (ההרגל הרצוי)",
   needsState: "האם יש מצב פנימי (כמו רוגע, ביטחון או חמלה) שתרצה לפתח ולחזק?",
   needsIdentityImmediately: "לעבוד גם על זהות מקבילה כבר מההתחלה?",
@@ -66,6 +73,7 @@ const YESNO_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   needsIdentityImmediately: "needsIdentityImmediately",
   needsIdentityExplicit: "needsIdentityExplicit",
   preventiveActionAsk: "hasPreventiveAction",
+  negativeActionEnabledAsk: "negativeActionReductionEnabled",
 };
 
 /**
@@ -162,15 +170,22 @@ export default function ProfileBuilderScreen() {
 
         {step === "negativeActionDuration" && (
           <View>
-            <TextInput
-              style={styles.textInput}
-              value={draft.negativeActionBaseDurationMinutes}
-              onChangeText={(value) => setDraft({ ...draft, negativeActionBaseDurationMinutes: value.replace(/[^0-9]/g, "") })}
-              keyboardType="numeric"
-              placeholder="אפשר להשאיר ריק"
-              textAlign="right"
-            />
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => goNext(draft)}>
+            <View style={styles.chipRow}>
+              {NEGATIVE_ACTION_DURATION_OPTIONS.map((minutes) => (
+                <Pressable
+                  key={minutes}
+                  style={[styles.chip, draft.negativeActionBaseDurationMinutes === minutes && styles.chipSelected]}
+                  onPress={() => setDraft({ ...draft, negativeActionBaseDurationMinutes: minutes })}
+                >
+                  <Text style={styles.buttonText}>{minutes} דק&apos;</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable
+              style={[styles.button, styles.fullWidthButton, draft.negativeActionBaseDurationMinutes === null && styles.buttonDisabled]}
+              disabled={draft.negativeActionBaseDurationMinutes === null}
+              onPress={() => goNext(draft)}
+            >
               <Text style={styles.buttonText}>המשך</Text>
             </Pressable>
           </View>
@@ -189,7 +204,15 @@ export default function ProfileBuilderScreen() {
         {step === "review" && (
           <View>
             <Text style={styles.body}>{`מטרה: ${draft.goal}`}</Text>
-            <Text style={styles.body}>{`הרגל רצוי: ${draft.habit} → ${draft.beneficialAction}`}</Text>
+            <Text style={styles.body}>{`פעולה מיטיבה (הרגל רצוי): ${draft.beneficialAction}`}</Text>
+            {draft.negativeActionReductionEnabled === true && (
+              <>
+                <Text style={styles.body}>{`פעולה שלילית: ${draft.habit}`}</Text>
+                {draft.negativeActionBaseDurationMinutes !== null && (
+                  <Text style={styles.body}>{`זמן מותר: ${draft.negativeActionBaseDurationMinutes} דקות`}</Text>
+                )}
+              </>
+            )}
             {draft.needsState && <Text style={styles.body}>{`מצב רצוי: ${draft.supportiveState}`}</Text>}
             {resolvesNeedsIdentityText(draft) && <Text style={styles.body}>{`זהות רצויה: ${draft.desiredIdentity}`}</Text>}
             <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
@@ -259,6 +282,9 @@ const styles = StyleSheet.create({
   fullWidthButton: {
     marginTop: 16,
   },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
   buttonText: {
     color: "#fff",
     fontWeight: "600",
@@ -270,6 +296,21 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 8,
+  },
+  chip: {
+    backgroundColor: "#E6F4FE",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  chipSelected: {
+    backgroundColor: "#0a7ea4",
   },
   backButton: {
     marginTop: 24,

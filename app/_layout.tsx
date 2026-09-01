@@ -69,6 +69,7 @@ export default function RootLayout() {
         <Stack.Screen name="stats/index" options={{ title: "התקדמות שבועית" }} />
         <Stack.Screen name="focus-success" options={{ title: "התמקדות בהצלחה" }} />
         <Stack.Screen name="routines/index" options={{ title: "השגרה שלי" }} />
+        <Stack.Screen name="negative-action" options={{ title: "פעולה שלילית מוגבלת" }} />
       </Stack>
       <StatusBar style="auto" />
     </SafeAreaProvider>

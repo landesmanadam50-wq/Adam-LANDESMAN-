@@ -38,6 +38,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     actionDuration: null,
     successFocusDuration: null,
     negativeActionBaseDurationMinutes: null,
+    negativeActionReductionEnabled: false,
     ...overrides,
   };
 }
