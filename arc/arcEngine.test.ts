@@ -6,7 +6,6 @@ import {
   getAvailableProactiveTargets,
   getAvailableReactiveExperiences,
   needsCurrentActionResolution,
-  needsNegativeAction,
   resolveActionDuration,
   getFirstArcStage,
   getNextArcStage,
@@ -52,6 +51,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     actionDuration: null,
     successFocusDuration: null,
     negativeActionBaseDurationMinutes: null,
+    negativeActionReductionEnabled: true,
     ...overrides,
   };
 }
@@ -532,38 +532,36 @@ test("proactive never uses the reactive intensity thresholds", () => {
 // Tail
 // ---------------------------------------------------------------------------
 
-test("the tail is a fixed line: encode -> act -> success_focus -> negative_action -> complete, when the habit layer is active and a negative action is configured", () => {
-  const p = profile(); // default profile has habit configured (see needsNegativeAction)
+// Negative Action reduction task: the main routine is always ARC ->
+// Success Focus -> completion. The optional Negative Action Timer is a
+// separate, BUILD-configured tool (program/engine.ts's
+// isNegativeActionAvailable) with its own standalone entry point
+// (app/negative-action.tsx) -- it is never inserted into this sequencer
+// any more, regardless of activeLayers or profile.habit.
+
+test("the tail is a fixed line: encode -> act -> success_focus -> complete, unconditionally", () => {
+  const p = profile(); // default profile has habit configured -- must not matter any more
   const s = state();
   assert.equal(getNextArcStage("encode", s, p, ALL_LAYERS).stage, "act");
   assert.equal(getNextArcStage("act", s, p, ALL_LAYERS).stage, "success_focus");
-  assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "negative_action");
-  assert.equal(getNextArcStage("negative_action", s, p, ALL_LAYERS).stage, "complete");
+  assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "complete");
 });
 
-test("the tail skips negative_action entirely, going straight to complete, when the habit layer isn't active this session (state/identity-only)", () => {
+test("success_focus continues straight to complete regardless of activeLayers -- habit layer active or not never matters any more", () => {
   const p = profile();
   const s = state();
   const layersWithoutHabit: DevelopmentLayer[] = ["state", "identity"];
   assert.equal(getNextArcStage("success_focus", s, p, layersWithoutHabit).stage, "complete");
-});
-
-test("the tail skips negative_action when the habit layer is active but no negative action is configured (habit is null)", () => {
-  const p = profile({ habit: null });
-  const s = state();
   assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "complete");
 });
 
-test("needsNegativeAction is true only when the habit layer is active AND a negative action is configured", () => {
-  const withHabit = profile({ habit: "גלילה ברשת" });
-  assert.equal(needsNegativeAction(["state", "identity", "habit"], withHabit), true);
-  assert.equal(needsNegativeAction(["state", "identity"], withHabit), false, "habit layer not active");
-
-  const withoutHabit = profile({ habit: null });
-  assert.equal(needsNegativeAction(["state", "identity", "habit"], withoutHabit), false, "no negative action configured");
+test("success_focus continues straight to complete regardless of whether a negative action is configured (profile.habit set or null)", () => {
+  const s = state();
+  assert.equal(getNextArcStage("success_focus", s, profile({ habit: "גלילה ברשת" }), ALL_LAYERS).stage, "complete");
+  assert.equal(getNextArcStage("success_focus", s, profile({ habit: null }), ALL_LAYERS).stage, "complete");
 });
 
-test("negative_action always advances unconditionally to complete", () => {
+test("negative_action always advances unconditionally to complete -- unreachable via the sequencer, but harmless if ever reached (exhaustiveness fallback)", () => {
   const p = profile();
   assert.equal(getNextArcStage("negative_action", state(), p, ALL_LAYERS).stage, "complete");
   assert.equal(getNextArcStage("negative_action", state({ negativeActionStarted: true }), p, ALL_LAYERS).stage, "complete");
@@ -738,7 +736,10 @@ test("existing downstream Reactive ARC progression is unchanged: from observer_p
     "encode",
     "act",
     "success_focus",
-    "negative_action", // habit layer active + profile.habit configured (base profile() default) -- unchanged existing behavior
+    // Negative Action reduction task: negative_action is never reached
+    // here any more, even though the habit layer is active and
+    // profile.habit is configured (base profile() default) -- it's an
+    // optional, standalone tool now, never inserted into this sequence.
     "complete",
   ]);
 });

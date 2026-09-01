@@ -172,7 +172,7 @@ export async function getOrCreatePilotStartedAt(): Promise<string> {
  * actually been processed (sound played, notification cancelled) --
  * once set, it is never processed a second time for this run.
  */
-export type TimerType = "beneficialAction" | "successCoding" | "negativeAction";
+export type TimerType = "beneficialAction" | "successCoding" | "negativeAction" | "routineSuccessFocus";
 
 export interface TimerRun {
   timerType: TimerType;
@@ -183,6 +183,18 @@ export interface TimerRun {
   copyBody: string;
   notificationId: string | null;
   completedAt: string | null;
+  /**
+   * Only ever set for timerType "routineSuccessFocus" -- which
+   * ScheduledRoutine's post-ARC Success Focus timer this specific run
+   * belongs to, so resuming it (surviving backgrounding/locking/a full
+   * close-reopen, the same as every other TimerRun) can record
+   * completion against the correct routine occurrence. Optional (never
+   * present on the other three timer types, and absent on any TimerRun
+   * persisted before this field existed) rather than `string | null`,
+   * so a legacy record simply parses with it `undefined` -- never a
+   * literal "undefined" read as a real id.
+   */
+  relatedRoutineId?: string | null;
 }
 
 function timerRunKey(timerType: TimerType): string {
@@ -224,7 +236,7 @@ export async function clearTimerRun(timerType: TimerType): Promise<void> {
  * fires and is handled, or the trainee replaces/cancels it) -- never
  * left dangling to fire a redundant signal later.
  */
-export type ReminderKind = "focusSuccess" | "arc";
+export type ReminderKind = "focusSuccess" | "arc" | "routine";
 
 export interface PendingReminder {
   kind: ReminderKind;
@@ -259,4 +271,85 @@ export async function savePendingReminder(reminder: PendingReminder): Promise<vo
 /** Called once a reminder's notification has actually fired and been handled, or when it's being replaced by a newly-scheduled one of the same kind. Only ever clears the ONE named kind's record. */
 export async function clearPendingReminder(kind: ReminderKind): Promise<void> {
   await AsyncStorage.removeItem(pendingReminderKey(kind));
+}
+
+/**
+ * Multiple Scheduled ARC + Success Focus Routines: a trainee-defined
+ * recurring routine (e.g. "08:00 -- Morning Focus"), distinct from
+ * PendingReminder above -- that type is deliberately one-per-kind
+ * (see its own doc), which cannot represent "any number of independent
+ * named routines, each with its own schedule". ScheduledRoutine records
+ * are instead stored as a single list (loadScheduledRoutines/
+ * saveScheduledRoutines below), each with its own stable `id`, so any
+ * number of routines -- including several scheduled for the exact same
+ * clock time -- can exist, be edited, and be notified independently,
+ * never overwriting one another.
+ *
+ * hour/minute are the device's LOCAL wall-clock time (never a UTC or
+ * elapsed-time value) the routine should begin; recurrenceDays uses
+ * JS's own Date.getDay() convention (0 = Sunday .. 6 = Saturday) so the
+ * exact same values can be compared directly against a live Date
+ * without any extra conversion. nextOccurrenceNotificationId/
+ * nextOccurrenceScheduledFor are this routine's OWN currently-scheduled
+ * local notification for its next occurrence (see data/routines.ts's
+ * rescheduleRoutineNotification/reconcileRoutineNotifications) --
+ * always kept in sync with a fresh resolveNextOccurrenceDate result,
+ * cancelled and replaced rather than ever left stale or duplicated.
+ */
+export interface ScheduledRoutine {
+  id: string;
+  title: string;
+  hour: number;
+  minute: number;
+  /** 0 = Sunday .. 6 = Saturday (Date.getDay() convention). */
+  recurrenceDays: number[];
+  successFocusDurationMinutes: number;
+  notificationsEnabled: boolean;
+  enabled: boolean;
+  nextOccurrenceNotificationId: string | null;
+  /** ISO timestamp this routine's currently-scheduled notification (if any) actually fires at -- lets reconciliation detect a stale schedule without re-deriving it from the notification itself. */
+  nextOccurrenceScheduledFor: string | null;
+  createdAt: string;
+}
+
+/**
+ * One completed occurrence of one routine, keyed by the LOCAL calendar
+ * date (program/dateUtils.ts's todayLocalDateString -- never an hour-only
+ * or UTC-based key, so a trainee near midnight always gets the correct
+ * day's occurrence marked, not the wrong one). Completing today's
+ * occurrence of routine A can never mark routine B -- or a different
+ * day's occurrence of routine A -- complete, since both routineId and
+ * occurrenceDateLocal must match. This list only ever grows
+ * (appendRoutineOccurrenceCompletion below); nothing in this feature
+ * removes a past completion.
+ */
+export interface RoutineOccurrenceCompletion {
+  routineId: string;
+  occurrenceDateLocal: string;
+  completedAt: string;
+}
+
+const SCHEDULED_ROUTINES_KEY = "archi.scheduledRoutines.v1";
+const ROUTINE_OCCURRENCE_COMPLETIONS_KEY = "archi.routineOccurrenceCompletions.v1";
+
+export async function loadScheduledRoutines(): Promise<ScheduledRoutine[]> {
+  const raw = await AsyncStorage.getItem(SCHEDULED_ROUTINES_KEY);
+  return raw ? (JSON.parse(raw) as ScheduledRoutine[]) : [];
+}
+
+/** Always the FULL list -- callers read-modify-write (load, change one routine, save the whole array back) rather than a per-id upsert, matching loadSessionLog/appendSessionLogEntry's own simple whole-array persistence style for a list this small (a trainee's own handful of routines, not an unbounded log). */
+export async function saveScheduledRoutines(routines: ScheduledRoutine[]): Promise<void> {
+  await AsyncStorage.setItem(SCHEDULED_ROUTINES_KEY, JSON.stringify(routines));
+}
+
+export async function loadRoutineOccurrenceCompletions(): Promise<RoutineOccurrenceCompletion[]> {
+  const raw = await AsyncStorage.getItem(ROUTINE_OCCURRENCE_COMPLETIONS_KEY);
+  return raw ? (JSON.parse(raw) as RoutineOccurrenceCompletion[]) : [];
+}
+
+/** Records one occurrence as done -- never removes or rewrites any earlier entry, so completion history survives app restarts and one routine's completion can never affect another's. */
+export async function appendRoutineOccurrenceCompletion(entry: RoutineOccurrenceCompletion): Promise<void> {
+  const existing = await loadRoutineOccurrenceCompletions();
+  existing.push(entry);
+  await AsyncStorage.setItem(ROUTINE_OCCURRENCE_COMPLETIONS_KEY, JSON.stringify(existing));
 }

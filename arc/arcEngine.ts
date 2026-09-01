@@ -61,10 +61,12 @@
  *            -> desired_state_check -> classified by getProactiveStage():
  *                 regulate -> regulate -> desired_state_check (re-check, capped)
  *                 encode   -> encode
- *     -> encode -> act -> success_focus
- *          -> negative_action (only when needsNegativeAction: habit
- *             layer active AND profile.habit configured) -> complete
- *          -> complete (otherwise, unchanged)
+ *     -> encode -> act -> success_focus -> complete
+ *        (unconditionally -- Negative Action reduction task: the
+ *        optional Negative Action Timer is never inserted here; it's a
+ *        separate, BUILD-configured tool opened intentionally from its
+ *        own standalone entry point, app/negative-action.tsx -- see
+ *        program/engine.ts's isNegativeActionAvailable)
  */
 
 import {
@@ -410,24 +412,6 @@ export function resolveActionDuration(
 }
 
 // ---------------------------------------------------------------------------
-// Negative Action -- the predefined interfering/negative behavior being
-// gradually reduced, shown after Success Focus per the Beneficial
-// Action -> Success Focus -> Negative Action sequence
-// ---------------------------------------------------------------------------
-
-/**
- * Whether the negative_action stage is relevant for this session at
- * all: only when the habit layer is active AND the trainee has a
- * predefined negative/interfering action configured (profile.habit).
- * Every other session (habit layer never active this program, or
- * simply not yet mapped) goes straight from success_focus to complete,
- * exactly as it always has -- see getNextArcStage's "success_focus" case.
- */
-export function needsNegativeAction(activeLayers: DevelopmentLayer[], profile: ArcBuildProfile): boolean {
-  return activeLayers.includes("habit") && profile.habit !== null;
-}
-
-// ---------------------------------------------------------------------------
 // Preventive action -- resolved per-target, surfaced before ARC Thought
 // ---------------------------------------------------------------------------
 
@@ -638,12 +622,18 @@ export function getNextArcStage(
     case "act":
       return result("success_focus", state.loopIterationCount);
     case "success_focus":
-      // Beneficial Action -> Success Focus -> Negative Action: only
-      // inserted when the habit layer is active and a predefined
-      // negative/interfering action is actually configured -- every
-      // other session continues straight to complete, exactly as
-      // before this stage existed. See needsNegativeAction.
-      return result(needsNegativeAction(activeLayers, profile) ? "negative_action" : "complete", state.loopIterationCount);
+      // Negative Action reduction task: the main routine is always
+      // ARC -> Success Focus -> completion -- success_focus continues
+      // straight to complete UNCONDITIONALLY now. The optional Negative
+      // Action Timer is never inserted here (or anywhere else in the
+      // main sequencer): it's a separate, BUILD-configured tool the
+      // trainee opens intentionally from its own standalone entry point
+      // (app/negative-action.tsx), never required to finish a session.
+      // See program/engine.ts's isNegativeActionAvailable.
+      return result("complete", state.loopIterationCount);
+    // negative_action is never routed to by this sequencer any more (see
+    // the "success_focus" case above) -- this case only exists so the
+    // switch stays exhaustive over ArcStage; harmless if ever reached.
     case "negative_action":
       return result("complete", state.loopIterationCount);
     case "complete":

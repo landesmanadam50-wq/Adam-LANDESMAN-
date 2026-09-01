@@ -109,6 +109,16 @@ export default function Home() {
                 <Text style={styles.secondaryButtonText}>מפת ARC (BUILD-ARC)</Text>
               </Pressable>
             </Link>
+            <Link href="/routines" asChild>
+              <Pressable style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>השגרה שלי</Text>
+              </Pressable>
+            </Link>
+            <Link href="/negative-action" asChild>
+              <Pressable style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>פעולה שלילית מוגבלת (רשות)</Text>
+              </Pressable>
+            </Link>
             <ScheduleArcReminder />
           </>
         )}

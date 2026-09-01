@@ -41,10 +41,17 @@ export type ArcStage =
    * The trainee's own predefined interfering/negative behavior
    * (habit, below), timed to the current program week's gradually
    * reduced allowance -- see program/engine.ts's
-   * resolveNegativeActionDuration. Only reached when the habit layer
-   * is active and habit is configured (see arc/arcEngine.ts's
-   * needsNegativeAction); every other session goes straight from
-   * success_focus to complete exactly as before this stage existed.
+   * resolveNegativeActionDuration. Negative Action reduction is an
+   * OPTIONAL, BUILD-configured tool (ArcBuildProfile.negativeActionReductionEnabled),
+   * separate from the main ARC routine: this stage is never reached
+   * through the main sequencer any more -- getNextArcStage's
+   * "success_focus" case always continues straight to "complete",
+   * unconditionally. The predefined-action/timer screens for this
+   * stage (live/screens.tsx's NegativeActionStartScreen/
+   * NegativeActionScreen, and this stage's own getStageCopy case) are
+   * still reused, but only by the standalone entry point
+   * (app/negative-action.tsx) the trainee opens intentionally --
+   * see program/engine.ts's isNegativeActionAvailable.
    */
   | "negative_action"
   | "complete";
@@ -206,6 +213,24 @@ export interface ArcBuildProfile {
    * program/engine.ts's resolveNegativeActionDuration).
    */
   negativeActionBaseDurationMinutes: number | null;
+
+  /**
+   * Negative Action reduction task: whether this optional habit-
+   * reduction tool is enabled for this program at all -- decoupled
+   * from the "habit" DevelopmentLayer being active (that's about the
+   * separate, POSITIVE Beneficial Action/Desired Habit track). false
+   * (or a legacy-absent/undefined value that resolves to false, unless
+   * a duration was already configured -- see program/engine.ts's
+   * isNegativeActionReductionEnabled) means the standalone Negative
+   * Action Timer (app/negative-action.tsx) is never offered/available,
+   * and the main ARC routine (ARC -> Success Focus -> completion)
+   * never depends on this field at all. Set explicitly in BUILD-GOAL's
+   * own "negativeActionEnabledAsk" step (build/profileWizard.ts) --
+   * only when true are the free-text negative action (habit, above)
+   * and its 1-15 minute duration (negativeActionBaseDurationMinutes,
+   * above) even asked for.
+   */
+  negativeActionReductionEnabled: boolean;
 }
 
 export interface ArcProgramProgress {

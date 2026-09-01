@@ -118,6 +118,7 @@ export interface ArcLiveRendererProps {
   onChangeGratitudeText: (text: string) => void;
   gratitudeMemoryDetailText: string;
   onChangeGratitudeMemoryDetailText: (text: string) => void;
+  restartLabel?: string;
   onRestart: () => void;
 }
 
@@ -485,6 +486,7 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           onChangeGratitudeText={props.onChangeGratitudeText}
           gratitudeMemoryDetailText={props.gratitudeMemoryDetailText}
           onChangeGratitudeMemoryDetailText={props.onChangeGratitudeMemoryDetailText}
+          restartLabel={props.restartLabel}
           onRestart={props.onRestart}
         />
       );

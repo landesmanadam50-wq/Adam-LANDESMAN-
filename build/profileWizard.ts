@@ -59,6 +59,11 @@ import type { ArcBuildProfile, DwellTimes, EncodingProfile } from "../arc/types.
 import type { ArcProgramSelection, KnownProgramPath } from "../program/programTypes.ts";
 import { deriveNeedsFromLegacyProgramPath, resolveCurrentPreset } from "../program/selection.ts";
 import { clampDwellSeconds, DEFAULT_DWELL_TIMES } from "../arc/dwellTimes.ts";
+import {
+  isNegativeActionReductionEnabled,
+  NEGATIVE_ACTION_MAX_DURATION_MINUTES,
+  NEGATIVE_ACTION_MIN_DURATION_MINUTES,
+} from "../program/engine.ts";
 
 const LEGACY_PROGRAM_PATHS: KnownProgramPath[] = [
   "standard_3_week",
@@ -73,15 +78,23 @@ function isKnownLegacyProgramPath(programPath: string): programPath is KnownProg
 
 export type ProfileStep =
   | "goal"
+  /**
+   * Negative Action reduction task: the explicit opt-in for the
+   * OPTIONAL Negative Action Timer tool -- decides whether "habit" and
+   * "negativeActionDuration" below are even asked (see
+   * shouldShowProfileStep). Kept separate from the "habit"
+   * DevelopmentLayer/needs-assessment questions further down: enabling
+   * this tool has nothing to do with which layers end up active.
+   */
+  | "negativeActionEnabledAsk"
   | "habit"
   /**
-   * Coordinated timer/dwell task (Part 12): the current target Habit's
-   * own real timer duration -- the ONE place this is configured (LIVE
-   * never asks for it again; see arc/types.ts's
-   * ArcBuildProfile.negativeActionBaseDurationMinutes doc). Optional,
-   * exactly like it always has been: a trainee can leave it blank,
-   * meaning no Negative Action Timer duration gates that stage this
-   * program, same as every profile before this step existed.
+   * Negative Action reduction task: the current target Habit's own
+   * real timer duration, restricted to 1-15 minutes (chip picker, no
+   * free numeric entry) -- the ONE place this is configured (LIVE never
+   * asks for it again; see arc/types.ts's
+   * ArcBuildProfile.negativeActionBaseDurationMinutes doc). Only shown
+   * when negativeActionEnabledAsk was answered "כן".
    */
   | "negativeActionDuration"
   | "beneficialAction"
@@ -125,6 +138,7 @@ export type ProfileStep =
  */
 export const GOAL_STEP_ORDER: ProfileStep[] = [
   "goal",
+  "negativeActionEnabledAsk",
   "habit",
   "negativeActionDuration",
   "beneficialAction",
@@ -231,9 +245,11 @@ export interface ProfileDraft {
   identityPresenceDwellSeconds: string;
   identityStopImageryDwellSeconds: string;
 
+  /** null = not yet decided this BUILD session (matches needsState/hasPreventiveAction's own tri-state pattern) -- must be explicitly answered before BUILD-GOAL can complete. */
+  negativeActionReductionEnabled: boolean | null;
   habit: string;
-  /** Coordinated timer/dwell task (Part 12): the current target Habit's own base timer allowance, in minutes -- kept as a string for direct TextInput binding, same convention as the dwell-seconds fields above. Optional: blank -> null (no Negative Action Timer duration configured, same as every profile before this step existed). */
-  negativeActionBaseDurationMinutes: string;
+  /** Negative Action reduction task: the current target Habit's own base timer allowance, restricted to 1-15 minutes -- set directly by a chip picker (build/ProfileBuilderScreen.tsx), never free text, so no separate parse/validation step is needed. null = not yet chosen (only meaningful while negativeActionReductionEnabled is true). */
+  negativeActionBaseDurationMinutes: number | null;
   beneficialAction: string;
   hasPreventiveAction: boolean | null;
   preventiveActionDescription: string;
@@ -278,8 +294,9 @@ export function createEmptyDraft(): ProfileDraft {
     identityActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.actionImageryDwellSeconds),
     identityPresenceDwellSeconds: String(DEFAULT_DWELL_TIMES.presenceDwellSeconds),
     identityStopImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.stopImageryDwellSeconds),
+    negativeActionReductionEnabled: null,
     habit: "",
-    negativeActionBaseDurationMinutes: "",
+    negativeActionBaseDurationMinutes: null,
     beneficialAction: "",
     hasPreventiveAction: null,
     preventiveActionDescription: "",
@@ -360,16 +377,19 @@ export function draftFromProfileAndSelection(
     identityStopImageryDwellSeconds: String(
       profile.identityDwellTimes?.stopImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.stopImageryDwellSeconds
     ),
+    // Negative Action reduction task: resolved via the same
+    // legacy-fallback resolver LIVE itself uses (program/engine.ts's
+    // isNegativeActionReductionEnabled) so BUILD and LIVE can never
+    // disagree about whether this tool is enabled for a given profile.
+    negativeActionReductionEnabled: isNegativeActionReductionEnabled(profile),
     habit: profile.habit ?? "",
-    // A profile saved before this field existed has it genuinely absent
-    // (`undefined`, not `null`) once JSON.parse'd -- data/storage.ts's
-    // loadProfile is a bare parse with no migration step (see that
-    // file's own doc). Checking only `!== null` let `undefined` through
-    // and rendered the literal string "undefined" in this TextInput; `??
-    // null` normalizes both "never configured" shapes to the same
-    // legacy-safe blank field.
-    negativeActionBaseDurationMinutes:
-      (profile.negativeActionBaseDurationMinutes ?? null) !== null ? String(profile.negativeActionBaseDurationMinutes) : "",
+    // Negative Action reduction task: clamped into the current 1-15
+    // valid range -- a legacy profile configured before this
+    // restriction existed (e.g. 20 or 30 minutes, or genuinely absent
+    // as `undefined` on very old data) must still load into a valid
+    // chip selection rather than an invalid/unselectable value or the
+    // literal string "undefined".
+    negativeActionBaseDurationMinutes: clampNegativeActionDurationMinutes(profile.negativeActionBaseDurationMinutes),
     beneficialAction: profile.beneficialAction ?? "",
     hasPreventiveAction: profile.preventiveAction !== null,
     preventiveActionDescription: profile.preventiveAction ?? "",
@@ -384,6 +404,9 @@ export function resolvesNeedsIdentity(draft: ProfileDraft): boolean {
 
 export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): boolean {
   switch (step) {
+    case "habit":
+    case "negativeActionDuration":
+      return draft.negativeActionReductionEnabled === true;
     case "needsIdentityImmediately":
       return draft.needsState === true;
     case "needsIdentityExplicit":
@@ -457,7 +480,11 @@ export function isGoalDraftComplete(draft: ProfileDraft): boolean {
     if (draft.desiredIdentity.trim().length === 0) return false;
   }
 
-  if (draft.habit.trim().length === 0) return false;
+  if (draft.negativeActionReductionEnabled === null) return false;
+  if (draft.negativeActionReductionEnabled === true) {
+    if (draft.habit.trim().length === 0) return false;
+    if (draft.negativeActionBaseDurationMinutes === null) return false;
+  }
   if (draft.beneficialAction.trim().length === 0) return false;
   if (draft.hasPreventiveAction === true && draft.preventiveActionDescription.trim().length === 0) return false;
   if (draft.regulationTool.trim().length === 0) return false;
@@ -520,12 +547,18 @@ function dwellTimesFromDraft(draft: {
   };
 }
 
-/** Parses the current target Habit's own base timer allowance (Part 12) -- blank/unparseable stays null (no Negative Action Timer duration configured), a valid positive number is used as-is. Deliberately NOT clamped through arc/dwellTimes.ts's dwell bounds -- this is a real action-timer minutes value, a different concept from an experiential dwell in seconds. */
-function parseNegativeActionBaseDurationMinutes(text: string): number | null {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+/**
+ * Negative Action reduction task: clamps any value (including a
+ * legacy-configured one from before the 1-15 minute restriction
+ * existed, or a genuinely absent/undefined legacy field) into the
+ * current valid [1, 15] range -- null only when nothing was ever
+ * configured at all. Never lets an out-of-range or non-finite value
+ * flow into the draft/profile, so the chip picker always has a
+ * selectable, valid value to show (or none).
+ */
+function clampNegativeActionDurationMinutes(value: number | null | undefined): number | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  return Math.min(Math.max(Math.round(value), NEGATIVE_ACTION_MIN_DURATION_MINUTES), NEGATIVE_ACTION_MAX_DURATION_MINUTES);
 }
 
 function buildEncodingProfile(target: string, mantra: string, bodyLanguageCue: string): EncodingProfile | null {
@@ -652,13 +685,23 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
         })
       : null,
 
-    habit: draft.habit.trim(),
+    // Negative Action reduction task: both the free-text action and its
+    // duration are only ever persisted while the tool is actually
+    // enabled -- disabling it (or never having enabled it) clears both
+    // to null rather than leaving a stale, hidden configuration behind
+    // that isNegativeActionAvailable could later see. Reuses the exact
+    // same "habit" field this app has always used to describe the
+    // predefined negative/interfering action -- see arc/types.ts's
+    // ArcBuildProfile.habit doc.
+    habit: draft.negativeActionReductionEnabled === true && draft.habit.trim() ? draft.habit.trim() : null,
     beneficialAction: draft.beneficialAction.trim(),
     preventiveAction: draft.hasPreventiveAction ? draft.preventiveActionDescription.trim() : null,
 
     regulationTool: draft.regulationTool.trim(),
     actionDuration: null,
     successFocusDuration: null,
-    negativeActionBaseDurationMinutes: parseNegativeActionBaseDurationMinutes(draft.negativeActionBaseDurationMinutes),
+    negativeActionReductionEnabled: draft.negativeActionReductionEnabled === true,
+    negativeActionBaseDurationMinutes:
+      draft.negativeActionReductionEnabled === true ? clampNegativeActionDurationMinutes(draft.negativeActionBaseDurationMinutes) : null,
   };
 }
