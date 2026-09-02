@@ -729,41 +729,56 @@ function AcceptRatingReveal({
 
 /**
  * One round of the Accept stage's "not ready yet" sub-flow (#H-#M):
- * shows the unwillingness-acknowledgment line immediately (it's a
- * simple statement of the current moment, not a timed practice
- * sequence of its own -- see arc/stageCopy.ts's
- * getAcceptanceUnwillingnessAcknowledgment), then waits this target's
- * SAME configured Acceptance dwell used by the normal "כן" path above
- * (never a separate hard-coded duration -- #K) before firing the
- * subtle Continue-available cue and revealing this round's outcome:
- * the readiness question again (capped === false) or nothing at all
- * (capped === true -- the caller, AcceptScreen below, auto-advances
- * into the normal Acceptance path instead of asking a further time,
- * mirroring the "force forward once capped" behavior every other loop
- * in arc/arcEngine.ts already has). A fresh `key` per round at the call
- * site is what gives each round its own independent dwell clock and
- * its own independent cue firing, the same remount-based reset already
- * used throughout this file (see e.g. arc_thought_expand_presence's
- * `key={stage}-${loopIterationCount}`).
+ * on the FIRST round only (showAcknowledgment), shows the
+ * unwillingness-acknowledgment line immediately (it's a simple
+ * statement of the current moment, not a timed practice sequence of
+ * its own -- see arc/stageCopy.ts's getAcceptanceUnwillingnessAcknowledgment).
+ * Every round then waits this target's SAME configured Acceptance
+ * dwell used by the normal "כן" path above (never a separate
+ * hard-coded duration -- #K) before firing the subtle Continue-available
+ * cue and revealing this round's outcome: the readiness question again
+ * (capped === false) or nothing at all (capped === true -- the caller,
+ * AcceptScreen below, auto-advances into the normal Acceptance path
+ * instead of asking a further time, mirroring the "force forward once
+ * capped" behavior every other loop in arc/arcEngine.ts already has).
+ * A fresh `key` per round at the call site gives each round its own
+ * independent dwell clock and its own independent cue firing, the same
+ * remount-based reset already used throughout this file (see e.g.
+ * arc_thought_expand_presence's `key={stage}-${loopIterationCount}`).
+ *
+ * Acceptance-duplicate-rendering fix: showAcknowledgment is only true
+ * for round 1. A trainee who answers "לא" more than once in the same
+ * Accept visit no longer sees the same acknowledgment sentence appended
+ * again for every additional round -- it is stated once, then every
+ * further round is just the dwell + readiness recheck. Previously the
+ * caller (AcceptScreen) ALSO kept a growing list of every completed
+ * round's own acknowledgment line visible below the title, so from
+ * round 2 onward the identical sentence appeared twice on screen at
+ * once (once in that history list, once again in the live round below
+ * it) -- that history list is removed below for the same reason.
  */
 function AcceptanceUnwillingnessRound({
   acceptanceDwellSeconds,
+  showAcknowledgment,
   capped,
   labels,
   onDwellCapped,
   onAnswer,
 }: {
   acceptanceDwellSeconds: number;
+  showAcknowledgment: boolean;
   capped: boolean;
   labels: YesNoLabels;
   onDwellCapped: () => void;
   onAnswer: (yes: boolean) => void;
 }) {
   const elapsedSeconds = useElapsedSeconds();
-  const segments: InstructionSegment[] = [
-    { text: getAcceptanceUnwillingnessAcknowledgment(), durationSeconds: 0 },
-    { text: "", durationSeconds: acceptanceDwellSeconds },
-  ];
+  const segments: InstructionSegment[] = showAcknowledgment
+    ? [
+        { text: getAcceptanceUnwillingnessAcknowledgment(), durationSeconds: 0 },
+        { text: "", durationSeconds: acceptanceDwellSeconds },
+      ]
+    : [{ text: "", durationSeconds: acceptanceDwellSeconds }];
   const status = getInstructionTimingStatus(segments, elapsedSeconds);
   useDwellCompletionCue(segments, status.complete);
 
@@ -803,14 +818,15 @@ function AcceptanceUnwillingnessRound({
  * into the normal Acceptance path exactly as if "כן" had been chosen,
  * rather than asking a further time -- never an unbounded loop.
  *
- * Every already-revealed unwillingness round's acknowledgment line
- * stays visible (progressive append, matching this app's existing
- * style throughout) as willingnessLoopCount grows across re-renders
- * of this SAME mount (key={stage} at the call site, unchanged --
- * "accept" is never itself the target of a loop-back the way
- * Presence/Regulation are, so no per-round remount of the whole screen
- * is needed, only of the currently-active round via
- * AcceptanceUnwillingnessRound's own key).
+ * The unwillingness acknowledgment itself is stated once per Accept
+ * visit (AcceptanceUnwillingnessRound's showAcknowledgment, true only
+ * for round 1) -- a trainee who answers "לא" repeatedly sees the
+ * readiness question loop (with its dwell) without the acknowledgment
+ * sentence re-appearing or accumulating on screen (key={stage} at the
+ * call site, unchanged -- "accept" is never itself the target of a
+ * loop-back the way Presence/Regulation are, so no per-round remount
+ * of the whole screen is needed, only of the currently-active round
+ * via AcceptanceUnwillingnessRound's own key).
  */
 export function AcceptScreen({
   copy,
@@ -840,28 +856,20 @@ export function AcceptScreen({
     if (yes) setResolved(true);
   }
 
-  const acknowledgedRounds = resolved ? willingnessLoopCount : Math.max(0, willingnessLoopCount - 1);
-
   return (
     <View>
       <Title copy={copy} />
       {willingnessLoopCount === 0 && !resolved && <YesNoButtons labels={labels} onAnswer={handleAnswer} />}
-      {willingnessLoopCount > 0 && (
-        <>
-          {Array.from({ length: acknowledgedRounds }, (_, index) => index + 1).map((round) => (
-            <RevealedLine key={round} text={getAcceptanceUnwillingnessAcknowledgment()} />
-          ))}
-          {!resolved && (
-            <AcceptanceUnwillingnessRound
-              key={willingnessLoopCount}
-              acceptanceDwellSeconds={acceptanceDwellSeconds}
-              capped={willingnessCapped}
-              labels={labels}
-              onDwellCapped={() => setResolved(true)}
-              onAnswer={handleAnswer}
-            />
-          )}
-        </>
+      {willingnessLoopCount > 0 && !resolved && (
+        <AcceptanceUnwillingnessRound
+          key={willingnessLoopCount}
+          acceptanceDwellSeconds={acceptanceDwellSeconds}
+          showAcknowledgment={willingnessLoopCount === 1}
+          capped={willingnessCapped}
+          labels={labels}
+          onDwellCapped={() => setResolved(true)}
+          onAnswer={handleAnswer}
+        />
       )}
       {resolved && (
         <AcceptRatingReveal
