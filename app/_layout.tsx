@@ -63,8 +63,8 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <Stack screenOptions={{ headerTitleAlign: "center" }}>
         <Stack.Screen name="index" options={{ title: "ARCHI" }} />
-        <Stack.Screen name="build/index" options={{ title: "בניית מטרה" }} />
-        <Stack.Screen name="build-arc/index" options={{ title: "בניית מפת ARC" }} />
+        <Stack.Screen name="build/index" options={{ title: "ARC Builds" }} />
+        <Stack.Screen name="build/[id]" options={{ title: "עריכת ARC Build" }} />
         <Stack.Screen name="live/index" options={{ title: "ARCHI LIVE" }} />
         <Stack.Screen name="stats/index" options={{ title: "התקדמות שבועית" }} />
         <Stack.Screen name="focus-success" options={{ title: "התמקדות בהצלחה" }} />

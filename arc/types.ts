@@ -255,6 +255,56 @@ export interface ArcBuildProfile {
   negativeActionReductionEnabled: boolean;
 }
 
+/**
+ * ARC Builds task: a fresh, fully empty ArcBuildProfile for a brand-new
+ * ArcBuild -- every field null/false exactly like a trainee who hasn't
+ * answered anything yet, so the SAME BUILD-ARC wizard step machinery
+ * (build/profileWizard.ts's shouldShowProfileStep/getFirstProfileStep)
+ * that already knows how to walk an empty draft works completely
+ * unchanged for a new standalone ArcBuild. programPath is a fixed,
+ * unused placeholder (see ArcBuild's own doc, above): no ArcBuild is
+ * ever validated against program/'s PROGRAM_DEFINITIONS.
+ */
+export function createEmptyArcBuildProfile(): ArcBuildProfile {
+  return {
+    programPath: "custom_arc_build",
+    identityActionNeeded: false,
+    goal: null,
+    interferingState: null,
+    supportiveState: null,
+    challengeContext: null,
+    statePreventiveAction: null,
+    stateEncodingRegulationCue: null,
+    stateEncoding: null,
+    internalAction: null,
+    internalActionBodyCue: null,
+    stateDwellTimes: null,
+    desiredIdentity: null,
+    identityChallengeContext: null,
+    identityInterferingEmotion: null,
+    identityPreventiveAction: null,
+    identityEncodingRegulationCue: null,
+    identityEncoding: null,
+    identityAction: null,
+    identityActionBodyCue: null,
+    identityDwellTimes: null,
+    habit: null,
+    beneficialAction: null,
+    beneficialActionBodyCue: null,
+    preventiveAction: null,
+    regulationTool: null,
+    actionDuration: null,
+    successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
+    negativeActionReductionEnabled: false,
+  };
+}
+
+/** Same stable-id-string pattern already used for ScheduledRoutine (arc/routines.ts's generateRoutineId) -- unique per build, never derived from array position, so an ArcBuild's identity survives reordering/deletion of any other build. */
+export function generateArcBuildId(): string {
+  return `arcbuild-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export interface ArcProgramProgress {
   programPath: string;
   currentProgramWeek: number;
@@ -272,6 +322,50 @@ export interface ArcProgramProgress {
   lastCompletedWeek: number | null;
   /** Every LIVE session that reached "act", regardless of daily training credit (max 1/day). */
   liveSessionCount: number;
+}
+
+/**
+ * ARC Builds task: the unit BUILD and LIVE now operate on -- a single,
+ * independently named, independently editable ARC protocol
+ * configuration. Any number of these can exist at once (data/storage.ts's
+ * loadArcBuilds/saveArcBuilds, a plain array, the same "keyed by its own
+ * stable id, never by array position" pattern already used for
+ * ScheduledRoutine), with no fixed limit and no requirement that one
+ * exists before another can be created.
+ *
+ * Replaces the old two-step BUILD-GOAL -> BUILD-ARC flow, where a
+ * single global ArcBuildProfile (below) was assigned a programPath via
+ * a separately-persisted ArcProgramSelection and paced by program/'s
+ * week-based ArcProgramProgress (above). An ArcBuild is fully
+ * self-contained instead: `profile` is the SAME ArcBuildProfile shape
+ * BUILD-ARC already produced (Desired State/Identity, their ARC Maps,
+ * Encoding, actions, Action Body Cues, dwell times, Negative Action
+ * configuration -- see that interface's own fields, none renamed or
+ * removed), and `needsState`/`needsIdentity`/`needsHabit`/
+ * `needsIdentityImmediately` are this ONE build's own needs-assessment
+ * answers -- the same four fields program/programTypes.ts's
+ * ArcProgramSelection already carries (minus its programPath, which
+ * doesn't apply here), duplicated as plain fields rather than imported
+ * from program/ to avoid a circular import (program/ already imports
+ * FROM arc/types.ts, never the reverse). profile.programPath itself is
+ * set to a fixed, unused placeholder for every ArcBuild -- LIVE resolves
+ * an ArcBuild session's activeLayers directly from its own configured
+ * fields (arc/arcEngine.ts's deriveActiveLayersForArcBuild), never from
+ * program/'s week-based ArcProgramProgress, so no real program/
+ * validation ever reads it. program/'s week-based progression and the
+ * Stats screen are untouched and keep working for any pre-existing
+ * legacy single-profile data, but are not wired into the ArcBuild flow.
+ */
+export interface ArcBuild {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  needsState: boolean;
+  needsIdentity: boolean;
+  needsHabit: boolean;
+  needsIdentityImmediately: boolean;
+  profile: ArcBuildProfile;
 }
 
 export interface ArcLiveState {

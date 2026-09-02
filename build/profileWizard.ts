@@ -1,43 +1,55 @@
 /**
  * build/profileWizard.ts
  *
- * Pure (React-free) logic shared by BUILD's two distinct UX sections --
- * BUILD-GOAL (build/ProfileBuilderScreen.tsx, route /build) and
- * BUILD-ARC (build/ArcMapScreen.tsx, route /build-arc). They are NOT
- * separate storage systems or separate architectures: both operate on
- * the same ArcBuildProfile, the same ProfileDraft shape, and the same
+ * Pure (React-free) logic shared by the three phases of ONE ArcBuild's
+ * editor (build/ArcBuildEditorScreen.tsx, route /build/[id]) -- GOAL,
+ * STATE ARC, and IDENTITY ARC. These are NOT separate storage systems
+ * or separate architectures: all three operate on the same
+ * ArcBuildProfile, the same ProfileDraft shape, and the same
  * step-machinery pattern below (a fixed step order, a "should this
  * step show" gate, a "walk to the next visible step" function) --
  * just different step-order arrays and completeness checks over that
- * one shape.
+ * one shape, orchestrated in sequence by ArcBuildEditorScreen's own
+ * `phase` state rather than as separate routes/screens (ARC Builds
+ * task: the old two-route BUILD-GOAL -> BUILD-ARC flow, and the old
+ * global single-profile storage it saved onto, are both gone -- every
+ * ArcBuildProfile below now belongs to exactly one independently
+ * created/edited/renamed/deleted ArcBuild, arc/types.ts).
  *
- * BUILD-GOAL defines the positive direction only -- Goal -> Desired
+ * GOAL_STEP_ORDER defines the positive direction only -- Desired
  * Habit -> Identity -> Desired State -- plus the needs-assessment
  * questions (needsState / needsIdentityImmediately / needsIdentity)
- * that feed program/selection.ts's resolveCurrentPreset (how
- * programPath gets assigned) and the general-purpose fields every
- * trainee needs regardless of which ARC Map(s) end up mapped
- * (preventiveAction, regulationTool -- see the design note on
- * GOAL_STEP_ORDER below for why these stay in GOAL rather than ARC).
+ * that feed program/selection.ts's resolveCurrentPreset (still used to
+ * resolve a value for ArcBuildProfile.programPath's shape, even though
+ * no ArcBuild's programPath is ever validated against program/'s real
+ * PROGRAM_DEFINITIONS -- see arc/types.ts's ArcBuild doc) and the
+ * general-purpose fields every trainee needs regardless of which ARC
+ * Map(s) end up mapped (preventiveAction, regulationTool -- see the
+ * design note on GOAL_STEP_ORDER below for why these stay in GOAL
+ * rather than ARC). There is no separate free-text "goal" question any
+ * more -- the ArcBuild's own name (given once at creation) already
+ * identifies it.
  *
- * BUILD-ARC creates an ARC Map around a Desired State BUILD-GOAL
- * already established. A trainee can have UP TO TWO independently
+ * STATE_ARC_STEP_ORDER/IDENTITY_ARC_STEP_ORDER create an ARC Map
+ * around a Desired State/Identity the GOAL phase already established,
+ * earlier in the SAME editing session (not a separately reached
+ * screen/object any more). A trainee can have UP TO TWO independently
  * mappable targets -- the state layer's Desired State (supportiveState)
  * and the identity layer's Desired Identity (desiredIdentity), e.g. a
- * "Focus" state map and a separate "Discipline" identity map on an
- * advanced_2_week (2-week) program where both layers are active
- * together from week 1. STATE_ARC_STEP_ORDER and IDENTITY_ARC_STEP_ORDER
+ * "Focus" state map and a separate "Discipline" identity map on the
+ * SAME ArcBuild. STATE_ARC_STEP_ORDER and IDENTITY_ARC_STEP_ORDER
  * are the same shape (Challenge Context -> Interfering State -> Encoding
  * cues) over two parallel field sets on the one ProfileDraft --
  * challengeContext/interferingState/stateMantra/stateBodyLanguageCue
  * for state, identityChallengeContext/identityInterferingEmotion/
  * identityMantra/identityBodyLanguageCue for identity -- never two
  * copies of the same target, never a shared field two targets fight
- * over. build/ArcMapScreen.tsx is responsible for offering a target
- * picker whenever both are available, and for never discarding one
- * target's fields while saving the other's (both live on the one
- * `draft` object the whole screen session, so buildProfileFromDraft
- * always writes both back, whichever one was just edited).
+ * over. build/ArcBuildEditorScreen.tsx is responsible for walking both
+ * phases in sequence whenever both are needed, and for never
+ * discarding one target's fields while saving the other's (both live
+ * on the one `draft` object the whole screen session, so
+ * buildProfileFromDraft always writes both back, whichever one was
+ * just edited).
  *
  * identityAction was previously its own question ("מה הפעולה שמבטאת
  * את הזהות הזו?"), semantically duplicating beneficialAction ("מה
@@ -47,12 +59,11 @@
  * so the field arc/arcEngine.ts's resolveEncodingTarget already reads
  * for the identity layer keeps working unchanged.
  *
- * The persisted ArcProgramSelection (program/programTypes.ts) is the
- * real source of truth for what a trainee needs -- ArcBuildProfile
- * .identityActionNeeded is legacy-only. draftFromProfileAndSelection
- * prefers a passed-in selection and only falls back to inferring from
- * the profile/legacy programPath when no selection was ever saved
- * (old data from before ArcProgramSelection persistence existed).
+ * selectionFromDraft's returned ArcProgramSelection-shaped needs
+ * (needsState/needsIdentity/needsHabit/needsIdentityImmediately) are
+ * this ONE ArcBuild's own fields now (arc/types.ts's ArcBuild), never
+ * a second, separately-persisted global ArcProgramSelection -- see
+ * build/ArcBuildEditorScreen.tsx's finishAndSave.
  */
 
 import type { ArcBuildProfile, DwellTimes, EncodingProfile } from "../arc/types.ts";
@@ -106,7 +117,7 @@ export type ProfileStep =
    * Body-Language Cue (stateBodyLanguageCue/identityBodyLanguageCue,
    * further down) -- Body Cue belongs to the "act" stage (Action
    * Imagery + the real timed Action), never to Encoding. Always
-   * optional (see OPTIONAL_TEXT_STEPS in build/ProfileBuilderScreen.tsx).
+   * optional (see OPTIONAL_TEXT_STEPS in build/ArcBuildEditorScreen.tsx).
    */
   | "beneficialActionBodyCue"
   | "needsState"
@@ -138,19 +149,28 @@ export type ProfileStep =
   | "review";
 
 /**
- * BUILD-GOAL's step order: Goal -> Desired Habit -> [needs assessment,
- * unavoidable -- it decides programPath] -> Identity -> Desired State,
- * plus preventiveAction/regulationTool. Those last two stay in GOAL
- * rather than ARC even though they're conceptually part of an ARC Map
- * (see the module doc): the engine uses regulationTool for every
- * "regulate" stage regardless of trigger, and preventiveAction
+ * GOAL phase's step order: Desired Habit -> [needs assessment,
+ * unavoidable -- it decides needsState/needsIdentity, this ArcBuild's
+ * own fields now] -> Identity -> Desired State, plus
+ * preventiveAction/regulationTool. Those last two stay in this phase
+ * rather than STATE/IDENTITY ARC even though they're conceptually part
+ * of an ARC Map (see the module doc): the engine uses regulationTool
+ * for every "regulate" stage regardless of trigger, and preventiveAction
  * specifically for the reactive_habit route (arc/arcEngine.ts's
- * afterArcThought) -- neither is ARC-Map-exclusive, so a trainee on a
- * habit-only program (no state or identity ARC Map, never visits
- * BUILD-ARC) still needs to be able to set them.
+ * afterArcThought) -- neither is ARC-Map-exclusive, so an ArcBuild with
+ * only a habit target (no state or identity ARC Map, never enters
+ * those phases) still needs to be able to set them.
+ *
+ * ARC Builds task: there is no standalone free-text "goal" step/question
+ * in this order any more -- an ArcBuild's own `name` (given once, at
+ * creation, on the ARC Build list screen) already identifies it, so
+ * asking "מה תרצה להשיג" again inside the wizard would be redundant.
+ * buildProfileFromDraft still writes draft.goal (see below), just
+ * auto-set from the build's name rather than asked here. The array
+ * starts wherever getFirstProfileStep lands (negativeActionEnabledAsk,
+ * the first step below with no special gating).
  */
 export const GOAL_STEP_ORDER: ProfileStep[] = [
-  "goal",
   "negativeActionEnabledAsk",
   "habit",
   "negativeActionDuration",
@@ -170,7 +190,7 @@ export const GOAL_STEP_ORDER: ProfileStep[] = [
 ];
 
 /**
- * BUILD-ARC's step order around the state layer's Desired State
+ * the STATE/IDENTITY ARC phase's step order around the state layer's Desired State
  * (supportiveState). Never re-asks supportiveState itself -- only
  * references it. statePreventiveAction sits right after the recognition
  * fields (Challenge Context / Interfering State) and before the
@@ -195,7 +215,7 @@ export const STATE_ARC_STEP_ORDER: ProfileStep[] = [
   "review",
 ];
 
-/** BUILD-ARC's step order around the identity layer's Desired State (desiredIdentity) -- the second, independently editable ARC Map. Never re-asks desiredIdentity itself. identityPreventiveAction/identityEncodingRegulationCueAsk/Cue are parallel to the state layer's own -- never mixed with it. */
+/** the STATE/IDENTITY ARC phase's step order around the identity layer's Desired State (desiredIdentity) -- the second, independently editable ARC Map. Never re-asks desiredIdentity itself. identityPreventiveAction/identityEncodingRegulationCueAsk/Cue are parallel to the state layer's own -- never mixed with it. */
 export const IDENTITY_ARC_STEP_ORDER: ProfileStep[] = [
   "identityChallengeContext",
   "identityInterferingEmotion",
@@ -229,8 +249,8 @@ export interface ProfileDraft {
   stateBodyLanguageCue: string;
   /**
    * The state layer's own configured dwell times (arc/dwellTimes.ts),
-   * kept as strings for direct TextInput binding -- see BUILD-ARC's
-   * "זמן שהייה" step (build/ArcMapScreen.tsx). Parsed and clamped into
+   * kept as strings for direct TextInput binding -- see the STATE/IDENTITY ARC phase's
+   * "זמן שהייה" step (build/ArcBuildEditorScreen.tsx). Parsed and clamped into
    * ArcBuildProfile.stateDwellTimes only at buildProfileFromDraft time,
    * never earlier.
    */
@@ -262,10 +282,10 @@ export interface ProfileDraft {
   identityPresenceDwellSeconds: string;
   identityStopImageryDwellSeconds: string;
 
-  /** null = not yet decided this BUILD session (matches needsState/hasPreventiveAction's own tri-state pattern) -- must be explicitly answered before BUILD-GOAL can complete. */
+  /** null = not yet decided this BUILD session (matches needsState/hasPreventiveAction's own tri-state pattern) -- must be explicitly answered before the GOAL phase can complete. */
   negativeActionReductionEnabled: boolean | null;
   habit: string;
-  /** Negative Action reduction task: the current target Habit's own base timer allowance, restricted to 1-15 minutes -- set directly by a chip picker (build/ProfileBuilderScreen.tsx), never free text, so no separate parse/validation step is needed. null = not yet chosen (only meaningful while negativeActionReductionEnabled is true). */
+  /** Negative Action reduction task: the current target Habit's own base timer allowance, restricted to 1-15 minutes -- set directly by a chip picker (build/ArcBuildEditorScreen.tsx), never free text, so no separate parse/validation step is needed. null = not yet chosen (only meaningful while negativeActionReductionEnabled is true). */
   negativeActionBaseDurationMinutes: number | null;
   beneficialAction: string;
   /** Action Body Cue task -- see ArcBuildProfile.beneficialActionBodyCue's doc. Also reused for the identity layer at buildProfileFromDraft time, exactly like beneficialAction itself. */
@@ -488,7 +508,7 @@ export function getPreviousProfileStep(current: ProfileStep, draft: ProfileDraft
   return null;
 }
 
-/** BUILD-GOAL's own completeness check -- does not require any BUILD-ARC field from either target's ARC Map. */
+/** the GOAL phase's own completeness check -- does not require any the STATE/IDENTITY ARC phase field from either target's ARC Map. */
 export function isGoalDraftComplete(draft: ProfileDraft): boolean {
   if (draft.goal.trim().length === 0) return false;
   if (draft.needsState === null) return false;
@@ -550,7 +570,7 @@ function parseDwellField(text: string, fallback: number): number {
   return clampDwellSeconds(Number(trimmed), fallback);
 }
 
-/** Builds a full DwellTimes set (never a partial one) from this target's seven draft fields -- always saved as a complete set once BUILD-ARC's "זמן שהייה" step is reached, so resolveDwellSecondsFor's own per-field fallback (arc/dwellTimes.ts) is really only ever exercised for a profile that never visited this step at all. Coordinated timer/dwell task: extended with presence/stopImagery, parallel to the original five. */
+/** Builds a full DwellTimes set (never a partial one) from this target's seven draft fields -- always saved as a complete set once the STATE/IDENTITY ARC phase's "זמן שהייה" step is reached, so resolveDwellSecondsFor's own per-field fallback (arc/dwellTimes.ts) is really only ever exercised for a profile that never visited this step at all. Coordinated timer/dwell task: extended with presence/stopImagery, parallel to the original five. */
 function dwellTimesFromDraft(draft: {
   sensation: string;
   acceptance: string;
@@ -598,7 +618,7 @@ function buildEncodingProfile(target: string, mantra: string, bodyLanguageCue: s
   };
 }
 
-/** Builds the real source-of-truth ArcProgramSelection to persist alongside the profile. BUILD-GOAL only -- BUILD-ARC never touches program selection/progress. */
+/** Builds the real source-of-truth ArcProgramSelection to persist alongside the profile. the GOAL phase only -- the STATE/IDENTITY ARC phase never touches program selection/progress. */
 export function selectionFromDraft(draft: ProfileDraft): ArcProgramSelection {
   if (draft.needsState === null) {
     throw new Error("Cannot build an ArcProgramSelection from an incomplete draft");
@@ -618,7 +638,7 @@ export function selectionFromDraft(draft: ProfileDraft): ArcProgramSelection {
 
 /**
  * Builds the full ArcBuildProfile from the full draft. Called by
- * BUILD-GOAL's finish() and by BUILD-ARC's finish() for EITHER target
+ * the GOAL phase's finish() and by the STATE/IDENTITY ARC phase's finish() for EITHER target
  * -- in every case the draft was loaded once (draftFromProfileAndSelection)
  * and carries both ARC Maps' current fields together, so writing the
  * full profile back here never discards the target that wasn't just
@@ -630,7 +650,7 @@ export function selectionFromDraft(draft: ProfileDraft): ArcProgramSelection {
  */
 export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
   if (!isGoalDraftComplete(draft) || draft.needsState === null) {
-    throw new Error("Cannot build an ArcBuildProfile from an incomplete BUILD-GOAL draft");
+    throw new Error("Cannot build an ArcBuildProfile from an incomplete the GOAL phase draft");
   }
 
   const needsIdentity = resolvesNeedsIdentity(draft);
@@ -652,8 +672,8 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
 
     goal: draft.goal.trim(),
 
-    // null (not "") until BUILD-ARC actually maps something -- a fresh
-    // BUILD-GOAL-only save has no ARC Map yet for either target, which
+    // null (not "") until the STATE/IDENTITY ARC phase actually maps something -- a fresh
+    // the GOAL phase-only save has no ARC Map yet for either target, which
     // is expected and valid (LIVE's recognition preamble and Encoding
     // both already treat a null/empty value as "nothing mapped").
     interferingState: draft.needsState && draft.interferingState.trim() ? draft.interferingState.trim() : null,

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  deriveActiveLayersForArcBuild,
   getAvailableLiveTriggers,
   getAvailableProactiveTargets,
   getAvailableReactiveExperiences,
@@ -17,7 +18,7 @@ import {
   resolveObserverPauseLayer,
   resolveTargetPreventiveAction,
 } from "./arcEngine.ts";
-import { createEmptyLiveState } from "./types.ts";
+import { createEmptyLiveState, createEmptyArcBuildProfile, generateArcBuildId } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { ARC_CONFIG } from "./config.ts";
 
@@ -260,6 +261,42 @@ test("resolveEncodingTarget honors an explicit selectedTarget override regardles
   const p = profile({ beneficialAction: "פעולה" });
   const resolved = resolveEncodingTarget({ activeLayers: ["habit"], triggerType: "reactive_emotion", selectedTarget: "habit", buildProfile: p });
   assert.equal(resolved.layer, "habit");
+});
+
+// --- ARC Builds task: deriveActiveLayersForArcBuild -- the equivalent
+// of program/'s week-based ArcProgramProgress.activeLayers, but derived
+// directly from an ArcBuild's own configured fields, with no concept of
+// layers unlocking over weeks.
+
+test("deriveActiveLayersForArcBuild returns an empty array for a brand-new, fully empty build", () => {
+  assert.deepEqual(deriveActiveLayersForArcBuild(createEmptyArcBuildProfile()), []);
+});
+
+test("deriveActiveLayersForArcBuild includes exactly the layers this build has actually configured, in state/identity/habit order", () => {
+  const p = profile({
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "אני חומל" },
+    identityAction: "לומר שלום",
+    beneficialAction: "לגשת ולפתוח שיחה",
+  });
+  assert.deepEqual(deriveActiveLayersForArcBuild(p), ["state", "identity", "habit"]);
+});
+
+test("deriveActiveLayersForArcBuild never includes a layer with nothing configured for it, even a habit-only build", () => {
+  const p = profile({ internalAction: null, identityAction: null, beneficialAction: "לגשת ולפתוח שיחה" });
+  assert.deepEqual(deriveActiveLayersForArcBuild(p), ["habit"]);
+});
+
+test("deriveActiveLayersForArcBuild treats internalAction alone (no stateEncoding) as enough to activate state, and identityAction alone as enough to activate identity", () => {
+  const p = profile({ internalAction: "סריקת גוף", identityAction: "לומר שלום", beneficialAction: null });
+  assert.deepEqual(deriveActiveLayersForArcBuild(p), ["state", "identity"]);
+});
+
+test("generateArcBuildId produces unique, non-empty ids across repeated calls", () => {
+  const ids = new Set(Array.from({ length: 20 }, () => generateArcBuildId()));
+  assert.equal(ids.size, 20);
+  for (const id of ids) {
+    assert.ok(id.length > 0);
+  }
 });
 
 // ---------------------------------------------------------------------------

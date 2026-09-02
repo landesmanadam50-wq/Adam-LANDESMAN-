@@ -11,7 +11,8 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { ArcBuildProfile, ArcProgramProgress } from "../arc/types.ts";
+import { generateArcBuildId } from "../arc/types.ts";
+import type { ArcBuild, ArcBuildProfile, ArcProgramProgress } from "../arc/types.ts";
 import type { ArcProgramSelection } from "../program/programTypes.ts";
 import { PROGRAM_DEFINITIONS } from "../program/config.ts";
 import type { SessionLogEntry } from "./sessionLog.ts";
@@ -21,6 +22,7 @@ const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
 const PROGRAM_PROGRESS_KEY = "archi.programProgress.v2";
 const SESSION_LOG_KEY = "archi.sessionLog.v1";
 const PILOT_STARTED_AT_KEY = "archi.pilotStartedAt.v1";
+const ARC_BUILDS_KEY = "archi.arcBuilds.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -33,6 +35,84 @@ export async function loadProfile(): Promise<ArcBuildProfile | null> {
 
 export async function saveProfile(profile: ArcBuildProfile): Promise<void> {
   await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+}
+
+/**
+ * ARC Builds task: the standalone collection BUILD and LIVE now operate
+ * on, replacing the old single global profile (PROFILE_KEY, above) as
+ * the user-facing source of truth. Stored as one plain array, the same
+ * "keyed by its own stable id, read-modify-write the whole list" style
+ * already used for ScheduledRoutine (loadScheduledRoutines/
+ * saveScheduledRoutines, further down) -- appropriate for the same
+ * reason: a trainee's own handful of ARC Builds, not an unbounded log.
+ *
+ * Migration (#10): the OLD BUILD-GOAL -> BUILD-ARC flow persisted
+ * exactly one profile (PROFILE_KEY) plus its program selection/progress
+ * -- never a list, never its own id, so there is nothing to iterate.
+ * The very first time this collection is loaded and found empty, if
+ * that legacy single profile exists, it is wrapped into ONE new
+ * ArcBuild (named from its own `goal` text, or a generic fallback if
+ * that was ever left blank) and persisted into the new collection --
+ * so an existing trainee's already-configured ARC protocol is carried
+ * forward automatically rather than silently discarded, exactly once
+ * (every subsequent load just returns the persisted collection
+ * as-is, even if it's still empty because the trainee deleted that
+ * migrated build or never had legacy data to begin with). The legacy
+ * PROFILE_KEY record itself is left untouched/inert -- never deleted --
+ * so program/'s week-based progression and the Stats screen keep
+ * reading exactly what they always did for any pre-existing data,
+ * unaffected by this migration.
+ */
+export async function loadArcBuilds(): Promise<ArcBuild[]> {
+  const raw = await AsyncStorage.getItem(ARC_BUILDS_KEY);
+  if (raw) return JSON.parse(raw) as ArcBuild[];
+
+  const legacyProfile = await loadProfile();
+  if (!legacyProfile) return [];
+
+  const legacySelection = await loadProgramSelection();
+  const now = new Date().toISOString();
+  const migrated: ArcBuild = {
+    id: generateArcBuildId(),
+    name: legacyProfile.goal?.trim() ? legacyProfile.goal.trim() : "הפרוטוקול שלי",
+    createdAt: now,
+    updatedAt: now,
+    needsState: legacySelection?.needsState ?? legacyProfile.supportiveState !== null,
+    needsIdentity: legacySelection?.needsIdentity ?? legacyProfile.desiredIdentity !== null,
+    needsHabit: legacySelection?.needsHabit ?? true,
+    needsIdentityImmediately: legacySelection?.needsIdentityImmediately ?? false,
+    profile: legacyProfile,
+  };
+  await saveArcBuilds([migrated]);
+  return [migrated];
+}
+
+/** Always the FULL list -- callers read-modify-write, matching loadScheduledRoutines/saveScheduledRoutines' own style. */
+export async function saveArcBuilds(builds: ArcBuild[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_BUILDS_KEY, JSON.stringify(builds));
+}
+
+export async function getArcBuild(id: string): Promise<ArcBuild | null> {
+  const builds = await loadArcBuilds();
+  return builds.find((build) => build.id === id) ?? null;
+}
+
+/** Upserts by id -- updates the one matching build in place (never touching any other build's own fields) if found, otherwise appends it as a new build. Never overwrites an existing build with a different id, and never re-indexes/reorders the rest of the list. */
+export async function upsertArcBuild(build: ArcBuild): Promise<void> {
+  const builds = await loadArcBuilds();
+  const index = builds.findIndex((existing) => existing.id === build.id);
+  if (index === -1) {
+    builds.push(build);
+  } else {
+    builds[index] = build;
+  }
+  await saveArcBuilds(builds);
+}
+
+/** Removes exactly the one matching build (by id) -- every other build is left completely untouched. A no-op if the id doesn't match any build. */
+export async function deleteArcBuild(id: string): Promise<void> {
+  const builds = await loadArcBuilds();
+  await saveArcBuilds(builds.filter((build) => build.id !== id));
 }
 
 /**

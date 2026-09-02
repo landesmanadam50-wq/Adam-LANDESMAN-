@@ -1,5 +1,5 @@
-import ProfileBuilderScreen from "../../build/ProfileBuilderScreen.tsx";
+import ArcBuildListScreen from "../../build/ArcBuildListScreen.tsx";
 
 export default function Build() {
-  return <ProfileBuilderScreen />;
+  return <ArcBuildListScreen />;
 }

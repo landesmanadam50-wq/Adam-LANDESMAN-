@@ -73,13 +73,8 @@ function filledHabitOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
 
 // --- BUILD-GOAL step order ---------------------------------------------
 
-test("first BUILD-GOAL step is goal for a fresh draft", () => {
-  assert.equal(getFirstProfileStep(createEmptyDraft(), GOAL_STEP_ORDER), "goal");
-});
-
-test("goal is followed by negativeActionEnabledAsk -- the explicit opt-in for the optional Negative Action Timer tool, asked before habit/negativeActionDuration", () => {
-  const draft = { ...createEmptyDraft(), goal: "x" };
-  assert.equal(getNextProfileStep("goal", draft, GOAL_STEP_ORDER), "negativeActionEnabledAsk");
+test("first GOAL phase step is negativeActionEnabledAsk for a fresh draft -- ARC Builds task: no standalone 'goal' step any more, the ArcBuild's own name replaces it", () => {
+  assert.equal(getFirstProfileStep(createEmptyDraft(), GOAL_STEP_ORDER), "negativeActionEnabledAsk");
 });
 
 test("answering negativeActionEnabledAsk 'לא' (false) skips both habit and negativeActionDuration entirely, going straight to beneficialAction", () => {
@@ -166,8 +161,11 @@ test("accepting preventive action enters its description step", () => {
 test("getPreviousProfileStep mirrors getNextProfileStep, skipping hidden steps", () => {
   const draft = filledHabitOnlyDraft();
   assert.equal(getPreviousProfileStep("habit", draft, GOAL_STEP_ORDER), "negativeActionEnabledAsk");
-  assert.equal(getPreviousProfileStep("negativeActionEnabledAsk", draft, GOAL_STEP_ORDER), "goal");
-  assert.equal(getPreviousProfileStep("goal", draft, GOAL_STEP_ORDER), null);
+  assert.equal(
+    getPreviousProfileStep("negativeActionEnabledAsk", draft, GOAL_STEP_ORDER),
+    null,
+    "ARC Builds task: negativeActionEnabledAsk is now the first GOAL phase step -- no 'goal' step precedes it any more"
+  );
 });
 
 // --- BUILD-ARC step orders: two independent targets ----------------------

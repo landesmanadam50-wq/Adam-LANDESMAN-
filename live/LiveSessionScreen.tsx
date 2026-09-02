@@ -8,14 +8,14 @@
  * never decides a route, threshold, or target itself.
  *
  * Session safety (#20): ArcLiveState lives only in this component's
- * React state, never persisted mid-session. useFocusEffect reloads
- * real profile/program state and starts a brand-new session every time
- * this screen gains focus -- so leaving LIVE mid-session (back button,
+ * React state, never persisted mid-session. useFocusEffect reloads the
+ * saved ArcBuilds (data/storage.ts's loadArcBuilds) and starts a
+ * brand-new session, against whichever ONE ArcBuild resolves (see the
+ * buildId route param / availableBuilds state below), every time this
+ * screen gains focus -- so leaving LIVE mid-session (back button,
  * navigating away) always terminates it explicitly rather than leaving
  * a partial session lying around, and returning to LIVE never resumes
- * a stale one. Training Day credit is only ever granted from
- * recordValidLiveCompletion() when a session reaches "complete" with a
- * confirmed real action -- an abandoned session never reaches that call.
+ * a stale one.
  *
  * One narrow, explicit exception to "never resumes a stale session":
  * a real timer already in progress that THIS screen owns -- the
@@ -41,22 +41,19 @@
  */
 
 import { useCallback, useState } from "react";
-import { ScrollView, StyleSheet } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
-import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
+import type { ArcBuild, ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
-import { getFirstArcStage, resolveEncodingTarget } from "../arc/arcEngine.ts";
+import { deriveActiveLayersForArcBuild, getFirstArcStage, resolveEncodingTarget } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
 import { buildEvidenceIndex, buildSessionEvidenceContext } from "../arc/evidence.ts";
 import type { EvidenceRecord } from "../arc/evidence.ts";
 import { getSuccessFocusReinforcement } from "../arc/reinforcement.ts";
 import {
-  loadProfile,
-  loadProgramProgress,
-  loadProgramSelection,
-  saveProgramProgress,
+  loadArcBuilds,
   loadSessionLog,
   appendSessionLogEntry,
   updateLastSessionLogEntryGratitude,
@@ -66,7 +63,6 @@ import {
   appendRoutineOccurrenceCompletion,
 } from "../data/storage.ts";
 import type { ScheduledRoutine, TimerRun } from "../data/storage.ts";
-import { recordValidLiveCompletion } from "../program/progress.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
   advanceLiveSession,
@@ -98,8 +94,23 @@ import { ActionScreen, SuccessFocusScreen } from "./screens.tsx";
 const ROUTINE_SUCCESS_FOCUS_MINUTES = [0, 5, 10, 15, 20];
 
 export default function LiveSessionScreen() {
-  const { routineId: routineIdParam } = useLocalSearchParams<{ routineId?: string }>();
+  const { routineId: routineIdParam, buildId: buildIdParam } = useLocalSearchParams<{ routineId?: string; buildId?: string }>();
   const routineId = typeof routineIdParam === "string" ? routineIdParam : null;
+  const buildId = typeof buildIdParam === "string" ? buildIdParam : null;
+  /**
+   * ARC Builds task: LIVE now selects and runs any saved ArcBuild --
+   * resolved from the buildId route param when present, auto-picked
+   * when exactly one ArcBuild exists (the common case, unambiguous),
+   * or left null (see availableBuilds below) when several exist and
+   * none was named, so the trainee picks one before anything starts.
+   * profile/activeLayers below are that ONE build's own fields once
+   * resolved -- activeLayers is derived directly from the build's own
+   * configured targets (arc/arcEngine.ts's deriveActiveLayersForArcBuild),
+   * never from program/'s week-based ArcProgramProgress (bypassed
+   * entirely for this flow -- see data/storage.ts's ArcBuild doc).
+   */
+  const [availableBuilds, setAvailableBuilds] = useState<ArcBuild[]>([]);
+  const [resolvedBuildId, setResolvedBuildId] = useState<string | null>(null);
   const [profile, setProfile] = useState<ArcBuildProfile | null>(null);
   const [activeLayers, setActiveLayers] = useState<DevelopmentLayer[]>([]);
   const [session, setSession] = useState<ArcLiveState>(() => createEmptyLiveState());
@@ -169,24 +180,18 @@ export default function LiveSessionScreen() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      // loadProgramSelection() is loaded for completeness (per the LIVE
-      // load contract) even though today's routing only needs
-      // activeLayers, which loadProgramProgress() already derives from
-      // ProgramDefinition -- see program/engine.ts. The two
-      // loadTimerRun() calls are the one exception to "always start
-      // fresh" -- see this file's module doc. Coordinated timer/dwell
-      // task: loadTimerRun("successCoding") is deliberately NOT among
-      // them any more -- a "successCoding" TimerRun now only ever
-      // exists as a future-scheduled Success Focus (data/reminders.ts's
+      // The two loadTimerRun() calls are the one exception to "always
+      // start fresh" -- see this file's module doc. Coordinated
+      // timer/dwell task: loadTimerRun("successCoding") is deliberately
+      // NOT among them any more -- a "successCoding" TimerRun now only
+      // ever exists as a future-scheduled Success Focus (data/reminders.ts's
       // scheduleFutureSuccessFocus), which is exclusively resumed via
       // its own dedicated deep-link screen (app/focus-success.tsx);
       // treating it as "this LIVE session's own in-progress timer"
       // would incorrectly hijack a brand-new session into that
       // unrelated future run.
       Promise.all([
-        loadProfile(),
-        loadProgramProgress(),
-        loadProgramSelection(),
+        loadArcBuilds(),
         loadTimerRun("beneficialAction"),
         // Multiple Scheduled ARC + Success Focus Routines: a routine's
         // own post-ARC Success Focus timer, resumed here the same way
@@ -201,14 +206,33 @@ export default function LiveSessionScreen() {
         loadTimerRun("routineSuccessFocus"),
         loadSessionLog(),
         loadScheduledRoutines(),
-      ]).then(([loadedProfile, loadedProgress, , beneficialActionRun, routineSuccessFocusRun, sessionLog, routines]) => {
+      ]).then(([builds, beneficialActionRun, routineSuccessFocusRun, sessionLog, routines]) => {
         if (cancelled) return;
-        if (!loadedProfile || !loadedProgress) {
+        if (builds.length === 0) {
           router.replace("/build");
           return;
         }
-        setProfile(loadedProfile);
-        setActiveLayers(loadedProgress.activeLayers);
+        // Resolve which ArcBuild this session runs: the buildId route
+        // param when it names a real build, else the only build when
+        // there's exactly one (unambiguous), else none -- the render
+        // below then shows an inline ARC Build picker instead of
+        // starting anything, and picking one calls router.setParams to
+        // set buildId, which re-runs this same effect (buildId is one
+        // of its useCallback dependencies below) now WITH a resolved
+        // build. A routine/reminder-triggered focus with no buildId
+        // param behaves the same way -- routines aren't tied to one
+        // particular ArcBuild.
+        const matchedByParam = buildId ? (builds.find((b) => b.id === buildId) ?? null) : null;
+        const resolved = matchedByParam ?? (builds.length === 1 ? builds[0] : null);
+        setAvailableBuilds(builds);
+        if (!resolved) {
+          setResolvedBuildId(null);
+          setProfile(null);
+          return;
+        }
+        setResolvedBuildId(resolved.id);
+        setProfile(resolved.profile);
+        setActiveLayers(deriveActiveLayersForArcBuild(resolved.profile));
         setEvidenceIndex(buildEvidenceIndex(sessionLog));
         setPendingSensationLocation("");
         setPendingCustomSensationLocation("");
@@ -256,7 +280,7 @@ export default function LiveSessionScreen() {
       return () => {
         cancelled = true;
       };
-    }, [routineId])
+    }, [routineId, buildId])
   );
 
   const finalizeSession = (finishedSession: ArcLiveState) => {
@@ -297,16 +321,14 @@ export default function LiveSessionScreen() {
       context,
     });
 
-    loadProgramProgress().then((freshProgress) => {
-      if (!freshProgress) return;
-      const updated = recordValidLiveCompletion({
-        progress: freshProgress,
-        reachedAct: finishedSession.actionReached,
-        actionCompleted: finishedSession.realActionCompleted,
-        localDate: todayLocalDateString(),
-      });
-      saveProgramProgress(updated);
-    });
+    // ARC Builds task: program/'s week-based ArcProgramProgress
+    // recording is intentionally not called here any more -- an
+    // ArcBuild-run session has no meaningful single "current program
+    // week" to credit (see arc/types.ts's ArcBuild doc: activeLayers is
+    // derived straight from the build's own configured fields, never
+    // from program/). program/ itself and the Stats screen are left
+    // fully intact for any pre-existing legacy progress data; they're
+    // just no longer fed by new sessions.
   };
 
   /**
@@ -419,6 +441,32 @@ export default function LiveSessionScreen() {
     setGratitudeText("");
     setGratitudeMemoryDetailText("");
   };
+
+  // ARC Builds task: several ArcBuilds exist and none was resolved (no
+  // buildId route param matched one) -- ask which one to run before
+  // starting anything. Picking one updates the route's own buildId
+  // param (router.setParams), which re-resolves via the useFocusEffect
+  // above (buildId is one of its dependencies) exactly as if the
+  // trainee had navigated here with that buildId from the start.
+  if (!resolvedBuildId && availableBuilds.length > 1) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARCHI LIVE" }} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.pickerTitle}>איזה ARC Build תרצה להריץ?</Text>
+          {availableBuilds.map((build) => (
+            <Pressable
+              key={build.id}
+              style={styles.pickerButton}
+              onPress={() => router.setParams({ buildId: build.id })}
+            >
+              <Text style={styles.pickerButtonText}>{build.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   if (!profile) {
     return (
@@ -695,5 +743,24 @@ const styles = StyleSheet.create({
     // provides scrolling once content exceeds the viewport, so nothing
     // needs to shrink or recenter to fit.
     justifyContent: "flex-start",
+  },
+  pickerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "right",
+    marginBottom: 16,
+  },
+  pickerButton: {
+    backgroundColor: "#0a7ea4",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  pickerButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 16,
   },
 });

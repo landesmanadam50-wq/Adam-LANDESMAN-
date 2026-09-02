@@ -3,7 +3,7 @@ import { Link, useFocusEffect } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { loadProfile } from "../data/storage.ts";
+import { loadArcBuilds } from "../data/storage.ts";
 import { DEFERRAL_OPTIONS, scheduleDeferredReminder } from "../data/reminders.ts";
 import type { DeferralOption } from "../data/reminders.ts";
 
@@ -60,13 +60,13 @@ function ScheduleArcReminder() {
 }
 
 export default function Home() {
-  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+  const [hasArcBuilds, setHasArcBuilds] = useState<boolean | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      loadProfile().then((profile) => {
-        if (!cancelled) setHasProfile(!!profile);
+      loadArcBuilds().then((builds) => {
+        if (!cancelled) setHasArcBuilds(builds.length > 0);
       });
       return () => {
         cancelled = true;
@@ -79,15 +79,15 @@ export default function Home() {
       <View style={styles.content}>
         <Text style={styles.title}>Archi</Text>
 
-        {hasProfile === false && (
+        {hasArcBuilds === false && (
           <Link href="/build" asChild>
             <Pressable style={styles.button}>
-              <Text style={styles.buttonText}>הגדר פרופיל</Text>
+              <Text style={styles.buttonText}>הוסף ARC Build ראשון</Text>
             </Pressable>
           </Link>
         )}
 
-        {hasProfile === true && (
+        {hasArcBuilds === true && (
           <>
             <Link href="/live" asChild>
               <Pressable style={styles.button}>
@@ -101,12 +101,7 @@ export default function Home() {
             </Link>
             <Link href="/build" asChild>
               <Pressable style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>ערוך מטרה (BUILD-GOAL)</Text>
-              </Pressable>
-            </Link>
-            <Link href="/build-arc" asChild>
-              <Pressable style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>מפת ARC (BUILD-ARC)</Text>
+                <Text style={styles.secondaryButtonText}>BUILD</Text>
               </Pressable>
             </Link>
             <Link href="/routines" asChild>

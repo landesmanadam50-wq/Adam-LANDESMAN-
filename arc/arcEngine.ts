@@ -362,6 +362,25 @@ function inferLayerFromTrigger(
   return "state"; // nothing configured yet -- caller shows generic copy
 }
 
+/**
+ * ARC Builds task: an ArcBuild has no separate program/week-based
+ * ArcProgramProgress.activeLayers to read (that gating belonged to the
+ * old BUILD-GOAL -> program/ pairing) -- this derives the equivalent
+ * set directly from the build's OWN configured fields, the same
+ * has-flag/available logic inferLayerFromTrigger above already uses,
+ * minus the "is this layer unlocked yet" check (an ArcBuild has no
+ * concept of layers unlocking over weeks: whatever is configured is
+ * immediately fully active). A layer with nothing configured for it is
+ * simply absent -- never included as a hollow, unusable target.
+ */
+export function deriveActiveLayersForArcBuild(profile: ArcBuildProfile): DevelopmentLayer[] {
+  const layers: DevelopmentLayer[] = [];
+  if (profile.stateEncoding !== null || profile.internalAction !== null) layers.push("state");
+  if (profile.identityEncoding !== null || profile.identityAction !== null) layers.push("identity");
+  if (profile.beneficialAction !== null) layers.push("habit");
+  return layers;
+}
+
 // ---------------------------------------------------------------------------
 // Action choice -- planned action vs. a session-specific alternative
 // ---------------------------------------------------------------------------
