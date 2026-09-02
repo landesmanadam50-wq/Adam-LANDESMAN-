@@ -22,6 +22,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     supportiveState: "חמלה",
     stateEncoding: null,
     internalAction: "סריקת גוף",
+    internalActionBodyCue: null,
     stateDwellTimes: null,
     desiredIdentity: null,
     identityChallengeContext: null,
@@ -30,9 +31,11 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityEncodingRegulationCue: null,
     identityEncoding: null,
     identityAction: null,
+    identityActionBodyCue: null,
     identityDwellTimes: null,
     habit: null,
     beneficialAction: null,
+    beneficialActionBodyCue: null,
     preventiveAction: null,
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
@@ -78,56 +81,61 @@ test("act copy is specific to the routed layer's action", () => {
   assert.ok(copy.body.includes("לגשת ולפתוח שיחה"));
 });
 
-// --- act carries the current target's Body-Language cue over from
-// Encoding into Imagery and the timed Action screen -- the same
-// per-target resolution encode already uses, so it can never mix
-// Focus's cue into a Discipline session or vice versa. LIVE-flow-update
-// task: the standalone Action Preparation sub-phase that used to
-// repeat this cue a third time is removed -- Imagery now goes straight
-// to Performing, and Encoding's OWN body-language segment absorbs the
-// "carry this into the real action" framing instead (see the next
-// test block below).
+// --- Action Body Cue task: Body Cue is an ACTION concept, resolved
+// from its own dedicated per-layer field (internalActionBodyCue /
+// identityActionBodyCue / beneficialActionBodyCue), never from
+// Encoding's own Body-Language Cue (stateEncoding/identityEncoding
+// .bodyLanguageCue) and never copied automatically in either direction
+// -- the two may be configured independently, identically, or not at
+// all. It appears in Action Imagery (when enabled) and directly on the
+// real Action screen -- never on a separate Action Preparation screen
+// (removed).
 
-test("act carries the current target's Body-Language cue through Imagery and the actual Action, in that order", () => {
+test("act carries the current target's own Action Body Cue through Imagery and the actual Action, action named first, then the cue", () => {
   const p = profile({
     beneficialAction: "לגשת ולפתוח שיחה",
+    beneficialActionBodyCue: "פתיחת חזה",
+  });
+  const base = { triggerType: "reactive_urge" as const, plannedActionConfirmed: true };
+
+  const imagery = getStageCopy("act", p, liveState(base), ["habit"]);
+  assert.match(imagery.body, /פתיחת חזה/, "Action Imagery must include this target's Action Body Cue");
+
+  const performing = getStageCopy("act", p, liveState({ ...base, actionImageryCompleted: true }), ["habit"]);
+  assert.match(performing.body, /פתיחת חזה/, "the cue must still be visible during the actual timed Action");
+  const cueIndex = performing.body.indexOf("פתיחת חזה");
+  const actionIndex = performing.body.indexOf("עכשיו הזמן");
+  assert.ok(cueIndex >= 0 && actionIndex >= 0 && actionIndex < cueIndex, "the action is named first, the Body Cue reminder follows");
+});
+
+test("Action Body Cue and Encoding's Body-Language Cue are independent -- configuring one never sets or changes the other", () => {
+  const p = profile({
+    internalAction: "לכתוב 3 דברים שהושגו היום",
+    internalActionBodyCue: "פתיחת חזה",
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
   });
   const base = { triggerType: "reactive_emotion" as const, plannedActionConfirmed: true };
+  const encodeCopy = getStageCopy("encode", p, liveState(base), ["state"]);
+  const performingCopy = getStageCopy("act", p, liveState({ ...base, actionImageryCompleted: true }), ["state"]);
 
-  const imagery = getStageCopy("act", p, liveState(base), ["state"]);
-  assert.match(imagery.body, /כתפיים משוחררות/, "Action Imagery must carry the cue over from Encoding");
-
-  const performing = getStageCopy("act", p, liveState({ ...base, actionImageryCompleted: true }), ["state"]);
-  assert.match(performing.body, /כתפיים משוחררות/, "the cue must still be visible during the actual timed Action");
-  const cueIndex = performing.body.indexOf("כתפיים משוחררות");
-  const actionIndex = performing.body.indexOf("עכשיו הזמן");
-  assert.ok(cueIndex >= 0 && actionIndex >= 0 && cueIndex < actionIndex, "the cue must appear before the action instruction");
+  assert.match(encodeCopy.body, /כתפיים משוחררות/, "Encoding still shows its own configured Body-Language Cue, unchanged");
+  assert.ok(!encodeCopy.body.includes("פתיחת חזה"), "Encoding must never show the separate Action Body Cue");
+  assert.match(performingCopy.body, /פתיחת חזה/, "the Action screen shows its own configured Action Body Cue");
+  assert.ok(!performingCopy.body.includes("כתפיים משוחררות"), "the Action screen must never show Encoding's Body-Language Cue");
 });
 
-test("LIVE-flow-update: Encoding's own body-language segment absorbs the 'carry this into the real action' reminder that used to live on the removed standalone Action Preparation screen", () => {
-  const p = profile({
-    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
-  });
-  const encode = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
-  assert.match(encode.body, /כתפיים משוחררות/, "the cue itself is still there, unchanged");
-  assert.match(encode.body, /בזמן הפעולה/, "and now also explicitly frames carrying it into the real action -- the useful instruction Preparation used to add is preserved, not lost");
-});
-
-test("act's Body-Language cue is a stable, pure function of the resolved target -- it stays identical across repeated calls, i.e. while a timer would be running", () => {
-  const p = profile({
-    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
-  });
+test("act's Action Body Cue is a stable, pure function of the resolved target -- it stays identical across repeated calls, i.e. while a timer would be running", () => {
+  const p = profile({ internalAction: "סריקת גוף", internalActionBodyCue: "פתיחת חזה" });
   const s = liveState({ triggerType: "reactive_emotion", plannedActionConfirmed: true });
   const first = getStageCopy("act", p, s, ["state"]);
   const second = getStageCopy("act", p, s, ["state"]);
   const third = getStageCopy("act", p, s, ["state"]);
   assert.equal(first.body, second.body);
   assert.equal(second.body, third.body);
-  assert.match(third.body, /כתפיים משוחררות/, "the cue must still be present on every re-render during the action");
+  assert.match(third.body, /פתיחת חזה/, "the cue must still be present on every re-render during the action");
 });
 
-test("act's Body-Language cue comes from the current target/map -- Focus's cue for a state-targeted session, Discipline's for an identity-targeted session", () => {
+test("act's Action Body Cue comes from the current target/map -- Focus's (state) cue for a state-targeted session, Discipline's (identity) for an identity-targeted session", () => {
   const p = twoTargetProfile();
 
   const stateAct = getStageCopy(
@@ -136,7 +144,7 @@ test("act's Body-Language cue comes from the current target/map -- Focus's cue f
     liveState({ triggerType: "reactive_emotion", selectedTarget: "state", plannedActionConfirmed: true }),
     ["state", "identity"]
   );
-  assert.match(stateAct.body, /עיניים פקוחות וממוקדות/, "must resolve Focus's own body-language cue");
+  assert.match(stateAct.body, /פתיחת חזה/, "must resolve Focus's own Action Body Cue (internalActionBodyCue)");
 
   const identityAct = getStageCopy(
     "act",
@@ -144,10 +152,10 @@ test("act's Body-Language cue comes from the current target/map -- Focus's cue f
     liveState({ triggerType: "reactive_emotion", selectedTarget: "identity", plannedActionConfirmed: true }),
     ["state", "identity"]
   );
-  assert.match(identityAct.body, /שמור את הראש ישר ויציב/, "must resolve Discipline's own body-language cue");
+  assert.match(identityAct.body, /מבט ישיר/, "must resolve Discipline's own Action Body Cue (identityActionBodyCue)");
 });
 
-test("act never mixes Focus's and Discipline's Body-Language cues, in either direction", () => {
+test("act never mixes Focus's and Discipline's Action Body Cues, in either direction", () => {
   const p = twoTargetProfile();
 
   const stateAct = getStageCopy(
@@ -156,7 +164,7 @@ test("act never mixes Focus's and Discipline's Body-Language cues, in either dir
     liveState({ triggerType: "reactive_emotion", selectedTarget: "state", plannedActionConfirmed: true }),
     ["state", "identity"]
   );
-  assert.ok(!stateAct.body.includes("שמור את הראש ישר ויציב"), "a Focus-targeted act screen must not leak Discipline's cue");
+  assert.ok(!stateAct.body.includes("מבט ישיר"), "a Focus-targeted act screen must not leak Discipline's Action Body Cue");
 
   const identityAct = getStageCopy(
     "act",
@@ -164,37 +172,36 @@ test("act never mixes Focus's and Discipline's Body-Language cues, in either dir
     liveState({ triggerType: "reactive_emotion", selectedTarget: "identity", plannedActionConfirmed: true }),
     ["state", "identity"]
   );
-  assert.ok(!identityAct.body.includes("עיניים פקוחות וממוקדות"), "a Discipline-targeted act screen must not leak Focus's cue");
+  assert.ok(!identityAct.body.includes("פתיחת חזה"), "a Discipline-targeted act screen must not leak Focus's Action Body Cue");
 });
 
-test("act never invents a Body-Language cue and never shows an empty placeholder when none is configured for the current target", () => {
-  const p = profile({
-    beneficialAction: "לגשת ולפתוח שיחה",
-    stateEncoding: null,
-    identityEncoding: null,
-  });
+test("act never invents an Action Body Cue and never shows undefined/empty when none is configured for the current target", () => {
+  const p = profile({ beneficialAction: "לגשת ולפתוח שיחה", beneficialActionBodyCue: null });
   const base = { triggerType: "reactive_urge" as const, plannedActionConfirmed: true };
 
   const imagery = getStageCopy("act", p, liveState(base), ["habit"]);
-  assert.equal(imagery.body, "דמיין את עצמך מבצע עכשיו את לגשת ולפתוח שיחה.", "no invented cue in Action Imagery");
+  assert.equal(imagery.body, "דמיין את עצמך מתחיל לגשת ולפתוח שיחה.", "no invented cue in Action Imagery");
+  assert.ok(!imagery.body.includes("undefined"), "never renders undefined");
 
   const performing = getStageCopy("act", p, liveState({ ...base, actionImageryCompleted: true }), ["habit"]);
   assert.equal(performing.body, "עכשיו הזמן: לגשת ולפתוח שיחה.", "no cue sentence in the actual Action screen either");
+  assert.ok(!performing.body.includes("undefined"), "never renders undefined");
 });
 
 // --- Action Imagery lives in the "act" stage, not Encoding: it
 // imagines currentAction -- the resolved action for this session,
 // preferring a session-specific alternative (ArcLiveState.selectedAction)
 // when the trainee's mapped action can't be performed right now -- while
-// explicitly maintaining the SAME Body-Language Cue carried over from
-// Encoding, from this target's own map only.
+// naturally including this SAME target's own Action Body Cue, using
+// "מתחיל" phrasing (never the "מבצע את X" pattern, which reads as
+// broken Hebrew against an infinitive action like "ללמוד").
 
 test("Action Imagery uses currentAction, and is a distinct sub-phase that precedes the actual-action instruction", () => {
   const p = profile({ beneficialAction: "לגשת ולפתוח שיחה" });
   const base = { triggerType: "reactive_urge" as const, plannedActionConfirmed: true };
 
   const imagery = getStageCopy("act", p, liveState(base), ["habit"]);
-  assert.match(imagery.body, /דמיין את עצמך מבצע עכשיו את לגשת ולפתוח שיחה/, "Action Imagery must use currentAction");
+  assert.match(imagery.body, /דמיין את עצמך מתחיל לגשת ולפתוח שיחה/, "Action Imagery must use currentAction");
   assert.ok(!imagery.body.includes("עכשיו הזמן"), "Action Imagery does not yet contain the actual-action instruction");
 
   const performing = getStageCopy("act", p, liveState({ ...base, actionImageryCompleted: true }), ["habit"]);
@@ -202,26 +209,24 @@ test("Action Imagery uses currentAction, and is a distinct sub-phase that preced
   assert.ok(!performing.body.includes("דמיין"), "the actual Action screen no longer repeats the imagery sentence");
 });
 
-test("Action Imagery includes the current target's Body-Language Cue when configured, in the same sentence as the action", () => {
-  const p = profile({
-    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
-  });
+test("Action Imagery includes the current target's Action Body Cue when configured, in the same sentence as the action, using natural phrasing", () => {
+  const p = profile({ internalAction: "ללמוד 20 דקות", internalActionBodyCue: "פתיחת חזה" });
   const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", plannedActionConfirmed: true }), ["state"]);
   assert.match(
     copy.body,
-    /דמיין את עצמך מבצע עכשיו את סריקת גוף, תוך שמירה על כתפיים משוחררות\./,
-    "imagery must name both the action and the cue together"
+    /דמיין את עצמך מתחיל ללמוד 20 דקות תוך שמירה על פתיחת חזה\./,
+    "imagery must name both the action and the cue together, in natural Hebrew"
   );
 });
 
-test("an alternative currentAction (entered because the planned action can't be performed now) is imagined together with the correct Body-Language Cue, never the original planned action", () => {
+test("an alternative currentAction (entered because the planned action can't be performed now) is imagined together with the correct Action Body Cue, never the original planned action", () => {
   const p = profile({
     internalAction: "לצאת להליכה של 20 דקות", // the planned/BUILD action
-    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "ראש ישר ויציב", mantra: null },
+    internalActionBodyCue: "ראש ישר ויציב",
   });
   const s = liveState({ triggerType: "reactive_emotion", selectedAction: "לעשות 5 דקות תרגילים בבית" });
   const copy = getStageCopy("act", p, s, ["state"]);
-  assert.match(copy.body, /דמיין את עצמך מבצע עכשיו את לעשות 5 דקות תרגילים בבית, תוך שמירה על ראש ישר ויציב\./);
+  assert.match(copy.body, /דמיין את עצמך מתחיל לעשות 5 דקות תרגילים בבית תוך שמירה על ראש ישר ויציב\./);
   assert.ok(!copy.body.includes("לצאת להליכה של 20 דקות"), "must never continue imagining the original planned action");
 });
 
@@ -243,35 +248,29 @@ test("resolveEncodingTarget's currentAction resolution is backwards compatible -
   assert.match(withoutSelectedAction.body, /לצאת להליכה של 20 דקות/);
 });
 
-test("no cue is invented in Action Imagery when none is configured -- it simply imagines the action, with no body-language wording", () => {
-  const p = profile({ beneficialAction: "לגשת ולפתוח שיחה", stateEncoding: null, identityEncoding: null });
+test("no cue is invented in Action Imagery when none is configured -- it simply imagines the action, with no body-cue wording", () => {
+  const p = profile({ beneficialAction: "לגשת ולפתוח שיחה" });
   const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_urge", plannedActionConfirmed: true }), ["habit"]);
-  assert.match(copy.body, /^דמיין את עצמך מבצע עכשיו את לגשת ולפתוח שיחה\./, "no trailing body-language clause");
-  assert.ok(!copy.body.includes("תוך שמירה"), "must never invent a body-language clause");
+  assert.match(copy.body, /^דמיין את עצמך מתחיל לגשת ולפתוח שיחה\./, "no trailing body-cue clause");
+  assert.ok(!copy.body.includes("תוך שמירה"), "must never invent a body-cue clause");
 });
 
 test("Action Imagery never contains Interfering-State imagery, even though the Interfering State is available on the profile", () => {
-  const p = profile({
-    interferingState: "ביקורת עצמית",
-    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
-  });
+  const p = profile({ interferingState: "ביקורת עצמית", internalActionBodyCue: "כתפיים משוחררות" });
   const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion", plannedActionConfirmed: true }), ["state"]);
   assert.ok(!copy.body.includes("ביקורת עצמית"), "Action Imagery must never reference the Interfering State");
   assert.equal(containsInductionPattern(copy.body), false);
 });
 
-test("the same Body-Language Cue is used across Encoding, Action Imagery, and the actual timed Action -- it never changes between these stages", () => {
-  const p = profile({
-    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
-  });
-  const base = { triggerType: "reactive_emotion" as const, plannedActionConfirmed: true };
-  const encodeCopy = getStageCopy("encode", p, liveState(base), ["state"]);
-  const imageryCopy = getStageCopy("act", p, liveState(base), ["state"]);
-  const performingCopy = getStageCopy("act", p, liveState({ ...base, actionImageryCompleted: true }), ["state"]);
-
-  assert.match(encodeCopy.body, /שמור על כתפיים משוחררות/, "Encoding activates the cue");
-  assert.match(imageryCopy.body, /תוך שמירה על כתפיים משוחררות/, "Action Imagery maintains the same cue");
-  assert.match(performingCopy.body, /שמור על שפת הגוף שבחרת: כתפיים משוחררות/, "the actual timed Action repeats the same cue");
+test("Body Cue does not require Action Imagery -- it still appears correctly on the real Action screen when Imagery is skipped/already completed", () => {
+  const p = profile({ beneficialAction: "לגשת ולפתוח שיחה", beneficialActionBodyCue: "פתיחת חזה" });
+  const performing = getStageCopy(
+    "act",
+    p,
+    liveState({ triggerType: "reactive_urge", plannedActionConfirmed: true, actionImageryCompleted: true }),
+    ["habit"]
+  );
+  assert.match(performing.body, /פתיחת חזה/, "the Body Cue must work normally on the Action screen even without Imagery");
 });
 
 // --- Action-choice: before currentAction is resolved (plannedActionConfirmed
@@ -288,6 +287,7 @@ test("the Action-choice screen displays the planned action before any choice is 
 test("the Action-choice screen never shows Body-Language, Action Imagery, or Action-Preparation content before the choice is resolved", () => {
   const p = profile({
     internalAction: "לצאת להליכה של 20 דקות",
+    internalActionBodyCue: null,
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
   });
   const copy = getStageCopy("act", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
@@ -482,7 +482,9 @@ test("no cue is invented in Encoding when neither a Short Encoding Regulation Cu
     stateEncodingRegulationCue: null,
     stateEncoding: null,
     internalAction: null,
+    internalActionBodyCue: null,
     beneficialAction: null,
+    beneficialActionBodyCue: null,
   });
   const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
   assert.ok(!copy.body.includes("המשך עם"), "no regulation-continuity line when nothing at all is configured");
@@ -591,6 +593,10 @@ function twoTargetProfile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildPro
     desiredIdentity: "משמעת עצמית", // Discipline
     stateEncoding: { target: "מיקוד", bodySensationCue: null, breathCue: null, bodyLanguageCue: "עיניים פקוחות וממוקדות", mantra: "אני ממוקד" },
     identityEncoding: { target: "משמעת עצמית", bodySensationCue: null, breathCue: null, bodyLanguageCue: "שמור את הראש ישר ויציב", mantra: "אני ממושמע בפעולותיי" },
+    internalAction: "לכתוב 3 דברים שהושגו היום",
+    internalActionBodyCue: "פתיחת חזה",
+    identityAction: "לגשת ולדבר ראשון",
+    identityActionBodyCue: "מבט ישיר",
     regulationTool: "כלי הוויסות",
     ...overrides,
   });
@@ -614,7 +620,7 @@ test("encode retrieves the Discipline (identity) Body-Language cue and mantra wh
   assert.ok(!copy.body.includes("אני ממוקד"), "must not leak Focus's mantra");
 });
 
-test("Action Imagery uses different map-specific Body-Language cues for Focus and Discipline, never mixed", () => {
+test("Action Imagery uses different map-specific Action Body Cues for Focus and Discipline, never mixed, and never Encoding's own Body-Language Cue", () => {
   const p = twoTargetProfile({
     internalAction: "סריקת גוף ממוקדת", // Focus's own action
     identityAction: "לשבת זקוף ולהתחיל", // Discipline's own action
@@ -628,10 +634,11 @@ test("Action Imagery uses different map-specific Body-Language cues for Focus an
   );
   assert.match(
     stateAct.body,
-    /דמיין את עצמך מבצע עכשיו את סריקת גוף ממוקדת, תוך שמירה על עיניים פקוחות וממוקדות\./,
-    "Focus's imagery must use Focus's own action and cue"
+    /דמיין את עצמך מתחיל סריקת גוף ממוקדת תוך שמירה על פתיחת חזה\./,
+    "Focus's imagery must use Focus's own action and Action Body Cue (internalActionBodyCue)"
   );
-  assert.ok(!stateAct.body.includes("שמור את הראש ישר ויציב"), "Focus's imagery must not leak Discipline's cue");
+  assert.ok(!stateAct.body.includes("מבט ישיר"), "Focus's imagery must not leak Discipline's Action Body Cue");
+  assert.ok(!stateAct.body.includes("עיניים פקוחות וממוקדות"), "Focus's imagery must not use Encoding's own Body-Language Cue");
 
   const identityAct = getStageCopy(
     "act",
@@ -641,10 +648,11 @@ test("Action Imagery uses different map-specific Body-Language cues for Focus an
   );
   assert.match(
     identityAct.body,
-    /דמיין את עצמך מבצע עכשיו את לשבת זקוף ולהתחיל, תוך שמירה על שמור את הראש ישר ויציב\./,
-    "Discipline's imagery must use Discipline's own action and cue"
+    /דמיין את עצמך מתחיל לשבת זקוף ולהתחיל תוך שמירה על מבט ישיר\./,
+    "Discipline's imagery must use Discipline's own action and Action Body Cue (identityActionBodyCue)"
   );
-  assert.ok(!identityAct.body.includes("עיניים פקוחות וממוקדות"), "Discipline's imagery must not leak Focus's cue");
+  assert.ok(!identityAct.body.includes("פתיחת חזה"), "Discipline's imagery must not leak Focus's Action Body Cue");
+  assert.ok(!identityAct.body.includes("שמור את הראש ישר ויציב"), "Discipline's imagery must not use Encoding's own Body-Language Cue");
 });
 
 test("encode's Body-Language cue appears before the matching Identity/Mantra, for either target (final corrected sub-order: embodiment -> evidence -> identity)", () => {
@@ -838,6 +846,7 @@ test("Encoding's fallback segment (nothing configured) is appended after the alw
 test("Action Imagery carries its own configured duration, distinct from every instruction stage above, plus a trailing dwell segment (the CURRENT target's own configured Action Imagery dwell, default 8s unconfigured here)", () => {
   const p = profile({
     beneficialAction: "לגשת ולפתוח שיחה",
+    beneficialActionBodyCue: null,
     stateEncoding: null,
   });
   const base = { triggerType: "reactive_urge" as const, plannedActionConfirmed: true };

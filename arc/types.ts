@@ -154,6 +154,24 @@ export interface ArcBuildProfile {
   stateEncoding: EncodingProfile | null;
   internalAction: string | null;
   /**
+   * The Action Body Cue for the state layer's own internalAction -- a
+   * physical cue the trainee performs and MAINTAINS while actually
+   * doing internalAction, resolved by arc/arcEngine.ts's
+   * resolveEncodingTarget alongside internalAction itself (never by
+   * Encoding). Deliberately separate from stateEncoding.bodyLanguageCue
+   * above: that one is Encoding's own embodiment segment, shown once,
+   * before Identity/Mantra, regardless of what's ever performed
+   * afterward; this one belongs to the "act" stage (Action Imagery, when
+   * enabled, and the real timed Action screen) and is never copied from,
+   * or into, stateEncoding.bodyLanguageCue automatically -- a trainee
+   * may configure either, both (even with different values), or
+   * neither. null (the default, and every profile stored before this
+   * field existed) means no Action Body Cue was configured for this
+   * target -- the "act" stage's copy simply omits it, never inventing a
+   * substitute.
+   */
+  internalActionBodyCue: string | null;
+  /**
    * The state layer's own configured dwell times (arc/dwellTimes.ts) --
    * null until BUILD-ARC's "זמן שהייה" step is saved for this target,
    * in which case every one of the five fields is resolved against
@@ -173,11 +191,15 @@ export interface ArcBuildProfile {
   identityEncodingRegulationCue: string | null;
   identityEncoding: EncodingProfile | null;
   identityAction: string | null;
+  /** The identity layer's own Action Body Cue, parallel to internalActionBodyCue -- never mixed with it or with beneficialActionBodyCue. Like identityAction itself, not asked as its own BUILD question: derived from beneficialActionBodyCue (see build/profileWizard.ts's module doc on why identityAction shares beneficialAction). */
+  identityActionBodyCue: string | null;
   /** The identity layer's own configured dwell times, parallel to stateDwellTimes above -- never mixed with it. */
   identityDwellTimes: Partial<DwellTimes> | null;
 
   habit: string | null;
   beneficialAction: string | null;
+  /** The habit layer's Action Body Cue for beneficialAction -- also reused for the identity layer's identityAction (identityActionBodyCue), exactly mirroring how identityAction itself reuses beneficialAction rather than being asked twice. See internalActionBodyCue's doc for the full Action-Body-Cue-vs-Encoding-Body-Language distinction. */
+  beneficialActionBodyCue: string | null;
   /** The habit layer's own Preventive Action, resolved for a session targeting "habit" (reactive_urge). Parallel to statePreventiveAction/identityPreventiveAction -- see arc/arcEngine.ts's resolveTargetPreventiveAction. */
   preventiveAction: string | null;
 

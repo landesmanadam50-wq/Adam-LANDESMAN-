@@ -39,6 +39,7 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   habit: "מה הפעולה השלילית שתרצה לצמצם?",
   negativeActionDuration: "כמה זמן, בדקות, לאפשר לפעולה הזו? (1 עד 15 דקות)",
   beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע במקומו? (ההרגל הרצוי)",
+  beneficialActionBodyCue: "איזה עוגן גופני תרצה לשמור בזמן ביצוע הפעולה? (רשות)",
   needsState: "האם יש מצב פנימי (כמו רוגע, ביטחון או חמלה) שתרצה לפתח ולחזק?",
   needsIdentityImmediately: "לעבוד גם על זהות מקבילה כבר מההתחלה?",
   needsIdentityExplicit: "האם יש זהות שתרצה לפתח?",
@@ -47,6 +48,7 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   identityMantra: "יש לך מנטרה לזהות הזו? (רשות)",
   supportiveState: "מה המצב הרצוי שתרצה לחוש יותר?",
   internalAction: "מה הפעולה הפנימית שלך? (למשל סריקת גוף)",
+  internalActionBodyCue: "איזה עוגן גופני תרצה לשמור בזמן ביצוע הפעולה? (רשות)",
   preventiveActionAsk: "יש לך פעולה מונעת מוגדרת מראש?",
   preventiveActionDescription: "תאר את הפעולה המונעת",
   regulationTool: "מה כלי הוויסות שלך? (למשל נשימה 4-7-8)",
@@ -57,16 +59,18 @@ const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   goal: "goal",
   habit: "habit",
   beneficialAction: "beneficialAction",
+  beneficialActionBodyCue: "beneficialActionBodyCue",
   desiredIdentity: "desiredIdentity",
   identityInterferingEmotion: "identityInterferingEmotion",
   identityMantra: "identityMantra",
   supportiveState: "supportiveState",
   internalAction: "internalAction",
+  internalActionBodyCue: "internalActionBodyCue",
   preventiveActionDescription: "preventiveActionDescription",
   regulationTool: "regulationTool",
 };
 
-const OPTIONAL_TEXT_STEPS: ProfileStep[] = ["identityMantra"];
+const OPTIONAL_TEXT_STEPS: ProfileStep[] = ["identityMantra", "beneficialActionBodyCue", "internalActionBodyCue"];
 
 const YESNO_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   needsState: "needsState",

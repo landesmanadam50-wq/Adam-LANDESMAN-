@@ -35,6 +35,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     supportiveState: "חמלה",
     stateEncoding: null,
     internalAction: "סריקת גוף",
+    internalActionBodyCue: null,
     stateDwellTimes: null,
     desiredIdentity: null,
     identityChallengeContext: null,
@@ -43,9 +44,11 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityEncodingRegulationCue: null,
     identityEncoding: null,
     identityAction: null,
+    identityActionBodyCue: null,
     identityDwellTimes: null,
     habit: "גלילה ברשת",
     beneficialAction: "לגשת ולפתוח שיחה",
+    beneficialActionBodyCue: null,
     preventiveAction: null,
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
@@ -213,6 +216,7 @@ test("resolveEncodingTarget routes reactive_emotion to the state layer", () => {
 test("resolveEncodingTarget prefers identity for proactive when an identity encoding exists", () => {
   const p = profile({
     identityAction: "לומר שלום",
+    identityActionBodyCue: null,
     identityEncoding: { target: "אומץ", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "אני בטוח כאן" },
   });
   const resolved = resolveEncodingTarget({ activeLayers: ["identity"], triggerType: "proactive", selectedTarget: null, buildProfile: p });
@@ -233,6 +237,7 @@ test("resolveEncodingTarget never falls back to an inactive layer, even one with
     interferingState: "stale",
     stateEncoding: { target: "stale", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: null },
     beneficialAction: "לגשת ולפתוח שיחה",
+    beneficialActionBodyCue: null,
   });
   const resolved = resolveEncodingTarget({ activeLayers: ["habit"], triggerType: "proactive", selectedTarget: null, buildProfile: p });
   assert.equal(resolved.layer, "habit", "must resolve to the only actually-active layer, not the stale state data");
@@ -242,7 +247,9 @@ test("resolveEncodingTarget for Identity Only: reactive_emotion resolves to iden
   const p = profile({
     interferingState: null,
     internalAction: null,
+    internalActionBodyCue: null,
     identityAction: "לומר שלום",
+    identityActionBodyCue: null,
     identityEncoding: { target: "אומץ", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: null },
   });
   const resolved = resolveEncodingTarget({ activeLayers: ["identity"], triggerType: "reactive_emotion", selectedTarget: null, buildProfile: p });
@@ -367,6 +374,7 @@ test("reactive_emotion resolves Preventive Action from the identity layer's own 
     identityInterferingEmotion: "תשוקה",
     desiredIdentity: "משמעת",
     identityAction: "להתקשר לחבר טוב",
+    identityActionBodyCue: null,
     identityPreventiveAction: "להתקשר לחבר",
   });
   // No selectedTarget set explicitly -- resolved purely by inference
@@ -711,6 +719,53 @@ test("resolveEncodingTarget: currentAction becomes the alternative action once s
   assert.equal(p.internalAction, "לצאת להליכה של 20 דקות", "the planned/BUILD action itself is untouched");
 });
 
+// --- Action Body Cue task: actionBodyCue is resolved from the same
+// layer as actionLabel, from its own dedicated field -- never from
+// Encoding's bodyLanguageCue, never mixed across layers, and never
+// overridden by a session-specific alternative action.
+test("resolveEncodingTarget resolves actionBodyCue per layer, from the dedicated Action Body Cue fields, never from Encoding's bodyLanguageCue", () => {
+  const p = profile({
+    internalAction: "ללמוד 20 דקות",
+    internalActionBodyCue: "פתיחת חזה",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+  });
+  const resolved = resolveEncodingTarget({ activeLayers: ["state"], triggerType: "reactive_emotion", selectedTarget: "state", buildProfile: p });
+  assert.equal(resolved.actionBodyCue, "פתיחת חזה", "must come from internalActionBodyCue, not Encoding's stateEncoding.bodyLanguageCue");
+});
+
+test("resolveEncodingTarget: habit and identity resolve their own, never-mixed Action Body Cue fields", () => {
+  const habitProfile = profile({ beneficialAction: "לגשת ולפתוח שיחה", beneficialActionBodyCue: "יציבה זקופה" });
+  const habitResolved = resolveEncodingTarget({ activeLayers: ["habit"], triggerType: "reactive_urge", selectedTarget: null, buildProfile: habitProfile });
+  assert.equal(habitResolved.actionBodyCue, "יציבה זקופה");
+
+  const identityProfile = profile({
+    identityAction: "לומר שלום",
+    identityActionBodyCue: "מבט ישיר",
+    internalActionBodyCue: "פתיחת חזה",
+  });
+  const identityResolved = resolveEncodingTarget({ activeLayers: ["identity"], triggerType: "proactive", selectedTarget: "identity", buildProfile: identityProfile });
+  assert.equal(identityResolved.actionBodyCue, "מבט ישיר", "identity's own cue, never the state layer's internalActionBodyCue");
+});
+
+test("resolveEncodingTarget: a session-specific Alternative Action still resolves the SAME target's Action Body Cue, never cleared and never overridden", () => {
+  const p = profile({ internalAction: "לצאת להליכה של 20 דקות", internalActionBodyCue: "פתיחת חזה" });
+  const resolved = resolveEncodingTarget({
+    activeLayers: ["state"],
+    triggerType: "reactive_emotion",
+    selectedTarget: "state",
+    buildProfile: p,
+    selectedAction: "לעשות 5 דקות תרגילים בבית",
+  });
+  assert.equal(resolved.actionLabel, "לעשות 5 דקות תרגילים בבית", "the alternative action wins for actionLabel");
+  assert.equal(resolved.actionBodyCue, "פתיחת חזה", "the Body Cue is untouched by the alternative action override");
+});
+
+test("resolveEncodingTarget: no configured Action Body Cue resolves to null, never undefined or invented", () => {
+  const p = profile({ internalAction: "סריקת גוף", internalActionBodyCue: null });
+  const resolved = resolveEncodingTarget({ activeLayers: ["state"], triggerType: "reactive_emotion", selectedTarget: "state", buildProfile: p });
+  assert.equal(resolved.actionBodyCue, null);
+});
+
 // --- resolveActPhase: the "act" stage's three sub-phases, in their
 // fixed, one-directional order -- see arc/instructionTiming.ts and
 // arc/actionTimer.ts for why Imagery timing and the actual Action
@@ -840,9 +895,12 @@ test("resolveObserverPauseLayer falls back to inferLayerFromTrigger's own existi
     interferingState: null,
     stateEncoding: null,
     internalAction: null,
+    internalActionBodyCue: null,
     identityEncoding: null,
     identityAction: null,
+    identityActionBodyCue: null,
     beneficialAction: null,
+    beneficialActionBodyCue: null,
   });
   assert.equal(resolveObserverPauseLayer("reactive_emotion", null, ALL_LAYERS, p), "state", "the generic fallback when nothing at all is configured yet");
 });

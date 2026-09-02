@@ -40,6 +40,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     stateEncodingRegulationCue: null,
     stateEncoding: null,
     internalAction: "סריקת גוף",
+    internalActionBodyCue: null,
     stateDwellTimes: null,
     desiredIdentity: "אדם רגוע ובוטח",
     identityChallengeContext: null,
@@ -48,9 +49,11 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityEncodingRegulationCue: null,
     identityEncoding: null,
     identityAction: null,
+    identityActionBodyCue: null,
     identityDwellTimes: null,
     habit: "לבדוק את הטלפון בכל הפסקה",
     beneficialAction: "לגשת ולפתוח שיחה",
+    beneficialActionBodyCue: null,
     preventiveAction: null,
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
@@ -193,6 +196,7 @@ test("ambient sound appears as a passive anchor in the real Combined Attention/E
 test("a full reactive_emotion session, walked end to end through the real engine, never trips the induction-pattern audit at any stage, and never leaks the Desired State before Encoding", () => {
   const p = profile({
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+    internalActionBodyCue: "כתפיים משוחררות",
   });
   const activeLayers: DevelopmentLayer[] = ["state", "identity", "habit"];
   let state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
@@ -249,8 +253,8 @@ test("a full reactive_emotion session, walked end to end through the real engine
   assert.ok(encodeCopy?.body.includes("כתפיים משוחררות"), "Encoding is where the Desired State's encoding cue is intentionally introduced");
 
   const actCopy = visited.find((v) => v.stage === "act");
-  assert.ok(actCopy?.body.includes("כתפיים משוחררות"), "the act stage's Action Preparation reminder and Action Imagery still carry the same Body-Language Cue, via the real engine walk");
-  assert.match(actCopy!.body, /דמיין את עצמך מבצע עכשיו את .*, תוך שמירה על כתפיים משוחררות\./, "Action Imagery names both the resolved action and the same cue");
+  assert.ok(actCopy?.body.includes("כתפיים משוחררות"), "Action Imagery shows this target's own configured Action Body Cue, via the real engine walk");
+  assert.match(actCopy!.body, /דמיין את עצמך מתחיל .* תוך שמירה על כתפיים משוחררות\./, "Action Imagery names both the resolved action and the same Action Body Cue");
 });
 
 test("a reactive_emotion session targeting the IDENTITY layer (Discipline), walked end to end through the real engine, resolves Discipline's own Body-Language cue and mantra -- never Focus's (state's)", () => {
@@ -263,6 +267,8 @@ test("a reactive_emotion session targeting the IDENTITY layer (Discipline), walk
     desiredIdentity: "משמעת עצמית", // Discipline
     stateEncoding: { target: "מיקוד", bodySensationCue: null, breathCue: null, bodyLanguageCue: "עיניים פקוחות וממוקדות", mantra: "אני ממוקד" },
     identityEncoding: { target: "משמעת עצמית", bodySensationCue: null, breathCue: null, bodyLanguageCue: "שמור את הראש ישר ויציב", mantra: "אני ממושמע בפעולותיי" },
+    identityAction: "לגשת ולדבר ראשון",
+    identityActionBodyCue: "שמור את הראש ישר ויציב",
   });
   const activeLayers: DevelopmentLayer[] = ["state", "identity", "habit"];
   let state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion", selectedTarget: "identity" };
@@ -306,7 +312,7 @@ test("a reactive_emotion session targeting the IDENTITY layer (Discipline), walk
   state = { ...state, plannedActionConfirmed: true }; // simulates confirming the planned action ("כן")
 
   const actCopy = getStageCopy(stage, p, state, activeLayers);
-  assert.match(actCopy.body, /תוך שמירה על שמור את הראש ישר ויציב/, "Action Imagery must carry Discipline's own cue, via the real engine walk");
+  assert.match(actCopy.body, /תוך שמירה על שמור את הראש ישר ויציב/, "Action Imagery must carry Discipline's own Action Body Cue, via the real engine walk");
   assert.ok(!actCopy.body.includes("עיניים פקוחות וממוקדות"), "must not leak Focus's cue into Discipline's Action Imagery");
   assert.equal(containsInductionPattern(actCopy.body), false);
 });
@@ -415,7 +421,7 @@ test("a reactive_urge session, walked to 'act' through the real engine, that cho
   assert.equal(nextAfterChoice.stage, "success_focus");
 
   const imageryCopy = getStageCopy(stage, p, state, activeLayers);
-  assert.match(imageryCopy.body, /דמיין את עצמך מבצע עכשיו את 5 דקות תרגילים בבית\./, "Action Imagery uses the alternative currentAction");
+  assert.match(imageryCopy.body, /דמיין את עצמך מתחיל 5 דקות תרגילים בבית\./, "Action Imagery uses the alternative currentAction");
   assert.ok(!imageryCopy.body.includes("לצאת להליכה של 20 דקות"), "the original planned action is never imagined once an alternative is chosen");
   assert.ok(!imageryCopy.body.includes("משך הפעולה"), "the Action Timer's duration is not named yet during Imagery -- it hasn't started");
   assert.equal(containsInductionPattern(imageryCopy.body), false);
@@ -444,6 +450,7 @@ test("a reactive_urge session with the habit layer active and Negative Action re
     habit: "גלילה ברשת", // the predefined negative/interfering action
     negativeActionReductionEnabled: true,
     beneficialAction: "לצאת להליכה של 20 דקות",
+    beneficialActionBodyCue: null,
     preventiveAction: null,
   });
   const activeLayers: DevelopmentLayer[] = ["habit"];

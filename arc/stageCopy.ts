@@ -617,10 +617,14 @@ export function getStageCopy(
       // one-directional order (choice -> imagery -> performing). Still
       // one ArcStage value throughout; no new stage was added. The
       // standalone Action Preparation sub-phase that used to sit
-      // between imagery and performing is removed -- its useful
-      // "carry the cue into the real action" reminder now lives on
-      // Encoding's own body-language segment instead (see the "encode"
-      // case above).
+      // between imagery and performing is removed. Action Body Cue
+      // task: the "carry a physical cue into the real action" role that
+      // sub-phase used to serve is now its own dedicated concept,
+      // resolved independently of Encoding (EncodingResolution.
+      // actionBodyCue, further down) and shown directly on Action
+      // Imagery (when enabled) and the real Action screen below --
+      // never on a separate transition screen, and never Encoding's own
+      // Body-Language Cue (see the "encode" case above, unchanged).
       const phase = resolveActPhase(state.plannedActionConfirmed, state.selectedAction, state.actionImageryCompleted);
 
       if (phase === "choice") {
@@ -644,19 +648,18 @@ export function getStageCopy(
       // From "imagery" onward, currentAction is resolved: the trainee's
       // mapped action, unless they entered a session-specific
       // alternative because the mapped one couldn't be performed right
-      // now -- see arc/arcEngine.ts's EncodingResolution doc. Imagery,
-      // Preparation, and the actual Action all resolve it the exact same
-      // way, from the same current target's own map, so they can never
-      // diverge onto different actions or mix in another target's
-      // Body-Language Cue.
-      const { layer, actionLabel: currentAction, encoding } = resolveEncodingTarget({
+      // now -- see arc/arcEngine.ts's EncodingResolution doc. Imagery
+      // and the actual Action both resolve it (and actionBodyCue) the
+      // exact same way, from the same current target's own map, so they
+      // can never diverge onto different actions or mix in another
+      // target's Action Body Cue.
+      const { layer, actionLabel: currentAction, actionBodyCue } = resolveEncodingTarget({
         activeLayers,
         triggerType: state.triggerType,
         selectedTarget: state.selectedTarget,
         buildProfile: profile,
         selectedAction: state.selectedAction,
       });
-      const bodyLanguageCue = encoding?.bodyLanguageCue ?? null;
 
       if (phase === "imagery") {
         // Action Imagery: strictly of currentAction (only ever sources
@@ -665,20 +668,24 @@ export function getStageCopy(
         // interferingState/identityInterferingEmotion) -- never the
         // Interfering State, craving, distraction, or any other
         // difficult state. See arc/instructions.ts's
-        // containsInductionPattern. Carries the SAME Body-Language Cue
-        // forward from Encoding, from this target's own map only, when
-        // one is configured -- never invented, never an empty
-        // placeholder when there isn't one. Has its own configured
-        // minimum-practice duration, separate from actionDuration (the
-        // real Action Timer, which hasn't started yet -- see
-        // arc/actionTimer.ts). Dwell-time task: the "Action Imagery"
-        // dwell category -- ONE trailing dwell segment (arc/dwellTimes.ts),
-        // sized from the CURRENT target's own configuration, appended
-        // once this instruction has finished revealing.
-        const imagine = currentAction
-          ? `דמיין את עצמך מבצע עכשיו את ${currentAction}`
-          : "דמיין את עצמך מבצע עכשיו את הפעולה שבחרת";
-        const text = bodyLanguageCue ? `${imagine}, תוך שמירה על ${bodyLanguageCue}.` : `${imagine}.`;
+        // containsInductionPattern. Naturally includes this target's
+        // Action Body Cue (never Encoding's own Body-Language Cue --
+        // see EncodingResolution.actionBodyCue's doc) when one is
+        // configured -- never invented, never an empty placeholder when
+        // there isn't one, and Action Imagery is never required for it
+        // to work (see the "act" case's performing phase below, which
+        // shows it independently). "מתחיל" + the action text as typed,
+        // never "מבצע את X" -- most actions are phrased as infinitives
+        // ("ללמוד", "ללכת לפארק"), and "מבצע את ללמוד" reads as broken
+        // Hebrew. Has its own configured minimum-practice duration,
+        // separate from actionDuration (the real Action Timer, which
+        // hasn't started yet -- see arc/actionTimer.ts). Dwell-time
+        // task: the "Action Imagery" dwell category -- ONE trailing
+        // dwell segment (arc/dwellTimes.ts), sized from the CURRENT
+        // target's own configuration, appended once this instruction
+        // has finished revealing.
+        const imagine = currentAction ? `דמיין את עצמך מתחיל ${currentAction}` : "דמיין את עצמך מתחיל בפעולה שבחרת";
+        const text = actionBodyCue ? `${imagine} תוך שמירה על ${actionBodyCue}.` : `${imagine}.`;
         const dwellSeconds = resolveDwellSecondsFor("actionImageryDwellSeconds", layer, profile);
         return {
           title: "דמיון הפעולה",
@@ -690,12 +697,18 @@ export function getStageCopy(
       // phase === "performing": the actual timed Action. No instruction
       // segments here -- this is governed by the separate Action Timer
       // (arc/actionTimer.ts) instead, which live/screens.tsx's
-      // ActionScreen starts only once this phase is reached.
+      // ActionScreen starts only once this phase is reached. copy.body
+      // (built below) is rendered by that screen's own Title component
+      // unconditionally, for as long as ActionScreen stays mounted --
+      // so this Action Body Cue line stays visible for the whole time
+      // the Action Timer is running, never hidden or replaced once it
+      // starts (Action Body Cue's whole purpose: help the trainee
+      // remember and maintain the cue DURING the real behavior).
       const parts: string[] = [];
-      if (bodyLanguageCue) {
-        parts.push(`בזמן הפעולה, שמור על שפת הגוף שבחרת: ${bodyLanguageCue}.`);
-      }
       parts.push(currentAction ? `עכשיו הזמן: ${currentAction}.` : "עכשיו הזמן לפעולה.");
+      if (actionBodyCue) {
+        parts.push(`שמור על ${actionBodyCue} בזמן הפעולה.`);
+      }
 
       // The resolved action duration -- the alternative action's own
       // session-specific duration when one was chosen, else the

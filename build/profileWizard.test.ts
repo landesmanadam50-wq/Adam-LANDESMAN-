@@ -97,6 +97,15 @@ test("answering negativeActionEnabledAsk 'כן' (true) walks habit, then negativ
   );
   assert.equal(
     getNextProfileStep("beneficialAction", { ...draft, habit: "x", negativeActionBaseDurationMinutes: 10, beneficialAction: "x" }, GOAL_STEP_ORDER),
+    "beneficialActionBodyCue",
+    "Action Body Cue task: the optional Action Body Cue question sits right after beneficialAction"
+  );
+  assert.equal(
+    getNextProfileStep(
+      "beneficialActionBodyCue",
+      { ...draft, habit: "x", negativeActionBaseDurationMinutes: 10, beneficialAction: "x" },
+      GOAL_STEP_ORDER
+    ),
     "needsState"
   );
 });
@@ -130,7 +139,12 @@ test("state path continues into identity questions after needsIdentityImmediatel
   const draft = filledStateOnlyDraft();
   assert.equal(getNextProfileStep("needsIdentityImmediately", draft, GOAL_STEP_ORDER), "desiredIdentity");
   assert.equal(getNextProfileStep("desiredIdentity", draft, GOAL_STEP_ORDER), "supportiveState");
-  assert.equal(getNextProfileStep("internalAction", draft, GOAL_STEP_ORDER), "preventiveActionAsk");
+  assert.equal(
+    getNextProfileStep("internalAction", draft, GOAL_STEP_ORDER),
+    "internalActionBodyCue",
+    "Action Body Cue task: the optional Action Body Cue question sits right after internalAction"
+  );
+  assert.equal(getNextProfileStep("internalActionBodyCue", draft, GOAL_STEP_ORDER), "preventiveActionAsk");
 });
 
 test("BUILD-GOAL never includes either target's ARC Map fields (Challenge Context, Interfering State, Encoding cues)", () => {

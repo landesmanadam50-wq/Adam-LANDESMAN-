@@ -273,6 +273,22 @@ export interface EncodingResolution {
    * session.
    */
   actionLabel: string | null;
+  /**
+   * Action Body Cue task: the physical cue the trainee performs and
+   * MAINTAINS while actually doing actionLabel -- resolved from the
+   * SAME layer as actionLabel (beneficialActionBodyCue/
+   * identityActionBodyCue/internalActionBodyCue), never from
+   * encoding?.bodyLanguageCue. These are deliberately separate concepts
+   * (see arc/types.ts's internalActionBodyCue doc): Encoding's
+   * Body-Language Cue is its own embodiment segment, shown once before
+   * Identity/Mantra, regardless of what's performed afterward; this one
+   * belongs to Action Imagery and the real "act" stage, and is never
+   * copied from, or into, encoding?.bodyLanguageCue. Unlike actionLabel,
+   * NEVER overridden by a session-specific alternative action (input.
+   * selectedAction) -- an Alternative Action still uses this same
+   * target's configured Body Cue, exactly as the planned action would.
+   */
+  actionBodyCue: string | null;
 }
 
 /**
@@ -291,7 +307,7 @@ export function resolveEncodingTarget(input: {
   triggerType: TriggerType | null;
   selectedTarget: DevelopmentLayer | null;
   buildProfile: ArcBuildProfile;
-  /** ArcLiveState.selectedAction -- a session-specific alternative action, when the trainee's mapped action can't be performed right now. Overrides the resolved layer's mapped action when set; omitted/null leaves the mapped action as-is (existing behavior, unchanged). */
+  /** ArcLiveState.selectedAction -- a session-specific alternative action, when the trainee's mapped action can't be performed right now. Overrides the resolved layer's mapped action when set; omitted/null leaves the mapped action as-is (existing behavior, unchanged). Never overrides actionBodyCue -- see that field's doc. */
   selectedAction?: string | null;
 }): EncodingResolution {
   const layer = input.selectedTarget ?? inferLayerFromTrigger(input.triggerType, input.activeLayers, input.buildProfile);
@@ -299,11 +315,26 @@ export function resolveEncodingTarget(input: {
   const resolved: EncodingResolution = (() => {
     switch (layer) {
       case "habit":
-        return { layer: "habit" as const, encoding: null, actionLabel: input.buildProfile.beneficialAction };
+        return {
+          layer: "habit" as const,
+          encoding: null,
+          actionLabel: input.buildProfile.beneficialAction,
+          actionBodyCue: input.buildProfile.beneficialActionBodyCue,
+        };
       case "identity":
-        return { layer: "identity" as const, encoding: input.buildProfile.identityEncoding, actionLabel: input.buildProfile.identityAction };
+        return {
+          layer: "identity" as const,
+          encoding: input.buildProfile.identityEncoding,
+          actionLabel: input.buildProfile.identityAction,
+          actionBodyCue: input.buildProfile.identityActionBodyCue,
+        };
       case "state":
-        return { layer: "state" as const, encoding: input.buildProfile.stateEncoding, actionLabel: input.buildProfile.internalAction };
+        return {
+          layer: "state" as const,
+          encoding: input.buildProfile.stateEncoding,
+          actionLabel: input.buildProfile.internalAction,
+          actionBodyCue: input.buildProfile.internalActionBodyCue,
+        };
     }
   })();
 

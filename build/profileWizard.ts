@@ -98,12 +98,25 @@ export type ProfileStep =
    */
   | "negativeActionDuration"
   | "beneficialAction"
+  /**
+   * Action Body Cue task: the physical cue the trainee performs and
+   * maintains WHILE actually doing beneficialAction (also reused, like
+   * beneficialAction itself, for the identity layer's identityAction --
+   * see the module doc). Deliberately separate from Encoding's own
+   * Body-Language Cue (stateBodyLanguageCue/identityBodyLanguageCue,
+   * further down) -- Body Cue belongs to the "act" stage (Action
+   * Imagery + the real timed Action), never to Encoding. Always
+   * optional (see OPTIONAL_TEXT_STEPS in build/ProfileBuilderScreen.tsx).
+   */
+  | "beneficialActionBodyCue"
   | "needsState"
   | "needsIdentityImmediately"
   | "needsIdentityExplicit"
   | "desiredIdentity"
   | "supportiveState"
   | "internalAction"
+  /** The state layer's own Action Body Cue, parallel to beneficialActionBodyCue above -- never mixed with it. Same optionality/role. */
+  | "internalActionBodyCue"
   | "preventiveActionAsk"
   | "preventiveActionDescription"
   | "regulationTool"
@@ -142,12 +155,14 @@ export const GOAL_STEP_ORDER: ProfileStep[] = [
   "habit",
   "negativeActionDuration",
   "beneficialAction",
+  "beneficialActionBodyCue",
   "needsState",
   "needsIdentityImmediately",
   "needsIdentityExplicit",
   "desiredIdentity",
   "supportiveState",
   "internalAction",
+  "internalActionBodyCue",
   "preventiveActionAsk",
   "preventiveActionDescription",
   "regulationTool",
@@ -204,6 +219,8 @@ export interface ProfileDraft {
   interferingState: string;
   challengeContext: string;
   internalAction: string;
+  /** Action Body Cue task -- see ArcBuildProfile.internalActionBodyCue's doc. */
+  internalActionBodyCue: string;
   statePreventiveAction: string;
   /** null = not yet decided this BUILD session; true = "choose a shorter cue for Encoding" (B); false = "use the same cue during Encoding" (A). Draft-only -- never persisted itself, only its downstream effect on stateEncodingRegulationCue is. */
   stateWantsShortEncodingRegulationCue: boolean | null;
@@ -251,6 +268,8 @@ export interface ProfileDraft {
   /** Negative Action reduction task: the current target Habit's own base timer allowance, restricted to 1-15 minutes -- set directly by a chip picker (build/ProfileBuilderScreen.tsx), never free text, so no separate parse/validation step is needed. null = not yet chosen (only meaningful while negativeActionReductionEnabled is true). */
   negativeActionBaseDurationMinutes: number | null;
   beneficialAction: string;
+  /** Action Body Cue task -- see ArcBuildProfile.beneficialActionBodyCue's doc. Also reused for the identity layer at buildProfileFromDraft time, exactly like beneficialAction itself. */
+  beneficialActionBodyCue: string;
   hasPreventiveAction: boolean | null;
   preventiveActionDescription: string;
 
@@ -267,6 +286,7 @@ export function createEmptyDraft(): ProfileDraft {
     interferingState: "",
     challengeContext: "",
     internalAction: "",
+    internalActionBodyCue: "",
     statePreventiveAction: "",
     stateWantsShortEncodingRegulationCue: null,
     stateEncodingRegulationCue: "",
@@ -298,6 +318,7 @@ export function createEmptyDraft(): ProfileDraft {
     habit: "",
     negativeActionBaseDurationMinutes: null,
     beneficialAction: "",
+    beneficialActionBodyCue: "",
     hasPreventiveAction: null,
     preventiveActionDescription: "",
     regulationTool: "",
@@ -330,6 +351,7 @@ export function draftFromProfileAndSelection(
     interferingState: profile.interferingState ?? "",
     challengeContext: profile.challengeContext ?? "",
     internalAction: profile.internalAction ?? "",
+    internalActionBodyCue: profile.internalActionBodyCue ?? "",
     statePreventiveAction: profile.statePreventiveAction ?? "",
     // A stored short cue means the trainee previously chose "B" (a
     // shorter cue) -- default the choice back to that so re-editing
@@ -391,6 +413,7 @@ export function draftFromProfileAndSelection(
     // literal string "undefined".
     negativeActionBaseDurationMinutes: clampNegativeActionDurationMinutes(profile.negativeActionBaseDurationMinutes),
     beneficialAction: profile.beneficialAction ?? "",
+    beneficialActionBodyCue: profile.beneficialActionBodyCue ?? "",
     hasPreventiveAction: profile.preventiveAction !== null,
     preventiveActionDescription: profile.preventiveAction ?? "",
     regulationTool: profile.regulationTool ?? "",
@@ -413,6 +436,7 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
       return draft.needsState === false;
     case "supportiveState":
     case "internalAction":
+    case "internalActionBodyCue":
     case "challengeContext":
     case "interferingState":
     case "statePreventiveAction":
@@ -648,6 +672,7 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
         : null,
     stateEncoding: draft.needsState && supportiveState ? buildEncodingProfile(supportiveState, draft.stateMantra, draft.stateBodyLanguageCue) : null,
     internalAction: draft.needsState ? draft.internalAction.trim() : null,
+    internalActionBodyCue: draft.needsState && draft.internalActionBodyCue.trim() ? draft.internalActionBodyCue.trim() : null,
     stateDwellTimes: draft.needsState
       ? dwellTimesFromDraft({
           sensation: draft.stateSensationDwellSeconds,
@@ -673,6 +698,11 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     // action is the same Desired Habit as the habit layer's, not asked
     // twice.
     identityAction: needsIdentity ? draft.beneficialAction.trim() : null,
+    // Action Body Cue task: mirrors identityAction's own derivation
+    // immediately above -- the identity layer's Action Body Cue is the
+    // same one configured for beneficialAction, never asked a second
+    // time.
+    identityActionBodyCue: needsIdentity && draft.beneficialActionBodyCue.trim() ? draft.beneficialActionBodyCue.trim() : null,
     identityDwellTimes: needsIdentity
       ? dwellTimesFromDraft({
           sensation: draft.identitySensationDwellSeconds,
@@ -695,6 +725,7 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     // ArcBuildProfile.habit doc.
     habit: draft.negativeActionReductionEnabled === true && draft.habit.trim() ? draft.habit.trim() : null,
     beneficialAction: draft.beneficialAction.trim(),
+    beneficialActionBodyCue: draft.beneficialActionBodyCue.trim() ? draft.beneficialActionBodyCue.trim() : null,
     preventiveAction: draft.hasPreventiveAction ? draft.preventiveActionDescription.trim() : null,
 
     regulationTool: draft.regulationTool.trim(),

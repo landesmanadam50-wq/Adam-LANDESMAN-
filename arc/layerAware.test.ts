@@ -27,6 +27,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     supportiveState: null,
     stateEncoding: null,
     internalAction: null,
+    internalActionBodyCue: null,
     stateDwellTimes: null,
     desiredIdentity: null,
     identityChallengeContext: null,
@@ -35,9 +36,11 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityEncodingRegulationCue: null,
     identityEncoding: null,
     identityAction: null,
+    identityActionBodyCue: null,
     identityDwellTimes: null,
     habit: null,
     beneficialAction: null,
+    beneficialActionBodyCue: null,
     preventiveAction: null,
     regulationTool: "נשימה 4-7-8",
     actionDuration: null,
@@ -64,6 +67,7 @@ test("STATE ONLY: a full reactive_emotion session walks through to completion wi
     interferingState: "פחד",
     supportiveState: "חמלה",
     internalAction: "סריקת גוף",
+    internalActionBodyCue: null,
     stateEncoding: { target: "פחד", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "אני בטוח כאן" },
   });
   let s = state({ triggerType: "reactive_emotion", presenceRating: 8 });
@@ -107,6 +111,7 @@ test("IDENTITY ONLY: proactive routes to the identity target without any state o
   const p = profile({
     desiredIdentity: "אומץ",
     identityAction: "לומר שלום",
+    identityActionBodyCue: null,
     identityEncoding: { target: "אומץ", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "אני מסוגל" },
   });
 
