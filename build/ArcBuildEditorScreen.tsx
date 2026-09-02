@@ -11,14 +11,6 @@ import {
   getFirstProfileStep,
   getNextProfileStep,
   getPreviousProfileStep,
-  isGoalDraftComplete,
-  isIdentityArcDraftComplete,
-  isStateArcDraftComplete,
-  resolvesNeedsIdentity,
-  selectionFromDraft,
-  GOAL_STEP_ORDER,
-  IDENTITY_ARC_STEP_ORDER,
-  STATE_ARC_STEP_ORDER,
   type ProfileDraft,
   type ProfileStep,
 } from "./profileWizard.ts";
@@ -26,158 +18,211 @@ import { NEGATIVE_ACTION_MAX_DURATION_MINUTES, NEGATIVE_ACTION_MIN_DURATION_MINU
 import type { ArcBuild, DwellTimes } from "../arc/types.ts";
 
 /**
- * ARC Builds task: ONE screen editing ONE ArcBuild end to end -- the
- * merged successor to the old, separately-routed BUILD-GOAL
- * (build/ProfileBuilderScreen.tsx) and BUILD-ARC (build/ArcMapScreen.tsx)
- * screens. Reuses their exact same underlying step machinery
- * (build/profileWizard.ts's GOAL_STEP_ORDER/STATE_ARC_STEP_ORDER/
- * IDENTITY_ARC_STEP_ORDER, shouldShowProfileStep, getFirstProfileStep/
- * getNextProfileStep/getPreviousProfileStep, buildProfileFromDraft,
- * draftFromProfileAndSelection, selectionFromDraft), completely
- * unchanged -- only ORCHESTRATION is new: instead of two independent
- * routes each owning one array, this screen walks up to three phases
- * in sequence within ONE array-at-a-time state (`phase`), exactly
- * mirroring how ArcMapScreen already switched between its two targets
- * (finishAndSwitchTarget) -- just with the (now goal-less) GOAL steps
- * as an unconditional first phase, ahead of state/identity.
+ * ARC Builds task (correction): ONE screen editing ONE, SINGLE-target
+ * ArcBuild -- an ArcBuild targets exactly ONE layer (state, identity,
+ * or habit), chosen once up front, never a bundle of several targets
+ * walked one after another. This replaces the earlier version of this
+ * screen, which still asked a needsState/needsIdentity "do you also
+ * want...?" cascade and sequenced through up to two target-specific ARC
+ * Maps with a "save and move to the next map" step in between -- the
+ * exact "one ARC Map per Desired Goal, guided sequentially" pattern
+ * this correction removes. The ArcBuild's own name (chosen at creation,
+ * on the ARC Builds list screen) is its only identity; it is never
+ * derived from, or shown as, the Desired State/Identity text.
  *
- * Phase order: "goal" (always) -> "state" (only if draft.needsState)
- * -> "identity" (only if resolvesNeedsIdentity(draft)) -> save. Each
- * phase's own "review" step is its internal end marker (unchanged
- * meaning from before), not a final save -- advancing past it either
- * moves to the next needed phase or actually persists, matching
- * ArcMapScreen's finishAndSwitchTarget/finishAndExit split exactly.
+ * Reuses build/profileWizard.ts's step machinery completely unchanged
+ * (shouldShowProfileStep/getFirstProfileStep/getNextProfileStep/
+ * getPreviousProfileStep, buildProfileFromDraft, draftFromProfileAndSelection)
+ * -- only the STEP ORDER ARRAYS below are new, each a flat,
+ * single-target list mixing existing ProfileStep values (never new
+ * ones except identityAction/identityActionBodyCue, added alongside
+ * this correction so a standalone identity-targeted build can capture
+ * its own Action without depending on a habit target's beneficialAction
+ * -- see profileWizard.ts's ProfileDraft.identityAction doc).
+ * draft.needsState/needsIdentityExplicit are set ONCE, to match the
+ * chosen target, before any step is shown, so shouldShowProfileStep's
+ * existing per-field gating (built around those same flags) continues
+ * to work completely unmodified.
  *
  * Saves back onto the ONE ArcBuild identified by the `id` route param
  * only (data/storage.ts's upsertArcBuild) -- never a second, global
- * profile, and never any other build's own fields.
+ * profile, and never any other build's own fields. Every field not
+ * relevant to the chosen target is explicitly cleared to null on save,
+ * so deriveActiveLayersForArcBuild (arc/arcEngine.ts) always resolves
+ * this build to exactly the one layer it targets, never more.
  */
 
-type Phase = "goal" | "state" | "identity";
+type Target = "state" | "identity" | "habit";
 
-function stepOrderFor(phase: Phase): ProfileStep[] {
-  if (phase === "goal") return GOAL_STEP_ORDER;
-  if (phase === "state") return STATE_ARC_STEP_ORDER;
-  return IDENTITY_ARC_STEP_ORDER;
+const STATE_STEPS: ProfileStep[] = [
+  "supportiveState",
+  "challengeContext",
+  "interferingState",
+  "internalAction",
+  "internalActionBodyCue",
+  "statePreventiveAction",
+  "regulationTool",
+  "stateEncodingRegulationCueAsk",
+  "stateEncodingRegulationCue",
+  "stateMantra",
+  "stateBodyLanguageCue",
+  "dwellTimes",
+  "review",
+];
+
+const IDENTITY_STEPS: ProfileStep[] = [
+  "desiredIdentity",
+  "identityChallengeContext",
+  "identityInterferingEmotion",
+  "identityAction",
+  "identityActionBodyCue",
+  "identityPreventiveAction",
+  "regulationTool",
+  "identityEncodingRegulationCueAsk",
+  "identityEncodingRegulationCue",
+  "identityMantra",
+  "identityBodyLanguageCue",
+  "dwellTimes",
+  "review",
+];
+
+const HABIT_STEPS: ProfileStep[] = [
+  "beneficialAction",
+  "beneficialActionBodyCue",
+  "preventiveActionAsk",
+  "preventiveActionDescription",
+  "regulationTool",
+  "negativeActionEnabledAsk",
+  "habit",
+  "negativeActionDuration",
+  "review",
+];
+
+function stepOrderFor(target: Target): ProfileStep[] {
+  if (target === "state") return STATE_STEPS;
+  if (target === "identity") return IDENTITY_STEPS;
+  return HABIT_STEPS;
 }
 
-function isCompleteFor(phase: Phase, draft: ProfileDraft): boolean {
-  if (phase === "goal") return isGoalDraftComplete(draft);
-  if (phase === "state") return isStateArcDraftComplete(draft);
-  return isIdentityArcDraftComplete(draft);
+/** Required fields for THIS target only -- mirrors each field's own existing required/optional status (Challenge Context + Interfering State required, the target's own Action required, regulationTool always required, Negative Action's own fields required only once enabled), scoped to one target instead of a whole bundled draft. */
+function isTargetDraftComplete(target: Target, draft: ProfileDraft): boolean {
+  if (draft.regulationTool.trim().length === 0) return false;
+  if (target === "state") {
+    return (
+      draft.supportiveState.trim().length > 0 && draft.challengeContext.trim().length > 0 && draft.interferingState.trim().length > 0
+    );
+  }
+  if (target === "identity") {
+    return (
+      draft.desiredIdentity.trim().length > 0 &&
+      draft.identityChallengeContext.trim().length > 0 &&
+      draft.identityInterferingEmotion.trim().length > 0
+    );
+  }
+  if (draft.beneficialAction.trim().length === 0) return false;
+  if (draft.negativeActionReductionEnabled === null) return false;
+  if (draft.negativeActionReductionEnabled === true) {
+    if (draft.habit.trim().length === 0) return false;
+    if (draft.negativeActionBaseDurationMinutes === null) return false;
+  }
+  return true;
 }
 
-const GOAL_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
-  negativeActionEnabledAsk: "האם תרצה להפעיל כלי לצמצום פעולה שלילית? (רשות)",
-  habit: "מה הפעולה השלילית שתרצה לצמצם?",
-  negativeActionDuration: "כמה זמן, בדקות, לאפשר לפעולה הזו? (1 עד 15 דקות)",
-  beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע במקומו? (ההרגל הרצוי)",
-  beneficialActionBodyCue: "איזה עוגן גופני תרצה לשמור בזמן ביצוע הפעולה? (רשות)",
-  needsState: "האם יש מצב פנימי (כמו רוגע, ביטחון או חמלה) שתרצה לפתח ולחזק?",
-  needsIdentityImmediately: "לעבוד גם על זהות מקבילה כבר מההתחלה?",
-  needsIdentityExplicit: "האם יש זהות שתרצה לפתח?",
-  desiredIdentity: "מה הזהות הרצויה?",
+/** Sets exactly the needs-flags shouldShowProfileStep already gates on to match ONE chosen target -- never both/neither, so the existing per-field gating (built for the old bundled model) shows exactly this target's own steps. */
+function draftForTarget(target: Target, base: ProfileDraft): ProfileDraft {
+  return {
+    ...base,
+    needsState: target === "state",
+    needsIdentityImmediately: target === "state" ? false : base.needsIdentityImmediately,
+    needsIdentityExplicit: target === "identity",
+  };
+}
+
+const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   supportiveState: "מה המצב הרצוי שתרצה לחוש יותר?",
+  challengeContext: "באילו מצבים המצב הרצוי הזה במיוחד רלוונטי? (הקשר האתגר)",
+  interferingState: "מה נוטה להפריע למצב הרצוי הזה? (לזיהוי בלבד)",
   internalAction: "מה הפעולה הפנימית שלך? (למשל סריקת גוף)",
   internalActionBodyCue: "איזה עוגן גופני תרצה לשמור בזמן ביצוע הפעולה? (רשות)",
-  preventiveActionAsk: "יש לך פעולה מונעת מוגדרת מראש?",
-  preventiveActionDescription: "תאר את הפעולה המונעת",
-  regulationTool: "מה כלי הוויסות שלך? (למשל נשימה 4-7-8)",
-};
-const GOAL_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
-  habit: "habit",
-  beneficialAction: "beneficialAction",
-  beneficialActionBodyCue: "beneficialActionBodyCue",
-  desiredIdentity: "desiredIdentity",
-  supportiveState: "supportiveState",
-  internalAction: "internalAction",
-  internalActionBodyCue: "internalActionBodyCue",
-  preventiveActionDescription: "preventiveActionDescription",
-  regulationTool: "regulationTool",
-};
-const GOAL_OPTIONAL_TEXT_STEPS: ProfileStep[] = ["beneficialActionBodyCue", "internalActionBodyCue"];
-const GOAL_YESNO_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
-  needsState: "needsState",
-  needsIdentityImmediately: "needsIdentityImmediately",
-  needsIdentityExplicit: "needsIdentityExplicit",
-  preventiveActionAsk: "hasPreventiveAction",
-  negativeActionEnabledAsk: "negativeActionReductionEnabled",
-};
-
-const STATE_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
-  challengeContext: "באילו מצבים המצב הרצוי הזה במיוחד רלוונטי? (הקשר האתגר)",
-  interferingState: "מה נוטה להפריע למצב הרצוי הזה?",
   statePreventiveAction: "יש פעולה מונעת שיכולה לעזור לפני שזה קורה? (רשות)",
   stateEncodingRegulationCueAsk: "באיזה כלי ויסות קצר תרצה להמשיך בזמן הקידוד?",
   stateEncodingRegulationCue: "מהו כלי הוויסות הקצר לקידוד?",
   stateMantra: "יש לך מנטרה למצב הזה? (רשות)",
   stateBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך במצב הזה? (רשות, למשל כתפיים משוחררות)",
-};
-const STATE_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
-  challengeContext: "challengeContext",
-  interferingState: "interferingState",
-  statePreventiveAction: "statePreventiveAction",
-  stateEncodingRegulationCue: "stateEncodingRegulationCue",
-  stateMantra: "stateMantra",
-  stateBodyLanguageCue: "stateBodyLanguageCue",
-};
-const STATE_ASK_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
-  stateEncodingRegulationCueAsk: "stateWantsShortEncodingRegulationCue",
-};
-const STATE_OPTIONAL_STEPS: ProfileStep[] = ["statePreventiveAction", "stateEncodingRegulationCue", "stateMantra", "stateBodyLanguageCue"];
 
-const IDENTITY_STEP_TITLES: Partial<Record<ProfileStep, string>> = {
+  desiredIdentity: "מה הזהות הרצויה?",
   identityChallengeContext: "באילו מצבים הזהות הרצויה הזו במיוחד רלוונטית? (הקשר האתגר)",
-  identityInterferingEmotion: "מה נוטה להפריע לזהות הזו?",
+  identityInterferingEmotion: "מה נוטה להפריע לזהות הזו? (לזיהוי בלבד)",
+  identityAction: "מה הפעולה שמבטאת את הזהות הזו?",
+  identityActionBodyCue: "איזה עוגן גופני תרצה לשמור בזמן ביצוע הפעולה? (רשות)",
   identityPreventiveAction: "יש פעולה מונעת שיכולה לעזור לפני שזה קורה? (רשות)",
   identityEncodingRegulationCueAsk: "באיזה כלי ויסות קצר תרצה להמשיך בזמן הקידוד?",
   identityEncodingRegulationCue: "מהו כלי הוויסות הקצר לקידוד?",
   identityMantra: "יש לך מנטרה לזהות הזו? (רשות)",
   identityBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך בזהות הזו? (רשות)",
+
+  beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע? (ההרגל הרצוי)",
+  beneficialActionBodyCue: "איזה עוגן גופני תרצה לשמור בזמן ביצוע הפעולה? (רשות)",
+  preventiveActionAsk: "יש לך פעולה מונעת מוגדרת מראש?",
+  preventiveActionDescription: "תאר את הפעולה המונעת",
+  negativeActionEnabledAsk: "האם תרצה להפעיל כלי לצמצום פעולה שלילית? (רשות)",
+  habit: "מה הפעולה השלילית שתרצה לצמצם?",
+  negativeActionDuration: "כמה זמן, בדקות, לאפשר לפעולה הזו? (1 עד 15 דקות)",
+
+  regulationTool: "מה כלי הוויסות שלך? (למשל נשימה 4-7-8)",
+  dwellTimes: "זמן שהייה",
+  review: "סיכום",
 };
-const IDENTITY_TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
+
+const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
+  supportiveState: "supportiveState",
+  challengeContext: "challengeContext",
+  interferingState: "interferingState",
+  internalAction: "internalAction",
+  internalActionBodyCue: "internalActionBodyCue",
+  statePreventiveAction: "statePreventiveAction",
+  stateEncodingRegulationCue: "stateEncodingRegulationCue",
+  stateMantra: "stateMantra",
+  stateBodyLanguageCue: "stateBodyLanguageCue",
+
+  desiredIdentity: "desiredIdentity",
   identityChallengeContext: "identityChallengeContext",
   identityInterferingEmotion: "identityInterferingEmotion",
+  identityAction: "identityAction",
+  identityActionBodyCue: "identityActionBodyCue",
   identityPreventiveAction: "identityPreventiveAction",
   identityEncodingRegulationCue: "identityEncodingRegulationCue",
   identityMantra: "identityMantra",
   identityBodyLanguageCue: "identityBodyLanguageCue",
+
+  beneficialAction: "beneficialAction",
+  beneficialActionBodyCue: "beneficialActionBodyCue",
+  preventiveActionDescription: "preventiveActionDescription",
+  habit: "habit",
+
+  regulationTool: "regulationTool",
 };
-const IDENTITY_ASK_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
-  identityEncodingRegulationCueAsk: "identityWantsShortEncodingRegulationCue",
-};
-const IDENTITY_OPTIONAL_STEPS: ProfileStep[] = [
+
+const OPTIONAL_TEXT_STEPS: ProfileStep[] = [
+  "internalActionBodyCue",
+  "statePreventiveAction",
+  "stateMantra",
+  "stateBodyLanguageCue",
+  "identityActionBodyCue",
   "identityPreventiveAction",
-  "identityEncodingRegulationCue",
   "identityMantra",
   "identityBodyLanguageCue",
+  "beneficialActionBodyCue",
 ];
 
-function titleFor(phase: Phase, step: ProfileStep): string | undefined {
-  if (step === "dwellTimes") return "זמן שהייה";
-  if (step === "review") return phase === "goal" ? "סיכום" : "סיכום מפת ARC";
-  if (phase === "goal") return GOAL_STEP_TITLES[step];
-  if (phase === "state") return STATE_STEP_TITLES[step];
-  return IDENTITY_STEP_TITLES[step];
-}
-function textFieldFor(phase: Phase, step: ProfileStep): keyof ProfileDraft | undefined {
-  if (phase === "goal") return GOAL_TEXT_STEP_FIELDS[step];
-  if (phase === "state") return STATE_TEXT_STEP_FIELDS[step];
-  return IDENTITY_TEXT_STEP_FIELDS[step];
-}
-function askFieldFor(phase: Phase, step: ProfileStep): keyof ProfileDraft | undefined {
-  if (phase === "state") return STATE_ASK_STEP_FIELDS[step];
-  if (phase === "identity") return IDENTITY_ASK_STEP_FIELDS[step];
-  return undefined;
-}
-function yesNoFieldFor(phase: Phase, step: ProfileStep): keyof ProfileDraft | undefined {
-  return phase === "goal" ? GOAL_YESNO_STEP_FIELDS[step] : undefined;
-}
-function isOptionalTextStep(phase: Phase, step: ProfileStep): boolean {
-  if (phase === "goal") return GOAL_OPTIONAL_TEXT_STEPS.includes(step);
-  if (phase === "state") return STATE_OPTIONAL_STEPS.includes(step);
-  return IDENTITY_OPTIONAL_STEPS.includes(step);
-}
+const ASK_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
+  stateEncodingRegulationCueAsk: "stateWantsShortEncodingRegulationCue",
+  identityEncodingRegulationCueAsk: "identityWantsShortEncodingRegulationCue",
+};
+const YESNO_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
+  preventiveActionAsk: "hasPreventiveAction",
+  negativeActionEnabledAsk: "negativeActionReductionEnabled",
+};
 
 const NEGATIVE_ACTION_DURATION_OPTIONS: number[] = Array.from(
   { length: NEGATIVE_ACTION_MAX_DURATION_MINUTES - NEGATIVE_ACTION_MIN_DURATION_MINUTES + 1 },
@@ -194,20 +239,28 @@ const DWELL_ROWS: { key: keyof DwellTimes; label: string }[] = [
   { key: "stopImageryDwellSeconds", label: "דמיון עצירה" },
 ];
 
-/** Maps a dwell category + the currently-edited phase to its ProfileDraft field name -- only meaningful for phase "state"/"identity" (the "dwellTimes" step never appears in the goal phase). */
-function dwellDraftFieldFor(phase: "state" | "identity", key: keyof DwellTimes): keyof ProfileDraft {
+/** Maps a dwell category + the chosen target to its ProfileDraft field name -- only meaningful for target "state"/"identity" (habit has no dwellTimes step -- see the field's own pre-existing architecture: dwell times were never asked for the habit layer). */
+function dwellDraftFieldFor(target: "state" | "identity", key: keyof DwellTimes): keyof ProfileDraft {
   const capitalized = `${key.charAt(0).toUpperCase()}${key.slice(1)}`;
-  return `${phase}${capitalized}` as keyof ProfileDraft;
+  return `${target}${capitalized}` as keyof ProfileDraft;
 }
 
-type ScreenStatus = "loading" | "notFound" | "editing";
+/** Infers this build's already-configured target from its saved profile, for reopening an existing build directly into its own flow -- never shows the target choice again once a target is set. state/identity/habit priority order matches deriveActiveLayersForArcBuild's own (arc/arcEngine.ts), for the rare case more than one somehow ended up configured. */
+function inferTarget(profile: ArcBuild["profile"]): Target | null {
+  if (profile.stateEncoding !== null || profile.internalAction !== null) return "state";
+  if (profile.identityEncoding !== null || profile.identityAction !== null) return "identity";
+  if (profile.beneficialAction !== null) return "habit";
+  return null;
+}
+
+type ScreenStatus = "loading" | "notFound" | "choosingTarget" | "editing";
 
 export default function ArcBuildEditorScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [status, setStatus] = useState<ScreenStatus>("loading");
   const [build, setBuild] = useState<ArcBuild | null>(null);
+  const [target, setTarget] = useState<Target | null>(null);
   const [draft, setDraft] = useState<ProfileDraft>(createEmptyDraft());
-  const [phase, setPhase] = useState<Phase>("goal");
   const [step, setStep] = useState<ProfileStep>("review");
 
   useEffect(() => {
@@ -219,6 +272,8 @@ export default function ArcBuildEditorScreen() {
         setStatus("notFound");
         return;
       }
+      setBuild(existing);
+      const inferredTarget = inferTarget(existing.profile);
       const loadedDraft = draftFromProfileAndSelection(existing.profile, {
         needsState: existing.needsState,
         needsIdentity: existing.needsIdentity,
@@ -226,69 +281,119 @@ export default function ArcBuildEditorScreen() {
         needsIdentityImmediately: existing.needsIdentityImmediately,
         programPath: existing.profile.programPath,
       });
-      setBuild(existing);
-      setDraft(loadedDraft);
-      setPhase("goal");
-      setStep(getFirstProfileStep(loadedDraft, GOAL_STEP_ORDER));
-      setStatus("editing");
+      if (inferredTarget) {
+        const targetDraft = draftForTarget(inferredTarget, loadedDraft);
+        setTarget(inferredTarget);
+        setDraft(targetDraft);
+        setStep(getFirstProfileStep(targetDraft, stepOrderFor(inferredTarget)));
+        setStatus("editing");
+      } else {
+        setDraft(loadedDraft);
+        setStatus("choosingTarget");
+      }
     });
     return () => {
       cancelled = true;
     };
   }, [id]);
 
+  function chooseTarget(chosen: Target) {
+    const targetDraft = draftForTarget(chosen, draft);
+    setTarget(chosen);
+    setDraft(targetDraft);
+    setStep(getFirstProfileStep(targetDraft, stepOrderFor(chosen)));
+    setStatus("editing");
+  }
+
   const goNext = useCallback(
     (nextDraft: ProfileDraft) => {
+      if (!target) return;
       setDraft(nextDraft);
-      setStep((current) => getNextProfileStep(current, nextDraft, stepOrderFor(phase)));
+      setStep((current) => getNextProfileStep(current, nextDraft, stepOrderFor(target)));
     },
-    [phase]
+    [target]
   );
 
   const goBack = useCallback(() => {
-    setStep((current) => getPreviousProfileStep(current, draft, stepOrderFor(phase)) ?? current);
-  }, [draft, phase]);
+    if (!target) return;
+    setStep((current) => getPreviousProfileStep(current, draft, stepOrderFor(target)) ?? current);
+  }, [draft, target]);
 
-  function enterPhase(nextPhase: Phase, currentDraft: ProfileDraft) {
-    setPhase(nextPhase);
-    setStep(getFirstProfileStep(currentDraft, stepOrderFor(nextPhase)));
-  }
+  async function finishAndSave() {
+    if (!build || !target) return;
+    // Clears every OTHER target's fields to null explicitly, regardless
+    // of what buildProfileFromDraft itself defaults to -- guarantees
+    // this build resolves to exactly the one layer it targets (never
+    // more), matching deriveActiveLayersForArcBuild's own detection.
+    const rawProfile = buildProfileFromDraft(draft);
+    const profile =
+      target === "state"
+        ? {
+            ...rawProfile,
+            desiredIdentity: null,
+            identityChallengeContext: null,
+            identityInterferingEmotion: null,
+            identityPreventiveAction: null,
+            identityEncodingRegulationCue: null,
+            identityEncoding: null,
+            identityAction: null,
+            identityActionBodyCue: null,
+            identityDwellTimes: null,
+            beneficialAction: null,
+            beneficialActionBodyCue: null,
+            preventiveAction: null,
+            habit: null,
+            negativeActionBaseDurationMinutes: null,
+            negativeActionReductionEnabled: false,
+          }
+        : target === "identity"
+          ? {
+              ...rawProfile,
+              supportiveState: null,
+              challengeContext: null,
+              interferingState: null,
+              statePreventiveAction: null,
+              stateEncodingRegulationCue: null,
+              stateEncoding: null,
+              internalAction: null,
+              internalActionBodyCue: null,
+              stateDwellTimes: null,
+              beneficialAction: null,
+              beneficialActionBodyCue: null,
+              preventiveAction: null,
+              habit: null,
+              negativeActionBaseDurationMinutes: null,
+              negativeActionReductionEnabled: false,
+            }
+          : {
+              ...rawProfile,
+              supportiveState: null,
+              challengeContext: null,
+              interferingState: null,
+              statePreventiveAction: null,
+              stateEncodingRegulationCue: null,
+              stateEncoding: null,
+              internalAction: null,
+              internalActionBodyCue: null,
+              stateDwellTimes: null,
+              desiredIdentity: null,
+              identityChallengeContext: null,
+              identityInterferingEmotion: null,
+              identityPreventiveAction: null,
+              identityEncodingRegulationCue: null,
+              identityEncoding: null,
+              identityAction: null,
+              identityActionBodyCue: null,
+              identityDwellTimes: null,
+            };
 
-  /** After a phase's own "review" step: move to the next NEEDED phase, or persist and exit if none remain -- exactly mirroring ArcMapScreen's finishAndSwitchTarget/finishAndExit split, just generalized to three phases instead of two. */
-  async function advancePastReview(currentDraft: ProfileDraft) {
-    if (phase === "goal") {
-      if (currentDraft.needsState === true) {
-        enterPhase("state", currentDraft);
-        return;
-      }
-      if (resolvesNeedsIdentity(currentDraft)) {
-        enterPhase("identity", currentDraft);
-        return;
-      }
-      await finishAndSave(currentDraft);
-      return;
-    }
-    if (phase === "state") {
-      if (resolvesNeedsIdentity(currentDraft)) {
-        enterPhase("identity", currentDraft);
-        return;
-      }
-      await finishAndSave(currentDraft);
-      return;
-    }
-    await finishAndSave(currentDraft);
-  }
-
-  async function finishAndSave(finalDraft: ProfileDraft) {
-    if (!build) return;
-    const selection = selectionFromDraft(finalDraft);
     const updated: ArcBuild = {
       ...build,
-      needsState: selection.needsState,
-      needsIdentity: selection.needsIdentity,
-      needsHabit: selection.needsHabit,
-      needsIdentityImmediately: selection.needsIdentityImmediately,
-      profile: { ...buildProfileFromDraft(finalDraft), programPath: build.profile.programPath },
+      needsState: target === "state",
+      needsIdentity: target === "identity",
+      needsHabit: target === "habit",
+      needsIdentityImmediately: false,
+      profile: { ...profile, programPath: build.profile.programPath },
       updatedAt: new Date().toISOString(),
     };
     await upsertArcBuild(updated);
@@ -316,18 +421,39 @@ export default function ArcBuildEditorScreen() {
     );
   }
 
-  const textField = textFieldFor(phase, step);
-  const askField = askFieldFor(phase, step);
-  const yesNoField = yesNoFieldFor(phase, step);
-  const isOptional = isOptionalTextStep(phase, step);
-  const firstStepOfPhase = stepOrderFor(phase)[0];
-  const isFirstStepOverall = phase === "goal" && step === firstStepOfPhase;
+  if (status === "choosingTarget") {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.eyebrow}>{build?.name}</Text>
+          <Text style={styles.title}>על מה יתמקד ה-ARC Build הזה?</Text>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => chooseTarget("state")}>
+            <Text style={styles.buttonText}>מצב פנימי (למשל רוגע, ביטחון, חמלה)</Text>
+          </Pressable>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => chooseTarget("identity")}>
+            <Text style={styles.buttonText}>זהות רצויה</Text>
+          </Pressable>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => chooseTarget("habit")}>
+            <Text style={styles.buttonText}>הרגל רצוי (פעולה מיטיבה)</Text>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // status === "editing" -- target is guaranteed non-null here.
+  const activeTarget = target as Target;
+  const textField = TEXT_STEP_FIELDS[step];
+  const askField = ASK_STEP_FIELDS[step];
+  const yesNoField = YESNO_STEP_FIELDS[step];
+  const isOptional = OPTIONAL_TEXT_STEPS.includes(step);
+  const firstStep = stepOrderFor(activeTarget)[0];
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.eyebrow}>{build?.name}</Text>
-        <Text style={styles.title}>{titleFor(phase, step)}</Text>
+        <Text style={styles.title}>{STEP_TITLES[step]}</Text>
 
         {textField && (
           <View>
@@ -392,11 +518,11 @@ export default function ArcBuildEditorScreen() {
           </View>
         )}
 
-        {step === "dwellTimes" && (phase === "state" || phase === "identity") && (
+        {step === "dwellTimes" && (activeTarget === "state" || activeTarget === "identity") && (
           <View>
             <Text style={styles.body}>כמה זמן תרצה להישאר בתרגיל לאחר סיום ההנחיה?</Text>
             {DWELL_ROWS.map((row) => {
-              const field = dwellDraftFieldFor(phase, row.key);
+              const field = dwellDraftFieldFor(activeTarget, row.key);
               return (
                 <View key={row.key} style={styles.dwellRow}>
                   <Text style={styles.dwellLabel}>{row.label}</Text>
@@ -417,68 +543,55 @@ export default function ArcBuildEditorScreen() {
           </View>
         )}
 
-        {step === "review" && phase === "goal" && (
+        {step === "review" && (
           <View>
-            <Text style={styles.body}>{`פעולה מיטיבה (הרגל רצוי): ${draft.beneficialAction}`}</Text>
-            {draft.negativeActionReductionEnabled === true && (
-              <>
-                <Text style={styles.body}>{`פעולה שלילית: ${draft.habit}`}</Text>
-                {draft.negativeActionBaseDurationMinutes !== null && (
-                  <Text style={styles.body}>{`זמן מותר: ${draft.negativeActionBaseDurationMinutes} דקות`}</Text>
-                )}
-              </>
-            )}
-            {draft.needsState && <Text style={styles.body}>{`מצב רצוי: ${draft.supportiveState}`}</Text>}
-            {resolvesNeedsIdentity(draft) && <Text style={styles.body}>{`זהות רצויה: ${draft.desiredIdentity}`}</Text>}
-            <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
-            <Pressable
-              style={[styles.button, styles.fullWidthButton]}
-              disabled={!isCompleteFor("goal", draft)}
-              onPress={() => advancePastReview(draft)}
-            >
-              <Text style={styles.buttonText}>המשך</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {step === "review" && (phase === "state" || phase === "identity") && (
-          <View>
-            {phase === "state" ? (
+            {activeTarget === "state" && (
               <>
                 <Text style={styles.body}>{`מצב רצוי: ${draft.supportiveState}`}</Text>
                 <Text style={styles.body}>{`נוטה להפריע: ${draft.interferingState}`}</Text>
                 <Text style={styles.body}>{`הקשר אתגר: ${draft.challengeContext}`}</Text>
+                {draft.internalAction && <Text style={styles.body}>{`פעולה פנימית: ${draft.internalAction}`}</Text>}
                 {draft.statePreventiveAction && <Text style={styles.body}>{`פעולה מונעת: ${draft.statePreventiveAction}`}</Text>}
-                {draft.stateWantsShortEncodingRegulationCue === true && draft.stateEncodingRegulationCue && (
-                  <Text style={styles.body}>{`כלי ויסות קצר לקידוד: ${draft.stateEncodingRegulationCue}`}</Text>
-                )}
                 {draft.stateBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.stateBodyLanguageCue}`}</Text>}
                 {draft.stateMantra && <Text style={styles.body}>{`מנטרה: ${draft.stateMantra}`}</Text>}
               </>
-            ) : (
+            )}
+            {activeTarget === "identity" && (
               <>
                 <Text style={styles.body}>{`זהות רצויה: ${draft.desiredIdentity}`}</Text>
                 <Text style={styles.body}>{`נוטה להפריע: ${draft.identityInterferingEmotion}`}</Text>
                 <Text style={styles.body}>{`הקשר אתגר: ${draft.identityChallengeContext}`}</Text>
+                {draft.identityAction && <Text style={styles.body}>{`פעולה: ${draft.identityAction}`}</Text>}
                 {draft.identityPreventiveAction && <Text style={styles.body}>{`פעולה מונעת: ${draft.identityPreventiveAction}`}</Text>}
-                {draft.identityWantsShortEncodingRegulationCue === true && draft.identityEncodingRegulationCue && (
-                  <Text style={styles.body}>{`כלי ויסות קצר לקידוד: ${draft.identityEncodingRegulationCue}`}</Text>
-                )}
                 {draft.identityBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.identityBodyLanguageCue}`}</Text>}
                 {draft.identityMantra && <Text style={styles.body}>{`מנטרה: ${draft.identityMantra}`}</Text>}
               </>
             )}
+            {activeTarget === "habit" && (
+              <>
+                <Text style={styles.body}>{`פעולה מיטיבה: ${draft.beneficialAction}`}</Text>
+                {draft.negativeActionReductionEnabled === true && (
+                  <>
+                    <Text style={styles.body}>{`פעולה שלילית: ${draft.habit}`}</Text>
+                    {draft.negativeActionBaseDurationMinutes !== null && (
+                      <Text style={styles.body}>{`זמן מותר: ${draft.negativeActionBaseDurationMinutes} דקות`}</Text>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
             <Pressable
               style={[styles.button, styles.fullWidthButton]}
-              disabled={!isCompleteFor(phase, draft)}
-              onPress={() => advancePastReview(draft)}
+              disabled={!isTargetDraftComplete(activeTarget, draft)}
+              onPress={finishAndSave}
             >
               <Text style={styles.buttonText}>שמור</Text>
             </Pressable>
           </View>
         )}
 
-        {!isFirstStepOverall && (
+        {step !== firstStep && (
           <Pressable style={styles.backButton} onPress={goBack}>
             <Text style={styles.backButtonText}>חזור</Text>
           </Pressable>

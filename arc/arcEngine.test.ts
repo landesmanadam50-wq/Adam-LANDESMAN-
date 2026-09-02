@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   deriveActiveLayersForArcBuild,
+  splitProfileIntoArcBuilds,
   getAvailableLiveTriggers,
   getAvailableProactiveTargets,
   getAvailableReactiveExperiences,
@@ -297,6 +298,227 @@ test("generateArcBuildId produces unique, non-empty ids across repeated calls", 
   for (const id of ids) {
     assert.ok(id.length > 0);
   }
+});
+
+// --- ARC Builds task (migration, #5): splitProfileIntoArcBuilds --
+// every existing target-based ARC Map (state/identity/habit) becomes
+// its own standalone ArcBuild, never one bundled build covering
+// several targets, and never any data loss.
+
+test("splitProfileIntoArcBuilds: a legacy profile with only a state target migrates into exactly one ArcBuild, named from its Desired State, with no identity/habit fields set", () => {
+  const p = profile({
+    supportiveState: "רוגע",
+    challengeContext: "אחרי טעות",
+    interferingState: "ביקורת עצמית",
+    internalAction: "סריקת גוף",
+    identityAction: null,
+    identityEncoding: null,
+    beneficialAction: null,
+    negativeActionReductionEnabled: false,
+  });
+  const ids = ["id-1"];
+  const builds = splitProfileIntoArcBuilds(p, () => ids.shift() as string, "2026-01-01T00:00:00.000Z");
+  assert.equal(builds.length, 1);
+  assert.equal(builds[0].name, "רוגע");
+  assert.equal(builds[0].needsState, true);
+  assert.equal(builds[0].needsIdentity, false);
+  assert.equal(builds[0].needsHabit, false);
+  assert.equal(builds[0].profile.supportiveState, "רוגע");
+  assert.equal(builds[0].profile.challengeContext, "אחרי טעות");
+  assert.equal(builds[0].profile.desiredIdentity, null);
+  assert.equal(builds[0].profile.beneficialAction, null);
+});
+
+test("splitProfileIntoArcBuilds: a legacy profile bundling a state target AND an identity target migrates into TWO separate ArcBuilds, never one bundled build", () => {
+  const p = profile({
+    supportiveState: "מיקוד",
+    challengeContext: "לפני פגישה",
+    interferingState: "פיזור דעת",
+    desiredIdentity: "משמעת עצמית",
+    identityChallengeContext: "לפני שיחה קשה",
+    identityInterferingEmotion: "היסוס",
+    identityAction: "לגשת ולדבר ראשון",
+    beneficialAction: null,
+    negativeActionReductionEnabled: false,
+  });
+  const ids = ["state-id", "identity-id"];
+  const builds = splitProfileIntoArcBuilds(p, () => ids.shift() as string, "2026-01-01T00:00:00.000Z");
+  assert.equal(builds.length, 2, "must produce two independent builds, not one bundling both targets");
+
+  const stateBuild = builds.find((b) => b.id === "state-id")!;
+  assert.equal(stateBuild.name, "מיקוד", "named from its own Desired State, never a generic goal label");
+  assert.equal(stateBuild.needsState, true);
+  assert.equal(stateBuild.needsIdentity, false);
+  assert.equal(stateBuild.profile.desiredIdentity, null, "never carries the other target's fields");
+  assert.equal(stateBuild.profile.identityAction, null);
+
+  const identityBuild = builds.find((b) => b.id === "identity-id")!;
+  assert.equal(identityBuild.name, "משמעת עצמית", "named from its own Desired Identity");
+  assert.equal(identityBuild.needsIdentity, true);
+  assert.equal(identityBuild.needsState, false);
+  assert.equal(identityBuild.profile.supportiveState, null, "never carries the state target's fields");
+  assert.equal(identityBuild.profile.identityAction, "לגשת ולדבר ראשון", "identity's own action is preserved, no data loss");
+});
+
+test("splitProfileIntoArcBuilds: a legacy profile with all three targets (state, identity, habit) migrates into three separate ArcBuilds", () => {
+  const p = profile({
+    supportiveState: "רוגע",
+    interferingState: "לחץ",
+    challengeContext: "בעבודה",
+    desiredIdentity: "ביטחון עצמי",
+    identityChallengeContext: "מול קהל",
+    identityInterferingEmotion: "פחד",
+    identityAction: "לומר שלום ראשון",
+    beneficialAction: "לגשת ולפתוח שיחה",
+    habit: "גלילה ברשת",
+    negativeActionReductionEnabled: true,
+    negativeActionBaseDurationMinutes: 10,
+  });
+  const builds = splitProfileIntoArcBuilds(p, generateArcBuildId, "2026-01-01T00:00:00.000Z");
+  assert.equal(builds.length, 3);
+  const names = builds.map((b) => b.name).sort();
+  assert.deepEqual(names, ["ביטחון עצמי", "לגשת ולפתוח שיחה", "רוגע"].sort());
+
+  const habitBuild = builds.find((b) => b.needsHabit)!;
+  assert.equal(habitBuild.profile.beneficialAction, "לגשת ולפתוח שיחה");
+  assert.equal(habitBuild.profile.habit, "גלילה ברשת", "Negative Action's own fields travel with the habit split, no data loss");
+  assert.equal(habitBuild.profile.negativeActionReductionEnabled, true);
+  assert.equal(habitBuild.profile.negativeActionBaseDurationMinutes, 10);
+  assert.equal(habitBuild.profile.supportiveState, null);
+  assert.equal(habitBuild.profile.desiredIdentity, null);
+});
+
+test("splitProfileIntoArcBuilds: shared global fields (regulationTool) are carried into every resulting build, never lost", () => {
+  const p = profile({
+    supportiveState: "רוגע",
+    desiredIdentity: "ביטחון עצמי",
+    identityChallengeContext: "מול קהל",
+    identityInterferingEmotion: "פחד",
+    identityAction: "לומר שלום ראשון",
+    beneficialAction: null,
+    negativeActionReductionEnabled: false,
+    regulationTool: "נשימה 4-7-8",
+  });
+  const builds = splitProfileIntoArcBuilds(p, generateArcBuildId, "2026-01-01T00:00:00.000Z");
+  assert.equal(builds.length, 2);
+  for (const b of builds) {
+    assert.equal(b.profile.regulationTool, "נשימה 4-7-8");
+  }
+});
+
+test("splitProfileIntoArcBuilds: a legacy profile with nothing configured at all migrates into zero builds -- nothing to migrate", () => {
+  const p = profile({
+    supportiveState: null,
+    desiredIdentity: null,
+    beneficialAction: null,
+    identityEncoding: null,
+    stateEncoding: null,
+    identityAction: null,
+    internalAction: null,
+    negativeActionReductionEnabled: false,
+    habit: null,
+  });
+  const builds = splitProfileIntoArcBuilds(p, generateArcBuildId, "2026-01-01T00:00:00.000Z");
+  assert.equal(builds.length, 0);
+});
+
+test("splitProfileIntoArcBuilds is pure and deterministic given the same generateId/now inputs -- repeated calls produce equivalent results, the idempotency guarantee data/storage.ts's migrate-once logic relies on", () => {
+  const p = profile({ supportiveState: "רוגע", challengeContext: "בעבודה", interferingState: "לחץ", beneficialAction: null });
+  const first = splitProfileIntoArcBuilds(p, () => "fixed-id", "2026-01-01T00:00:00.000Z");
+  const second = splitProfileIntoArcBuilds(p, () => "fixed-id", "2026-01-01T00:00:00.000Z");
+  assert.deepEqual(first, second);
+});
+
+// --- ARC Builds task (#6/#7): LIVE resolves a single-target ArcBuild's
+// own profile+activeLayers correctly for BOTH Reactive and Proactive
+// sessions, by that one build's own fields only -- never mixing in
+// another build's data, matching the corrected one-target-per-build
+// architecture (each split/created build has exactly one active layer).
+
+test("Reactive LIVE resolves the selected ArcBuild's own state-target fields, by that build's profile alone -- reactive_emotion trigger", () => {
+  const buildA = profile({
+    supportiveState: "רוגע",
+    interferingState: "ביקורת עצמית",
+    internalAction: "סריקת גוף",
+    stateEncoding: { target: "רוגע", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+    beneficialAction: null,
+    desiredIdentity: null,
+  });
+  const buildB = profile({
+    supportiveState: "ביטחון",
+    interferingState: "פחד",
+    internalAction: "נשימה עמוקה",
+    stateEncoding: { target: "ביטחון", bodySensationCue: null, breathCue: null, bodyLanguageCue: "גב זקוף", mantra: null },
+    beneficialAction: null,
+    desiredIdentity: null,
+  });
+
+  const layersA = deriveActiveLayersForArcBuild(buildA);
+  const resolvedA = resolveEncodingTarget({ activeLayers: layersA, triggerType: "reactive_emotion", selectedTarget: null, buildProfile: buildA });
+  assert.equal(resolvedA.layer, "state");
+  assert.equal(resolvedA.encoding?.bodyLanguageCue, "כתפיים משוחררות");
+
+  const layersB = deriveActiveLayersForArcBuild(buildB);
+  const resolvedB = resolveEncodingTarget({ activeLayers: layersB, triggerType: "reactive_emotion", selectedTarget: null, buildProfile: buildB });
+  assert.equal(resolvedB.layer, "state");
+  assert.equal(resolvedB.encoding?.bodyLanguageCue, "גב זקוף", "must resolve build B's own cue, never build A's");
+});
+
+test("Reactive LIVE resolves the selected ArcBuild's own habit target by ID -- reactive_urge trigger, never falls back to a different build's habit", () => {
+  const buildA = profile({ beneficialAction: "לגשת ולפתוח שיחה", habit: "גלילה ברשת", supportiveState: null, desiredIdentity: null });
+  const buildB = profile({ beneficialAction: "לצאת להליכה", habit: "אכילה מתוך שעמום", supportiveState: null, desiredIdentity: null });
+
+  const layersA = deriveActiveLayersForArcBuild(buildA);
+  const resolvedA = resolveEncodingTarget({ activeLayers: layersA, triggerType: "reactive_urge", selectedTarget: null, buildProfile: buildA });
+  assert.equal(resolvedA.actionLabel, "לגשת ולפתוח שיחה");
+
+  const layersB = deriveActiveLayersForArcBuild(buildB);
+  const resolvedB = resolveEncodingTarget({ activeLayers: layersB, triggerType: "reactive_urge", selectedTarget: null, buildProfile: buildB });
+  assert.equal(resolvedB.actionLabel, "לצאת להליכה", "must resolve build B's own action, never build A's");
+});
+
+test("Proactive LIVE resolves the selected ArcBuild's own identity-target fields by ID, never another build's", () => {
+  const buildA = profile({
+    desiredIdentity: "ביטחון עצמי",
+    identityAction: "לומר שלום ראשון",
+    identityEncoding: { target: "ביטחון עצמי", bodySensationCue: null, breathCue: null, bodyLanguageCue: "מבט ישיר", mantra: "אני בטוח בעצמי" },
+    supportiveState: null,
+    beneficialAction: null,
+  });
+  const buildB = profile({
+    desiredIdentity: "משמעת עצמית",
+    identityAction: "לשבת ולהתחיל לעבוד",
+    identityEncoding: { target: "משמעת עצמית", bodySensationCue: null, breathCue: null, bodyLanguageCue: "גב זקוף", mantra: "אני ממושמע" },
+    supportiveState: null,
+    beneficialAction: null,
+  });
+
+  const layersA = deriveActiveLayersForArcBuild(buildA);
+  const resolvedA = resolveEncodingTarget({ activeLayers: layersA, triggerType: "proactive", selectedTarget: null, buildProfile: buildA });
+  assert.equal(resolvedA.layer, "identity");
+  assert.equal(resolvedA.actionLabel, "לומר שלום ראשון");
+  assert.equal(resolvedA.encoding?.mantra, "אני בטוח בעצמי");
+
+  const layersB = deriveActiveLayersForArcBuild(buildB);
+  const resolvedB = resolveEncodingTarget({ activeLayers: layersB, triggerType: "proactive", selectedTarget: null, buildProfile: buildB });
+  assert.equal(resolvedB.layer, "identity");
+  assert.equal(resolvedB.actionLabel, "לשבת ולהתחיל לעבוד", "must resolve build B's own action, never build A's");
+  assert.equal(resolvedB.encoding?.mantra, "אני ממושמע", "must resolve build B's own mantra, never build A's");
+});
+
+test("Proactive LIVE resolves the selected ArcBuild's own state-target fields by ID when that build targets state instead of identity", () => {
+  const stateBuild = profile({
+    supportiveState: "ריכוז",
+    internalAction: "סריקת גוף ממוקדת",
+    stateEncoding: { target: "ריכוז", bodySensationCue: null, breathCue: null, bodyLanguageCue: "עיניים פקוחות", mantra: "אני ממוקד" },
+    desiredIdentity: null,
+    beneficialAction: null,
+  });
+  const layers = deriveActiveLayersForArcBuild(stateBuild);
+  const resolved = resolveEncodingTarget({ activeLayers: layers, triggerType: "proactive", selectedTarget: null, buildProfile: stateBuild });
+  assert.equal(resolved.layer, "state");
+  assert.equal(resolved.actionLabel, "סריקת גוף ממוקדת");
+  assert.equal(resolved.encoding?.mantra, "אני ממוקד");
 });
 
 // ---------------------------------------------------------------------------

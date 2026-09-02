@@ -13,6 +13,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { generateArcBuildId } from "../arc/types.ts";
 import type { ArcBuild, ArcBuildProfile, ArcProgramProgress } from "../arc/types.ts";
+import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
+import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import type { ArcProgramSelection } from "../program/programTypes.ts";
 import { PROGRAM_DEFINITIONS } from "../program/config.ts";
 import type { SessionLogEntry } from "./sessionLog.ts";
@@ -47,21 +49,25 @@ export async function saveProfile(profile: ArcBuildProfile): Promise<void> {
  * reason: a trainee's own handful of ARC Builds, not an unbounded log.
  *
  * Migration (#10): the OLD BUILD-GOAL -> BUILD-ARC flow persisted
- * exactly one profile (PROFILE_KEY) plus its program selection/progress
- * -- never a list, never its own id, so there is nothing to iterate.
- * The very first time this collection is loaded and found empty, if
- * that legacy single profile exists, it is wrapped into ONE new
- * ArcBuild (named from its own `goal` text, or a generic fallback if
- * that was ever left blank) and persisted into the new collection --
- * so an existing trainee's already-configured ARC protocol is carried
- * forward automatically rather than silently discarded, exactly once
- * (every subsequent load just returns the persisted collection
- * as-is, even if it's still empty because the trainee deleted that
- * migrated build or never had legacy data to begin with). The legacy
- * PROFILE_KEY record itself is left untouched/inert -- never deleted --
- * so program/'s week-based progression and the Stats screen keep
- * reading exactly what they always did for any pre-existing data,
- * unaffected by this migration.
+ * exactly one profile (PROFILE_KEY) that could bundle a state target
+ * AND an identity target AND a habit target together -- never a list,
+ * never one-target-per-build. The very first time this collection is
+ * loaded and found empty, if that legacy profile exists, it is split
+ * into one standalone ArcBuild PER target actually configured
+ * (arc/arcEngine.ts's splitProfileIntoArcBuilds -- never one bundled
+ * build covering several targets), each named from that target's own
+ * Desired State/Identity/Habit text, and persisted into the new
+ * collection -- so an existing trainee's already-configured ARC
+ * protocol(s) are carried forward automatically rather than silently
+ * discarded, exactly once (every subsequent load just returns the
+ * persisted collection as-is, even if it's still empty because the
+ * trainee deleted every migrated build or never had legacy data to
+ * begin with -- saveArcBuilds always persists the array, even an empty
+ * one, so `raw` is truthy on every later load and this branch is never
+ * re-entered). The legacy PROFILE_KEY record itself is left
+ * untouched/inert -- never deleted -- so program/'s week-based
+ * progression and the Stats screen keep reading exactly what they
+ * always did for any pre-existing data, unaffected by this migration.
  */
 export async function loadArcBuilds(): Promise<ArcBuild[]> {
   const raw = await AsyncStorage.getItem(ARC_BUILDS_KEY);
@@ -70,21 +76,9 @@ export async function loadArcBuilds(): Promise<ArcBuild[]> {
   const legacyProfile = await loadProfile();
   if (!legacyProfile) return [];
 
-  const legacySelection = await loadProgramSelection();
-  const now = new Date().toISOString();
-  const migrated: ArcBuild = {
-    id: generateArcBuildId(),
-    name: legacyProfile.goal?.trim() ? legacyProfile.goal.trim() : "הפרוטוקול שלי",
-    createdAt: now,
-    updatedAt: now,
-    needsState: legacySelection?.needsState ?? legacyProfile.supportiveState !== null,
-    needsIdentity: legacySelection?.needsIdentity ?? legacyProfile.desiredIdentity !== null,
-    needsHabit: legacySelection?.needsHabit ?? true,
-    needsIdentityImmediately: legacySelection?.needsIdentityImmediately ?? false,
-    profile: legacyProfile,
-  };
-  await saveArcBuilds([migrated]);
-  return [migrated];
+  const migrated = splitProfileIntoArcBuilds(legacyProfile, generateArcBuildId, new Date().toISOString());
+  await saveArcBuilds(migrated);
+  return migrated;
 }
 
 /** Always the FULL list -- callers read-modify-write, matching loadScheduledRoutines/saveScheduledRoutines' own style. */
@@ -97,22 +91,16 @@ export async function getArcBuild(id: string): Promise<ArcBuild | null> {
   return builds.find((build) => build.id === id) ?? null;
 }
 
-/** Upserts by id -- updates the one matching build in place (never touching any other build's own fields) if found, otherwise appends it as a new build. Never overwrites an existing build with a different id, and never re-indexes/reorders the rest of the list. */
+/** Upserts by id -- see arc/arcBuilds.ts's upsertArcBuildInList (the actual, unit-tested list logic) for the exact guarantee: updates the one matching build in place, never touching any other build's own fields, or appends it as a new build. Never matches by name/Desired State text, only by id -- two builds sharing the same Desired State never collide. */
 export async function upsertArcBuild(build: ArcBuild): Promise<void> {
   const builds = await loadArcBuilds();
-  const index = builds.findIndex((existing) => existing.id === build.id);
-  if (index === -1) {
-    builds.push(build);
-  } else {
-    builds[index] = build;
-  }
-  await saveArcBuilds(builds);
+  await saveArcBuilds(upsertArcBuildInList(builds, build));
 }
 
-/** Removes exactly the one matching build (by id) -- every other build is left completely untouched. A no-op if the id doesn't match any build. */
+/** Removes exactly the one matching build (by id) -- see arc/arcBuilds.ts's deleteArcBuildFromList. Every other build is left completely untouched; a no-op if the id doesn't match any build. */
 export async function deleteArcBuild(id: string): Promise<void> {
   const builds = await loadArcBuilds();
-  await saveArcBuilds(builds.filter((build) => build.id !== id));
+  await saveArcBuilds(deleteArcBuildFromList(builds, id));
 }
 
 /**

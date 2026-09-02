@@ -145,6 +145,9 @@ export type ProfileStep =
   | "identityEncodingRegulationCue"
   | "identityMantra"
   | "identityBodyLanguageCue"
+  /** ARC Builds task: parallel to internalAction/internalActionBodyCue -- see ProfileDraft.identityAction's doc. */
+  | "identityAction"
+  | "identityActionBodyCue"
   | "dwellTimes"
   | "review";
 
@@ -272,6 +275,10 @@ export interface ProfileDraft {
   identityEncodingRegulationCue: string;
   identityMantra: string;
   identityBodyLanguageCue: string;
+  /** ARC Builds task: the identity layer's own Action, asked directly for a standalone identity-targeted ArcBuild -- see ArcBuildProfile.identityAction's doc for the legacy beneficialAction-derivation fallback this preserves. */
+  identityAction: string;
+  /** Parallel to identityAction above -- see ArcBuildProfile.internalActionBodyCue's doc for the Action-Body-Cue-vs-Encoding-Body-Language distinction. */
+  identityActionBodyCue: string;
   /** The identity layer's own configured dwell times, parallel to the state fields above -- never mixed with them. */
   identitySensationDwellSeconds: string;
   identityAcceptanceDwellSeconds: string;
@@ -327,6 +334,8 @@ export function createEmptyDraft(): ProfileDraft {
     identityEncodingRegulationCue: "",
     identityMantra: "",
     identityBodyLanguageCue: "",
+    identityAction: "",
+    identityActionBodyCue: "",
     identitySensationDwellSeconds: String(DEFAULT_DWELL_TIMES.sensationDwellSeconds),
     identityAcceptanceDwellSeconds: String(DEFAULT_DWELL_TIMES.acceptanceDwellSeconds),
     identityRegulationDwellSeconds: String(DEFAULT_DWELL_TIMES.regulationDwellSeconds),
@@ -406,6 +415,8 @@ export function draftFromProfileAndSelection(
     identityEncodingRegulationCue: profile.identityEncodingRegulationCue ?? "",
     identityMantra: profile.identityEncoding?.mantra ?? "",
     identityBodyLanguageCue: profile.identityEncoding?.bodyLanguageCue ?? "",
+    identityAction: profile.identityAction ?? "",
+    identityActionBodyCue: profile.identityActionBodyCue ?? "",
     identitySensationDwellSeconds: String(profile.identityDwellTimes?.sensationDwellSeconds ?? DEFAULT_DWELL_TIMES.sensationDwellSeconds),
     identityAcceptanceDwellSeconds: String(profile.identityDwellTimes?.acceptanceDwellSeconds ?? DEFAULT_DWELL_TIMES.acceptanceDwellSeconds),
     identityRegulationDwellSeconds: String(profile.identityDwellTimes?.regulationDwellSeconds ?? DEFAULT_DWELL_TIMES.regulationDwellSeconds),
@@ -473,6 +484,8 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
     case "identityEncodingRegulationCueAsk":
     case "identityMantra":
     case "identityBodyLanguageCue":
+    case "identityAction":
+    case "identityActionBodyCue":
       return resolvesNeedsIdentity(draft);
     case "identityEncodingRegulationCue":
       return resolvesNeedsIdentity(draft) && draft.identityWantsShortEncodingRegulationCue === true;
@@ -714,15 +727,29 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
         ? draft.identityEncodingRegulationCue.trim()
         : null,
     identityEncoding: needsIdentity && desiredIdentity ? buildEncodingProfile(desiredIdentity, draft.identityMantra, draft.identityBodyLanguageCue) : null,
-    // No longer its own question (see module doc): the identity layer's
-    // action is the same Desired Habit as the habit layer's, not asked
-    // twice.
-    identityAction: needsIdentity ? draft.beneficialAction.trim() : null,
-    // Action Body Cue task: mirrors identityAction's own derivation
-    // immediately above -- the identity layer's Action Body Cue is the
-    // same one configured for beneficialAction, never asked a second
-    // time.
-    identityActionBodyCue: needsIdentity && draft.beneficialActionBodyCue.trim() ? draft.beneficialActionBodyCue.trim() : null,
+    // ARC Builds task: a standalone identity-targeted ArcBuild has no
+    // habit target sharing its own action any more, so identityAction
+    // is now its own directly-askable field (draft.identityAction) --
+    // asked explicitly on the identity-focused editor path. Falls back
+    // to the older derivation (the same Desired Habit as beneficialAction)
+    // only when identityAction itself was never filled in -- preserves
+    // legacy/migrated builds and profiles saved before this field
+    // existed, which relied on that derivation, without requiring
+    // re-entry.
+    identityAction: needsIdentity
+      ? draft.identityAction.trim()
+        ? draft.identityAction.trim()
+        : draft.beneficialAction.trim()
+          ? draft.beneficialAction.trim()
+          : null
+      : null,
+    identityActionBodyCue: needsIdentity
+      ? draft.identityActionBodyCue.trim()
+        ? draft.identityActionBodyCue.trim()
+        : draft.beneficialActionBodyCue.trim()
+          ? draft.beneficialActionBodyCue.trim()
+          : null
+      : null,
     identityDwellTimes: needsIdentity
       ? dwellTimesFromDraft({
           sensation: draft.identitySensationDwellSeconds,

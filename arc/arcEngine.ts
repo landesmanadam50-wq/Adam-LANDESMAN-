@@ -76,7 +76,8 @@ import {
   shouldRunArcThought,
 } from "./engine.ts";
 import { ARC_CONFIG } from "./config.ts";
-import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, EncodingProfile, TriggerType } from "./types.ts";
+import { createEmptyArcBuildProfile } from "./types.ts";
+import type { ArcBuild, ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, EncodingProfile, TriggerType } from "./types.ts";
 
 export interface ArcStageResult {
   stage: ArcStage;
@@ -379,6 +380,133 @@ export function deriveActiveLayersForArcBuild(profile: ArcBuildProfile): Develop
   if (profile.identityEncoding !== null || profile.identityAction !== null) layers.push("identity");
   if (profile.beneficialAction !== null) layers.push("habit");
   return layers;
+}
+
+/**
+ * ARC Builds task (#10, migration): splits ONE legacy, target-bundling
+ * ArcBuildProfile (the old BUILD-GOAL -> BUILD-ARC model, where a
+ * single profile could carry a state target AND an identity target AND
+ * a habit target all at once) into one standalone ArcBuild PER target
+ * that was actually configured -- never one bundled build covering
+ * several targets, matching the corrected architecture where an
+ * ArcBuild targets exactly one layer. Each split build's initial name
+ * is that target's own Desired State/Identity/Habit text (never a
+ * generic "goal" label), and carries ONLY that target's fields --
+ * every other target's fields are left at createEmptyArcBuildProfile's
+ * defaults (null), so deriveActiveLayersForArcBuild resolves each
+ * split build to exactly the one layer it was split from. Global,
+ * not-target-specific fields (regulationTool, actionDuration,
+ * successFocusDuration) are carried into every resulting build, since
+ * they applied to the whole legacy profile and there is no way to
+ * attribute them to one target over another -- this loses no
+ * configuration, and each is independently editable per build from
+ * this point on. Negative Action's own fields (habit/
+ * negativeActionReductionEnabled/negativeActionBaseDurationMinutes)
+ * travel with the habit split (or their own habit-only build, if the
+ * trainee enabled Negative Action without ever configuring a positive
+ * beneficialAction target) since Negative Action is the habit-reduction
+ * counterpart to the habit layer's positive beneficialAction.
+ *
+ * Pure and deterministic given its inputs (generateId/now are supplied
+ * by the caller, data/storage.ts's loadArcBuilds, rather than read
+ * from Date.now()/Math.random() here) -- this is what data/storage.ts's
+ * migrate-once-on-first-load logic actually calls; testable directly
+ * without any AsyncStorage involved.
+ */
+export function splitProfileIntoArcBuilds(profile: ArcBuildProfile, generateId: () => string, now: string): ArcBuild[] {
+  const builds: ArcBuild[] = [];
+  const hasState = profile.stateEncoding !== null || profile.internalAction !== null;
+  const hasIdentity = profile.identityEncoding !== null || profile.identityAction !== null;
+  // profile.habit (the negative/interfering action text) is deliberately
+  // NOT its own trigger here -- it's only ever meaningful alongside
+  // negativeActionReductionEnabled (see isNegativeActionAvailable's own
+  // check), so a legacy profile with stray/leftover habit text but the
+  // tool never actually enabled must not spuriously produce a habit
+  // build with nothing else configured.
+  const hasHabit = profile.beneficialAction !== null || profile.negativeActionReductionEnabled === true;
+
+  if (hasState) {
+    builds.push({
+      id: generateId(),
+      name: profile.supportiveState?.trim() ? profile.supportiveState.trim() : "מצב רצוי",
+      createdAt: now,
+      updatedAt: now,
+      needsState: true,
+      needsIdentity: false,
+      needsHabit: false,
+      needsIdentityImmediately: false,
+      profile: {
+        ...createEmptyArcBuildProfile(),
+        supportiveState: profile.supportiveState,
+        challengeContext: profile.challengeContext,
+        interferingState: profile.interferingState,
+        statePreventiveAction: profile.statePreventiveAction,
+        stateEncodingRegulationCue: profile.stateEncodingRegulationCue,
+        stateEncoding: profile.stateEncoding,
+        internalAction: profile.internalAction,
+        internalActionBodyCue: profile.internalActionBodyCue,
+        stateDwellTimes: profile.stateDwellTimes,
+        regulationTool: profile.regulationTool,
+        actionDuration: profile.actionDuration,
+        successFocusDuration: profile.successFocusDuration,
+      },
+    });
+  }
+
+  if (hasIdentity) {
+    builds.push({
+      id: generateId(),
+      name: profile.desiredIdentity?.trim() ? profile.desiredIdentity.trim() : "זהות רצויה",
+      createdAt: now,
+      updatedAt: now,
+      needsState: false,
+      needsIdentity: true,
+      needsHabit: false,
+      needsIdentityImmediately: false,
+      profile: {
+        ...createEmptyArcBuildProfile(),
+        desiredIdentity: profile.desiredIdentity,
+        identityChallengeContext: profile.identityChallengeContext,
+        identityInterferingEmotion: profile.identityInterferingEmotion,
+        identityPreventiveAction: profile.identityPreventiveAction,
+        identityEncodingRegulationCue: profile.identityEncodingRegulationCue,
+        identityEncoding: profile.identityEncoding,
+        identityAction: profile.identityAction,
+        identityActionBodyCue: profile.identityActionBodyCue,
+        identityDwellTimes: profile.identityDwellTimes,
+        regulationTool: profile.regulationTool,
+        actionDuration: profile.actionDuration,
+        successFocusDuration: profile.successFocusDuration,
+      },
+    });
+  }
+
+  if (hasHabit) {
+    builds.push({
+      id: generateId(),
+      name: profile.beneficialAction?.trim() ? profile.beneficialAction.trim() : "הרגל רצוי",
+      createdAt: now,
+      updatedAt: now,
+      needsState: false,
+      needsIdentity: false,
+      needsHabit: true,
+      needsIdentityImmediately: false,
+      profile: {
+        ...createEmptyArcBuildProfile(),
+        beneficialAction: profile.beneficialAction,
+        beneficialActionBodyCue: profile.beneficialActionBodyCue,
+        preventiveAction: profile.preventiveAction,
+        habit: profile.habit,
+        negativeActionBaseDurationMinutes: profile.negativeActionBaseDurationMinutes,
+        negativeActionReductionEnabled: profile.negativeActionReductionEnabled,
+        regulationTool: profile.regulationTool,
+        actionDuration: profile.actionDuration,
+        successFocusDuration: profile.successFocusDuration,
+      },
+    });
+  }
+
+  return builds;
 }
 
 // ---------------------------------------------------------------------------
