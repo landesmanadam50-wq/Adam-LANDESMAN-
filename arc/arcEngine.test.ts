@@ -329,6 +329,63 @@ test("splitProfileIntoArcBuilds: a legacy profile with only a state target migra
   assert.equal(builds[0].profile.beneficialAction, null);
 });
 
+test("startup-safety: a realistic legacy stored profile -- parsed from an actual JSON string, missing fields added after this trainee's install (identityActionBodyCue/internalActionBodyCue/beneficialActionBodyCue) -- migrates cleanly with no crash", () => {
+  // Simulates exactly what AsyncStorage.getItem + JSON.parse would hand
+  // back for a trainee who configured their profile with an OLD app
+  // version, before the Action Body Cue fields existed: those three
+  // keys are genuinely ABSENT from the JSON, not present-as-null, the
+  // same shape a real old install's stored record would have.
+  const legacyJson = JSON.stringify({
+    programPath: "standard_3_week",
+    identityActionNeeded: false,
+    goal: "לחיות בהתאם לערכים שלי",
+    interferingState: "ביקורת עצמית",
+    supportiveState: "רוגע",
+    challengeContext: "אחרי טעות",
+    statePreventiveAction: null,
+    stateEncodingRegulationCue: null,
+    stateEncoding: { target: "רוגע", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: null },
+    internalAction: "סריקת גוף",
+    // internalActionBodyCue intentionally absent -- pre-dates this field
+    stateDwellTimes: null,
+    desiredIdentity: "ביטחון עצמי",
+    identityChallengeContext: "מול קהל",
+    identityInterferingEmotion: "פחד",
+    identityPreventiveAction: null,
+    identityEncodingRegulationCue: null,
+    identityEncoding: { target: "ביטחון עצמי", bodySensationCue: null, breathCue: null, bodyLanguageCue: "מבט ישיר", mantra: "אני בטוח" },
+    identityAction: "לומר שלום ראשון",
+    // identityActionBodyCue intentionally absent
+    identityDwellTimes: null,
+    habit: null,
+    beneficialAction: null,
+    // beneficialActionBodyCue intentionally absent
+    preventiveAction: null,
+    regulationTool: "נשימה 4-7-8",
+    actionDuration: null,
+    successFocusDuration: null,
+    negativeActionBaseDurationMinutes: null,
+    negativeActionReductionEnabled: false,
+  });
+
+  const parsed = JSON.parse(legacyJson) as ArcBuildProfile;
+  assert.doesNotThrow(() => splitProfileIntoArcBuilds(parsed, generateArcBuildId, "2026-01-01T00:00:00.000Z"));
+
+  const builds = splitProfileIntoArcBuilds(parsed, generateArcBuildId, "2026-01-01T00:00:00.000Z");
+  assert.equal(builds.length, 2, "state target + identity target -- two independent ArcBuilds");
+  const stateBuild = builds.find((b) => b.needsState)!;
+  const identityBuild = builds.find((b) => b.needsIdentity)!;
+  assert.equal(stateBuild.name, "רוגע");
+  assert.equal(stateBuild.profile.internalAction, "סריקת גוף", "existing data preserved even though a newer field is missing");
+  assert.equal(identityBuild.name, "ביטחון עצמי");
+  assert.equal(identityBuild.profile.identityAction, "לומר שלום ראשון");
+  // The absent field must never crash and must never be invented as a
+  // truthy placeholder -- it simply carries through as whatever JSON.parse
+  // produced for a missing key (undefined), same as null everywhere this
+  // is truthy-checked (arc/arcEngine.ts's resolveEncodingTarget).
+  assert.ok(!stateBuild.profile.internalActionBodyCue);
+});
+
 test("splitProfileIntoArcBuilds: a legacy profile bundling a state target AND an identity target migrates into TWO separate ArcBuilds, never one bundled build", () => {
   const p = profile({
     supportiveState: "מיקוד",

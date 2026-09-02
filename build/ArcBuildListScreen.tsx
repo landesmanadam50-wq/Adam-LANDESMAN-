@@ -35,7 +35,16 @@ export default function ArcBuildListScreen() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const reload = useCallback(() => {
-    loadArcBuilds().then(setBuilds);
+    // Startup-safety fix: loadArcBuilds() itself no longer rejects, but
+    // this stays as defense-in-depth so the list can never get stuck on
+    // its loading state (builds staying null forever) -- falls back to
+    // an empty list, which renders this screen's own empty state.
+    loadArcBuilds()
+      .then(setBuilds)
+      .catch((error) => {
+        console.warn("[ArcBuildListScreen] Failed to load ARC Builds -- showing the empty state.", error);
+        setBuilds([]);
+      });
   }, []);
 
   useFocusEffect(

@@ -65,9 +65,19 @@ export default function Home() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      loadArcBuilds().then((builds) => {
-        if (!cancelled) setHasArcBuilds(builds.length > 0);
-      });
+      loadArcBuilds()
+        .then((builds) => {
+          if (!cancelled) setHasArcBuilds(builds.length > 0);
+        })
+        // Startup-safety fix: loadArcBuilds() itself no longer rejects,
+        // but this stays as defense-in-depth so Home can never get stuck
+        // showing nothing (hasArcBuilds staying null forever) if some
+        // other, unrelated failure occurs here -- falls back to the
+        // "no ARC Builds yet" empty state, never a blank screen.
+        .catch((error) => {
+          console.warn("[Home] Failed to load ARC Builds -- showing the empty state.", error);
+          if (!cancelled) setHasArcBuilds(false);
+        });
       return () => {
         cancelled = true;
       };

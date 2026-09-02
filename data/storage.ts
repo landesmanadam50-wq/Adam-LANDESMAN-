@@ -30,9 +30,29 @@ function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
 }
 
+/**
+ * Startup-safety fix: JSON.parse on stored data must never be allowed to
+ * throw uncaught -- this is reachable from app/index.tsx's (Home's) very
+ * first useFocusEffect on every cold start via loadArcBuilds' migration
+ * path below, with no .catch() at any call site. An unguarded throw here
+ * became an unhandled promise rejection on the very first screen the app
+ * renders, which is exactly the class of very-early fatal failure Expo
+ * Updates' rollback-to-previous-update safety net watches for. A
+ * corrupted/unparseable PROFILE_KEY record is treated as "no legacy
+ * profile" (never crashes, never invents data) -- the raw bytes are left
+ * untouched in storage (never deleted/overwritten by this read), so nothing
+ * about the trainee's actual data is destroyed, only this one read safely
+ * degrades to null.
+ */
 export async function loadProfile(): Promise<ArcBuildProfile | null> {
   const raw = await AsyncStorage.getItem(PROFILE_KEY);
-  return raw ? (JSON.parse(raw) as ArcBuildProfile) : null;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ArcBuildProfile;
+  } catch (error) {
+    console.warn("[storage] Stored profile is not valid JSON -- treating as no legacy profile.", error);
+    return null;
+  }
 }
 
 export async function saveProfile(profile: ArcBuildProfile): Promise<void> {
@@ -71,14 +91,44 @@ export async function saveProfile(profile: ArcBuildProfile): Promise<void> {
  */
 export async function loadArcBuilds(): Promise<ArcBuild[]> {
   const raw = await AsyncStorage.getItem(ARC_BUILDS_KEY);
-  if (raw) return JSON.parse(raw) as ArcBuild[];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as ArcBuild[];
+      // Defensive: a stored value that parses but isn't actually an
+      // array (e.g. corrupted into an object/null) must not reach
+      // callers that immediately call .length/.find/.map on it.
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      // Startup-safety fix: this key already exists (raw is truthy), so
+      // re-running migration below would risk creating duplicate builds
+      // from the still-present legacy profile -- corruption here must
+      // degrade to "no builds visible right now", never to "migrate
+      // again". The raw bytes are left in storage untouched; nothing is
+      // deleted or overwritten by this read.
+      console.warn("[storage] Stored ARC Builds are not valid JSON -- returning an empty list rather than crashing or re-migrating.", error);
+      return [];
+    }
+  }
 
-  const legacyProfile = await loadProfile();
-  if (!legacyProfile) return [];
+  // No ARC_BUILDS_KEY at all yet -- migrate once from any legacy profile.
+  // Wrapped defensively end to end: any unexpected failure here (a
+  // corrupted legacy profile loadProfile() couldn't parse, or the split
+  // itself throwing on a truly malformed record) must never crash
+  // startup -- it simply resolves to "no builds yet", the same state a
+  // trainee with no legacy data already sees, and never writes anything
+  // to ARC_BUILDS_KEY, so the migration remains eligible to run again
+  // correctly with better data if this call was a transient failure.
+  try {
+    const legacyProfile = await loadProfile();
+    if (!legacyProfile) return [];
 
-  const migrated = splitProfileIntoArcBuilds(legacyProfile, generateArcBuildId, new Date().toISOString());
-  await saveArcBuilds(migrated);
-  return migrated;
+    const migrated = splitProfileIntoArcBuilds(legacyProfile, generateArcBuildId, new Date().toISOString());
+    await saveArcBuilds(migrated);
+    return migrated;
+  } catch (error) {
+    console.warn("[storage] Legacy-profile migration into ARC Builds failed -- returning an empty list rather than crashing startup.", error);
+    return [];
+  }
 }
 
 /** Always the FULL list -- callers read-modify-write, matching loadScheduledRoutines/saveScheduledRoutines' own style. */
