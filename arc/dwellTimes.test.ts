@@ -20,6 +20,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     programPath: "standard_3_week",
     identityActionNeeded: false,
     goal: null,
+    presenceColor: null,
     interferingState: null,
     challengeContext: null,
     statePreventiveAction: null,

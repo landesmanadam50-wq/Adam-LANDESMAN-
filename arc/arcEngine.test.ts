@@ -30,6 +30,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     programPath: "standard_3_week",
     identityActionNeeded: false,
     goal: null,
+    presenceColor: null,
     interferingState: "פחד",
     challengeContext: null,
     statePreventiveAction: null,
@@ -384,6 +385,13 @@ test("startup-safety: a realistic legacy stored profile -- parsed from an actual
   // produced for a missing key (undefined), same as null everywhere this
   // is truthy-checked (arc/arcEngine.ts's resolveEncodingTarget).
   assert.ok(!stateBuild.profile.internalActionBodyCue);
+  // Presence Color task: presenceColor is missing from this legacy JSON
+  // entirely (added after this trainee's install, same as the Action
+  // Body Cue fields above) -- both split builds must default it to
+  // null via createEmptyArcBuildProfile's spread base, never crash, and
+  // never invent a color.
+  assert.equal(stateBuild.profile.presenceColor, null);
+  assert.equal(identityBuild.profile.presenceColor, null);
 });
 
 test("splitProfileIntoArcBuilds: a legacy profile bundling a state target AND an identity target migrates into TWO separate ArcBuilds, never one bundled build", () => {
@@ -596,12 +604,46 @@ test("trigger_selection routes proactive straight to presence_check, unaffected 
   assert.equal(getNextArcStage("trigger_selection", s, p, ALL_LAYERS).stage, "presence_check");
 });
 
-test("high presence skips ARC Thought; low presence enters it", () => {
+test("high presence skips the full ARC Thought sequence but still routes into Presence Stage 3; low presence enters the full sequence", () => {
+  // Presence Color task: Presence Stage 3 (arc_thought_expand_presence)
+  // is where the saved Presence Color activates, so it must never be
+  // skipped entirely -- a high rating now routes directly into it
+  // instead of past it (see arc/arcEngine.ts's "presence_check" case).
   const high = state({ triggerType: "reactive_emotion", presenceRating: 8 });
-  assert.equal(getNextArcStage("presence_check", high, profile(), ALL_LAYERS).stage, "sensation_check");
+  assert.equal(getNextArcStage("presence_check", high, profile(), ALL_LAYERS).stage, "arc_thought_expand_presence");
 
   const low = state({ triggerType: "reactive_emotion", presenceRating: 3 });
   assert.equal(getNextArcStage("presence_check", low, profile(), ALL_LAYERS).stage, "arc_thought_awareness");
+});
+
+test("Presence Color task: a high presence rating still completes Stage 3 exactly once, then exits to the normal post-ARC-Thought route -- never re-entering the full ARC Thought sequence, never looping", () => {
+  const s = state({ triggerType: "reactive_emotion", presenceRating: 9 });
+  const p = profile();
+  const toStage3 = getNextArcStage("presence_check", s, p, ALL_LAYERS);
+  assert.equal(toStage3.stage, "arc_thought_expand_presence");
+
+  // Stage 3's own existing, unchanged transition -- unconditional.
+  const toRecheck = getNextArcStage("arc_thought_expand_presence", { ...s, loopIterationCount: toStage3.loopIterationCount }, p, ALL_LAYERS);
+  assert.equal(toRecheck.stage, "arc_thought_presence_recheck");
+
+  // The rating is still high (nothing reset it), so the recheck exits
+  // straight to the normal reactive_emotion route -- sensation_check --
+  // never back into arc_thought_awareness/combined_attention.
+  const afterRecheck = getNextArcStage(
+    "arc_thought_presence_recheck",
+    { ...s, loopIterationCount: toRecheck.loopIterationCount },
+    p,
+    ALL_LAYERS
+  );
+  assert.equal(afterRecheck.stage, "sensation_check");
+});
+
+test("Presence Color task: a proactive trigger with high presence also still routes through Stage 3 before its own post-ARC-Thought route (desired_state_check)", () => {
+  const s = state({ triggerType: "proactive", presenceRating: 9 });
+  const p = profile();
+  assert.equal(getNextArcStage("presence_check", s, p, ALL_LAYERS).stage, "arc_thought_expand_presence");
+  const afterRecheck = getNextArcStage("arc_thought_presence_recheck", s, p, ALL_LAYERS);
+  assert.equal(afterRecheck.stage, "desired_state_check");
 });
 
 test("ARC Thought is a straight line through its first three stages", () => {
@@ -1179,6 +1221,13 @@ test("existing downstream Reactive ARC progression is unchanged: from observer_p
     "trigger_context",
     "observer_pause",
     "presence_check",
+    // Presence Color task: a high presence rating no longer skips
+    // Presence Stage 3 entirely -- it now routes directly into
+    // arc_thought_expand_presence (where the saved Presence Color
+    // activates) and its own unchanged single-pass recheck, before
+    // continuing exactly where this sequence always continued.
+    "arc_thought_expand_presence",
+    "arc_thought_presence_recheck",
     "sensation_check",
     "encode",
     "act",

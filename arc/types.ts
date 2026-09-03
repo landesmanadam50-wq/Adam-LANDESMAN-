@@ -125,6 +125,26 @@ export interface ArcBuildProfile {
   goal: string | null;
 
   /**
+   * Presence Color task: this ONE ArcBuild's own answer to "באיזה צבע
+   * מתמלאת הנוכחות שלך?" -- free Hebrew text (a preset chip or typed
+   * entry, see build/ArcBuildEditorScreen.tsx), global to the whole
+   * build (never per-target/per-layer the way stateEncoding/
+   * identityEncoding are) since Presence itself is experienced once per
+   * session, before any target is even resolved. Chosen once during
+   * BUILD, never asked again during LIVE -- arc/stageCopy.ts's
+   * "arc_thought_expand_presence" case (Presence Stage 3) activates it,
+   * and arc/presenceColor.ts's getPresenceColorReminder threads a short,
+   * grammatically-safe (never gender-inflected against arbitrary
+   * user text) reminder through the rest of that LIVE session. null
+   * means either a legacy ArcBuild created before this field existed,
+   * or (should not happen for a build saved through the current
+   * wizard, which requires it) never answered -- both cases are always
+   * treated as "no color" everywhere this is read, never a crash and
+   * never an invented default.
+   */
+  presenceColor: string | null;
+
+  /**
    * The ARC Map around the state-layer Desired State (supportiveState
    * below): where it's especially relevant (challengeContext), what
    * commonly interferes with it (interferingState), and what to do
@@ -270,6 +290,7 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     programPath: "custom_arc_build",
     identityActionNeeded: false,
     goal: null,
+    presenceColor: null,
     interferingState: null,
     supportiveState: null,
     challengeContext: null,

@@ -55,6 +55,7 @@ import type { ArcBuild, DwellTimes } from "../arc/types.ts";
 type Target = "state" | "identity" | "habit";
 
 const STATE_STEPS: ProfileStep[] = [
+  "presenceColor",
   "supportiveState",
   "challengeContext",
   "interferingState",
@@ -71,6 +72,7 @@ const STATE_STEPS: ProfileStep[] = [
 ];
 
 const IDENTITY_STEPS: ProfileStep[] = [
+  "presenceColor",
   "desiredIdentity",
   "identityChallengeContext",
   "identityInterferingEmotion",
@@ -87,6 +89,7 @@ const IDENTITY_STEPS: ProfileStep[] = [
 ];
 
 const HABIT_STEPS: ProfileStep[] = [
+  "presenceColor",
   "beneficialAction",
   "beneficialActionBodyCue",
   "preventiveActionAsk",
@@ -106,6 +109,10 @@ function stepOrderFor(target: Target): ProfileStep[] {
 
 /** Required fields for THIS target only -- mirrors each field's own existing required/optional status (Challenge Context + Interfering State required, the target's own Action required, regulationTool always required, Negative Action's own fields required only once enabled), scoped to one target instead of a whole bundled draft. */
 function isTargetDraftComplete(target: Target, draft: ProfileDraft): boolean {
+  // Presence Color task: required for every target, exactly like
+  // regulationTool right below -- a legacy build reopened for editing
+  // cannot pass this check again until the trainee fills it in.
+  if (draft.presenceColor.trim().length === 0) return false;
   if (draft.regulationTool.trim().length === 0) return false;
   if (target === "state") {
     return (
@@ -139,6 +146,7 @@ function draftForTarget(target: Target, base: ProfileDraft): ProfileDraft {
 }
 
 const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
+  presenceColor: "באיזה צבע מתמלאת הנוכחות שלך?",
   supportiveState: "מה המצב הרצוי שתרצה לחוש יותר?",
   challengeContext: "באילו מצבים המצב הרצוי הזה במיוחד רלוונטי? (הקשר האתגר)",
   interferingState: "מה נוטה להפריע למצב הרצוי הזה? (לזיהוי בלבד)",
@@ -175,6 +183,7 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
 };
 
 const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
+  presenceColor: "presenceColor",
   supportiveState: "supportiveState",
   challengeContext: "challengeContext",
   interferingState: "interferingState",
@@ -545,6 +554,7 @@ export default function ArcBuildEditorScreen() {
 
         {step === "review" && (
           <View>
+            <Text style={styles.body}>{`צבע נוכחות: ${draft.presenceColor}`}</Text>
             {activeTarget === "state" && (
               <>
                 <Text style={styles.body}>{`מצב רצוי: ${draft.supportiveState}`}</Text>

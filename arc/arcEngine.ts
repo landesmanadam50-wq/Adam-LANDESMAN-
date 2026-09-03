@@ -725,8 +725,20 @@ export function getNextArcStage(
 
     case "presence_check":
       if (state.presenceRating === null) return result(current, state.loopIterationCount);
+      // Presence Color task: Presence Stage 3 (arc_thought_expand_presence)
+      // must run in EVERY LIVE protocol, never be skipped entirely, since
+      // it's the one place the saved Presence Color is activated (see
+      // arc/stageCopy.ts's "arc_thought_expand_presence" case). A high
+      // presence rating still skips the full ARC Thought sequence
+      // (arc_thought_awareness/combined_attention) exactly as before --
+      // it now routes directly into arc_thought_expand_presence instead
+      // of straight past it. That stage's own unchanged transition into
+      // arc_thought_presence_recheck (below), and that stage's own
+      // unchanged re-evaluation logic, then exit to afterArcThought on
+      // the very next hop once presence is confirmed high again -- no
+      // other routing/rating logic changes.
       return result(
-        shouldRunArcThought(state.presenceRating) ? "arc_thought_awareness" : afterArcThought(state.triggerType),
+        shouldRunArcThought(state.presenceRating) ? "arc_thought_awareness" : "arc_thought_expand_presence",
         state.loopIterationCount
       );
 

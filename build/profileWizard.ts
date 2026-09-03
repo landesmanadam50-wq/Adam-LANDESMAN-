@@ -90,6 +90,19 @@ function isKnownLegacyProgramPath(programPath: string): programPath is KnownProg
 export type ProfileStep =
   | "goal"
   /**
+   * Presence Color task: "באיזה צבע מתמלאת הנוכחות שלך?" -- this
+   * ArcBuild's own predefined Presence Color, chosen once here during
+   * BUILD and never re-asked during LIVE (see arc/types.ts's
+   * ArcBuildProfile.presenceColor doc). Required, not optional (see
+   * isGoalDraftComplete below) -- a legacy ArcBuild saved before this
+   * field existed simply has an empty draft value for it and so cannot
+   * pass GOAL-phase completeness again until this step is answered,
+   * which is how "ask the user to complete the new Presence Color field
+   * when editing an old ArcBuild" is satisfied without any bespoke
+   * migration-prompt logic.
+   */
+  | "presenceColor"
+  /**
    * Negative Action reduction task: the explicit opt-in for the
    * OPTIONAL Negative Action Timer tool -- decides whether "habit" and
    * "negativeActionDuration" below are even asked (see
@@ -169,11 +182,16 @@ export type ProfileStep =
  * creation, on the ARC Build list screen) already identifies it, so
  * asking "מה תרצה להשיג" again inside the wizard would be redundant.
  * buildProfileFromDraft still writes draft.goal (see below), just
- * auto-set from the build's name rather than asked here. The array
- * starts wherever getFirstProfileStep lands (negativeActionEnabledAsk,
- * the first step below with no special gating).
+ * auto-set from the build's name rather than asked here.
+ *
+ * Presence Color task: "presenceColor" is now this array's first entry,
+ * ahead of negativeActionEnabledAsk -- asked before anything else in a
+ * fresh BUILD, and required (see isGoalDraftComplete below), so
+ * re-editing a legacy ArcBuild that never answered it lands right back
+ * on this step until it's filled in.
  */
 export const GOAL_STEP_ORDER: ProfileStep[] = [
+  "presenceColor",
   "negativeActionEnabledAsk",
   "habit",
   "negativeActionDuration",
@@ -233,6 +251,8 @@ export const IDENTITY_ARC_STEP_ORDER: ProfileStep[] = [
 
 export interface ProfileDraft {
   goal: string;
+  /** Presence Color task -- see the "presenceColor" ProfileStep's doc and ArcBuildProfile.presenceColor's doc. Required, like goal. */
+  presenceColor: string;
 
   needsState: boolean | null;
   needsIdentityImmediately: boolean | null;
@@ -306,6 +326,7 @@ export interface ProfileDraft {
 export function createEmptyDraft(): ProfileDraft {
   return {
     goal: "",
+    presenceColor: "",
     needsState: null,
     needsIdentityImmediately: null,
     needsIdentityExplicit: null,
@@ -373,6 +394,7 @@ export function draftFromProfileAndSelection(
 
   return {
     goal: profile.goal ?? "",
+    presenceColor: profile.presenceColor ?? "",
     needsState,
     needsIdentityImmediately: needsState ? resolvedSelection.needsIdentityImmediately : null,
     needsIdentityExplicit: needsState ? null : needsIdentity,
@@ -524,6 +546,10 @@ export function getPreviousProfileStep(current: ProfileStep, draft: ProfileDraft
 /** the GOAL phase's own completeness check -- does not require any the STATE/IDENTITY ARC phase field from either target's ARC Map. */
 export function isGoalDraftComplete(draft: ProfileDraft): boolean {
   if (draft.goal.trim().length === 0) return false;
+  // Presence Color task: required, exactly like goal -- a legacy
+  // ArcBuild that never answered it cannot pass this check again until
+  // the trainee fills it in via the "presenceColor" step.
+  if (draft.presenceColor.trim().length === 0) return false;
   if (draft.needsState === null) return false;
   if (draft.needsState === true && draft.needsIdentityImmediately === null) return false;
   if (draft.needsState === false && draft.needsIdentityExplicit === null) return false;
@@ -684,6 +710,10 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     identityActionNeeded: needsIdentity,
 
     goal: draft.goal.trim(),
+    // Presence Color task: required by isGoalDraftComplete, so always
+    // non-empty by the time buildProfileFromDraft is reachable -- same
+    // pattern as goal, right above.
+    presenceColor: draft.presenceColor.trim(),
 
     // null (not "") until the STATE/IDENTITY ARC phase actually maps something -- a fresh
     // the GOAL phase-only save has no ARC Map yet for either target, which
