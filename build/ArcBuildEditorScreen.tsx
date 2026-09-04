@@ -5,7 +5,6 @@ import { router, useLocalSearchParams } from "expo-router";
 
 import { getArcBuild, upsertArcBuild } from "../data/storage.ts";
 import {
-  buildProfileFromDraft,
   createEmptyDraft,
   draftFromProfileAndSelection,
   getFirstProfileStep,
@@ -14,6 +13,7 @@ import {
   type ProfileDraft,
   type ProfileStep,
 } from "./profileWizard.ts";
+import { buildArcBuildProfileForSave, draftForTarget, inferTarget, isTargetDraftComplete, type Target } from "./arcBuildSave.ts";
 import { NEGATIVE_ACTION_MAX_DURATION_MINUTES, NEGATIVE_ACTION_MIN_DURATION_MINUTES } from "../program/engine.ts";
 import type { ArcBuild, DwellTimes } from "../arc/types.ts";
 
@@ -32,13 +32,13 @@ import type { ArcBuild, DwellTimes } from "../arc/types.ts";
  *
  * Reuses build/profileWizard.ts's step machinery completely unchanged
  * (shouldShowProfileStep/getFirstProfileStep/getNextProfileStep/
- * getPreviousProfileStep, buildProfileFromDraft, draftFromProfileAndSelection)
- * -- only the STEP ORDER ARRAYS below are new, each a flat,
- * single-target list mixing existing ProfileStep values (never new
- * ones except identityAction/identityActionBodyCue, added alongside
- * this correction so a standalone identity-targeted build can capture
- * its own Action without depending on a habit target's beneficialAction
- * -- see profileWizard.ts's ProfileDraft.identityAction doc).
+ * getPreviousProfileStep, draftFromProfileAndSelection) -- only the STEP
+ * ORDER ARRAYS below are new, each a flat, single-target list mixing
+ * existing ProfileStep values (never new ones except
+ * identityAction/identityActionBodyCue, added alongside this correction
+ * so a standalone identity-targeted build can capture its own Action
+ * without depending on a habit target's beneficialAction -- see
+ * profileWizard.ts's ProfileDraft.identityAction doc).
  * draft.needsState/needsIdentityExplicit are set ONCE, to match the
  * chosen target, before any step is shown, so shouldShowProfileStep's
  * existing per-field gating (built around those same flags) continues
@@ -50,9 +50,16 @@ import type { ArcBuild, DwellTimes } from "../arc/types.ts";
  * relevant to the chosen target is explicitly cleared to null on save,
  * so deriveActiveLayersForArcBuild (arc/arcEngine.ts) always resolves
  * this build to exactly the one layer it targets, never more.
+ *
+ * Presence Color bug-fix task: the actual draft-to-profile conversion
+ * (buildProfileFromDraft, whose own internal completeness gate was
+ * never compatible with a single-target draft) now goes through
+ * build/arcBuildSave.ts's buildArcBuildProfileForSave instead of being
+ * called directly here -- see that module's doc for the full root
+ * cause. isTargetDraftComplete/draftForTarget/inferTarget/Target moved
+ * there too, unchanged, so the pure save-path logic (previously only
+ * reachable by driving the UI) can be covered by node --test.
  */
-
-type Target = "state" | "identity" | "habit";
 
 const STATE_STEPS: ProfileStep[] = [
   "presenceColor",
@@ -105,44 +112,6 @@ function stepOrderFor(target: Target): ProfileStep[] {
   if (target === "state") return STATE_STEPS;
   if (target === "identity") return IDENTITY_STEPS;
   return HABIT_STEPS;
-}
-
-/** Required fields for THIS target only -- mirrors each field's own existing required/optional status (Challenge Context + Interfering State required, the target's own Action required, regulationTool always required, Negative Action's own fields required only once enabled), scoped to one target instead of a whole bundled draft. */
-function isTargetDraftComplete(target: Target, draft: ProfileDraft): boolean {
-  // Presence Color task: required for every target, exactly like
-  // regulationTool right below -- a legacy build reopened for editing
-  // cannot pass this check again until the trainee fills it in.
-  if (draft.presenceColor.trim().length === 0) return false;
-  if (draft.regulationTool.trim().length === 0) return false;
-  if (target === "state") {
-    return (
-      draft.supportiveState.trim().length > 0 && draft.challengeContext.trim().length > 0 && draft.interferingState.trim().length > 0
-    );
-  }
-  if (target === "identity") {
-    return (
-      draft.desiredIdentity.trim().length > 0 &&
-      draft.identityChallengeContext.trim().length > 0 &&
-      draft.identityInterferingEmotion.trim().length > 0
-    );
-  }
-  if (draft.beneficialAction.trim().length === 0) return false;
-  if (draft.negativeActionReductionEnabled === null) return false;
-  if (draft.negativeActionReductionEnabled === true) {
-    if (draft.habit.trim().length === 0) return false;
-    if (draft.negativeActionBaseDurationMinutes === null) return false;
-  }
-  return true;
-}
-
-/** Sets exactly the needs-flags shouldShowProfileStep already gates on to match ONE chosen target -- never both/neither, so the existing per-field gating (built for the old bundled model) shows exactly this target's own steps. */
-function draftForTarget(target: Target, base: ProfileDraft): ProfileDraft {
-  return {
-    ...base,
-    needsState: target === "state",
-    needsIdentityImmediately: target === "state" ? false : base.needsIdentityImmediately,
-    needsIdentityExplicit: target === "identity",
-  };
 }
 
 const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
@@ -254,14 +223,6 @@ function dwellDraftFieldFor(target: "state" | "identity", key: keyof DwellTimes)
   return `${target}${capitalized}` as keyof ProfileDraft;
 }
 
-/** Infers this build's already-configured target from its saved profile, for reopening an existing build directly into its own flow -- never shows the target choice again once a target is set. state/identity/habit priority order matches deriveActiveLayersForArcBuild's own (arc/arcEngine.ts), for the rare case more than one somehow ended up configured. */
-function inferTarget(profile: ArcBuild["profile"]): Target | null {
-  if (profile.stateEncoding !== null || profile.internalAction !== null) return "state";
-  if (profile.identityEncoding !== null || profile.identityAction !== null) return "identity";
-  if (profile.beneficialAction !== null) return "habit";
-  return null;
-}
-
 type ScreenStatus = "loading" | "notFound" | "choosingTarget" | "editing";
 
 export default function ArcBuildEditorScreen() {
@@ -271,6 +232,7 @@ export default function ArcBuildEditorScreen() {
   const [target, setTarget] = useState<Target | null>(null);
   const [draft, setDraft] = useState<ProfileDraft>(createEmptyDraft());
   const [step, setStep] = useState<ProfileStep>("review");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -318,6 +280,7 @@ export default function ArcBuildEditorScreen() {
     (nextDraft: ProfileDraft) => {
       if (!target) return;
       setDraft(nextDraft);
+      setSaveError(null);
       setStep((current) => getNextProfileStep(current, nextDraft, stepOrderFor(target)));
     },
     [target]
@@ -330,83 +293,40 @@ export default function ArcBuildEditorScreen() {
 
   async function finishAndSave() {
     if (!build || !target) return;
-    // Clears every OTHER target's fields to null explicitly, regardless
-    // of what buildProfileFromDraft itself defaults to -- guarantees
-    // this build resolves to exactly the one layer it targets (never
-    // more), matching deriveActiveLayersForArcBuild's own detection.
-    const rawProfile = buildProfileFromDraft(draft);
-    const profile =
-      target === "state"
-        ? {
-            ...rawProfile,
-            desiredIdentity: null,
-            identityChallengeContext: null,
-            identityInterferingEmotion: null,
-            identityPreventiveAction: null,
-            identityEncodingRegulationCue: null,
-            identityEncoding: null,
-            identityAction: null,
-            identityActionBodyCue: null,
-            identityDwellTimes: null,
-            beneficialAction: null,
-            beneficialActionBodyCue: null,
-            preventiveAction: null,
-            habit: null,
-            negativeActionBaseDurationMinutes: null,
-            negativeActionReductionEnabled: false,
-          }
-        : target === "identity"
-          ? {
-              ...rawProfile,
-              supportiveState: null,
-              challengeContext: null,
-              interferingState: null,
-              statePreventiveAction: null,
-              stateEncodingRegulationCue: null,
-              stateEncoding: null,
-              internalAction: null,
-              internalActionBodyCue: null,
-              stateDwellTimes: null,
-              beneficialAction: null,
-              beneficialActionBodyCue: null,
-              preventiveAction: null,
-              habit: null,
-              negativeActionBaseDurationMinutes: null,
-              negativeActionReductionEnabled: false,
-            }
-          : {
-              ...rawProfile,
-              supportiveState: null,
-              challengeContext: null,
-              interferingState: null,
-              statePreventiveAction: null,
-              stateEncodingRegulationCue: null,
-              stateEncoding: null,
-              internalAction: null,
-              internalActionBodyCue: null,
-              stateDwellTimes: null,
-              desiredIdentity: null,
-              identityChallengeContext: null,
-              identityInterferingEmotion: null,
-              identityPreventiveAction: null,
-              identityEncodingRegulationCue: null,
-              identityEncoding: null,
-              identityAction: null,
-              identityActionBodyCue: null,
-              identityDwellTimes: null,
-            };
 
-    const updated: ArcBuild = {
-      ...build,
-      needsState: target === "state",
-      needsIdentity: target === "identity",
-      needsHabit: target === "habit",
-      needsIdentityImmediately: false,
-      profile: { ...profile, programPath: build.profile.programPath },
-      updatedAt: new Date().toISOString(),
-    };
-    await upsertArcBuild(updated);
-    router.back();
+    // Defense-in-depth: the review screen's own "שמור" button is already
+    // disabled while this is false (see below), but re-checking here
+    // means a save attempt can never silently no-op -- an incomplete
+    // draft always gets an explicit, visible reason instead.
+    if (!isTargetDraftComplete(target, draft)) {
+      setSaveError("יש להשלים את כל השדות הנדרשים לפני השמירה (כולל צבע נוכחות וכלי ויסות).");
+      return;
+    }
+
+    setSaveError(null);
+    try {
+      // buildArcBuildProfileForSave (build/arcBuildSave.ts) is the ONE
+      // place this screen turns the draft into a real ArcBuildProfile --
+      // it also clears every field not relevant to the chosen target to
+      // null, guaranteeing this build resolves to exactly the one layer
+      // it targets.
+      const profile = buildArcBuildProfileForSave(target, draft, build.name, build.profile.programPath);
+      const updated: ArcBuild = {
+        ...build,
+        needsState: target === "state",
+        needsIdentity: target === "identity",
+        needsHabit: target === "habit",
+        needsIdentityImmediately: false,
+        profile,
+        updatedAt: new Date().toISOString(),
+      };
+      await upsertArcBuild(updated);
+      router.back();
+    } catch {
+      // Never let a save failure vanish as a silent, unhandled promise
+      // rejection -- the trainee always sees why nothing was saved.
+      setSaveError("אירעה שגיאה בשמירת ה-ARC Build. נסה שוב.");
+    }
   }
 
   if (status === "loading") {
@@ -591,6 +511,10 @@ export default function ArcBuildEditorScreen() {
               </>
             )}
             <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
+            {!isTargetDraftComplete(activeTarget, draft) && (
+              <Text style={styles.errorText}>יש להשלים את כל השדות הנדרשים לפני השמירה (כולל צבע נוכחות וכלי ויסות).</Text>
+            )}
+            {saveError && <Text style={styles.errorText}>{saveError}</Text>}
             <Pressable
               style={[styles.button, styles.fullWidthButton]}
               disabled={!isTargetDraftComplete(activeTarget, draft)}
@@ -617,6 +541,7 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 13, textAlign: "right", color: "#0a7ea4", marginBottom: 4 },
   title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 16 },
   body: { fontSize: 16, textAlign: "right", marginBottom: 8 },
+  errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 8 },
   buttonRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12 },
   button: {
     backgroundColor: "#0a7ea4",
