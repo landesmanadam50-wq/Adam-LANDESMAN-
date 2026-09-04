@@ -70,6 +70,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     programPath: "standard_3_week",
     identityActionNeeded: false,
     goal: null,
+    presenceColor: null,
     interferingState: null,
     challengeContext: null,
     statePreventiveAction: null,
@@ -155,16 +156,22 @@ test("5. Low presence: ARC Thought starts regardless of which trigger was chosen
   }
 });
 
-test("6. High presence + reactive_emotion: reactive route starts directly", () => {
+test("6. High presence + reactive_emotion: reactive route starts directly, still through Presence Stage 3", () => {
   const p = profile();
   const activeLayers: DevelopmentLayer[] = ["state"];
   let session = applyTriggerSelection(createEmptyLiveState(), "reactive_emotion");
   session = applyScaleAnswer("presence_check", session, 9);
+  // Presence Color task: high presence no longer skips Presence Stage 3
+  // entirely -- it routes directly into it instead of past it.
   const outcome = step("presence_check", session, p, activeLayers);
-  assert.equal(outcome.stage, "sensation_check");
+  assert.equal(outcome.stage, "arc_thought_expand_presence");
+  const afterStage3 = step("arc_thought_expand_presence", outcome.session, p, activeLayers);
+  assert.equal(afterStage3.stage, "arc_thought_presence_recheck");
+  const afterRecheck = step("arc_thought_presence_recheck", afterStage3.session, p, activeLayers);
+  assert.equal(afterRecheck.stage, "sensation_check");
 });
 
-test("7. High presence + reactive_urge: habit route starts only when habit is active", () => {
+test("7. High presence + reactive_urge: habit route starts only when habit is active, still through Presence Stage 3", () => {
   const p = profile();
   assert.throws(() => resolveLiveRoute("reactive_urge", ["state"]));
 
@@ -172,7 +179,11 @@ test("7. High presence + reactive_urge: habit route starts only when habit is ac
   let session = applyTriggerSelection(createEmptyLiveState(), "reactive_urge");
   session = applyScaleAnswer("presence_check", session, 9);
   const outcome = step("presence_check", session, p, activeLayers);
-  assert.equal(outcome.stage, "sensation_check");
+  assert.equal(outcome.stage, "arc_thought_expand_presence");
+  const afterStage3 = step("arc_thought_expand_presence", outcome.session, p, activeLayers);
+  assert.equal(afterStage3.stage, "arc_thought_presence_recheck");
+  const afterRecheck = step("arc_thought_presence_recheck", afterStage3.session, p, activeLayers);
+  assert.equal(afterRecheck.stage, "sensation_check");
 });
 
 // --- 8/9: proactive rating threshold ---
@@ -640,9 +651,15 @@ test("desired_state_check's own first-time entry (via afterArcThought, never thr
   const p = profile();
   const activeLayers: DevelopmentLayer[] = ["state"];
   let session = applyTriggerSelection(createEmptyLiveState(), "proactive");
-  session = applyScaleAnswer("presence_check", session, 9); // high presence, skip ARC Thought
+  session = applyScaleAnswer("presence_check", session, 9); // high presence, skip the full ARC Thought sequence
+  // Presence Color task: Presence Stage 3 still runs once before reaching
+  // desired_state_check -- unrelated to, and unaffected by, the Regulation merge.
   const outcome = step("presence_check", session, p, activeLayers);
-  assert.equal(outcome.stage, "desired_state_check", "still reached directly, exactly as before -- unaffected by the merge");
+  assert.equal(outcome.stage, "arc_thought_expand_presence");
+  const afterStage3 = step("arc_thought_expand_presence", outcome.session, p, activeLayers);
+  assert.equal(afterStage3.stage, "arc_thought_presence_recheck");
+  const afterRecheck = step("arc_thought_presence_recheck", afterStage3.session, p, activeLayers);
+  assert.equal(afterRecheck.stage, "desired_state_check", "still reached directly, exactly as before -- unaffected by the merge");
 });
 
 // --- BUG REGRESSION: reported symptom was the "הרחבה" (arc_thought_expand_presence)
@@ -991,9 +1008,15 @@ test("no separate sensation_check page is visited for the accept-triggered reche
   const activeLayers: DevelopmentLayer[] = ["state"];
   // The OTHER, still-unmerged path into sensation_check -- its first-time entry -- is completely unaffected.
   let session = applyTriggerSelection(createEmptyLiveState(), "reactive_emotion");
-  session = applyScaleAnswer("presence_check", session, 9); // high presence, skip ARC Thought
+  session = applyScaleAnswer("presence_check", session, 9); // high presence, skip the full ARC Thought sequence
+  // Presence Color task: Presence Stage 3 still runs once before
+  // sensation_check -- unrelated to, and unaffected by, the Acceptance merge.
   const outcome = step("presence_check", session, p, activeLayers);
-  assert.equal(outcome.stage, "sensation_check", "the initial sensation_check entry is untouched -- only the accept-triggered recheck was merged");
+  assert.equal(outcome.stage, "arc_thought_expand_presence");
+  const afterStage3 = step("arc_thought_expand_presence", outcome.session, p, activeLayers);
+  assert.equal(afterStage3.stage, "arc_thought_presence_recheck");
+  const afterRecheck = step("arc_thought_presence_recheck", afterStage3.session, p, activeLayers);
+  assert.equal(afterRecheck.stage, "sensation_check", "the initial sensation_check entry is untouched -- only the accept-triggered recheck was merged");
 });
 
 // --- Visual-refinement task: the inline rating's reveal now uses a
@@ -1424,6 +1447,11 @@ test("existing downstream ARC progression is unchanged for an unknown-trigger se
     "trigger_context",
     "observer_pause",
     "presence_check",
+    // Presence Color task: a high presence rating now routes directly
+    // into Presence Stage 3 (arc_thought_expand_presence) and its own
+    // unchanged single-pass recheck, instead of skipping past it.
+    "arc_thought_expand_presence",
+    "arc_thought_presence_recheck",
     "sensation_check",
     "encode",
     "act",

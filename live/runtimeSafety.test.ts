@@ -33,6 +33,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     programPath: "standard_3_week",
     identityActionNeeded: false,
     goal: "להגיב לעצמי בצורה בונה יותר",
+    presenceColor: null,
     interferingState: "ביקורת עצמית",
     supportiveState: "חמלה",
     challengeContext: "אחרי טעות",

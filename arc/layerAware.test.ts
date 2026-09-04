@@ -20,6 +20,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     programPath: "standard_3_week",
     identityActionNeeded: false,
     goal: null,
+    presenceColor: null,
     interferingState: null,
     challengeContext: null,
     statePreventiveAction: null,
@@ -79,7 +80,15 @@ test("STATE ONLY: a full reactive_emotion session walks through to completion wi
   assert.equal(stage, "observer_pause");
   stage = getNextArcStage(stage, s, p, activeLayers).stage; // observer_pause -> presence_check (no Preventive Action configured)
   assert.equal(stage, "presence_check");
-  stage = getNextArcStage(stage, s, p, activeLayers).stage; // presence_check -> sensation_check (high presence, no ARC Thought)
+  // Presence Color task: high presence still completes Presence Stage 3
+  // (arc_thought_expand_presence) -- it only skips the full
+  // arc_thought_awareness/combined_attention sequence, never Stage 3
+  // itself.
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
+  assert.equal(stage, "arc_thought_expand_presence");
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
+  assert.equal(stage, "arc_thought_presence_recheck");
+  stage = getNextArcStage(stage, s, p, activeLayers).stage; // still high -> sensation_check, no full ARC Thought
   assert.equal(stage, "sensation_check");
 
   s = { ...s, sensationIntensity: 2 };
@@ -118,7 +127,12 @@ test("IDENTITY ONLY: proactive routes to the identity target without any state o
   assert.equal(resolveLiveRoute("proactive", activeLayers), "proactive");
 
   let s = state({ triggerType: "proactive", presenceRating: 8, desiredStateRating: 7 });
+  // Presence Color task: still routes through Presence Stage 3 first.
   let stage = getNextArcStage("presence_check", s, p, activeLayers).stage;
+  assert.equal(stage, "arc_thought_expand_presence");
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
+  assert.equal(stage, "arc_thought_presence_recheck");
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "desired_state_check");
   stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "encode", "high desired-state rating goes straight to encode without touching state/habit");

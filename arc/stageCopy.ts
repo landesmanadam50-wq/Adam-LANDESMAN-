@@ -10,6 +10,7 @@
  */
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
+import { getPresenceColorActivationLine, getPresenceColorReminder } from "./presenceColor.ts";
 import {
   needsCurrentActionResolution,
   needsReactiveStateSelection,
@@ -336,7 +337,16 @@ export function getStageCopy(
       // (INSTRUCTION_TIMING.arcThoughtExpandPresence, including its
       // separate, unrelated +15s instruction-pacing increase) is left
       // completely untouched, never counted as dwell time.
-      const text = getExpandPresenceInstruction();
+      // Presence Color task: activated once, right here, at the end of
+      // Presence Stage 3's existing instruction -- appended to the SAME
+      // segment's text (never a new segment/duration of its own), so
+      // this stage's existing timing/dwell configuration is completely
+      // unchanged. A legacy ArcBuild with no saved color (or one whose
+      // trainee left the field genuinely blank pre-migration) simply
+      // never gets this sentence -- getPresenceColorActivationLine
+      // returns null, and Stage 3 reads exactly as it always did.
+      const activationLine = getPresenceColorActivationLine(profile.presenceColor);
+      const text = activationLine ? `${getExpandPresenceInstruction()} ${activationLine}` : getExpandPresenceInstruction();
       const presenceDwellSeconds = resolvePresenceDwellSeconds(profile, activeLayers);
       const segments = withTrailingDwellSegment([{ text, durationSeconds: INSTRUCTION_TIMING.arcThoughtExpandPresence }], presenceDwellSeconds);
       return { title: "הרחבה", body: text, segments };
@@ -425,6 +435,15 @@ export function getStageCopy(
         { text: "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה.", durationSeconds: INSTRUCTION_TIMING.stayCurrentSensation },
         { text: "שים לב גם לנשימה כפי שהיא מתרחשת מעצמה.", durationSeconds: INSTRUCTION_TIMING.stayNaturalBreath },
       ];
+      // Presence Color task: the Awareness thread reminder, appended to
+      // the LAST existing segment's text (never a new segment/duration)
+      // once Presence Stage 3 has activated a saved color for this
+      // build. Null (legacy/no color) leaves this stage's text exactly
+      // as it always was.
+      const awarenessReminder = getPresenceColorReminder(profile.presenceColor, "awareness");
+      if (awarenessReminder) {
+        instructionSegments[instructionSegments.length - 1].text += ` ${awarenessReminder}`;
+      }
       return {
         title: "הישאר עם זה",
         body: instructionSegments.map((segment) => segment.text).join(" "),
@@ -432,8 +451,16 @@ export function getStageCopy(
       };
     }
 
-    case "accept":
-      return { title: "קבלה", body: "האם אתה מוכן לקבל את התחושה הזו כמו שהיא, בלי להילחם בה?", segments: null };
+    case "accept": {
+      // Presence Color task: Acceptance thread reminder, appended to the
+      // existing question -- null (legacy/no color) leaves this
+      // unchanged.
+      const acceptanceReminder = getPresenceColorReminder(profile.presenceColor, "acceptance");
+      const body = acceptanceReminder
+        ? `האם אתה מוכן לקבל את התחושה הזו כמו שהיא, בלי להילחם בה? ${acceptanceReminder}`
+        : "האם אתה מוכן לקבל את התחושה הזו כמו שהיא, בלי להילחם בה?";
+      return { title: "קבלה", body, segments: null };
+    }
 
     case "reactive_transition_check":
       return {
@@ -467,9 +494,14 @@ export function getStageCopy(
         buildProfile: profile,
       });
       const dwellSeconds = resolveDwellSecondsFor("regulationDwellSeconds", layer, profile);
-      const text = profile.regulationTool
+      const baseRegulateText = profile.regulationTool
         ? `שים לב לתחושה שלך עכשיו. השתמש בכלי הוויסות שלך: ${profile.regulationTool}.`
         : "שים לב לתחושה שלך עכשיו.";
+      // Presence Color task: Regulation thread reminder appended to the
+      // same existing text before segment-building, so timing/dwell stay
+      // unchanged. Null (legacy/no color) leaves the text as-is.
+      const regulationReminder = getPresenceColorReminder(profile.presenceColor, "regulation");
+      const text = regulationReminder ? `${baseRegulateText} ${regulationReminder}` : baseRegulateText;
       const segments = withTrailingDwellSegment([{ text, durationSeconds: INSTRUCTION_TIMING.regulate }], dwellSeconds);
       return { title: "ויסות", body: text, segments };
     }
@@ -537,7 +569,15 @@ export function getStageCopy(
       const segments: InstructionSegment[] = [
         { text: "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה.", durationSeconds: INSTRUCTION_TIMING.encodeUpdatedSensation },
       ];
+      // Presence Color task: Updated Sensation thread reminder, appended
+      // to this segment's own text (never a new segment) -- null
+      // (legacy/no color) leaves it unchanged.
+      const updatedSensationReminder = getPresenceColorReminder(profile.presenceColor, "updatedSensation");
+      if (updatedSensationReminder) {
+        segments[0].text += ` ${updatedSensationReminder}`;
+      }
       let hasContinuityContent = false;
+      let bodyLanguageSegmentIndex: number | null = null;
 
       const regulationCue = resolveEncodingRegulationCue(layer, profile);
       if (regulationCue) {
@@ -557,6 +597,7 @@ export function getStageCopy(
           durationSeconds: INSTRUCTION_TIMING.encodeBodyLanguageCue,
         });
         hasContinuityContent = true;
+        bodyLanguageSegmentIndex = segments.length - 1;
       } else if (!encoding?.mantra && encoding?.target) {
         // No explicit body-language cue and no mantra either -- fall
         // back to a generic body-language transition toward the
@@ -564,6 +605,7 @@ export function getStageCopy(
         // also being maintained.
         segments.push({ text: `עבור לשפת הגוף של ${encoding.target}.`, durationSeconds: INSTRUCTION_TIMING.encodeBodyLanguageCue });
         hasContinuityContent = true;
+        bodyLanguageSegmentIndex = segments.length - 1;
       }
 
       // Evidence-encoding task (corrected order): a real past
@@ -591,10 +633,28 @@ export function getStageCopy(
       if (encoding?.mantra) {
         segments.push({ text: `חזור לעצמך: "${encoding.mantra}".`, durationSeconds: INSTRUCTION_TIMING.encodeIdentityMantra });
         hasContinuityContent = true;
+        // Presence Color task: Identity/Mantra thread reminder, appended
+        // to this same segment's text -- only when the mantra segment
+        // actually exists. Null (legacy/no color) leaves it unchanged.
+        const identityReminder = getPresenceColorReminder(profile.presenceColor, "identity");
+        if (identityReminder) {
+          segments[segments.length - 1].text += ` ${identityReminder}`;
+        }
       }
 
       if (!hasContinuityContent) {
         segments.push({ text: "קח רגע לקבע את התחושה החדשה.", durationSeconds: INSTRUCTION_TIMING.encodeFallback });
+      }
+
+      // Presence Color task: Encoding (body-language/embodiment) thread
+      // reminder, appended to that same segment's text once it exists --
+      // never a new segment/duration. Null (legacy/no color) leaves it
+      // unchanged.
+      if (bodyLanguageSegmentIndex !== null) {
+        const encodingReminder = getPresenceColorReminder(profile.presenceColor, "encoding");
+        if (encodingReminder) {
+          segments[bodyLanguageSegmentIndex].text += ` ${encodingReminder}`;
+        }
       }
 
       // Dwell-time task: the "Encoding / Body-Language" dwell category --
@@ -685,7 +745,12 @@ export function getStageCopy(
         // target's own configuration, appended once this instruction
         // has finished revealing.
         const imagine = currentAction ? `דמיין את עצמך מתחיל ${currentAction}` : "דמיין את עצמך מתחיל בפעולה שבחרת";
-        const text = actionBodyCue ? `${imagine} תוך שמירה על ${actionBodyCue}.` : `${imagine}.`;
+        const baseImageryText = actionBodyCue ? `${imagine} תוך שמירה על ${actionBodyCue}.` : `${imagine}.`;
+        // Presence Color task: Action Imagery thread reminder, appended
+        // to the same existing text before segment-building. Null
+        // (legacy/no color) leaves it unchanged.
+        const actionImageryReminder = getPresenceColorReminder(profile.presenceColor, "actionImagery");
+        const text = actionImageryReminder ? `${baseImageryText} ${actionImageryReminder}` : baseImageryText;
         const dwellSeconds = resolveDwellSecondsFor("actionImageryDwellSeconds", layer, profile);
         return {
           title: "דמיון הפעולה",
@@ -717,6 +782,13 @@ export function getStageCopy(
       const duration = resolveActionDuration(state.selectedActionDuration, profile);
       if (duration !== null) {
         parts.push(`משך הפעולה: ${duration} דקות.`);
+      }
+
+      // Presence Color task: Timed Action thread reminder, appended as
+      // one more part -- null (legacy/no color) leaves this unchanged.
+      const timedActionReminder = getPresenceColorReminder(profile.presenceColor, "timedAction");
+      if (timedActionReminder) {
+        parts.push(timedActionReminder);
       }
 
       return { title: "פעולה", body: parts.join(" "), segments: null };
@@ -760,7 +832,13 @@ export function getStageCopy(
       };
     }
 
-    case "complete":
-      return { title: "סיום", body: "כל הכבוד על השלמת הסשן.", segments: null };
+    case "complete": {
+      // Presence Color task: Success Focus/Completion thread reminder,
+      // appended to the existing closing line -- null (legacy/no color)
+      // leaves it unchanged.
+      const completionReminder = getPresenceColorReminder(profile.presenceColor, "completion");
+      const body = completionReminder ? `כל הכבוד על השלמת הסשן. ${completionReminder}` : "כל הכבוד על השלמת הסשן.";
+      return { title: "סיום", body, segments: null };
+    }
   }
 }

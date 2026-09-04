@@ -26,6 +26,7 @@ function filledStateOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
   return {
     ...createEmptyDraft(),
     goal: "להגיב לעצמי בצורה בונה יותר",
+    presenceColor: "סגול",
     needsState: true,
     needsIdentityImmediately: false,
     supportiveState: "חמלה",
@@ -59,6 +60,7 @@ function filledHabitOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
   return {
     ...createEmptyDraft(),
     goal: "ללמוד ביעילות",
+    presenceColor: "כחול",
     needsState: false,
     needsIdentityExplicit: false,
     negativeActionReductionEnabled: true,
@@ -73,17 +75,22 @@ function filledHabitOnlyDraft(overrides: Partial<ProfileDraft> = {}): ProfileDra
 
 // --- BUILD-GOAL step order ---------------------------------------------
 
-test("first GOAL phase step is negativeActionEnabledAsk for a fresh draft -- ARC Builds task: no standalone 'goal' step any more, the ArcBuild's own name replaces it", () => {
-  assert.equal(getFirstProfileStep(createEmptyDraft(), GOAL_STEP_ORDER), "negativeActionEnabledAsk");
+test("first GOAL phase step is presenceColor for a fresh draft -- Presence Color task: asked before anything else, ahead of negativeActionEnabledAsk", () => {
+  assert.equal(getFirstProfileStep(createEmptyDraft(), GOAL_STEP_ORDER), "presenceColor");
+});
+
+test("answering presenceColor moves to negativeActionEnabledAsk -- ARC Builds task: no standalone 'goal' step any more, the ArcBuild's own name replaces it", () => {
+  const draft = { ...createEmptyDraft(), goal: "x", presenceColor: "סגול" };
+  assert.equal(getNextProfileStep("presenceColor", draft, GOAL_STEP_ORDER), "negativeActionEnabledAsk");
 });
 
 test("answering negativeActionEnabledAsk 'לא' (false) skips both habit and negativeActionDuration entirely, going straight to beneficialAction", () => {
-  const draft = { ...createEmptyDraft(), goal: "x", negativeActionReductionEnabled: false };
+  const draft = { ...createEmptyDraft(), goal: "x", presenceColor: "סגול", negativeActionReductionEnabled: false };
   assert.equal(getNextProfileStep("negativeActionEnabledAsk", draft, GOAL_STEP_ORDER), "beneficialAction");
 });
 
 test("answering negativeActionEnabledAsk 'כן' (true) walks habit, then negativeActionDuration, then beneficialAction -- coordinated timer/dwell task (Part 12): negativeActionDuration sits right after habit, the ONE place the current target Habit's real timer duration is configured", () => {
-  const draft = { ...createEmptyDraft(), goal: "x", negativeActionReductionEnabled: true };
+  const draft = { ...createEmptyDraft(), goal: "x", presenceColor: "סגול", negativeActionReductionEnabled: true };
   assert.equal(getNextProfileStep("negativeActionEnabledAsk", draft, GOAL_STEP_ORDER), "habit");
   assert.equal(getNextProfileStep("habit", { ...draft, habit: "x" }, GOAL_STEP_ORDER), "negativeActionDuration");
   assert.equal(
@@ -163,8 +170,13 @@ test("getPreviousProfileStep mirrors getNextProfileStep, skipping hidden steps",
   assert.equal(getPreviousProfileStep("habit", draft, GOAL_STEP_ORDER), "negativeActionEnabledAsk");
   assert.equal(
     getPreviousProfileStep("negativeActionEnabledAsk", draft, GOAL_STEP_ORDER),
+    "presenceColor",
+    "Presence Color task: presenceColor is now the step right before negativeActionEnabledAsk"
+  );
+  assert.equal(
+    getPreviousProfileStep("presenceColor", draft, GOAL_STEP_ORDER),
     null,
-    "ARC Builds task: negativeActionEnabledAsk is now the first GOAL phase step -- no 'goal' step precedes it any more"
+    "presenceColor is now the first GOAL phase step -- no 'goal' step precedes it any more"
   );
 });
 
@@ -239,6 +251,44 @@ test("isGoalDraftComplete requires desiredIdentity once resolvesNeedsIdentity is
 test("isGoalDraftComplete requires goal regardless of which layers are needed", () => {
   assert.equal(isGoalDraftComplete(filledStateOnlyDraft({ goal: "" })), false);
   assert.equal(isGoalDraftComplete(filledHabitOnlyDraft({ goal: "" })), false);
+});
+
+// --- Presence Color task ---------------------------------------------------
+
+test("createEmptyDraft defaults presenceColor to an empty string", () => {
+  assert.equal(createEmptyDraft().presenceColor, "");
+});
+
+test("isGoalDraftComplete requires presenceColor regardless of which layers are needed -- a legacy build missing it (empty draft value) cannot pass completeness until it's filled in", () => {
+  assert.equal(isGoalDraftComplete(filledStateOnlyDraft({ presenceColor: "" })), false);
+  assert.equal(isGoalDraftComplete(filledHabitOnlyDraft({ presenceColor: "" })), false);
+  assert.equal(isGoalDraftComplete(filledStateOnlyDraft({ presenceColor: "   " })), false, "whitespace-only does not count as answered");
+});
+
+test("buildProfileFromDraft persists the trimmed presenceColor exactly as entered", () => {
+  const profile = buildProfileFromDraft(filledStateOnlyDraft({ presenceColor: "  סגול  " }));
+  assert.equal(profile.presenceColor, "סגול");
+});
+
+test("draftFromProfileAndSelection round-trips presenceColor, and defaults a legacy profile that predates the field (genuinely absent, not null) to an empty string rather than crashing or rendering a placeholder", () => {
+  const draft = filledStateOnlyDraft({ presenceColor: "ירוק" });
+  const profile = buildProfileFromDraft(draft);
+  const selection = selectionFromDraft(draft);
+  const roundTripped = draftFromProfileAndSelection(profile, selection);
+  assert.equal(roundTripped.presenceColor, "ירוק");
+
+  const legacyProfile = { ...profile } as typeof profile;
+  delete (legacyProfile as { presenceColor?: unknown }).presenceColor;
+  const migrated = draftFromProfileAndSelection(legacyProfile, selection);
+  assert.equal(migrated.presenceColor, "", "missing presenceColor on old data defaults to empty, not a crash, never the literal string \"undefined\"");
+});
+
+test("two different ArcBuild drafts retain two different presenceColor values -- editing one never touches the other", () => {
+  const purpleProfile = buildProfileFromDraft(filledStateOnlyDraft({ presenceColor: "סגול" }));
+  const greenProfile = buildProfileFromDraft(filledHabitOnlyDraft({ presenceColor: "ירוק" }));
+  assert.equal(purpleProfile.presenceColor, "סגול");
+  assert.equal(greenProfile.presenceColor, "ירוק");
+  assert.notEqual(purpleProfile.presenceColor, greenProfile.presenceColor);
 });
 
 test("isStateArcDraftComplete requires Challenge Context and Interfering State only when the state layer is active", () => {

@@ -15,6 +15,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     programPath: "standard_3_week",
     identityActionNeeded: false,
     goal: "להגיב לעצמי בצורה בונה יותר",
+    presenceColor: null,
     interferingState: "פחד",
     challengeContext: "אחרי טעות",
     statePreventiveAction: null,
@@ -1173,6 +1174,162 @@ test("unknown-trigger observer_pause never invents or infers a triggering situat
   const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion", triggerKnown: false }), ["state"]);
   for (const situationWord of ["מה שקרה", "הסיטואציה", "האירוע"]) {
     assert.ok(!copy.body.includes(situationWord), `must never reference an unidentified situation/event: "${situationWord}"`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Presence Color task
+// ---------------------------------------------------------------------------
+
+test("Presence Stage 3 (arc_thought_expand_presence) appends the color activation line to the SAME instruction segment when a color is saved -- never a new segment, never changing its duration", () => {
+  const withColor = profile({ presenceColor: "סגול" });
+  const withoutColor = profile({ presenceColor: null });
+
+  const withColorCopy = getStageCopy("arc_thought_expand_presence", withColor, liveState(), ["state"]);
+  const withoutColorCopy = getStageCopy("arc_thought_expand_presence", withoutColor, liveState(), ["state"]);
+
+  // Same segment count/timing as the pre-existing (no-color) behavior --
+  // only the first segment's TEXT grows.
+  assert.equal(withColorCopy.segments?.length, withoutColorCopy.segments?.length, "segment count unchanged (still the instruction segment plus the trailing dwell segment)");
+  assert.equal(withColorCopy.segments?.[0].durationSeconds, withoutColorCopy.segments?.[0].durationSeconds);
+  assert.equal(withColorCopy.segments?.[1].durationSeconds, withoutColorCopy.segments?.[1].durationSeconds);
+
+  assert.match(withColorCopy.segments![0].text, /בצבע שבחרת: סגול/);
+  assert.ok(withColorCopy.segments![0].text.startsWith(withoutColorCopy.segments![0].text), "the original instruction text stays intact at the start");
+  assert.equal(withColorCopy.body, withColorCopy.segments![0].text);
+
+  // No color -- exactly the pre-existing Stage 3 text, untouched.
+  assert.ok(!withoutColorCopy.segments![0].text.includes("בצבע שבחרת"));
+});
+
+test("Presence Stage 3 retains all its existing content (bodily sensations / breath-adjacent phrasing untouched by this task, sounds, visual-field expansion) when a color is active -- the activation line is appended, nothing is removed", () => {
+  const withoutColor = getStageCopy("arc_thought_expand_presence", profile({ presenceColor: null }), liveState(), ["state"]);
+  const withColor = getStageCopy("arc_thought_expand_presence", profile({ presenceColor: "כחול" }), liveState(), ["state"]);
+  assert.ok(withColor.segments![0].text.includes(withoutColor.segments![0].text), "every existing word of Stage 3's instruction survives verbatim");
+});
+
+test("Presence Color thread reminders: each of the 9 remaining sections gets exactly one short, appended reminder naming the CURRENT build's own saved color -- never a new screen/segment/timer", () => {
+  const color = "סגול";
+  const p = profile({
+    presenceColor: color,
+    regulationTool: "נשימה 4-7-8",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני בטוח כאן" },
+  });
+  const withoutColorP = { ...p, presenceColor: null };
+  const activeLayers: DevelopmentLayer[] = ["state"];
+
+  // Awareness ("stay")
+  {
+    const withColor = getStageCopy("stay", p, liveState(), activeLayers);
+    const withoutColor = getStageCopy("stay", withoutColorP, liveState(), activeLayers);
+    assert.equal(withColor.segments?.length, withoutColor.segments?.length, "stay: segment count unchanged");
+    assert.deepEqual(
+      withColor.segments!.map((s) => s.durationSeconds),
+      withoutColor.segments!.map((s) => s.durationSeconds),
+      "stay: no duration changed"
+    );
+    assert.match(withColor.segments![1].text, new RegExp(color));
+    assert.ok(withColor.segments![1].text.startsWith(withoutColor.segments![1].text));
+  }
+
+  // Acceptance ("accept")
+  {
+    const withColor = getStageCopy("accept", p, liveState(), activeLayers);
+    const withoutColor = getStageCopy("accept", withoutColorP, liveState(), activeLayers);
+    assert.equal(withColor.segments, null);
+    assert.match(withColor.body, new RegExp(color));
+    assert.ok(withColor.body.startsWith(withoutColor.body));
+  }
+
+  // Regulation ("regulate")
+  {
+    const withColor = getStageCopy("regulate", p, liveState(), activeLayers);
+    const withoutColor = getStageCopy("regulate", withoutColorP, liveState(), activeLayers);
+    assert.deepEqual(
+      withColor.segments!.map((s) => s.durationSeconds),
+      withoutColor.segments!.map((s) => s.durationSeconds),
+      "regulate: no duration changed"
+    );
+    assert.match(withColor.segments![0].text, new RegExp(color));
+  }
+
+  // Encoding: Updated Sensation (segment 0), Encoding/body-language
+  // (the body-language segment), Identity/Mantra (the mantra segment).
+  {
+    const withColor = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), activeLayers);
+    const withoutColor = getStageCopy("encode", withoutColorP, liveState({ triggerType: "reactive_emotion" }), activeLayers);
+    assert.equal(withColor.segments?.length, withoutColor.segments?.length, "encode: segment count unchanged");
+    assert.deepEqual(
+      withColor.segments!.map((s) => s.durationSeconds),
+      withoutColor.segments!.map((s) => s.durationSeconds),
+      "encode: no duration changed"
+    );
+    // segment 0: Updated Sensation
+    assert.match(withColor.segments![0].text, new RegExp(color));
+    // segment 2: the body-language cue (see the "Encoding preserves its exact 4-piece order" test above for this layout)
+    assert.match(withColor.segments![2].text, new RegExp(color));
+    // segment 3: the mantra
+    assert.match(withColor.segments![3].text, new RegExp(color));
+  }
+
+  // Action Imagery
+  {
+    const base = { triggerType: "reactive_urge" as const, plannedActionConfirmed: true };
+    const habitP = profile({ presenceColor: color, beneficialAction: "לגשת ולפתוח שיחה", stateEncoding: null });
+    const habitWithoutColorP = { ...habitP, presenceColor: null };
+    const withColor = getStageCopy("act", habitP, liveState(base), ["habit"]);
+    const withoutColor = getStageCopy("act", habitWithoutColorP, liveState(base), ["habit"]);
+    assert.deepEqual(
+      withColor.segments!.map((s) => s.durationSeconds),
+      withoutColor.segments!.map((s) => s.durationSeconds),
+      "action imagery: no duration changed"
+    );
+    assert.match(withColor.segments![0].text, new RegExp(color));
+
+    // Timed Action (performing phase)
+    const performingState = { ...base, actionImageryCompleted: true };
+    const performingWithColor = getStageCopy("act", habitP, liveState(performingState), ["habit"]);
+    const performingWithoutColor = getStageCopy("act", habitWithoutColorP, liveState(performingState), ["habit"]);
+    assert.equal(performingWithColor.segments, null, "the actual timed Action never carries instruction segments");
+    assert.match(performingWithColor.body, new RegExp(color));
+    assert.ok(performingWithColor.body.startsWith(performingWithoutColor.body));
+  }
+
+  // Completion
+  {
+    const withColor = getStageCopy("complete", p, liveState(), activeLayers);
+    const withoutColor = getStageCopy("complete", withoutColorP, liveState(), activeLayers);
+    assert.equal(withColor.segments, null);
+    assert.match(withColor.body, new RegExp(color));
+    assert.ok(withColor.body.startsWith(withoutColor.body));
+  }
+});
+
+test("Presence Color: two different ArcBuild profiles with different saved colors never bleed into each other's copy", () => {
+  const purple = profile({ presenceColor: "סגול" });
+  const green = profile({ presenceColor: "ירוק" });
+  const purpleCopy = getStageCopy("arc_thought_expand_presence", purple, liveState(), ["state"]);
+  const greenCopy = getStageCopy("arc_thought_expand_presence", green, liveState(), ["state"]);
+  assert.match(purpleCopy.body, /סגול/);
+  assert.ok(!purpleCopy.body.includes("ירוק"));
+  assert.match(greenCopy.body, /ירוק/);
+  assert.ok(!greenCopy.body.includes("סגול"));
+});
+
+test("Presence Color: a legacy/unanswered build (presenceColor: null) produces safe, neutral copy across every stage this task touches -- never 'undefined'/'null'/'[object Object]', never an invented color", () => {
+  const p = profile({
+    presenceColor: null,
+    regulationTool: "נשימה 4-7-8",
+    stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני בטוח כאן" },
+  });
+  const activeLayers: DevelopmentLayer[] = ["state"];
+  const touchedStages: ArcStage[] = ["arc_thought_expand_presence", "stay", "accept", "regulate", "encode", "complete"];
+  for (const stage of touchedStages) {
+    const copy = getStageCopy(stage, p, liveState({ triggerType: "reactive_emotion" }), activeLayers);
+    assert.ok(!copy.body.includes("undefined"), `${stage} body must never contain "undefined"`);
+    assert.ok(!copy.body.includes("null"), `${stage} body must never contain "null"`);
+    assert.ok(!copy.body.includes("[object Object]"), `${stage} body must never contain "[object Object]"`);
+    assert.ok(!copy.body.includes("בחרת"), `${stage} must never reference a chosen color when none was saved: "${copy.body}"`);
   }
 });
 
