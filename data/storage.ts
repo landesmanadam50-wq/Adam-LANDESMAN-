@@ -15,6 +15,8 @@ import { generateArcBuildId } from "../arc/types.ts";
 import type { ArcBuild, ArcBuildProfile, ArcProgramProgress } from "../arc/types.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
+import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
+import type { MiniArcBuild } from "../arc/miniArc.ts";
 import type { ArcProgramSelection } from "../program/programTypes.ts";
 import { PROGRAM_DEFINITIONS } from "../program/config.ts";
 import type { SessionLogEntry } from "./sessionLog.ts";
@@ -25,6 +27,8 @@ const PROGRAM_PROGRESS_KEY = "archi.programProgress.v2";
 const SESSION_LOG_KEY = "archi.sessionLog.v1";
 const PILOT_STARTED_AT_KEY = "archi.pilotStartedAt.v1";
 const ARC_BUILDS_KEY = "archi.arcBuilds.v1";
+/** Mini ARC task: a brand-new, independent collection -- never read/written by any full-ARC code path, never migrated from or into ARC_BUILDS_KEY/PROFILE_KEY. Deleting/editing/duplicating a Mini ARC can never affect a full ArcBuild, and vice versa. */
+const MINI_ARC_BUILDS_KEY = "archi.miniArcBuilds.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -151,6 +155,49 @@ export async function upsertArcBuild(build: ArcBuild): Promise<void> {
 export async function deleteArcBuild(id: string): Promise<void> {
   const builds = await loadArcBuilds();
   await saveArcBuilds(deleteArcBuildFromList(builds, id));
+}
+
+/**
+ * Mini ARC task: an independent collection, parallel to loadArcBuilds
+ * above but with NO legacy migration step -- there is no prior data
+ * format for Mini ARC, so an absent/empty key simply means "no Mini ARC
+ * Builds yet". Same defensive parse (corrupt JSON, or JSON that parses
+ * but isn't actually an array) as loadArcBuilds, for the same reason:
+ * malformed data here must degrade to an empty list, never crash
+ * startup or any Mini ARC screen.
+ */
+export async function loadMiniArcBuilds(): Promise<MiniArcBuild[]> {
+  const raw = await AsyncStorage.getItem(MINI_ARC_BUILDS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as MiniArcBuild[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored Mini ARC Builds are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveArcBuilds' own style. */
+export async function saveMiniArcBuilds(builds: MiniArcBuild[]): Promise<void> {
+  await AsyncStorage.setItem(MINI_ARC_BUILDS_KEY, JSON.stringify(builds));
+}
+
+export async function getMiniArcBuild(id: string): Promise<MiniArcBuild | null> {
+  const builds = await loadMiniArcBuilds();
+  return builds.find((build) => build.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/miniArc.ts's upsertMiniArcInList. Updates the one matching Mini ARC in place, never touching any other Mini ARC's own fields, or appends it as new. Never touches ARC_BUILDS_KEY/PROFILE_KEY. */
+export async function upsertMiniArcBuild(build: MiniArcBuild): Promise<void> {
+  const builds = await loadMiniArcBuilds();
+  await saveMiniArcBuilds(upsertMiniArcInList(builds, build));
+}
+
+/** Removes exactly the one matching Mini ARC (by id) -- see arc/miniArc.ts's deleteMiniArcFromList. Every other Mini ARC (and every full ArcBuild) is left completely untouched; a no-op if the id doesn't match any Mini ARC. */
+export async function deleteMiniArcBuild(id: string): Promise<void> {
+  const builds = await loadMiniArcBuilds();
+  await saveMiniArcBuilds(deleteMiniArcFromList(builds, id));
 }
 
 /**
