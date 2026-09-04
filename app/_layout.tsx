@@ -70,6 +70,9 @@ export default function RootLayout() {
         <Stack.Screen name="focus-success" options={{ title: "התמקדות בהצלחה" }} />
         <Stack.Screen name="routines/index" options={{ title: "השגרה שלי" }} />
         <Stack.Screen name="negative-action" options={{ title: "פעולה שלילית מוגבלת" }} />
+        <Stack.Screen name="mini-arc/index" options={{ title: "בניית Mini ARC" }} />
+        <Stack.Screen name="mini-arc/[id]" options={{ title: "עריכת Mini ARC" }} />
+        <Stack.Screen name="mini-arc/live/[id]" options={{ title: "Mini ARC LIVE" }} />
       </Stack>
       <StatusBar style="auto" />
     </SafeAreaProvider>

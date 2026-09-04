@@ -89,6 +89,15 @@ export default function Home() {
       <View style={styles.content}>
         <Text style={styles.title}>Archi</Text>
 
+        {/* Mini ARC task: an independent feature -- available regardless of
+            whether the trainee has any full ARC Build yet, since it's meant
+            for immediate support without the full protocol. */}
+        <Link href="/mini-arc" asChild>
+          <Pressable style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>Mini ARC</Text>
+          </Pressable>
+        </Link>
+
         {hasArcBuilds === false && (
           <Link href="/build" asChild>
             <Pressable style={styles.button}>
