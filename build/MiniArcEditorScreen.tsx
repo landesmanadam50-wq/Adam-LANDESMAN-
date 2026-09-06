@@ -15,6 +15,8 @@ import {
   MINI_ARC_REGULATION_ANCHOR_PRESETS,
 } from "../arc/miniArc.ts";
 import type { MiniArcDraft } from "../arc/miniArc.ts";
+import { ARC_LINK_TRIGGER_TYPE_LABELS } from "../arc/bodyImagery.ts";
+import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
 
 /**
  * build/MiniArcEditorScreen.tsx (route: /mini-arc/[id], id="new" to create)
@@ -156,6 +158,23 @@ export default function MiniArcEditorScreen() {
           multiline
         />
 
+        <Text style={styles.question}>באילו חלקי גוף מתרחש עוגן הוויסות שהגדרת? (רשות, לדמיון ב-Mini ARC Link, מופרדים בפסיק)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.regulationBodyParts}
+          onChangeText={(value) => setDraft({ ...draft, regulationBodyParts: value })}
+          textAlign="right"
+          placeholder="לדוגמה: הבטן, האף"
+        />
+        <Text style={styles.question}>איך הגוף מבצע אותו? (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.regulationMovementText}
+          onChangeText={(value) => setDraft({ ...draft, regulationMovementText: value })}
+          textAlign="right"
+          multiline
+        />
+
         <Text style={styles.question}>איזו פעולת קידוד גופנית קטנה תחבר אותך למצב הרצוי?</Text>
         <View style={styles.chipRow}>
           {MINI_ARC_ENCODING_ACTION_PRESETS.map((preset) => (
@@ -176,6 +195,23 @@ export default function MiniArcEditorScreen() {
           placeholder="לדוגמה: ליישר בעדינות את הגב"
         />
 
+        <Text style={styles.question}>באילו חלקי גוף מתרחשת פעולת הקידוד שהגדרת? (רשות, לדמיון ב-Mini ARC Link, מופרדים בפסיק)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.encodingBodyParts}
+          onChangeText={(value) => setDraft({ ...draft, encodingBodyParts: value })}
+          textAlign="right"
+          placeholder="לדוגמה: הגב, עמוד השדרה"
+        />
+        <Text style={styles.question}>איך הגוף מבצע אותה? (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.encodingMovementText}
+          onChangeText={(value) => setDraft({ ...draft, encodingMovementText: value })}
+          textAlign="right"
+          multiline
+        />
+
         <Text style={styles.question}>מהי הפעולה המיטיבה שאליה ה־Mini ARC יוביל?</Text>
         <TextInput
           style={styles.textInput}
@@ -184,6 +220,26 @@ export default function MiniArcEditorScreen() {
           textAlign="right"
           placeholder="לדוגמה: להרחיק את היד מהאוזן ולהניח אותה על הרגל."
           multiline
+        />
+
+        <Text style={styles.question}>מתי או אחרי מה תרצה לזכור להתחיל את התרגיל? (רשות)</Text>
+        <View style={styles.chipRow}>
+          {(Object.keys(ARC_LINK_TRIGGER_TYPE_LABELS) as ArcLinkTriggerType[]).map((type) => (
+            <Pressable
+              key={type}
+              style={[styles.chip, draft.linkTriggerType === type && styles.chipSelected]}
+              onPress={() => setDraft({ ...draft, linkTriggerType: type })}
+            >
+              <Text style={styles.chipText}>{ARC_LINK_TRIGGER_TYPE_LABELS[type]}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <TextInput
+          style={styles.textInput}
+          value={draft.linkTriggerText}
+          onChangeText={(value) => setDraft({ ...draft, linkTriggerText: value })}
+          textAlign="right"
+          placeholder="לדוגמה: בשעה 10:00 / אחרי שאני קם מהמיטה"
         />
 
         {!complete && <Text style={styles.errorText}>יש למלא שם, צבע נוכחות, עוגן ויסות, פעולת קידוד ופעולה מיטיבה לפני השמירה.</Text>}

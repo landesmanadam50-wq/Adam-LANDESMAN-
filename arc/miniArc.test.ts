@@ -35,6 +35,7 @@ function build(overrides: Partial<MiniArcBuild> = {}): MiniArcBuild {
 
 function completeDraft(overrides: Partial<MiniArcDraft> = {}): MiniArcDraft {
   return {
+    ...createEmptyMiniArcDraft(),
     name: "עצירה מול דחף",
     presenceColor: "סגול",
     regulationAnchor: "הרגש את כפות הרגליים על הקרקע.",

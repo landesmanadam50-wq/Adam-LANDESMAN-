@@ -73,6 +73,10 @@ export default function RootLayout() {
         <Stack.Screen name="mini-arc/index" options={{ title: "בניית Mini ARC" }} />
         <Stack.Screen name="mini-arc/[id]" options={{ title: "עריכת Mini ARC" }} />
         <Stack.Screen name="mini-arc/live/[id]" options={{ title: "Mini ARC LIVE" }} />
+        <Stack.Screen name="mini-arc/mode/[id]" options={{ title: "מה תרצה לתרגל?" }} />
+        <Stack.Screen name="live/select" options={{ title: "מה תרצה לתרגל?" }} />
+        <Stack.Screen name="arc-link/[id]" options={{ title: "ARC Link" }} />
+        <Stack.Screen name="mini-arc-link/[id]" options={{ title: "Mini ARC Link" }} />
       </Stack>
       <StatusBar style="auto" />
     </SafeAreaProvider>
