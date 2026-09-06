@@ -108,7 +108,7 @@ export default function Home() {
 
         {hasArcBuilds === true && (
           <>
-            <Link href="/live" asChild>
+            <Link href="/live/select" asChild>
               <Pressable style={styles.button}>
                 <Text style={styles.buttonText}>התחל סשן LIVE</Text>
               </Pressable>

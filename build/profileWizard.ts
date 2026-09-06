@@ -67,6 +67,8 @@
  */
 
 import type { ArcBuildProfile, DwellTimes, EncodingProfile } from "../arc/types.ts";
+import { bodyImageryFromCustomFields } from "../arc/bodyImagery.ts";
+import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
 import type { ArcProgramSelection, KnownProgramPath } from "../program/programTypes.ts";
 import { deriveNeedsFromLegacyProgramPath, resolveCurrentPreset } from "../program/selection.ts";
 import { clampDwellSeconds, DEFAULT_DWELL_TIMES } from "../arc/dwellTimes.ts";
@@ -162,6 +164,19 @@ export type ProfileStep =
   | "identityAction"
   | "identityActionBodyCue"
   | "dwellTimes"
+  /** ARC Link task: the optional trigger-type chip selection -- custom-rendered (4-way choice), not a generic text/yes-no step. See ProfileDraft.linkTriggerType's doc. */
+  | "linkTriggerType"
+  /** ARC Link task: the optional trigger's own free-text description. Empty means Link stays disabled for this build. */
+  | "linkTriggerText"
+  /** ARC Link task: the Full Regulation Cue's optional custom body-imagery fields (comma-separated body parts, then a free-text movement description) -- only meaningfully used by ARC Link when regulationTool's text doesn't match a known preset. */
+  | "regulationBodyParts"
+  | "regulationMovementText"
+  /** ARC Link task: the state layer's own optional encoding body-imagery fields, parallel to identityEncodingBodyParts/identityEncodingMovementText. */
+  | "stateEncodingBodyParts"
+  | "stateEncodingMovementText"
+  /** ARC Link task: the identity layer's own optional encoding body-imagery fields, parallel to stateEncodingBodyParts/stateEncodingMovementText. */
+  | "identityEncodingBodyParts"
+  | "identityEncodingMovementText"
   | "review";
 
 /**
@@ -321,6 +336,29 @@ export interface ProfileDraft {
   preventiveActionDescription: string;
 
   regulationTool: string;
+
+  /**
+   * ARC Link task: this build's own optional trigger -- see
+   * ArcBuildProfile.linkSettings' doc. Always optional; an empty
+   * linkTriggerText simply means the trigger was never configured
+   * (Link stays unavailable), never a blocker for saving anything else.
+   */
+  linkTriggerType: ArcLinkTriggerType;
+  linkTriggerText: string;
+  /**
+   * ARC Link task: the two short custom-imagery fields for the Full
+   * Regulation Cue (build-global, like regulationTool) -- only ever
+   * used by ARC Link when regulationTool's saved text doesn't match a
+   * known preset (arc/bodyImagery.ts's getBodyImageryForText).
+   */
+  regulationBodyParts: string;
+  regulationMovementText: string;
+  /** ARC Link task: the state layer's own custom encoding-imagery fields, parallel to identityEncodingBodyParts/identityEncodingMovementText -- never mixed with them. */
+  stateEncodingBodyParts: string;
+  stateEncodingMovementText: string;
+  /** ARC Link task: the identity layer's own custom encoding-imagery fields, parallel to stateEncodingBodyParts/stateEncodingMovementText -- never mixed with them. */
+  identityEncodingBodyParts: string;
+  identityEncodingMovementText: string;
 }
 
 export function createEmptyDraft(): ProfileDraft {
@@ -372,6 +410,14 @@ export function createEmptyDraft(): ProfileDraft {
     hasPreventiveAction: null,
     preventiveActionDescription: "",
     regulationTool: "",
+    linkTriggerType: "time",
+    linkTriggerText: "",
+    regulationBodyParts: "",
+    regulationMovementText: "",
+    stateEncodingBodyParts: "",
+    stateEncodingMovementText: "",
+    identityEncodingBodyParts: "",
+    identityEncodingMovementText: "",
   };
 }
 
@@ -470,6 +516,18 @@ export function draftFromProfileAndSelection(
     hasPreventiveAction: profile.preventiveAction !== null,
     preventiveActionDescription: profile.preventiveAction ?? "",
     regulationTool: profile.regulationTool ?? "",
+    // ARC Link task: missing linkSettings (a legacy/never-configured
+    // build) defaults to "time" + empty text -- never presumes a
+    // trigger was ever answered, and always round-trips a previously
+    // saved one exactly.
+    linkTriggerType: profile.linkSettings?.triggerType ?? "time",
+    linkTriggerText: profile.linkSettings?.triggerText ?? "",
+    regulationBodyParts: (profile.regulationBodyImagery?.bodyParts ?? []).join(", "),
+    regulationMovementText: profile.regulationBodyImagery?.imageryText ?? "",
+    stateEncodingBodyParts: (profile.stateEncoding?.bodyImagery?.bodyParts ?? []).join(", "),
+    stateEncodingMovementText: profile.stateEncoding?.bodyImagery?.imageryText ?? "",
+    identityEncodingBodyParts: (profile.identityEncoding?.bodyImagery?.bodyParts ?? []).join(", "),
+    identityEncodingMovementText: profile.identityEncoding?.bodyImagery?.imageryText ?? "",
   };
 }
 
@@ -644,16 +702,24 @@ function clampNegativeActionDurationMinutes(value: number | null | undefined): n
   return Math.min(Math.max(Math.round(value), NEGATIVE_ACTION_MIN_DURATION_MINUTES), NEGATIVE_ACTION_MAX_DURATION_MINUTES);
 }
 
-function buildEncodingProfile(target: string, mantra: string, bodyLanguageCue: string): EncodingProfile | null {
+function buildEncodingProfile(
+  target: string,
+  mantra: string,
+  bodyLanguageCue: string,
+  bodyImageryBodyParts: string,
+  bodyImageryMovementText: string
+): EncodingProfile | null {
   const trimmedMantra = mantra.trim();
   const trimmedCue = bodyLanguageCue.trim();
-  if (trimmedMantra.length === 0 && trimmedCue.length === 0) return null;
+  const bodyImagery = bodyImageryFromCustomFields(bodyImageryBodyParts, bodyImageryMovementText);
+  if (trimmedMantra.length === 0 && trimmedCue.length === 0 && !bodyImagery) return null;
   return {
     target,
     bodySensationCue: null,
     breathCue: null,
     bodyLanguageCue: trimmedCue.length > 0 ? trimmedCue : null,
     mantra: trimmedMantra.length > 0 ? trimmedMantra : null,
+    bodyImagery,
   };
 }
 
@@ -733,7 +799,10 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
       draft.needsState && draft.stateWantsShortEncodingRegulationCue === true && draft.stateEncodingRegulationCue.trim()
         ? draft.stateEncodingRegulationCue.trim()
         : null,
-    stateEncoding: draft.needsState && supportiveState ? buildEncodingProfile(supportiveState, draft.stateMantra, draft.stateBodyLanguageCue) : null,
+    stateEncoding:
+      draft.needsState && supportiveState
+        ? buildEncodingProfile(supportiveState, draft.stateMantra, draft.stateBodyLanguageCue, draft.stateEncodingBodyParts, draft.stateEncodingMovementText)
+        : null,
     internalAction: draft.needsState ? draft.internalAction.trim() : null,
     internalActionBodyCue: draft.needsState && draft.internalActionBodyCue.trim() ? draft.internalActionBodyCue.trim() : null,
     stateDwellTimes: draft.needsState
@@ -756,7 +825,16 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
       needsIdentity && draft.identityWantsShortEncodingRegulationCue === true && draft.identityEncodingRegulationCue.trim()
         ? draft.identityEncodingRegulationCue.trim()
         : null,
-    identityEncoding: needsIdentity && desiredIdentity ? buildEncodingProfile(desiredIdentity, draft.identityMantra, draft.identityBodyLanguageCue) : null,
+    identityEncoding:
+      needsIdentity && desiredIdentity
+        ? buildEncodingProfile(
+            desiredIdentity,
+            draft.identityMantra,
+            draft.identityBodyLanguageCue,
+            draft.identityEncodingBodyParts,
+            draft.identityEncodingMovementText
+          )
+        : null,
     // ARC Builds task: a standalone identity-targeted ArcBuild has no
     // habit target sharing its own action any more, so identityAction
     // is now its own directly-askable field (draft.identityAction) --
@@ -811,5 +889,16 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     negativeActionReductionEnabled: draft.negativeActionReductionEnabled === true,
     negativeActionBaseDurationMinutes:
       draft.negativeActionReductionEnabled === true ? clampNegativeActionDurationMinutes(draft.negativeActionBaseDurationMinutes) : null,
+
+    // ARC Link task: always optional -- an empty trigger just means
+    // ARC Link stays unavailable for this build (see
+    // arc/bodyImagery.ts's hasConfiguredTrigger), never a blocker for
+    // saving the rest of the build.
+    linkSettings: {
+      enabled: draft.linkTriggerText.trim().length > 0,
+      triggerType: draft.linkTriggerType,
+      triggerText: draft.linkTriggerText.trim(),
+    },
+    regulationBodyImagery: bodyImageryFromCustomFields(draft.regulationBodyParts, draft.regulationMovementText),
   };
 }

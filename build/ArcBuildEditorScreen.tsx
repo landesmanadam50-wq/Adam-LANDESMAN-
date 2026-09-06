@@ -15,6 +15,8 @@ import {
 } from "./profileWizard.ts";
 import { buildArcBuildProfileForSave, draftForTarget, inferTarget, isTargetDraftComplete, type Target } from "./arcBuildSave.ts";
 import { NEGATIVE_ACTION_MAX_DURATION_MINUTES, NEGATIVE_ACTION_MIN_DURATION_MINUTES } from "../program/engine.ts";
+import { ARC_LINK_TRIGGER_TYPE_LABELS } from "../arc/bodyImagery.ts";
+import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
 import type { ArcBuild, DwellTimes } from "../arc/types.ts";
 
 /**
@@ -70,11 +72,17 @@ const STATE_STEPS: ProfileStep[] = [
   "internalActionBodyCue",
   "statePreventiveAction",
   "regulationTool",
+  "regulationBodyParts",
+  "regulationMovementText",
   "stateEncodingRegulationCueAsk",
   "stateEncodingRegulationCue",
   "stateMantra",
   "stateBodyLanguageCue",
+  "stateEncodingBodyParts",
+  "stateEncodingMovementText",
   "dwellTimes",
+  "linkTriggerType",
+  "linkTriggerText",
   "review",
 ];
 
@@ -87,11 +95,17 @@ const IDENTITY_STEPS: ProfileStep[] = [
   "identityActionBodyCue",
   "identityPreventiveAction",
   "regulationTool",
+  "regulationBodyParts",
+  "regulationMovementText",
   "identityEncodingRegulationCueAsk",
   "identityEncodingRegulationCue",
   "identityMantra",
   "identityBodyLanguageCue",
+  "identityEncodingBodyParts",
+  "identityEncodingMovementText",
   "dwellTimes",
+  "linkTriggerType",
+  "linkTriggerText",
   "review",
 ];
 
@@ -102,9 +116,13 @@ const HABIT_STEPS: ProfileStep[] = [
   "preventiveActionAsk",
   "preventiveActionDescription",
   "regulationTool",
+  "regulationBodyParts",
+  "regulationMovementText",
   "negativeActionEnabledAsk",
   "habit",
   "negativeActionDuration",
+  "linkTriggerType",
+  "linkTriggerText",
   "review",
 ];
 
@@ -148,6 +166,16 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
 
   regulationTool: "מה כלי הוויסות שלך? (למשל נשימה 4-7-8)",
   dwellTimes: "זמן שהייה",
+
+  linkTriggerType: "מתי או אחרי מה תרצה לזכור להתחיל את התרגיל? (רשות)",
+  linkTriggerText: "תאר את הטריגר (רשות, למשל \"בשעה 10:00\" או \"אחרי שאני קם מהמיטה\")",
+  regulationBodyParts: "באילו חלקי גוף מתרחש כלי הוויסות? (רשות, מופרדים בפסיק)",
+  regulationMovementText: "איך הגוף מבצע את כלי הוויסות? (רשות, לדמיון ב-ARC Link)",
+  stateEncodingBodyParts: "באילו חלקי גוף מתרחשת שפת הגוף שהגדרת? (רשות, מופרדים בפסיק)",
+  stateEncodingMovementText: "איך הגוף מבצע אותה? (רשות, לדמיון ב-ARC Link)",
+  identityEncodingBodyParts: "באילו חלקי גוף מתרחשת שפת הגוף שהגדרת? (רשות, מופרדים בפסיק)",
+  identityEncodingMovementText: "איך הגוף מבצע אותה? (רשות, לדמיון ב-ARC Link)",
+
   review: "סיכום",
 };
 
@@ -179,6 +207,14 @@ const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   habit: "habit",
 
   regulationTool: "regulationTool",
+
+  linkTriggerText: "linkTriggerText",
+  regulationBodyParts: "regulationBodyParts",
+  regulationMovementText: "regulationMovementText",
+  stateEncodingBodyParts: "stateEncodingBodyParts",
+  stateEncodingMovementText: "stateEncodingMovementText",
+  identityEncodingBodyParts: "identityEncodingBodyParts",
+  identityEncodingMovementText: "identityEncodingMovementText",
 };
 
 const OPTIONAL_TEXT_STEPS: ProfileStep[] = [
@@ -191,6 +227,13 @@ const OPTIONAL_TEXT_STEPS: ProfileStep[] = [
   "identityMantra",
   "identityBodyLanguageCue",
   "beneficialActionBodyCue",
+  "linkTriggerText",
+  "regulationBodyParts",
+  "regulationMovementText",
+  "stateEncodingBodyParts",
+  "stateEncodingMovementText",
+  "identityEncodingBodyParts",
+  "identityEncodingMovementText",
 ];
 
 const ASK_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
@@ -426,6 +469,25 @@ export default function ArcBuildEditorScreen() {
           </View>
         )}
 
+        {step === "linkTriggerType" && (
+          <View>
+            <View style={styles.chipRow}>
+              {(Object.keys(ARC_LINK_TRIGGER_TYPE_LABELS) as ArcLinkTriggerType[]).map((type) => (
+                <Pressable
+                  key={type}
+                  style={[styles.chip, draft.linkTriggerType === type && styles.chipSelected]}
+                  onPress={() => setDraft({ ...draft, linkTriggerType: type })}
+                >
+                  <Text style={styles.buttonText}>{ARC_LINK_TRIGGER_TYPE_LABELS[type]}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => goNext(draft)}>
+              <Text style={styles.buttonText}>המשך</Text>
+            </Pressable>
+          </View>
+        )}
+
         {yesNoField && (
           <View style={styles.buttonRow}>
             {[true, false].map((answer) => (
@@ -511,6 +573,7 @@ export default function ArcBuildEditorScreen() {
               </>
             )}
             <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
+            {draft.linkTriggerText.trim() && <Text style={styles.body}>{`טריגר ל-ARC Link: ${draft.linkTriggerText}`}</Text>}
             {!isTargetDraftComplete(activeTarget, draft) && (
               <Text style={styles.errorText}>יש להשלים את כל השדות הנדרשים לפני השמירה (כולל צבע נוכחות וכלי ויסות).</Text>
             )}

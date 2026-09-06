@@ -24,6 +24,9 @@
  * reach the screen.
  */
 
+import { bodyImageryFromCustomFields } from "./bodyImagery.ts";
+import type { ArcLinkSettings, BodyImagery } from "./bodyImagery.ts";
+
 /** Never renders "undefined"/"null"/"[object Object]" for a value that -- despite MiniArcBuild's type -- turns out missing or malformed after JSON.parse of a corrupted/legacy record. Always returns a plain, trimmed string (possibly empty). */
 export function safeText(value: unknown): string {
   if (typeof value === "string") return value.trim();
@@ -43,6 +46,18 @@ export interface MiniArcBuild {
   encodingAction: string;
   /** The short free-text action this Mini ARC leads to. */
   beneficialAction: string;
+  /**
+   * ARC Link task: this ONE Mini ARC's own optional trigger + Mini ARC
+   * Link enablement -- parallel to ArcBuildProfile.linkSettings, never
+   * read by normal Mini ARC LIVE. Optional so every existing MiniArcBuild
+   * object literal keeps compiling unchanged; missing/undefined is
+   * always disabled (arc/bodyImagery.ts's hasConfiguredTrigger).
+   */
+  linkSettings?: ArcLinkSettings | null;
+  /** ARC Link task: optional custom body-imagery metadata for regulationAnchor -- used only by Mini ARC Link's regulation imagery step. */
+  regulationBodyImagery?: BodyImagery | null;
+  /** ARC Link task: optional custom body-imagery metadata for encodingAction -- used only by Mini ARC Link's encoding imagery step. */
+  encodingBodyImagery?: BodyImagery | null;
 }
 
 /** Same stable-id-string pattern already used for ArcBuild (arc/types.ts's generateArcBuildId) -- unique per Mini ARC, independent of array position or any full ARC id. */
@@ -89,10 +104,30 @@ export interface MiniArcDraft {
   regulationAnchor: string;
   encodingAction: string;
   beneficialAction: string;
+  /** ARC Link task: draft fields for the optional trigger -- see MiniArcBuild.linkSettings. */
+  linkTriggerType: ArcLinkSettings["triggerType"];
+  linkTriggerText: string;
+  /** ARC Link task: the two short custom-imagery fields (comma-separated body parts + a free-text movement description), only ever used when the saved regulationAnchor/encodingAction text doesn't match a known preset -- see arc/bodyImagery.ts's bodyImageryFromCustomFields. */
+  regulationBodyParts: string;
+  regulationMovementText: string;
+  encodingBodyParts: string;
+  encodingMovementText: string;
 }
 
 export function createEmptyMiniArcDraft(): MiniArcDraft {
-  return { name: "", presenceColor: "", regulationAnchor: "", encodingAction: "", beneficialAction: "" };
+  return {
+    name: "",
+    presenceColor: "",
+    regulationAnchor: "",
+    encodingAction: "",
+    beneficialAction: "",
+    linkTriggerType: "time",
+    linkTriggerText: "",
+    regulationBodyParts: "",
+    regulationMovementText: "",
+    encodingBodyParts: "",
+    encodingMovementText: "",
+  };
 }
 
 export function draftFromMiniArc(build: MiniArcBuild): MiniArcDraft {
@@ -102,6 +137,12 @@ export function draftFromMiniArc(build: MiniArcBuild): MiniArcDraft {
     regulationAnchor: safeText(build.regulationAnchor),
     encodingAction: safeText(build.encodingAction),
     beneficialAction: safeText(build.beneficialAction),
+    linkTriggerType: build.linkSettings?.triggerType ?? "time",
+    linkTriggerText: safeText(build.linkSettings?.triggerText),
+    regulationBodyParts: (build.regulationBodyImagery?.bodyParts ?? []).join(", "),
+    regulationMovementText: safeText(build.regulationBodyImagery?.imageryText),
+    encodingBodyParts: (build.encodingBodyImagery?.bodyParts ?? []).join(", "),
+    encodingMovementText: safeText(build.encodingBodyImagery?.imageryText),
   };
 }
 
@@ -116,11 +157,12 @@ export function isMiniArcDraftComplete(draft: MiniArcDraft): boolean {
   );
 }
 
-/** Builds a real, persistable MiniArcBuild from a complete draft. Throws for an incomplete draft -- callers must gate on isMiniArcDraftComplete first (this is defense-in-depth, matching the same "never silently save incomplete data" guarantee the rest of BUILD relies on). */
+/** Builds a real, persistable MiniArcBuild from a complete draft. Throws for an incomplete draft -- callers must gate on isMiniArcDraftComplete first (this is defense-in-depth, matching the same "never silently save incomplete data" guarantee the rest of BUILD relies on). The Link trigger and custom body imagery are always OPTIONAL on top of the five required fields -- an empty trigger simply means Mini ARC Link stays unavailable for this build (never blocks saving the Mini ARC itself). */
 export function buildMiniArcFromDraft(draft: MiniArcDraft, id: string, createdAt: string, updatedAt: string): MiniArcBuild {
   if (!isMiniArcDraftComplete(draft)) {
     throw new Error("Cannot build a MiniArcBuild from an incomplete draft");
   }
+  const triggerText = draft.linkTriggerText.trim();
   return {
     id,
     name: draft.name.trim(),
@@ -130,6 +172,9 @@ export function buildMiniArcFromDraft(draft: MiniArcDraft, id: string, createdAt
     regulationAnchor: draft.regulationAnchor.trim(),
     encodingAction: draft.encodingAction.trim(),
     beneficialAction: draft.beneficialAction.trim(),
+    linkSettings: { enabled: triggerText.length > 0, triggerType: draft.linkTriggerType, triggerText },
+    regulationBodyImagery: bodyImageryFromCustomFields(draft.regulationBodyParts, draft.regulationMovementText),
+    encodingBodyImagery: bodyImageryFromCustomFields(draft.encodingBodyParts, draft.encodingMovementText),
   };
 }
 

@@ -1,3 +1,5 @@
+import type { ArcLinkSettings, BodyImagery } from "./bodyImagery.ts";
+
 export type DevelopmentLayer = "state" | "identity" | "habit";
 
 export type TriggerType = "reactive_emotion" | "reactive_urge" | "proactive";
@@ -63,6 +65,18 @@ export interface EncodingProfile {
   bodyLanguageCue: string | null;
   gazeCue?: string | null;
   mantra: string | null;
+  /**
+   * ARC Link task: optional custom body-imagery metadata for THIS
+   * target's own bodyLanguageCue, used only by the new ARC Link
+   * rehearsal mode's Encoding imagery screen (arc/arcLink.ts) -- never
+   * read by normal ARC/Encoding itself. Optional so every existing
+   * EncodingProfile object literal across the codebase (tests included)
+   * keeps compiling unchanged; missing/undefined is always treated as
+   * "no custom imagery saved" (arc/bodyImagery.ts's
+   * getBodyImageryForText then falls back to a known preset match or a
+   * safe generic instruction -- never a crash).
+   */
+  bodyImagery?: BodyImagery | null;
 }
 
 /**
@@ -273,6 +287,30 @@ export interface ArcBuildProfile {
    * above) even asked for.
    */
   negativeActionReductionEnabled: boolean;
+
+  /**
+   * ARC Link task: this ONE build's own optional trigger + Link
+   * enablement -- "Trigger -> Open ARCHI -> Start the selected protocol
+   * -> Perform the exact personalized protocol -> Begin the beneficial
+   * action" rehearsal. Read only by the new entry-selection screen
+   * (build/LiveModeSelectScreen.tsx, which decides whether to show/
+   * enable "ARC Link") and by arc/arcLink.ts's content builder -- never
+   * by normal ARC/LIVE, Presence routing, or any timer. Optional so
+   * every existing ArcBuildProfile object literal keeps compiling
+   * unchanged; missing/undefined is always disabled (arc/bodyImagery.ts's
+   * hasConfiguredTrigger), matching a build saved before this feature
+   * existed.
+   */
+  linkSettings?: ArcLinkSettings | null;
+  /**
+   * ARC Link task: optional custom body-imagery metadata for the Full
+   * Regulation Cue (regulationTool, above) -- build-global, like
+   * regulationTool itself, since Regulation isn't split per target.
+   * Used only by ARC Link's Regulation imagery screen; never read by
+   * normal ARC's own Regulation stage. Optional for the same
+   * backward-compatibility reason as EncodingProfile.bodyImagery.
+   */
+  regulationBodyImagery?: BodyImagery | null;
 }
 
 /**
@@ -318,6 +356,8 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     successFocusDuration: null,
     negativeActionBaseDurationMinutes: null,
     negativeActionReductionEnabled: false,
+    linkSettings: null,
+    regulationBodyImagery: null,
   };
 }
 

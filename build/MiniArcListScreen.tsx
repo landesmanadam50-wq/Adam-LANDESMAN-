@@ -84,7 +84,7 @@ export default function MiniArcListScreen() {
 
             <Pressable
               style={[styles.button, styles.fullWidthButton]}
-              onPress={() => router.push({ pathname: "/mini-arc/live/[id]", params: { id: build.id } })}
+              onPress={() => router.push({ pathname: "/mini-arc/mode/[id]", params: { id: build.id } })}
             >
               <Text style={styles.buttonText}>התחל Mini ARC</Text>
             </Pressable>
