@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import { loadArcBuilds } from "../data/storage.ts";
 import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
@@ -24,6 +24,12 @@ import type { ArcBuild } from "../arc/types.ts";
  * normal ARC's own entry point and behavior are completely unchanged.
  */
 export default function LiveModeSelectScreen() {
+  // Weekly Routine + ARC Link management task: an optional `buildId` param
+  // -- when a weekly action is linked to a specific ArcBuild, its own
+  // "start" button pre-selects that build directly instead of always
+  // falling back to "auto-pick when exactly one, else show a picker".
+  // Absent (the original entry point from Home), behavior is unchanged.
+  const { buildId } = useLocalSearchParams<{ buildId?: string }>();
   const [builds, setBuilds] = useState<ArcBuild[] | null>(null);
   const [selectedBuild, setSelectedBuild] = useState<ArcBuild | null>(null);
 
@@ -31,8 +37,11 @@ export default function LiveModeSelectScreen() {
     loadArcBuilds()
       .then((loaded) => {
         setBuilds(loaded);
+        const preSelected = buildId ? loaded.find((build) => build.id === buildId) ?? null : null;
         if (loaded.length === 0) {
           router.replace("/build");
+        } else if (preSelected) {
+          setSelectedBuild(preSelected);
         } else if (loaded.length === 1) {
           setSelectedBuild(loaded[0]);
         }
@@ -41,7 +50,7 @@ export default function LiveModeSelectScreen() {
         console.warn("[LiveModeSelectScreen] Failed to load ARC Builds.", error);
         setBuilds([]);
       });
-  }, []);
+  }, [buildId]);
 
   useFocusEffect(
     useCallback(() => {

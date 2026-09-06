@@ -3,47 +3,86 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getMiniArcBuild } from "../data/storage.ts";
+import { getArcLink, getMiniArcBuild, loadRoutineTriggers, upsertArcLink } from "../data/storage.ts";
 import { buildMiniArcLinkSteps } from "../arc/miniArcLink.ts";
 import type { MiniArcLinkStep } from "../arc/miniArcLink.ts";
 import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
+import { describeTrigger, resolveRoutineTrigger } from "../arc/routineLinks.ts";
+import type { ArcLink } from "../arc/routineLinks.ts";
+import { todayLocalDateString } from "../program/dateUtils.ts";
 import BodyImageryStep from "./BodyImageryStep.tsx";
 
 /**
- * live/MiniArcLinkScreen.tsx (route: /mini-arc-link/[id])
+ * live/MiniArcLinkScreen.tsx (route: /mini-arc-link/[id], optionally ?linkId=...)
  *
- * ARC Link task: Mini ARC's own rehearsal-mode driver -- parallel to
- * live/ArcLinkScreen.tsx, walking arc/miniArcLink.ts's fixed 9-step
- * list. Never launches normal Mini ARC LIVE (live/MiniArcLiveScreen.tsx)
- * or any of its screens; never starts a timer.
+ * Parallel to live/ArcLinkScreen.tsx. Without `linkId` (the original
+ * entry point), behavior is 100% unchanged. With `linkId` (the new
+ * Routine-page Practice area), reads the ArcLink entity's own mode +
+ * RoutineTrigger and records a practice completion on the ArcLink
+ * itself once finished. Mini ARC has no route choice (no state/identity
+ * distinction) -- unlike ARC Link, there's no chooser phase here.
  */
 export default function MiniArcLinkScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, linkId } = useLocalSearchParams<{ id: string; linkId?: string }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "noTrigger" | "ready">("loading");
   const [steps, setSteps] = useState<MiniArcLinkStep[]>([]);
   const [index, setIndex] = useState(0);
+  const [arcLink, setArcLink] = useState<ArcLink | null>(null);
 
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    getMiniArcBuild(id).then((existing) => {
+    getMiniArcBuild(id).then(async (existing) => {
       if (cancelled) return;
       if (!existing) {
         setStatus("notFound");
         return;
       }
-      if (!hasConfiguredTrigger(existing.linkSettings)) {
-        setStatus("noTrigger");
+
+      if (!linkId) {
+        // Original entry point -- completely unchanged.
+        if (!hasConfiguredTrigger(existing.linkSettings)) {
+          setStatus("noTrigger");
+          return;
+        }
+        setSteps(buildMiniArcLinkSteps(existing));
+        setIndex(0);
+        setStatus("ready");
         return;
       }
-      setSteps(buildMiniArcLinkSteps(existing));
+
+      const [link, triggers] = await Promise.all([getArcLink(linkId), loadRoutineTriggers()]);
+      if (cancelled) return;
+      if (!link || link.protocolId !== existing.id) {
+        setStatus("notFound");
+        return;
+      }
+      setArcLink(link);
+      const trigger = resolveRoutineTrigger(link.triggerId, triggers);
+      const triggerText = describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger);
+      setSteps(buildMiniArcLinkSteps(existing, { triggerText, mode: link.mode }));
       setIndex(0);
       setStatus("ready");
     });
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, linkId]);
+
+  async function completePractice() {
+    if (arcLink) {
+      const today = todayLocalDateString();
+      const updated: ArcLink = {
+        ...arcLink,
+        completedPracticeDates: arcLink.completedPracticeDates.includes(today)
+          ? arcLink.completedPracticeDates
+          : [...arcLink.completedPracticeDates, today],
+        updatedAt: new Date().toISOString(),
+      };
+      await upsertArcLink(updated);
+    }
+    router.back();
+  }
 
   if (status === "loading") {
     return (
@@ -81,6 +120,8 @@ export default function MiniArcLinkScreen() {
   }
 
   const step = steps[index];
+  if (!step) return null;
+  const isLast = index === steps.length - 1;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -92,7 +133,7 @@ export default function MiniArcLinkScreen() {
             bodyImagery={step.bodyImagery.imagery}
             extraLines={step.lines}
             buttonLabel={step.buttonLabel}
-            onContinue={() => (index === steps.length - 1 ? router.back() : setIndex(index + 1))}
+            onContinue={() => (isLast ? completePractice() : setIndex(index + 1))}
           />
         ) : (
           <View>
@@ -102,10 +143,7 @@ export default function MiniArcLinkScreen() {
                 {line}
               </Text>
             ))}
-            <Pressable
-              style={[styles.button, styles.fullWidthButton]}
-              onPress={() => (index === steps.length - 1 ? router.back() : setIndex(index + 1))}
-            >
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => (isLast ? completePractice() : setIndex(index + 1))}>
               <Text style={styles.buttonText}>{step.buttonLabel}</Text>
             </Pressable>
           </View>

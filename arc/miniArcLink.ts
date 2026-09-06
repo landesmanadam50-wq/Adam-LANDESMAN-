@@ -15,6 +15,7 @@ import { getBodyImageryForText, safeTriggerText } from "./bodyImagery.ts";
 import type { BodyImagery } from "./bodyImagery.ts";
 import { safeText } from "./miniArc.ts";
 import type { MiniArcBuild } from "./miniArc.ts";
+import type { ArcLinkMode } from "./routineLinks.ts";
 
 export type MiniArcLinkStepId =
   | "intro"
@@ -35,26 +36,48 @@ export interface MiniArcLinkStep {
   bodyImagery: { anchorLabel: string; imagery: BodyImagery } | null;
 }
 
+export interface MiniArcLinkRehearsalContext {
+  triggerText?: string;
+  mode?: ArcLinkMode;
+}
+
 /**
  * Builds the full, ordered Mini ARC Link screen sequence for one
  * MiniArcBuild -- pure and total: never throws, never renders
  * "undefined"/"null"/"[object Object]".
+ *
+ * `ctx` is entirely OPTIONAL, for backward compatibility with the
+ * original entry point (build/MiniArcModeSelectScreen.tsx via
+ * live/MiniArcLinkScreen.tsx's old, linkId-less path), which never
+ * passes it: omitted, this reads the trigger straight from
+ * build.linkSettings (as it always has) and defaults to mode
+ * "with_archi" (the only mode that existed before this task). The new
+ * Routine-page Practice area passes an explicit ctx sourced from an
+ * ArcLink entity + its own RoutineTrigger instead (arc/routineLinks.ts).
  */
-export function buildMiniArcLinkSteps(build: MiniArcBuild): MiniArcLinkStep[] {
-  const trigger = safeTriggerText(build.linkSettings);
+export function buildMiniArcLinkSteps(build: MiniArcBuild, ctx: MiniArcLinkRehearsalContext = {}): MiniArcLinkStep[] {
+  const trigger = (ctx.triggerText ?? safeTriggerText(build.linkSettings)).trim();
+  const mode: ArcLinkMode = ctx.mode ?? "with_archi";
   const color = safeText(build.presenceColor);
   const regulationText = safeText(build.regulationAnchor);
   const encodingText = safeText(build.encodingAction);
   const actionLabel = safeText(build.beneficialAction);
 
-  const connectionDiagram = `${trigger || "הטריגר שלך"} ← כניסה ל-ARCHI ← Mini ARC ← הפעולה המיטיבה`;
+  const connectionDiagram =
+    mode === "with_archi"
+      ? `${trigger || "הטריגר שלך"} ← כניסה ל-ARCHI ← Mini ARC ← הפעולה המיטיבה`
+      : `${trigger || "הטריגר שלך"} ← Mini ARC מהזיכרון ← הפעולה המיטיבה`;
+  const introText =
+    mode === "with_archi"
+      ? "בתרגול הזה תחזק את הקישור בין הטריגר שלך לבין הכניסה ל-ARCHI וביצוע ה-Mini ARC האישי שלך."
+      : "בתרגול הזה תחזק את הקישור בין הטריגר שלך לבין ביצוע ה-Mini ARC האישי שלך מהזיכרון.";
 
   const steps: MiniArcLinkStep[] = [];
 
   steps.push({
     id: "intro",
     title: "Mini ARC Link",
-    lines: ["בתרגול הזה תחזק את הקישור בין הטריגר שלך לבין הכניסה ל-ARCHI וביצוע ה-Mini ARC האישי שלך.", connectionDiagram],
+    lines: [introText, connectionDiagram],
     buttonLabel: "התחלת התרגול",
     bodyImagery: null,
   });
@@ -71,17 +94,19 @@ export function buildMiniArcLinkSteps(build: MiniArcBuild): MiniArcLinkStep[] {
     bodyImagery: null,
   });
 
-  steps.push({
-    id: "enter_archi",
-    title: "דמיין את הכניסה ל-ARCHI",
-    lines: [
-      "דמיין שאתה מזהה את הטריגר ונזכר:",
-      "זה הזמן שלי לעשות Mini ARC.",
-      "דמיין שאתה לוקח את הטלפון, פותח את ARCHI, בוחר את ה-Mini ARC שלך ולוחץ על התחלה.",
-    ],
-    buttonLabel: "נכנסתי ל-ARCHI בדמיון",
-    bodyImagery: null,
-  });
+  if (mode === "with_archi") {
+    steps.push({
+      id: "enter_archi",
+      title: "דמיין את הכניסה ל-ARCHI",
+      lines: [
+        "דמיין שאתה מזהה את הטריגר ונזכר:",
+        "זה הזמן שלי לעשות Mini ARC.",
+        "דמיין שאתה לוקח את הטלפון, פותח את ARCHI, בוחר את ה-Mini ARC שלך ולוחץ על התחלה.",
+      ],
+      buttonLabel: "נכנסתי ל-ARCHI בדמיון",
+      bodyImagery: null,
+    });
+  }
 
   const colorLines = color
     ? [
@@ -133,13 +158,20 @@ export function buildMiniArcLinkSteps(build: MiniArcBuild): MiniArcLinkStep[] {
     bodyImagery: null,
   });
 
+  const reinforceLines =
+    mode === "with_archi"
+      ? [
+          `${trigger || "הטריגר שלך"} ← אני פותח את ARCHI ← אני מבצע Mini ARC ← אני מתחיל את ${actionLabel || "הפעולה המיטיבה שלי"}.`,
+          `כש${trigger || "הטריגר שלך"}, אני נכנס ל-ARCHI ומתחיל את ה-Mini ARC שלי.`,
+        ]
+      : [
+          `${trigger || "הטריגר שלך"} ← אני מתחיל Mini ARC מהזיכרון ← אני מתחיל את ${actionLabel || "הפעולה המיטיבה שלי"}.`,
+          `כש${trigger || "הטריגר שלך"}, אני מתחיל את ה-Mini ARC שלי מהזיכרון.`,
+        ];
   steps.push({
     id: "reinforce",
     title: "חיזוק הקישור",
-    lines: [
-      `${trigger || "הטריגר שלך"} ← אני פותח את ARCHI ← אני מבצע Mini ARC ← אני מתחיל את ${actionLabel || "הפעולה המיטיבה שלי"}.`,
-      `כש${trigger || "הטריגר שלך"}, אני נכנס ל-ARCHI ומתחיל את ה-Mini ARC שלי.`,
-    ],
+    lines: reinforceLines,
     buttonLabel: "סיום Mini ARC Link",
     bodyImagery: null,
   });

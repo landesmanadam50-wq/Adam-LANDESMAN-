@@ -32,6 +32,7 @@
 import { getAwarenessInstruction, getCombinedAttentionInstruction, getExpandPresenceInstruction } from "./instructions.ts";
 import { getBodyImageryForText, safeTriggerText } from "./bodyImagery.ts";
 import type { BodyImagery } from "./bodyImagery.ts";
+import type { ArcLinkMode } from "./routineLinks.ts";
 import type { ArcBuildProfile } from "./types.ts";
 
 export type ArcLinkTarget = "state" | "identity" | "habit";
@@ -48,6 +49,7 @@ export type ArcLinkStepId =
   | "intro"
   | "trigger"
   | "enter_archi"
+  | "route_intro"
   | "awareness"
   | "sensation"
   | "acceptance"
@@ -272,6 +274,274 @@ export function buildArcLinkSteps(profile: ArcBuildProfile): ArcLinkStep[] {
     buttonLabel: "סיום ARC Link",
     bodyImagery: null,
   });
+
+  return steps;
+}
+
+// ---------------------------------------------------------------------------
+// Weekly Routine + ARC Link management task: route choice (interfering vs
+// supportive) + with/without ARCHI mode, used by the NEW Routine-page
+// Practice area (live/ArcLinkScreen.tsx, reached with a `linkId` param).
+// buildArcLinkSteps above is left completely UNCHANGED for the original
+// entry point (build/LiveModeSelectScreen.tsx, no route/mode choice, always
+// "with_archi") -- these are new, additive exports, not a replacement.
+// ---------------------------------------------------------------------------
+
+export interface ArcLinkRouteOption {
+  target: ArcLinkTarget;
+  label: string;
+}
+
+/**
+ * Both of normal ARC's own main route choices ("something interfering"
+ * vs "create a supportive state"), collected from whichever of the
+ * state/identity layers this build actually has built out (mirrors
+ * resolveArcLinkTarget's own "state"/"identity" availability check --
+ * a bare interferingState/supportiveState typed in with no encoding/
+ * action ever configured is not offered as a rehearsable route). Never
+ * invents a target habit doesn't have: the habit layer has no
+ * interfering/supportive STATE of its own (only a beneficial action),
+ * so it never appears in either list.
+ */
+export function resolveArcLinkRouteOptions(profile: ArcBuildProfile): { interfering: ArcLinkRouteOption[]; supportive: ArcLinkRouteOption[] } {
+  const stateConfigured = profile.stateEncoding !== null || profile.internalAction !== null;
+  const identityConfigured = profile.identityEncoding !== null || profile.identityAction !== null;
+
+  const interfering: ArcLinkRouteOption[] = [];
+  const stateInterfering = safe(profile.interferingState);
+  if (stateConfigured && stateInterfering) interfering.push({ target: "state", label: stateInterfering });
+  const identityInterfering = safe(profile.identityInterferingEmotion);
+  if (identityConfigured && identityInterfering) interfering.push({ target: "identity", label: identityInterfering });
+
+  const supportive: ArcLinkRouteOption[] = [];
+  const stateSupportive = safe(profile.supportiveState);
+  if (stateConfigured && stateSupportive) supportive.push({ target: "state", label: stateSupportive });
+  const identitySupportive = safe(profile.desiredIdentity);
+  if (identityConfigured && identitySupportive) supportive.push({ target: "identity", label: identitySupportive });
+
+  return { interfering, supportive };
+}
+
+/** null = no explicit choice was made (or none was available) -- protocol steps fall back to the same automatic state > identity > habit priority buildArcLinkSteps has always used, with "sensation" included only when that target has an interfering label, exactly reproducing the original, unconditional behavior. */
+export type ArcLinkRouteChoice = { kind: "interfering" | "supportive"; target: ArcLinkTarget } | null;
+
+export interface ArcLinkRehearsalContext {
+  triggerText: string;
+  mode: ArcLinkMode;
+}
+
+/**
+ * The fixed opening screens shared by every rehearsal, regardless of
+ * which route is chosen afterward: intro, trigger imagery, and (only
+ * for "with_archi") entering ARCHI. For "without_archi", the trainee
+ * proceeds directly from imagining the trigger to imagining the
+ * remembered protocol -- the "enter_archi" screen never appears.
+ */
+export function buildArcLinkIntroSteps(profile: ArcBuildProfile, ctx: ArcLinkRehearsalContext): ArcLinkStep[] {
+  const trigger = ctx.triggerText.trim();
+  const connectionDiagram =
+    ctx.mode === "with_archi"
+      ? `${trigger || "הטריגר שלך"} ← כניסה ל-ARCHI ← ביצוע ARC ← הפעולה המיטיבה`
+      : `${trigger || "הטריגר שלך"} ← ביצוע ARC מהזיכרון ← הפעולה המיטיבה`;
+  const introText =
+    ctx.mode === "with_archi"
+      ? "בתרגול הזה תחזק את הקישור בין הטריגר שלך לבין הכניסה ל-ARCHI וביצוע ה-ARC האישי שלך."
+      : "בתרגול הזה תחזק את הקישור בין הטריגר שלך לבין ביצוע ה-ARC האישי שלך מהזיכרון.";
+
+  const steps: ArcLinkStep[] = [
+    {
+      id: "intro",
+      title: "ARC Link",
+      lines: [introText, connectionDiagram],
+      buttonLabel: "התחלת התרגול",
+      bodyImagery: null,
+    },
+    {
+      id: "trigger",
+      title: "דמיין את הטריגר",
+      lines: [
+        "עצום עיניים ודמיין שהרגע הבא מתרחש:",
+        trigger || "הטריגר שהגדרת",
+        "דמיין היכן אתה נמצא, מה אתה רואה סביבך ומה אתה עושה באותו רגע. דמיין את הרגע כאילו הוא מתרחש עכשיו.",
+      ],
+      buttonLabel: "דמיינתי את הטריגר",
+      bodyImagery: null,
+    },
+  ];
+
+  if (ctx.mode === "with_archi") {
+    steps.push({
+      id: "enter_archi",
+      title: "דמיין את הכניסה ל-ARCHI",
+      lines: [
+        "דמיין שאתה מזהה את הטריגר ונזכר:",
+        "זה הזמן שלי לעשות ARC.",
+        "דמיין שאתה לוקח את הטלפון, פותח את ARCHI, בוחר את תוכנית ה-ARC שלך ולוחץ על התחלה.",
+        "ראה את עצמך מתחיל בלי לדחות ובלי לעבור לאפליקציה אחרת.",
+      ],
+      buttonLabel: "נכנסתי ל-ARCHI בדמיון",
+      bodyImagery: null,
+    });
+  }
+
+  return steps;
+}
+
+/**
+ * The rest of the rehearsal (Awareness through the final connection),
+ * shaped by which route was chosen: "interfering" adds the safe
+ * recognition wording for the chosen interfering state (never an
+ * instruction to evoke/strengthen it) plus Awareness/Acceptance;
+ * "supportive" skips Awareness/Acceptance/the interfering-state step/
+ * Updated Sensation entirely -- normal ARC's own proactive route never
+ * has them either. `choice: null` reproduces buildArcLinkSteps' own
+ * original, unconditional behavior exactly (Awareness and Acceptance
+ * always included; "sensation" only when the resolved target has an
+ * interfering label) for full backward compatibility.
+ */
+export function buildArcLinkProtocolSteps(profile: ArcBuildProfile, choice: ArcLinkRouteChoice, ctx: ArcLinkRehearsalContext): ArcLinkStep[] {
+  const trigger = ctx.triggerText.trim();
+  const target = choice?.target ?? resolveArcLinkTarget(profile);
+  const routeKind: "interfering" | "supportive" | "legacy" = choice?.kind ?? "legacy";
+
+  const actionLabel = target ? resolveActionLabel(profile, target) : safe(profile.beneficialAction);
+  const desiredStateLabel = target ? resolveDesiredStateLabel(profile, target) : "";
+  const interferingLabel = target ? resolveInterferingLabel(profile, target) : "";
+  const presenceColor = safe(profile.presenceColor);
+  const regulationText = safe(profile.regulationTool);
+  const encodingBodyLanguage = target ? resolveEncodingBodyLanguage(profile, target) : { cue: "", bodyImagery: null };
+  const mantra = target ? resolveMantra(profile, target) : "";
+
+  const steps: ArcLinkStep[] = [];
+
+  if (routeKind === "interfering") {
+    steps.push({
+      id: "route_intro",
+      title: "דמיין את המצב המפריע",
+      lines: [
+        `דמיין שהטריגר מתרחש ושבאותו רגע אתה מזהה ש-${interferingLabel || "המצב המפריע"} כבר נמצא. אין צורך לעורר או להעצים אותו.`,
+        "דמיין שאתה מתחיל את הפרוטוקול ועובר בין השלבים שלו.",
+      ],
+      buttonLabel: "המשך",
+      bodyImagery: null,
+    });
+  }
+
+  if (routeKind !== "supportive") {
+    steps.push({
+      id: "awareness",
+      title: "דמיין את המודעות",
+      lines: ["דמיין שאתה שם לב למה שכבר נמצא באותו רגע, בלי להעצים אותו ובלי להילחם בו."],
+      buttonLabel: "המשך",
+      bodyImagery: null,
+    });
+  }
+
+  // "the current interfering sensation or state" -- shown for the
+  // explicit interfering route, or (legacy, choice === null) only when
+  // this target actually has one mapped, never invented. Safe, neutral,
+  // recognition-only wording -- never an instruction to evoke/strengthen it.
+  if (routeKind === "interfering" || (routeKind === "legacy" && interferingLabel)) {
+    steps.push({
+      id: "sensation",
+      title: "דמיין את התחושה הנוכחית",
+      lines: [
+        `דמיין שאתה שם לב לתחושה או למצב שנוטים להופיע: ${interferingLabel}.`,
+        "דמיין שאתה רק שם לב אליו, כפי שהוא, בלי להעצים אותו ובלי להילחם בו.",
+      ],
+      buttonLabel: "המשך",
+      bodyImagery: null,
+    });
+  }
+
+  if (routeKind !== "supportive") {
+    steps.push({
+      id: "acceptance",
+      title: "דמיין את הקבלה",
+      lines: ["דמיין שאתה מוכן לקבל את מה שנמצא כרגע כמו שהוא, בלי להילחם בו."],
+      buttonLabel: "המשך",
+      bodyImagery: null,
+    });
+  }
+
+  // Presence -- identical for every route kind, the exact same fixed
+  // instruction text normal ARC's own three Presence stages use.
+  const presenceLines = [
+    "דמיין שאתה מבצע את שלבי הנוכחות שמופיעים ב-ARC הרגיל שלך.",
+    getAwarenessInstruction(),
+    getCombinedAttentionInstruction(),
+    getExpandPresenceInstruction(),
+  ];
+  if (presenceColor) {
+    presenceLines.push(
+      "כעת דמיין את צבע הנוכחות שלך:",
+      presenceColor,
+      "דמיין שהצבע מתפשט בהדרגה וממלא את הגוף. אפשר לצבע להתפשט בקצב טבעי, בזמן שאתה נעשה נוכח, יציב ומחובר יותר לכאן ולעכשיו."
+    );
+  }
+  steps.push({ id: "presence", title: "דמיין את הנוכחות", lines: presenceLines, buttonLabel: "דמיינתי את הנוכחות", bodyImagery: null });
+
+  const regulationImagery = getBodyImageryForText(regulationText, profile.regulationBodyImagery ?? null);
+  steps.push({
+    id: "regulation",
+    title: "דמיין את הוויסות",
+    lines: [],
+    buttonLabel: "המשך",
+    bodyImagery: { anchorLabel: regulationText, imagery: regulationImagery },
+  });
+
+  if (routeKind !== "supportive") {
+    steps.push({
+      id: "updated_sensation",
+      title: "דמיין את התחושה המתעדכנת",
+      lines: ["דמיין שאתה שם לב לתחושה שלך עכשיו, ולכל שינוי שקרה, אם קרה."],
+      buttonLabel: "המשך",
+      bodyImagery: null,
+    });
+  }
+
+  const encodingImagery = getBodyImageryForText(encodingBodyLanguage.cue, encodingBodyLanguage.bodyImagery);
+  const encodingLines: string[] = [];
+  if (desiredStateLabel && mantra) {
+    encodingLines.push(`דמיין שאתה מתחבר ל-${desiredStateLabel} ואומר לעצמך: “${mantra}”.`);
+  } else if (desiredStateLabel) {
+    encodingLines.push(`דמיין שאתה מתחבר ל-${desiredStateLabel}.`);
+  } else if (mantra) {
+    encodingLines.push(`דמיין שאתה אומר לעצמך: “${mantra}”.`);
+  }
+  steps.push({
+    id: "encoding",
+    title: "דמיין את הקידוד",
+    lines: encodingLines,
+    buttonLabel: "המשך",
+    bodyImagery: { anchorLabel: encodingBodyLanguage.cue, imagery: encodingImagery },
+  });
+
+  steps.push({
+    id: "beneficial_action",
+    title: "דמיין את הפעולה המיטיבה",
+    lines: [
+      "דמיין שאתה מסיים את הפרוטוקול ומתחיל לבצע:",
+      actionLabel || "הפעולה המיטיבה שלך",
+      "דמיין בבירור את הצעד הראשון. אין צורך לדמיין ביצוע מושלם -- רק את עצמך מתחיל.",
+    ],
+    buttonLabel: "חיזוק הקישור",
+    bodyImagery: null,
+  });
+
+  const reinforceLines =
+    ctx.mode === "with_archi"
+      ? [
+          `${trigger || "הטריגר שלך"} ← אני פותח את ARCHI ← אני מבצע את ה-ARC שלי ← אני מתחיל את ${actionLabel || "הפעולה המיטיבה שלי"}.`,
+          "חזור על הרצף פעם נוספת בדמיון.",
+          `כש${trigger || "הטריגר שלך"}, אני נכנס ל-ARCHI ומתחיל את ה-ARC שלי.`,
+        ]
+      : [
+          `${trigger || "הטריגר שלך"} ← אני מתחיל ARC מהזיכרון ← אני מבצע את הפרוטוקול שלי ← אני מתחיל את ${actionLabel || "הפעולה המיטיבה שלי"}.`,
+          "חזור על הרצף פעם נוספת בדמיון.",
+          `כש${trigger || "הטריגר שלך"}, אני מתחיל את ה-ARC שלי ועובר לפעולה המיטיבה.`,
+        ];
+  steps.push({ id: "reinforce", title: "חיזוק הקישור", lines: reinforceLines, buttonLabel: "סיום ARC Link", bodyImagery: null });
 
   return steps;
 }

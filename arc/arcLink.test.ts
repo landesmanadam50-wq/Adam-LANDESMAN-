@@ -1,8 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildArcLinkSteps, resolveArcLinkTarget } from "./arcLink.ts";
-import type { ArcLinkStepId } from "./arcLink.ts";
+import {
+  buildArcLinkIntroSteps,
+  buildArcLinkProtocolSteps,
+  buildArcLinkSteps,
+  resolveArcLinkRouteOptions,
+  resolveArcLinkTarget,
+} from "./arcLink.ts";
+import type { ArcLinkRouteChoice, ArcLinkStepId } from "./arcLink.ts";
 import { createEmptyArcBuildProfile } from "./types.ts";
 import type { ArcBuildProfile } from "./types.ts";
 // NOTE: arc/instructions.ts's containsInductionPattern/INDUCTION_PATTERN_DENYLIST
@@ -224,4 +230,122 @@ test("a legacy profile with no linkSettings/regulationBodyImagery/encoding.bodyI
   assert.doesNotThrow(() => buildArcLinkSteps(legacy));
   const steps = buildArcLinkSteps(legacy);
   assert.ok(steps.length > 0);
+});
+
+// ---------------------------------------------------------------------------
+// Weekly Routine + ARC Link management task: resolveArcLinkRouteOptions /
+// buildArcLinkIntroSteps / buildArcLinkProtocolSteps -- the with_archi/
+// without_archi mode and the interfering-vs-supportive route choice, used
+// by the new Routine-page Practice area. buildArcLinkSteps above (tested
+// exhaustively already) is untouched by any of this.
+// ---------------------------------------------------------------------------
+
+test("resolveArcLinkRouteOptions collects only the routes this build actually has built out -- never invents a habit route, never a bare interferingState with no encoding/action behind it", () => {
+  assert.deepEqual(resolveArcLinkRouteOptions(profile()), { interfering: [], supportive: [] });
+
+  // interferingState typed in but the state layer itself never built out -- not offered.
+  assert.deepEqual(resolveArcLinkRouteOptions(profile({ interferingState: "לחץ" })), { interfering: [], supportive: [] });
+
+  const bothLayers = profile({
+    internalAction: "סריקת גוף",
+    interferingState: "לחץ",
+    supportiveState: "רוגע",
+    identityAction: "לומר שלום",
+    identityInterferingEmotion: "בושה",
+    desiredIdentity: "ביטחון",
+  });
+  const options = resolveArcLinkRouteOptions(bothLayers);
+  assert.deepEqual(options.interfering, [
+    { target: "state", label: "לחץ" },
+    { target: "identity", label: "בושה" },
+  ]);
+  assert.deepEqual(options.supportive, [
+    { target: "state", label: "רוגע" },
+    { target: "identity", label: "ביטחון" },
+  ]);
+});
+
+test("buildArcLinkIntroSteps: with_archi includes enter_archi with the diagram routed through ARCHI; without_archi skips it entirely and routes the diagram 'from memory'", () => {
+  const p = profile({ internalAction: "סריקת גוף" });
+  const withArchi = buildArcLinkIntroSteps(p, { triggerText: "בשעה 10:00", mode: "with_archi" });
+  assert.deepEqual(withArchi.map((s) => s.id), ["intro", "trigger", "enter_archi"]);
+  assert.match(withArchi[0].lines.join(" "), /כניסה ל-ARCHI/);
+
+  const withoutArchi = buildArcLinkIntroSteps(p, { triggerText: "בשעה 10:00", mode: "without_archi" });
+  assert.deepEqual(withoutArchi.map((s) => s.id), ["intro", "trigger"]);
+  assert.match(withoutArchi[0].lines.join(" "), /ביצוע ARC מהזיכרון/);
+  assert.ok(!withoutArchi[0].lines.join(" ").includes("כניסה ל-ARCHI"));
+});
+
+test("buildArcLinkProtocolSteps: choice=null (legacy) reproduces buildArcLinkSteps' own protocol-steps content exactly", () => {
+  const p = profile({ internalAction: "סריקת גוף", interferingState: "לחץ", beneficialAction: "לצאת להליכה" });
+  const ctx = { triggerText: "בשעה 10:00", mode: "with_archi" as const };
+  const legacySteps = buildArcLinkProtocolSteps(p, null, ctx);
+  assert.deepEqual(legacySteps.map((s) => s.id), [
+    "awareness",
+    "sensation",
+    "acceptance",
+    "presence",
+    "regulation",
+    "updated_sensation",
+    "encoding",
+    "beneficial_action",
+    "reinforce",
+  ]);
+});
+
+test("buildArcLinkProtocolSteps: the 'interfering' route adds route_intro with the exact spec-mandated safe wording, and keeps awareness/sensation/acceptance/updated_sensation", () => {
+  const p = profile({ internalAction: "סריקת גוף", interferingState: "לחץ" });
+  const ctx = { triggerText: "בשעה 10:00", mode: "with_archi" as const };
+  const choice: ArcLinkRouteChoice = { kind: "interfering", target: "state" };
+  const steps = buildArcLinkProtocolSteps(p, choice, ctx);
+  assert.deepEqual(steps.map((s) => s.id), [
+    "route_intro",
+    "awareness",
+    "sensation",
+    "acceptance",
+    "presence",
+    "regulation",
+    "updated_sensation",
+    "encoding",
+    "beneficial_action",
+    "reinforce",
+  ]);
+  const routeIntro = steps.find((s) => s.id === "route_intro")!;
+  assert.match(routeIntro.lines.join(" "), /דמיין שהטריגר מתרחש ושבאותו רגע אתה מזהה ש-לחץ כבר נמצא/);
+  assert.match(routeIntro.lines.join(" "), /אין צורך לעורר או להעצים אותו/);
+});
+
+test("buildArcLinkProtocolSteps: the 'supportive' route skips route_intro/awareness/sensation/acceptance/updated_sensation entirely -- mirrors normal ARC's own proactive route", () => {
+  const p = profile({ internalAction: "סריקת גוף", interferingState: "לחץ", supportiveState: "רוגע" });
+  const ctx = { triggerText: "בשעה 10:00", mode: "with_archi" as const };
+  const choice: ArcLinkRouteChoice = { kind: "supportive", target: "state" };
+  const steps = buildArcLinkProtocolSteps(p, choice, ctx);
+  assert.deepEqual(steps.map((s) => s.id), ["presence", "regulation", "encoding", "beneficial_action", "reinforce"]);
+  // The interfering state is never even mentioned on the supportive route.
+  const allText = steps.map((s) => `${s.title} ${s.lines.join(" ")}`).join(" ");
+  assert.ok(!allText.includes("לחץ"));
+});
+
+test("buildArcLinkProtocolSteps: mode is mode-aware only in the final reinforce step, routed 'from memory' for without_archi", () => {
+  const p = profile({ internalAction: "סריקת גוף", beneficialAction: "לצאת להליכה" });
+  const ctx = { triggerText: "בשעה 10:00", mode: "without_archi" as const };
+  const steps = buildArcLinkProtocolSteps(p, null, ctx);
+  const reinforce = steps.find((s) => s.id === "reinforce")!;
+  assert.match(reinforce.lines.join(" "), /אני מתחיל ARC מהזיכרון/);
+  assert.ok(!reinforce.lines.join(" ").includes("אני פותח את ARCHI"));
+});
+
+test("buildArcLinkProtocolSteps never trips the interfering-state create/strengthen/hold safety check, on any route kind", () => {
+  const p = profile({ internalAction: "סריקת גוף", interferingState: "לחץ", supportiveState: "רוגע" });
+  const ctx = { triggerText: "בשעה 10:00", mode: "with_archi" as const };
+  for (const choice of [null, { kind: "interfering", target: "state" } as const, { kind: "supportive", target: "state" } as const]) {
+    const steps = buildArcLinkProtocolSteps(p, choice, ctx);
+    for (const step of steps) {
+      const text = `${step.title} ${step.lines.join(" ")}`;
+      for (const pattern of FORBIDDEN_INTERFERING_STATE_PATTERNS) {
+        assert.equal(pattern.test(text), false, `${step.id} (${choice?.kind ?? "legacy"}): ${pattern}`);
+      }
+    }
+  }
 });

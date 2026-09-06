@@ -133,3 +133,38 @@ test("a legacy Mini ARC with no linkSettings/regulationBodyImagery/encodingBodyI
   delete (legacy as { encodingBodyImagery?: unknown }).encodingBodyImagery;
   assert.doesNotThrow(() => buildMiniArcLinkSteps(legacy));
 });
+
+// ---------------------------------------------------------------------------
+// Weekly Routine + ARC Link management task: the optional ctx (mode +
+// externally-sourced trigger text), used by the new Routine-page Practice
+// area. Omitted entirely, buildMiniArcLinkSteps behaves exactly as before
+// (already covered by every test above, none of which pass a ctx).
+// ---------------------------------------------------------------------------
+
+test("ctx.mode 'without_archi' skips enter_archi entirely and reroutes intro/reinforce text away from ARCHI", () => {
+  const b = build();
+  const steps = buildMiniArcLinkSteps(b, { mode: "without_archi" });
+  assert.ok(!steps.some((s) => s.id === "enter_archi"));
+  const intro = steps.find((s) => s.id === "intro")!;
+  assert.match(intro.lines.join(" "), /Mini ARC האישי שלך מהזיכרון/);
+  assert.ok(!intro.lines.join(" ").includes("כניסה ל-ARCHI"));
+  const reinforce = steps.find((s) => s.id === "reinforce")!;
+  assert.match(reinforce.lines.join(" "), /Mini ARC מהזיכרון/);
+  assert.ok(!reinforce.lines.join(" ").includes("אני פותח את ARCHI"));
+});
+
+test("ctx.mode 'with_archi' (or omitted) keeps enter_archi -- identical to the default, backward-compatible behavior", () => {
+  const b = build();
+  const defaultSteps = buildMiniArcLinkSteps(b);
+  const explicitSteps = buildMiniArcLinkSteps(b, { mode: "with_archi" });
+  assert.deepEqual(defaultSteps, explicitSteps);
+  assert.ok(defaultSteps.some((s) => s.id === "enter_archi"));
+});
+
+test("ctx.triggerText overrides build.linkSettings' own trigger -- the new Routine-page Practice area sources its trigger from a RoutineTrigger, not the legacy embedded linkSettings", () => {
+  const b = build({ linkSettings: { enabled: true, triggerType: "time", triggerText: "בשעה 10:00" } });
+  const steps = buildMiniArcLinkSteps(b, { triggerText: "אחרי ארוחת הערב" });
+  const trigger = steps.find((s) => s.id === "trigger")!;
+  assert.match(trigger.lines.join(" "), /אחרי ארוחת הערב/);
+  assert.ok(!trigger.lines.join(" ").includes("בשעה 10:00"));
+});

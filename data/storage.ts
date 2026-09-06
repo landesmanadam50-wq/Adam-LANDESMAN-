@@ -17,6 +17,15 @@ import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
+import {
+  deleteArcLinkFromList,
+  deleteRoutineTriggerFromList,
+  deleteWeeklyActionFromList,
+  upsertArcLinkInList,
+  upsertRoutineTriggerInList,
+  upsertWeeklyActionInList,
+} from "../arc/routineLinks.ts";
+import type { ArcLink, RoutineTrigger, WeeklyAction } from "../arc/routineLinks.ts";
 import type { ArcProgramSelection } from "../program/programTypes.ts";
 import { PROGRAM_DEFINITIONS } from "../program/config.ts";
 import type { SessionLogEntry } from "./sessionLog.ts";
@@ -496,6 +505,16 @@ export interface RoutineOccurrenceCompletion {
 
 const SCHEDULED_ROUTINES_KEY = "archi.scheduledRoutines.v1";
 const ROUTINE_OCCURRENCE_COMPLETIONS_KEY = "archi.routineOccurrenceCompletions.v1";
+/**
+ * Weekly Routine + ARC Link management task: three brand-new, independent
+ * collections (arc/routineLinks.ts) -- never read/written by any normal
+ * ARC/Mini ARC code path, ScheduledRoutine, or program/. A missing key
+ * (a trainee's existing install, before this feature existed) always
+ * loads as an empty list, never a crash and never invented data.
+ */
+const ROUTINE_TRIGGERS_KEY = "archi.routineTriggers.v1";
+const WEEKLY_ACTIONS_KEY = "archi.weeklyActions.v1";
+const ARC_LINKS_KEY = "archi.arcLinks.v1";
 
 export async function loadScheduledRoutines(): Promise<ScheduledRoutine[]> {
   const raw = await AsyncStorage.getItem(SCHEDULED_ROUTINES_KEY);
@@ -517,4 +536,101 @@ export async function appendRoutineOccurrenceCompletion(entry: RoutineOccurrence
   const existing = await loadRoutineOccurrenceCompletions();
   existing.push(entry);
   await AsyncStorage.setItem(ROUTINE_OCCURRENCE_COMPLETIONS_KEY, JSON.stringify(existing));
+}
+
+// ---------------------------------------------------------------------------
+// Weekly Routine + ARC Link management task -- three independent
+// collections, each the same "load full list / save full list / upsert-
+// by-id / delete-by-id" style already used for ArcBuild/MiniArcBuild
+// above. Defensive parsing (corrupt JSON, or JSON that parses but isn't
+// actually an array) degrades to an empty list, never a crash -- same
+// guarantee loadArcBuilds/loadMiniArcBuilds already give.
+// ---------------------------------------------------------------------------
+
+export async function loadRoutineTriggers(): Promise<RoutineTrigger[]> {
+  const raw = await AsyncStorage.getItem(ROUTINE_TRIGGERS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as RoutineTrigger[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored routine triggers are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function saveRoutineTriggers(triggers: RoutineTrigger[]): Promise<void> {
+  await AsyncStorage.setItem(ROUTINE_TRIGGERS_KEY, JSON.stringify(triggers));
+}
+
+export async function upsertRoutineTrigger(trigger: RoutineTrigger): Promise<void> {
+  const triggers = await loadRoutineTriggers();
+  await saveRoutineTriggers(upsertRoutineTriggerInList(triggers, trigger));
+}
+
+export async function deleteRoutineTrigger(id: string): Promise<void> {
+  const triggers = await loadRoutineTriggers();
+  await saveRoutineTriggers(deleteRoutineTriggerFromList(triggers, id));
+}
+
+export async function loadWeeklyActions(): Promise<WeeklyAction[]> {
+  const raw = await AsyncStorage.getItem(WEEKLY_ACTIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as WeeklyAction[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored weekly actions are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function saveWeeklyActions(actions: WeeklyAction[]): Promise<void> {
+  await AsyncStorage.setItem(WEEKLY_ACTIONS_KEY, JSON.stringify(actions));
+}
+
+export async function getWeeklyAction(id: string): Promise<WeeklyAction | null> {
+  const actions = await loadWeeklyActions();
+  return actions.find((action) => action.id === id) ?? null;
+}
+
+export async function upsertWeeklyAction(action: WeeklyAction): Promise<void> {
+  const actions = await loadWeeklyActions();
+  await saveWeeklyActions(upsertWeeklyActionInList(actions, action));
+}
+
+export async function deleteWeeklyAction(id: string): Promise<void> {
+  const actions = await loadWeeklyActions();
+  await saveWeeklyActions(deleteWeeklyActionFromList(actions, id));
+}
+
+export async function loadArcLinks(): Promise<ArcLink[]> {
+  const raw = await AsyncStorage.getItem(ARC_LINKS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcLink[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ARC Links are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function saveArcLinks(links: ArcLink[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_LINKS_KEY, JSON.stringify(links));
+}
+
+export async function getArcLink(id: string): Promise<ArcLink | null> {
+  const links = await loadArcLinks();
+  return links.find((link) => link.id === id) ?? null;
+}
+
+export async function upsertArcLink(link: ArcLink): Promise<void> {
+  const links = await loadArcLinks();
+  await saveArcLinks(upsertArcLinkInList(links, link));
+}
+
+export async function deleteArcLink(id: string): Promise<void> {
+  const links = await loadArcLinks();
+  await saveArcLinks(deleteArcLinkFromList(links, id));
 }
