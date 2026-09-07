@@ -1,9 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getEvidenceLine, getInlineRequiredRatingQuestion, getPreventiveActionReinforcement, getStageCopy, getStageInputKind } from "./stageCopy.ts";
+import {
+  getEvidenceLine,
+  getInlineRequiredRatingQuestion,
+  getPreventiveActionReinforcement,
+  getStageCopy,
+  getStageInputKind,
+  getYesNoLabels,
+} from "./stageCopy.ts";
 import { getNextArcStage } from "./arcEngine.ts";
-import { createEmptyLiveState } from "./types.ts";
+import { createEmptyLiveState, IDENTIFIED_NEED_UNKNOWN } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { containsInductionPattern } from "./instructions.ts";
 import { INSTRUCTION_TIMING } from "./instructionTiming.ts";
@@ -52,8 +59,8 @@ function liveState(overrides: Partial<ArcLiveState> = {}): ArcLiveState {
 }
 
 const ALL_STAGES: ArcStage[] = [
-  "trigger_selection", "trigger_context", "observer_pause", "presence_check", "arc_thought_awareness", "arc_thought_combined_attention",
-  "arc_thought_expand_presence", "arc_thought_presence_recheck", "preventive_action_check", "preventive_action",
+  "urge_check", "trigger_selection", "trigger_context", "observer_pause", "presence_check", "arc_thought_awareness", "arc_thought_combined_attention",
+  "arc_thought_expand_presence", "arc_thought_presence_recheck", "preventive_action_check", "preventive_action", "need_identification",
   "sensation_check", "stay", "interfering_thought_check", "accept", "reactive_transition_check", "regulate", "desired_state_check",
   "encode", "act", "success_focus", "complete",
 ];
@@ -1462,4 +1469,58 @@ test("success_focus carries the exact spec title and retrospective question, nev
   assert.ok(!copy.body.includes("עכשיו"));
   assert.ok(!copy.body.includes("מאוחר יותר"));
   assert.equal(copy.segments, null, "no instruction-timing gate on this plain retrospective question");
+});
+
+// --- Urge Check + Need Identification task: the reactive_urge-only
+// route ahead of the existing Stop stage (see arc/arcEngine.ts's
+// afterHabitPreventiveStage). Copy-layer coverage mirrors the existing
+// getStageCopy/getYesNoLabels precedent above.
+
+test("urge_check carries the exact spec title and question, with custom yes/no wording", () => {
+  const copy = getStageCopy("urge_check", profile(), liveState(), ["habit"]);
+  assert.equal(copy.title, "בדיקת דחף");
+  assert.equal(copy.body, "האם יש כרגע דחף לבצע את ההרגל המפריע?");
+  assert.equal(copy.segments, null);
+
+  const labels = getYesNoLabels("urge_check");
+  assert.equal(labels.yes, "כן, יש דחף");
+  assert.equal(labels.no, "לא, אין כרגע דחף");
+});
+
+test("need_identification carries the exact spec title and question, and frames the need as belonging to the person, not the habit", () => {
+  const copy = getStageCopy("need_identification", profile(), liveState(), ["habit"]);
+  assert.equal(copy.title, "זיהוי הצורך שמאחורי הדחף");
+  assert.match(copy.body, /מה אתה באמת צריך עכשיו\?/);
+  assert.match(copy.body, /ההרגל הוא דרך שניסתה לענות על צורך/);
+  assert.equal(copy.segments, null);
+  assert.ok(!copy.body.includes("הצורך של ההרגל"), "must never describe this as the habit's own need");
+});
+
+test("urge_check and need_identification never instruct the trainee to intensify, evoke, or hold the urge, and never trip the induction-pattern audit", () => {
+  const urgeCopy = getStageCopy("urge_check", profile(), liveState(), ["habit"]);
+  const needCopy = getStageCopy("need_identification", profile(), liveState(), ["habit"]);
+  assert.equal(containsInductionPattern(urgeCopy.body), false);
+  assert.equal(containsInductionPattern(needCopy.body), false);
+  for (const forbidden of ["תחזק", "תחזיק", "עורר מחדש את", "השאר את הדחף פעיל"]) {
+    assert.ok(!urgeCopy.body.includes(forbidden), `urge_check must never contain: "${forbidden}"`);
+    assert.ok(!needCopy.body.includes(forbidden), `need_identification must never contain: "${forbidden}"`);
+  }
+});
+
+test("act's copy appends the identified need only when one was actually selected, and never changes the shown beneficial action", () => {
+  const p = profile({ beneficialAction: "לגשת ולפתוח שיחה" });
+  // No plannedActionConfirmed/selectedAction here -- the "choice" phase
+  // (see resolveActPhase) is where the need line is appended, before the
+  // trainee has confirmed the planned action or picked an alternative.
+  const base = { triggerType: "reactive_urge" as const };
+
+  const noNeed = getStageCopy("act", p, liveState(base), ["habit"]);
+  assert.ok(!noNeed.body.includes("הצורך שזיהית"), "no need line when identifiedNeed is null");
+
+  const unknownNeed = getStageCopy("act", p, liveState({ ...base, identifiedNeed: IDENTIFIED_NEED_UNKNOWN }), ["habit"]);
+  assert.ok(!unknownNeed.body.includes("הצורך שזיהית"), "no need line when the sentinel 'still don't know' was selected");
+
+  const withNeed = getStageCopy("act", p, liveState({ ...base, identifiedNeed: "רגיעה" }), ["habit"]);
+  assert.match(withNeed.body, /הצורך שזיהית קודם: רגיעה/);
+  assert.match(withNeed.body, /לגשת ולפתוח שיחה/, "the planned action itself is never changed by the identified need");
 });

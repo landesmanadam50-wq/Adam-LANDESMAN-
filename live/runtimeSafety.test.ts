@@ -150,6 +150,8 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "beneficialActionDurationMinutes",
     "currentArcStage",
     "desiredStateRating",
+    "hasUrge",
+    "identifiedNeed",
     "interferingThoughtChoice",
     "interferingThoughtSessionText",
     "loopIterationCount",
@@ -374,6 +376,12 @@ test("ARC Thought is presence-gated only -- reached the same way regardless of t
       if (stage === "presence_check") {
         state = { ...state, presenceRating: 3 };
       }
+      // Urge-check task: reactive_urge now opens with urge_check, and
+      // (with no Preventive Action configured here) passes through
+      // need_identification before presence_check -- answer both so the
+      // walk isn't about those stages specifically.
+      if (stage === "urge_check") state = { ...state, hasUrge: true };
+      if (stage === "need_identification") state = { ...state, identifiedNeed: "רגיעה" };
       const next = getNextArcStage(stage, state, p, activeLayers);
       stage = next.stage;
       state = { ...state, loopIterationCount: next.loopIterationCount };
@@ -402,6 +410,10 @@ test("a reactive_urge session, walked to 'act' through the real engine, that cho
     if (stage === "sensation_check") {
       state = { ...state, sensationIntensity: 2 }; // low intensity -> straight to encode
     }
+    // Urge-check task: answer urge_check/need_identification (no
+    // Preventive Action configured here) so the walk isn't about them.
+    if (stage === "urge_check") state = { ...state, hasUrge: true };
+    if (stage === "need_identification") state = { ...state, identifiedNeed: "רגיעה" };
     const next = getNextArcStage(stage, state, p, activeLayers);
     stage = next.stage;
     state = { ...state, loopIterationCount: next.loopIterationCount };
@@ -466,6 +478,10 @@ test("a reactive_urge session with the habit layer active and Negative Action re
     visitedStages.push(stage);
     if (stage === "presence_check") state = { ...state, presenceRating: 8 };
     if (stage === "sensation_check") state = { ...state, sensationIntensity: 2 };
+    // Urge-check task: answer urge_check/need_identification (no
+    // Preventive Action configured here) so the walk isn't about them.
+    if (stage === "urge_check") state = { ...state, hasUrge: true };
+    if (stage === "need_identification") state = { ...state, identifiedNeed: "רגיעה" };
     if (stage === "act") {
       // Resolve currentAction (the "כן" branch) and walk through
       // Imagery without stopping -- this test is about stage ORDER,

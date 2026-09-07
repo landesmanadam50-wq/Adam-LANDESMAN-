@@ -9,6 +9,7 @@
  * resolveEncodingTarget -- this module doesn't re-derive that choice.
  */
 
+import { IDENTIFIED_NEED_UNKNOWN } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { getPresenceColorActivationLine, getPresenceColorReminder } from "./presenceColor.ts";
 import { getFutureOrientedMantraLine } from "./futureOrientedMantra.ts";
@@ -47,7 +48,9 @@ export type ArcStageInputKind =
   | "successFocus"
   | "finish"
   /** ARC-BUILD-to-LIVE connection task: "interfering_thought_check"'s own three-way choice (present/absent/different), with an optional free-text entry for "different" -- distinct from "yesno" since it isn't binary. */
-  | "interferingThoughtCheck";
+  | "interferingThoughtCheck"
+  /** Urge-check task: "need_identification"'s own multi-preset choice (seven need labels + "אחר" custom text + "אני עדיין לא יודע") -- distinct from "yesno"/"interferingThoughtCheck" since it's neither binary nor three-way. */
+  | "needIdentification";
 
 export interface ArcStageCopy {
   title: string;
@@ -69,9 +72,11 @@ export interface YesNoLabels {
   no: string;
 }
 
-/** Per-stage button wording for the three "yesno" stages -- Instruction Layer content, not decision logic. */
+/** Per-stage button wording for the "yesno" stages -- Instruction Layer content, not decision logic. */
 export function getYesNoLabels(stage: ArcStage): YesNoLabels {
   switch (stage) {
+    case "urge_check":
+      return { yes: "כן, יש דחף", no: "לא, אין כרגע דחף" };
     case "reactive_transition_check":
       return { yes: "כן, לעבור לוויסות", no: "עוד קצת שהייה" };
     case "accept":
@@ -158,6 +163,7 @@ export function getPreventiveActionReinforcement(): string {
 
 const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   trigger_selection: "triggerSelect",
+  urge_check: "yesno",
   trigger_context: "triggerContext",
   observer_pause: "info",
   presence_check: "scale0to10",
@@ -167,6 +173,7 @@ const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   arc_thought_presence_recheck: "scale0to10",
   preventive_action_check: "yesno",
   preventive_action: "info",
+  need_identification: "needIdentification",
   sensation_check: "sensationCheck",
   stay: "info",
   interfering_thought_check: "interferingThoughtCheck",
@@ -232,6 +239,13 @@ export function getStageCopy(
         return { title: "מה כבר נמצא עכשיו?", body: "בחר את מה שהכי מתאים לרגע הזה.", segments: null };
       }
       return { title: "מה מביא אותך לכאן?", body: "בחר את מה שהכי מתאים לרגע הזה.", segments: null };
+
+    // Urge-check task: reached only for a reactive_urge (habit) session,
+    // before the existing Stop/Preventive-Action sequence. Recognition
+    // only -- never asks the trainee to intensify, evoke, or hold the
+    // urge, only whether it's already present right now.
+    case "urge_check":
+      return { title: "בדיקת דחף", body: "האם יש כרגע דחף לבצע את ההרגל המפריע?", segments: null };
 
     case "trigger_context":
       // Reactive-flow-strengthening task (#1, #8): the session-specific
@@ -392,6 +406,18 @@ export function getStageCopy(
       });
       return { title: "פעולה מונעת", body: resolveTargetPreventiveAction(layer, profile) ?? "", segments: null };
     }
+
+    // Urge-check task: "מה אתה באמת צריך עכשיו?" -- the need belongs to
+    // the PERSON, never described as "the habit's need"; the habit is
+    // only an attempted way of meeting it. Never forces an answer -- see
+    // live/screens.tsx's NeedIdentificationScreen for the preset/custom/
+    // "אני עדיין לא יודע" choices themselves.
+    case "need_identification":
+      return {
+        title: "זיהוי הצורך שמאחורי הדחף",
+        body: "מה אתה באמת צריך עכשיו? ההרגל הוא דרך שניסתה לענות על צורך. שים לב לצורך שנמצא מאחורי הדחף, בלי לשפוט אותו.",
+        segments: null,
+      };
 
     case "sensation_check":
       if (state.sensationLocation !== null || state.sensationIntensity !== null) {
@@ -765,9 +791,18 @@ export function getStageCopy(
           selectedTarget: state.selectedTarget,
           buildProfile: profile,
         });
+        const actionLine = plannedAction ? `הפעולה שתכננת: ${plannedAction}.` : "האם תוכל לבצע את הפעולה שתכננת עכשיו?";
+        // Urge-check task: an identified need, when one was genuinely
+        // selected (never the "אני עדיין לא יודע" sentinel), is
+        // mentioned here alongside the planned action -- never
+        // substituted for it, never changing which action is shown.
+        const needLine =
+          state.identifiedNeed !== null && state.identifiedNeed !== IDENTIFIED_NEED_UNKNOWN
+            ? ` הצורך שזיהית קודם: ${state.identifiedNeed}.`
+            : "";
         return {
           title: "פעולה",
-          body: plannedAction ? `הפעולה שתכננת: ${plannedAction}.` : "האם תוכל לבצע את הפעולה שתכננת עכשיו?",
+          body: `${actionLine}${needLine}`,
           segments: null,
         };
       }

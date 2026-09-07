@@ -42,6 +42,7 @@ import {
   FutureSuccessFocusScheduleScreen,
   InstructionScreen,
   InterferingThoughtCheckScreen,
+  NeedIdentificationScreen,
   NegativeActionScreen,
   NegativeActionStartScreen,
   PresenceExperienceScreen,
@@ -56,6 +57,7 @@ import {
   TransitionCheckScreen,
   TriggerContextScreen,
   TriggerSelectScreen,
+  UrgeCheckScreen,
 } from "./screens.tsx";
 
 const BODY_LOCATIONS = ["חזה", "בטן", "גרון", "כתפיים", "ראש"];
@@ -90,6 +92,7 @@ export interface ArcLiveRendererProps {
   onSubmitSensationIntensity: (value: number) => void;
   onYesNoAnswer: (yes: boolean) => void;
   onInterferingThoughtAnswer: (choice: "present" | "absent" | "different", sessionText: string | null) => void;
+  onNeedIdentificationAnswer: (need: string) => void;
   onSelectTarget: (target: DevelopmentLayer) => void;
   onSelectReactiveExperience: (target: DevelopmentLayer) => void;
   onGenericContinue: () => void;
@@ -131,6 +134,12 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
   const copy: ArcStageCopy = getStageCopy(stage, profile, session, activeLayers, props.evidenceIndex);
 
   switch (stage) {
+    case "urge_check":
+      return <UrgeCheckScreen copy={copy} labels={getYesNoLabels(stage)} onAnswer={props.onYesNoAnswer} />;
+
+    case "need_identification":
+      return <NeedIdentificationScreen copy={copy} onAnswer={props.onNeedIdentificationAnswer} />;
+
     case "trigger_selection": {
       // Reactive recognition chooser: stays at trigger_selection (same
       // interstitial pattern as desired_state_check's proactive-target

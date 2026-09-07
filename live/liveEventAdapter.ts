@@ -24,6 +24,7 @@ import {
   needsProactiveTargetSelection,
   needsReactiveStateSelection,
 } from "../arc/arcEngine.ts";
+import { IDENTIFIED_NEED_UNKNOWN } from "../arc/types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, TriggerType } from "../arc/types.ts";
 
 export function applyTriggerSelection(session: ArcLiveState, triggerType: TriggerType): ArcLiveState {
@@ -143,6 +144,8 @@ export function resolveSensationLocation(preset: string, custom: string, unclear
 
 export function applyYesNoAnswer(stage: ArcStage, session: ArcLiveState, yes: boolean): ArcLiveState {
   switch (stage) {
+    case "urge_check":
+      return { ...session, hasUrge: yes };
     case "preventive_action_check":
       return { ...session, wantsPreventiveAction: yes };
     case "reactive_transition_check":
@@ -150,6 +153,19 @@ export function applyYesNoAnswer(stage: ArcStage, session: ArcLiveState, yes: bo
     default:
       return session;
   }
+}
+
+/**
+ * Urge-check task: need_identification's own answer -- a preset need
+ * label, the trainee's own short custom text (when "אחר" is chosen), or
+ * the IDENTIFIED_NEED_UNKNOWN sentinel (arc/types.ts) for "אני עדיין לא
+ * יודע". A blank/whitespace-only custom entry is treated the same as
+ * that sentinel -- never a forced answer. Session-only: never touches
+ * ArcBuildProfile, and never changes the saved beneficial action.
+ */
+export function applyNeedIdentificationAnswer(session: ArcLiveState, need: string): ArcLiveState {
+  const trimmed = need.trim();
+  return { ...session, identifiedNeed: trimmed.length > 0 ? trimmed : IDENTIFIED_NEED_UNKNOWN };
 }
 
 /**
