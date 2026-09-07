@@ -66,6 +66,10 @@ const ENCODING_BASE_SECONDS = {
   /** Evidence-encoding task: the two new pieces (personal-evidence line and its concrete memory detail, when present -- arc/evidence.ts) get the same per-piece base as every other Encoding sub-piece, kept consistent rather than inventing a bespoke value. */
   evidence: 4,
   memoryDetail: 4,
+  /** ARC-BUILD-to-LIVE connection task: the empowering interpretation (Bridge Belief), Value, and Future Mantra pieces -- same per-piece base as every other Encoding sub-piece. */
+  bridgeBelief: 4,
+  value: 4,
+  futureMantra: 4,
 } as const;
 
 /** Timing-update task: every individual Encoding step's duration increases by exactly +7s over its previous duration -- never applied to any non-Encoding stage. Preserved as-is by the later UX/timing update below, which layers its own increase on top rather than replacing this one. */
@@ -114,6 +118,12 @@ export const INSTRUCTION_TIMING = {
   /** The user's own concrete memory detail from that SAME selected evidence/Gratitude record, when one was stored -- appears immediately after encodeEvidence and before Identity/Mantra, never on its own. */
   encodeMemoryDetail: ENCODING_BASE_SECONDS.memoryDetail + ENCODING_DURATION_INCREASE_SECONDS,
   encodeIdentityMantra: ENCODING_BASE_SECONDS.identityMantra + ENCODING_DURATION_INCREASE_SECONDS,
+  /** ARC-BUILD-to-LIVE connection task: the empowering interpretation (Bridge Belief) -- appears after Body-Language/evidence, before Value. */
+  encodeBridgeBelief: ENCODING_BASE_SECONDS.bridgeBelief + ENCODING_DURATION_INCREASE_SECONDS,
+  /** ARC-BUILD-to-LIVE connection task: the Value -- appears after the empowering interpretation, before the Identity Mantra/Future Mantra. */
+  encodeValue: ENCODING_BASE_SECONDS.value + ENCODING_DURATION_INCREASE_SECONDS,
+  /** ARC-BUILD-to-LIVE connection task: the Future Mantra -- moved here from "regulate" (see arc/futureOrientedMantra.ts's own doc); appears alongside the existing Identity Mantra, after Value. */
+  encodeFutureMantra: ENCODING_BASE_SECONDS.futureMantra + ENCODING_DURATION_INCREASE_SECONDS,
   /** The generic "take a moment" fallback line, only shown when nothing else in Encoding was configured for this target. */
   encodeFallback: ENCODING_BASE_SECONDS.fallback + ENCODING_DURATION_INCREASE_SECONDS,
   actionImagery: 5,

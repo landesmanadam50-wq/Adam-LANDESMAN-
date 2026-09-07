@@ -611,6 +611,39 @@ export function resolveTargetPreventiveAction(layer: DevelopmentLayer, profile: 
 }
 
 // ---------------------------------------------------------------------------
+// ARC-BUILD-to-LIVE connection task: interfering thought (Limiting
+// Belief) and empowering interpretation (Bridge Belief) -- resolved
+// per-target, parallel to resolveTargetPreventiveAction above. Neither
+// has a habit-layer equivalent (see ArcBuildProfile.stateLimitingBelief's
+// own doc), so "habit" always resolves to null -- a habit-only session
+// never shows either screen/segment.
+// ---------------------------------------------------------------------------
+
+/** The interfering thought -- recognition-only, surfaced on the "interfering_thought_check" stage. Never the empowering interpretation -- see resolveTargetBridgeBelief. */
+export function resolveTargetLimitingBelief(layer: DevelopmentLayer, profile: ArcBuildProfile): string | null {
+  switch (layer) {
+    case "state":
+      return profile.stateLimitingBelief ?? null;
+    case "identity":
+      return profile.identityLimitingBelief ?? null;
+    case "habit":
+      return null;
+  }
+}
+
+/** The empowering interpretation/belief -- surfaced during Encoding, never Awareness/Acceptance. Never the interfering thought -- see resolveTargetLimitingBelief. */
+export function resolveTargetBridgeBelief(layer: DevelopmentLayer, profile: ArcBuildProfile): string | null {
+  switch (layer) {
+    case "state":
+      return profile.stateBridgeBelief ?? null;
+    case "identity":
+      return profile.identityBridgeBelief ?? null;
+    case "habit":
+      return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Encoding regulation -- a lightweight per-target carry-over anchor,
 // distinct from the Full Regulation Cue used during Regulation itself
 // ---------------------------------------------------------------------------
@@ -776,8 +809,26 @@ export function getNextArcStage(
       return result(getReactiveStage(state.sensationIntensity), state.loopIterationCount);
     }
 
-    case "stay":
+    case "stay": {
+      // ARC-BUILD-to-LIVE connection task: interfering_thought_check is
+      // shown at most once per session -- once answered (any of the
+      // three choices), every later pass through "stay" (the accept ->
+      // sensation_check re-check loop can revisit it) skips straight to
+      // "accept", exactly like an unconfigured build always has.
+      if (state.interferingThoughtChoice !== null) return result("accept", state.loopIterationCount);
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: state.triggerType,
+        selectedTarget: state.selectedTarget,
+        buildProfile: profile,
+      });
+      return result(resolveTargetLimitingBelief(layer, profile) !== null ? "interfering_thought_check" : "accept", state.loopIterationCount);
+    }
+
+    case "interfering_thought_check":
+      if (state.interferingThoughtChoice === null) return result(current, state.loopIterationCount);
       return result("accept", state.loopIterationCount);
+
     case "accept":
       if (loopCapped(state.loopIterationCount)) {
         return result("regulate", state.loopIterationCount);

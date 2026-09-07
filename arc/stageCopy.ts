@@ -20,6 +20,8 @@ import {
   resolveEncodingRegulationCue,
   resolveEncodingTarget,
   resolveObserverPauseLayer,
+  resolveTargetBridgeBelief,
+  resolveTargetLimitingBelief,
   resolveTargetPreventiveAction,
 } from "./arcEngine.ts";
 import {
@@ -43,7 +45,9 @@ export type ArcStageInputKind =
   | "yesno"
   | "info"
   | "successFocus"
-  | "finish";
+  | "finish"
+  /** ARC-BUILD-to-LIVE connection task: "interfering_thought_check"'s own three-way choice (present/absent/different), with an optional free-text entry for "different" -- distinct from "yesno" since it isn't binary. */
+  | "interferingThoughtCheck";
 
 export interface ArcStageCopy {
   title: string;
@@ -165,6 +169,7 @@ const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   preventive_action: "info",
   sensation_check: "sensationCheck",
   stay: "info",
+  interfering_thought_check: "interferingThoughtCheck",
   accept: "yesno",
   reactive_transition_check: "yesno",
   regulate: "info",
@@ -452,6 +457,28 @@ export function getStageCopy(
       };
     }
 
+    // ARC-BUILD-to-LIVE connection task: Awareness of the interfering
+    // thought (Limiting Belief), recognition-only -- reached only when
+    // the resolved target has one configured (see arc/arcEngine.ts's
+    // "stay" transition, which skips straight to "accept" otherwise, so
+    // this case's own body is never generic/empty in practice). Never
+    // an instruction to imagine, evoke, strengthen, or remain inside the
+    // thought -- it only asks whether it's already present.
+    case "interfering_thought_check": {
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: state.triggerType,
+        selectedTarget: state.selectedTarget,
+        buildProfile: profile,
+      });
+      const limitingBelief = resolveTargetLimitingBelief(layer, profile) ?? "";
+      return {
+        title: "שים לב למחשבה",
+        body: `האם המחשבה הבאה נמצאת כאן עכשיו? "${limitingBelief}" אין צורך לעורר את המחשבה, להסכים איתה או לשנות אותה. רק לשים לב אם היא כבר נוכחת.`,
+        segments: null,
+      };
+    }
+
     case "accept": {
       // Presence Color task: Acceptance thread reminder, appended to the
       // existing question -- null (legacy/no color) leaves this
@@ -502,16 +529,10 @@ export function getStageCopy(
       // same existing text before segment-building, so timing/dwell stay
       // unchanged. Null (legacy/no color) leaves the text as-is.
       const regulationReminder = getPresenceColorReminder(profile.presenceColor, "regulation");
-      // Coherent-architecture task (#7/#8): the optional Future-Oriented
-      // Mantra -- "the direction I'm moving toward now" -- surfaced here,
-      // between Presence (just completed) and Encoding (next), the exact
-      // placement the spec calls for. Appended after the Presence Color
-      // reminder, before the dwell segment; null (nothing saved for this
-      // layer, or a legacy build) leaves this stage's text completely
-      // unchanged.
-      const futureOrientedMantraLine = getFutureOrientedMantraLine(profile, layer);
-      const textWithColor = regulationReminder ? `${baseRegulateText} ${regulationReminder}` : baseRegulateText;
-      const text = futureOrientedMantraLine ? `${textWithColor} ${futureOrientedMantraLine}` : textWithColor;
+      // ARC-BUILD-to-LIVE connection task: the Future-Oriented Mantra
+      // moved to Encoding (see arc/futureOrientedMantra.ts's own doc) --
+      // no longer read here.
+      const text = regulationReminder ? `${baseRegulateText} ${regulationReminder}` : baseRegulateText;
       const segments = withTrailingDwellSegment([{ text, durationSeconds: INSTRUCTION_TIMING.regulate }], dwellSeconds);
       return { title: "ויסות", body: text, segments };
     }
@@ -640,6 +661,30 @@ export function getStageCopy(
         }
       }
 
+      // ARC-BUILD-to-LIVE connection task: the empowering interpretation
+      // (Bridge Belief) -- "עכשיו, מתוך נוכחות, התחבר לפרשנות שבחרת" --
+      // never during Awareness/Acceptance, only here, after Body-Language/
+      // evidence and before the Identity/Mantra segment below. Presented
+      // as the interpretation the trainee chose to practise, never as an
+      // objective fact to force themselves to believe.
+      const bridgeBelief = resolveTargetBridgeBelief(layer, profile);
+      if (bridgeBelief) {
+        segments.push({
+          text: `עכשיו, מתוך נוכחות, התחבר לפרשנות שבחרת: "${bridgeBelief}".`,
+          durationSeconds: INSTRUCTION_TIMING.encodeBridgeBelief,
+        });
+        hasContinuityContent = true;
+      }
+
+      // ARC-BUILD-to-LIVE connection task: the Value -- "the why behind
+      // the identity and action" -- build-global (not per-layer), kept
+      // completely separate from the empowering interpretation, identity,
+      // and mantra text above/below.
+      if (profile.value) {
+        segments.push({ text: `הערך שמאחורי הזהות והפעולה שלך: ${profile.value}.`, durationSeconds: INSTRUCTION_TIMING.encodeValue });
+        hasContinuityContent = true;
+      }
+
       if (encoding?.mantra) {
         segments.push({ text: `חזור לעצמך: "${encoding.mantra}".`, durationSeconds: INSTRUCTION_TIMING.encodeIdentityMantra });
         hasContinuityContent = true;
@@ -650,6 +695,18 @@ export function getStageCopy(
         if (identityReminder) {
           segments[segments.length - 1].text += ` ${identityReminder}`;
         }
+      }
+
+      // ARC-BUILD-to-LIVE connection task: the Future Mantra -- moved
+      // here from "regulate" (see arc/futureOrientedMantra.ts's own doc)
+      // -- shown in this existing mantra/identity part of Encoding,
+      // after the empowering interpretation, Value, and Identity Mantra.
+      // Preserved as its own field/segment, never merged into the
+      // Identity Mantra text above.
+      const futureOrientedMantraLine = getFutureOrientedMantraLine(profile, layer);
+      if (futureOrientedMantraLine) {
+        segments.push({ text: futureOrientedMantraLine, durationSeconds: INSTRUCTION_TIMING.encodeFutureMantra });
+        hasContinuityContent = true;
       }
 
       if (!hasContinuityContent) {

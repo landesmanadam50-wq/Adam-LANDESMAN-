@@ -41,6 +41,7 @@ import {
   FutureSuccessFocusAskScreen,
   FutureSuccessFocusScheduleScreen,
   InstructionScreen,
+  InterferingThoughtCheckScreen,
   NegativeActionScreen,
   NegativeActionStartScreen,
   PresenceExperienceScreen,
@@ -88,6 +89,7 @@ export interface ArcLiveRendererProps {
   onSelectSensationLocationUnclear: () => void;
   onSubmitSensationIntensity: (value: number) => void;
   onYesNoAnswer: (yes: boolean) => void;
+  onInterferingThoughtAnswer: (choice: "present" | "absent" | "different", sessionText: string | null) => void;
   onSelectTarget: (target: DevelopmentLayer) => void;
   onSelectReactiveExperience: (target: DevelopmentLayer) => void;
   onGenericContinue: () => void;
@@ -240,6 +242,9 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
 
     case "stay":
       return <StayScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
+
+    case "interfering_thought_check":
+      return <InterferingThoughtCheckScreen copy={copy} onAnswer={props.onInterferingThoughtAnswer} />;
 
     case "accept": {
       // Timing-update task: the intensity recheck that used to live on

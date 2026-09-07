@@ -47,6 +47,21 @@ export type ArcStage =
   | "preventive_action"
   | "sensation_check"
   | "stay"
+  /**
+   * ARC-BUILD-to-LIVE connection task: Awareness of an already-present
+   * interfering thought (the Limiting Belief mapped in BUILD --
+   * stateLimitingBelief/identityLimitingBelief), reached only from
+   * "stay" and only when the resolved target has one configured (see
+   * arc/arcEngine.ts's resolveTargetLimitingBelief and the "stay" case's
+   * own transition) -- a legacy/unconfigured build skips straight from
+   * "stay" to "accept", unchanged. Recognition-only, exactly like
+   * sensation_check/stay themselves: never an instruction to imagine,
+   * evoke, strengthen, or remain inside the thought. Always continues to
+   * "accept" once answered (any of the three choices), never re-shown
+   * again within the same session even across a later "stay" loop
+   * iteration (see ArcLiveState.interferingThoughtChoice).
+   */
+  | "interfering_thought_check"
   | "accept"
   | "reactive_transition_check"
   | "regulate"
@@ -386,6 +401,18 @@ export interface ArcBuildProfile {
    * full four-sentence-type distinction). Parallel per-layer fields,
    * like every other ARC-Map field on this profile; no habit-layer
    * equivalent (see stateSupportingAction's doc above).
+   *
+   * ARC-BUILD-to-LIVE connection task: the Limiting Belief (the
+   * "interfering thought") is surfaced during Awareness, recognition-only,
+   * on the new "interfering_thought_check" ArcStage -- see
+   * arc/arcEngine.ts's resolveTargetLimitingBelief and that stage's own
+   * doc. The Bridge Belief (the "empowering interpretation") is surfaced
+   * later, during Encoding -- see resolveTargetBridgeBelief and
+   * arc/stageCopy.ts's "encode" case. Never confused with each other:
+   * the interfering thought is only ever recognized, never practised or
+   * connected with; the empowering interpretation is the opposite --
+   * something the trainee actively connects with, never shown during
+   * Awareness/Acceptance.
    */
   stateLimitingBelief?: string | null;
   stateBridgeBelief?: string | null;
@@ -398,11 +425,13 @@ export interface ArcBuildProfile {
    * קטן" -- distinct from Presence ("this is what's here now") and
    * from Identity Mantra (identityEncoding.mantra/stateEncoding.mantra
    * -- "the person I'm practicing becoming", said during Encoding).
-   * This one is surfaced between Presence and Encoding (see
-   * arc/futureOrientedMantra.ts / arc/stageCopy.ts's "regulate" case).
-   * Optional and never required -- omitted, the Regulation stage's
-   * existing text is completely unchanged. Parallel per-layer fields;
-   * no habit-layer equivalent (see stateSupportingAction's doc above).
+   * ARC-BUILD-to-LIVE connection task: surfaced during Encoding, in the
+   * existing mantra/identity part -- after the empowering interpretation
+   * (Bridge Belief) and Value, alongside the older Identity Mantra (see
+   * arc/futureOrientedMantra.ts / arc/stageCopy.ts's "encode" case).
+   * Optional and never required -- omitted, Encoding's existing text is
+   * completely unchanged. Parallel per-layer fields; no habit-layer
+   * equivalent (see stateSupportingAction's doc above).
    */
   stateFutureOrientedMantra?: string | null;
   identityFutureOrientedMantra?: string | null;
@@ -688,6 +717,28 @@ export interface ArcLiveState {
    */
   wantsFutureSuccessFocus: boolean | null;
 
+  /**
+   * ARC-BUILD-to-LIVE connection task: the "interfering_thought_check"
+   * stage's own answer -- "present" ("כן, היא נמצאת עכשיו"), "absent"
+   * ("לא"), or "different" ("מופיעה מחשבה אחרת", with an optional
+   * session-specific thought in interferingThoughtSessionText below).
+   * null only before the stage has been answered at all (also its
+   * "not yet reached"/"skipped because nothing was configured" value).
+   * Once non-null, arc/arcEngine.ts's "stay" transition never re-routes
+   * through the check stage again this session, even on a later loop
+   * iteration -- the trainee is asked at most once per session.
+   */
+  interferingThoughtChoice: "present" | "absent" | "different" | null;
+  /**
+   * The optional free-text answer to "מופיעה מחשבה אחרת" -- session-only,
+   * exactly like triggerContext never touches the BUILD-configured
+   * Challenge Context: this NEVER overwrites
+   * ArcBuildProfile.stateLimitingBelief/identityLimitingBelief. null
+   * unless interferingThoughtChoice is "different" and the trainee typed
+   * something.
+   */
+  interferingThoughtSessionText: string | null;
+
   acceptanceNeeded: boolean | null;
   /**
    * Safety cap on the Acceptance "not ready yet" willingness loop (the
@@ -733,6 +784,8 @@ export function createEmptyLiveState(): ArcLiveState {
     plannedActionConfirmed: false,
     actionImageryCompleted: false,
     beneficialActionDurationMinutes: null,
+    interferingThoughtChoice: null,
+    interferingThoughtSessionText: null,
     negativeActionStarted: false,
     successFocusExtraMinutes: null,
     wantsFutureSuccessFocus: null,

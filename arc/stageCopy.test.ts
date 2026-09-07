@@ -54,7 +54,7 @@ function liveState(overrides: Partial<ArcLiveState> = {}): ArcLiveState {
 const ALL_STAGES: ArcStage[] = [
   "trigger_selection", "trigger_context", "observer_pause", "presence_check", "arc_thought_awareness", "arc_thought_combined_attention",
   "arc_thought_expand_presence", "arc_thought_presence_recheck", "preventive_action_check", "preventive_action",
-  "sensation_check", "stay", "accept", "reactive_transition_check", "regulate", "desired_state_check",
+  "sensation_check", "stay", "interfering_thought_check", "accept", "reactive_transition_check", "regulate", "desired_state_check",
   "encode", "act", "success_focus", "complete",
 ];
 
@@ -452,30 +452,71 @@ test("regulate always uses the Full Regulation Cue, never the Short Encoding Reg
   assert.ok(!copy.body.includes("נשיפה רגועה"), "Regulation must never use the shorter Encoding-only cue");
 });
 
-test("regulate appends the resolved layer's own Future-Oriented Mantra, verbatim, after the existing text -- coherent-architecture task", () => {
+// ARC-BUILD-to-LIVE connection task: the Future-Oriented Mantra moved
+// from "regulate" to "encode" (in the existing mantra/identity part,
+// after the empowering interpretation and Value) -- see
+// arc/futureOrientedMantra.ts's own doc.
+
+test("regulate's text is completely unaffected by a configured Future-Oriented Mantra -- it moved to encode", () => {
   const p = profile({ regulationTool: "נשימה 4-7-8", stateFutureOrientedMantra: "אני אתחיל היום בצעד קטן." });
   const copy = getStageCopy("regulate", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
-  assert.match(copy.body, /^שים לב לתחושה שלך עכשיו\. השתמש בכלי הוויסות שלך: נשימה 4-7-8\./);
+  assert.equal(copy.body, "שים לב לתחושה שלך עכשיו. השתמש בכלי הוויסות שלך: נשימה 4-7-8.");
+  assert.ok(!copy.body.includes("אני אתחיל היום בצעד קטן"));
+});
+
+test("encode appends the resolved layer's own Future-Oriented Mantra, verbatim, after the existing text -- coherent-architecture task", () => {
+  const p = profile({ internalAction: "סריקת גוף", stateFutureOrientedMantra: "אני אתחיל היום בצעד קטן." });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
   assert.match(copy.body, /אני אתחיל היום בצעד קטן\./);
   assert.equal(containsInductionPattern(copy.body), false);
 });
 
-test("regulate never shows the OTHER layer's Future-Oriented Mantra -- only the resolved target's own", () => {
+test("encode never shows the OTHER layer's Future-Oriented Mantra -- only the resolved target's own", () => {
   const p = profile({
-    regulationTool: "נשימה 4-7-8",
     stateFutureOrientedMantra: "מנטרת המצב שלי",
     identityFutureOrientedMantra: "מנטרת הזהות שלי",
     internalAction: "סריקת גוף",
   });
-  const stateCopy = getStageCopy("regulate", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  const stateCopy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
   assert.match(stateCopy.body, /מנטרת המצב שלי/);
   assert.ok(!stateCopy.body.includes("מנטרת הזהות שלי"));
 });
 
-test("regulate's text is completely unchanged when no Future-Oriented Mantra is configured (legacy build)", () => {
-  const p = profile({ regulationTool: "נשימה 4-7-8" });
-  const copy = getStageCopy("regulate", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
-  assert.equal(copy.body, "שים לב לתחושה שלך עכשיו. השתמש בכלי הוויסות שלך: נשימה 4-7-8.");
+test("encode's text has no Future-Oriented Mantra line when none is configured (legacy build)", () => {
+  const p = profile({ internalAction: "סריקת גוף" });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(!copy.body.includes("הכיוון שאליו אתה מתקדם עכשיו"));
+});
+
+test("encode shows the empowering interpretation (Bridge Belief), Value, and Future Mantra in order, all distinct from each other and from the interfering thought (Limiting Belief)", () => {
+  const p = profile({
+    internalAction: "סריקת גוף",
+    stateLimitingBelief: "אין טעם להתחיל",
+    stateBridgeBelief: "כל צעד קטן נחשב",
+    value: "בריאות וחופש",
+    stateFutureOrientedMantra: "אני נושם ומתקדם",
+  });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  const bridgeIndex = copy.body.indexOf("כל צעד קטן נחשב");
+  const valueIndex = copy.body.indexOf("בריאות וחופש");
+  const mantraIndex = copy.body.indexOf("אני נושם ומתקדם");
+  assert.ok(bridgeIndex >= 0 && valueIndex > bridgeIndex && mantraIndex > valueIndex, "order must be: empowering interpretation -> Value -> Future Mantra");
+  assert.ok(!copy.body.includes("אין טעם להתחיל"), "the interfering thought (Limiting Belief) must never appear during Encoding");
+});
+
+test("encode shows Value even when neither the interfering thought nor the empowering interpretation is configured", () => {
+  const p = profile({ internalAction: "סריקת גוף", value: "ידע, סקרנות וחוכמה" });
+  const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /ידע, סקרנות וחוכמה/);
+});
+
+test("encode shows the empowering interpretation as an interpretation to connect with, never an objective fact -- skips safely when the field is empty", () => {
+  const withBelief = profile({ internalAction: "סריקת גוף", stateBridgeBelief: "אני לא חייב להבין הכול" });
+  const withoutBelief = profile({ internalAction: "סריקת גוף" });
+  const copyWith = getStageCopy("encode", withBelief, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  const copyWithout = getStageCopy("encode", withoutBelief, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copyWith.body, /התחבר לפרשנות שבחרת: "אני לא חייב להבין הכול"/);
+  assert.ok(!copyWithout.body.includes("התחבר לפרשנות שבחרת"));
 });
 
 test("encode uses the Short Encoding Regulation Cue when configured, not the Full Regulation Cue's own text", () => {
@@ -576,6 +617,30 @@ test("stay never changes copy based on regulationTool -- it's identical with or 
   const withTool = getStageCopy("stay", profile({ regulationTool: "נשימה 4-7-8" }), liveState(), ["state"]);
   const withoutTool = getStageCopy("stay", profile({ regulationTool: null }), liveState(), ["state"]);
   assert.equal(withTool.body, withoutTool.body);
+});
+
+// ARC-BUILD-to-LIVE connection task: interfering_thought_check's own
+// copy -- recognition-only, exactly like "stay" itself, never an
+// instruction to imagine/evoke/strengthen/remain inside the thought.
+
+test("interfering_thought_check shows the resolved layer's own Limiting Belief prominently, with the exact safety wording", () => {
+  const p = profile({ internalAction: "סריקת גוף", stateLimitingBelief: "אתה חייב להתרכז" });
+  const copy = getStageCopy("interfering_thought_check", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.equal(copy.title, "שים לב למחשבה");
+  assert.match(copy.body, /אתה חייב להתרכז/);
+  assert.match(copy.body, /אין צורך לעורר את המחשבה, להסכים איתה או לשנות אותה/);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("interfering_thought_check never shows the OTHER layer's Limiting Belief -- only the resolved target's own", () => {
+  const p = profile({
+    internalAction: "סריקת גוף",
+    stateLimitingBelief: "מחשבת המצב שלי",
+    identityLimitingBelief: "מחשבת הזהות שלי",
+  });
+  const copy = getStageCopy("interfering_thought_check", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /מחשבת המצב שלי/);
+  assert.ok(!copy.body.includes("מחשבת הזהות שלי"));
 });
 
 test("desired_state_check (Proactive) names the resolved target -- Desired State, Identity, or Desired Habit -- consuming the mapped data", () => {

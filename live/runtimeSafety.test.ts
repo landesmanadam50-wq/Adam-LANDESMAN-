@@ -150,6 +150,8 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "beneficialActionDurationMinutes",
     "currentArcStage",
     "desiredStateRating",
+    "interferingThoughtChoice",
+    "interferingThoughtSessionText",
     "loopIterationCount",
     "negativeActionStarted",
     "plannedActionConfirmed",

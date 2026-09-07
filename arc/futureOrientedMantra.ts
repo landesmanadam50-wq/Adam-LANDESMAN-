@@ -4,9 +4,10 @@
  * Coherent-architecture task (#7/#8): pure copy helper for the ONE new
  * ArcBuildProfile field this piece adds per layer (stateFutureOrientedMantra/
  * identityFutureOrientedMantra) -- "the direction I'm moving toward
- * right now", surfaced once, between Presence and Encoding (see
- * arc/stageCopy.ts's "regulate" case), the same placement/mechanism
- * pattern as arc/presenceColor.ts's getPresenceColorReminder.
+ * right now", surfaced once, during Encoding (see arc/stageCopy.ts's
+ * "encode" case), in the existing mantra/identity part, after the
+ * empowering interpretation (Bridge Belief) and Value -- ARC-BUILD-to-LIVE
+ * connection task, moved here from its earlier "regulate" placement.
  *
  * Distinct from Presence ("this is what's here now") and from Identity
  * Mantra (EncodingProfile.mantra -- "the person I'm practicing
