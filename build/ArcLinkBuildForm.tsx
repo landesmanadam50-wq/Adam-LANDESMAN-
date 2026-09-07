@@ -2,6 +2,11 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { deleteArcLink, upsertArcLink, upsertRoutineTrigger, upsertWeeklyAction } from "../data/storage.ts";
+import { resolveArcLinkTarget } from "../arc/arcLink.ts";
+import { resolveActionLabel, resolveFutureMantra, resolveIdentityLabel, resolveSupportiveStateLabel, resolveValueLabel } from "../arc/arcLinkContent.ts";
+import { buildArcLinkPreviewText } from "../arc/arcLinkPreview.ts";
+import type { ArcLinkPreviewInputs } from "../arc/arcLinkPreview.ts";
+import { resolveSupportiveCue } from "../arc/bridgingArcLink.ts";
 import { ARC_LINK_TRIGGER_TYPE_LABELS } from "../arc/bodyImagery.ts";
 import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
 import {
@@ -14,10 +19,14 @@ import {
   resolveArcLinkTriggerCategory,
 } from "../arc/routineLinks.ts";
 import type { ArcLink, ArcLinkKind, ArcLinkMode, ArcLinkTriggerCategory, RoutineTrigger, WeeklyAction } from "../arc/routineLinks.ts";
-import type { ArcBuild } from "../arc/types.ts";
+import type { ArcBuild, ArcBuildProfile } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 
 const DAY_LABELS = ["א", "ב", "ג", "ד", "ה", "ו", "ש"]; // index === Date.getDay()
+
+function safe(value: string | null | undefined): string {
+  return typeof value === "string" ? value.trim() : "";
+}
 
 /**
  * Extended ARC Link trigger system: "category" (the 5-way type chip:
@@ -48,6 +57,8 @@ interface ArcLinkFormState {
   triggerCategory: ArcLinkTriggerCategory;
   bridgingSupportiveProtocolId: string | null;
   bridgingVariant: "full" | "short";
+  /** Updated-ARC-structure task: an optional link-level Future Mantra override -- blank means "use the referenced ARC's own Future Mantra" (see arc/arcLinkContent.ts's resolveFutureMantra). Applied to ArcLink.futureMantraOverride for a standard Link, or BridgingLinkConfig.futureMantraOverride for a Bridging Link -- never both, and never written back into the referenced ArcBuild itself. */
+  futureMantraOverrideText: string;
 }
 
 function emptyForm(): ArcLinkFormState {
@@ -65,6 +76,7 @@ function emptyForm(): ArcLinkFormState {
     triggerCategory: "scheduled",
     bridgingSupportiveProtocolId: null,
     bridgingVariant: "full",
+    futureMantraOverrideText: "",
   };
 }
 
@@ -83,6 +95,7 @@ function formFromLink(link: ArcLink): ArcLinkFormState {
     triggerCategory: resolveArcLinkTriggerCategory(link),
     bridgingSupportiveProtocolId: link.bridging?.supportiveProtocolId ?? null,
     bridgingVariant: link.bridging?.variant ?? "full",
+    futureMantraOverrideText: (resolveArcLinkKind(link) === "bridging" ? link.bridging?.futureMantraOverride : link.futureMantraOverride) ?? "",
   };
 }
 
@@ -200,7 +213,11 @@ export default function ArcLinkBuildForm({
       kind: form.kind,
       triggerCategory: form.triggerCategory,
       triggerLevels: editingLink?.triggerLevels ?? null,
-      bridging: form.kind === "bridging" && form.bridgingSupportiveProtocolId ? { supportiveProtocolId: form.bridgingSupportiveProtocolId, variant: form.bridgingVariant } : null,
+      futureMantraOverride: form.kind === "bridging" ? null : form.futureMantraOverrideText.trim() || null,
+      bridging:
+        form.kind === "bridging" && form.bridgingSupportiveProtocolId
+          ? { supportiveProtocolId: form.bridgingSupportiveProtocolId, variant: form.bridgingVariant, futureMantraOverride: form.futureMantraOverrideText.trim() || null }
+          : null,
     };
     await upsertArcLink(link);
     onSaved();
@@ -524,6 +541,65 @@ export default function ArcLinkBuildForm({
   const selectedTrigger = localTriggers.find((t) => t.id === form.triggerId);
   const selectedBridgingProtocolName =
     form.kind === "bridging" && form.bridgingSupportiveProtocolId ? protocolName("arc", form.bridgingSupportiveProtocolId, arcBuilds, miniArcBuilds) : "";
+
+  // Updated-ARC-structure task: "Whenever the selected ARC already
+  // contains a value, load it automatically into ARC Link BUILD. Do not
+  // require the user to rewrite it." This block reads Value/Desired-
+  // identity/Desired-supportive-state/Future-Mantra/Identity-cue/
+  // Beneficial-action live from the selected ArcBuildProfile(s) -- never
+  // a copy stored on the ArcLink -- and feeds the SAME resolved strings
+  // into the live Hebrew preview (arc/arcLinkPreview.ts). Mini ARC Link
+  // (protocolType "mini_arc") has none of these fields, so this entire
+  // block is skipped for it.
+  let previewInputs: ArcLinkPreviewInputs | null = null;
+  let referenceRows: { label: string; value: string; source: string | null }[] = [];
+  if (protocolType === "arc") {
+    const overrideText = form.futureMantraOverrideText.trim() || null;
+    const triggerText = selectedTrigger?.text ?? "";
+    if (form.kind === "bridging") {
+      const supportiveProfile = form.bridgingSupportiveProtocolId ? arcBuilds.find((b) => b.id === form.bridgingSupportiveProtocolId)?.profile ?? null : null;
+      const destinationProfile = form.protocolId ? arcBuilds.find((b) => b.id === form.protocolId)?.profile ?? null : null;
+      if (supportiveProfile && destinationProfile) {
+        const cue = resolveSupportiveCue(supportiveProfile);
+        const supportiveStateText = safe(supportiveProfile.supportiveState);
+        const identityText = resolveIdentityLabel(destinationProfile, "identity");
+        const valueText = resolveValueLabel(destinationProfile);
+        const futureMantraText = resolveFutureMantra(destinationProfile, "identity", overrideText);
+        const actionText = resolveActionLabel(destinationProfile, "identity");
+        previewInputs = { triggerText, cueText: cue.label, supportiveStateText, identityText, valueText, futureMantraText, actionText };
+        referenceRows = [
+          { label: "רמז המצב התומך", value: cue.label, source: "מה-ARC של המצב התומך" },
+          { label: "המצב התומך הרצוי", value: supportiveStateText, source: "מה-ARC של המצב התומך" },
+          { label: "הזהות הרצויה", value: identityText, source: "מה-ARC של הזהות והפעולה" },
+          { label: "הערך", value: valueText, source: "מה-ARC של הזהות והפעולה" },
+          { label: "המנטרה העתידית", value: futureMantraText, source: "מה-ARC של הזהות והפעולה" },
+          { label: "הפעולה המיטיבה", value: actionText, source: "מה-ARC של הזהות והפעולה" },
+        ];
+      }
+    } else {
+      const selectedProfile = form.protocolId ? arcBuilds.find((b) => b.id === form.protocolId)?.profile ?? null : null;
+      if (selectedProfile) {
+        const target = resolveArcLinkTarget(selectedProfile) ?? "habit";
+        const cueText = safe(selectedProfile.regulationTool);
+        const supportiveStateText = resolveSupportiveStateLabel(selectedProfile, target);
+        const identityText = resolveIdentityLabel(selectedProfile, target);
+        const valueText = resolveValueLabel(selectedProfile);
+        const futureMantraText = resolveFutureMantra(selectedProfile, target, overrideText);
+        const actionText = resolveActionLabel(selectedProfile, target);
+        previewInputs = { triggerText, cueText, supportiveStateText, identityText, valueText, futureMantraText, actionText };
+        referenceRows = [
+          { label: "רמז הוויסות/המצב התומך", value: cueText, source: null },
+          { label: "המצב התומך הרצוי", value: supportiveStateText, source: null },
+          { label: "הזהות/המצב הרצוי", value: identityText, source: null },
+          { label: "הערך", value: valueText, source: null },
+          { label: "המנטרה העתידית", value: futureMantraText, source: null },
+          { label: "הפעולה המיטיבה", value: actionText, source: null },
+        ];
+      }
+    }
+  }
+  const visibleReferenceRows = referenceRows.filter((row) => row.value.trim().length > 0);
+
   return (
     <View>
       <Text style={styles.title}>סקירה</Text>
@@ -547,6 +623,38 @@ export default function ArcLinkBuildForm({
       {form.practiceDays.length > 0 && <Text style={styles.reviewLine}>{`ימי תרגול: ${form.practiceDays.map((d) => DAY_LABELS[d]).join(", ")}`}</Text>}
       {form.practiceTimeText.trim() && <Text style={styles.reviewLine}>{`שעת תרגול: ${form.practiceTimeText.trim()}`}</Text>}
       {form.weeklyTargetText.trim() && <Text style={styles.reviewLine}>{`יעד שבועי: ${form.weeklyTargetText.trim()}`}</Text>}
+
+      {protocolType === "arc" && visibleReferenceRows.length > 0 && (
+        <>
+          <Text style={styles.subheading}>מידע שנטען אוטומטית מה-ARC</Text>
+          {visibleReferenceRows.map((row) => (
+            <Text key={row.label} style={styles.reviewLine}>
+              {row.source ? `${row.label} (${row.source}): ${row.value}` : `${row.label}: ${row.value}`}
+            </Text>
+          ))}
+        </>
+      )}
+
+      {protocolType === "arc" && (
+        <>
+          <Text style={styles.fieldLabel}>מנטרה עתידית מותאמת לקישור הזה (רשות)</Text>
+          <TextInput
+            style={styles.textInput}
+            value={form.futureMantraOverrideText}
+            onChangeText={(text) => setForm({ ...form, futureMantraOverrideText: text })}
+            placeholder="השאר ריק כדי להשתמש במנטרה העתידית השמורה ב-ARC"
+            textAlign="right"
+            multiline
+          />
+        </>
+      )}
+
+      {previewInputs && (
+        <>
+          <Text style={styles.subheading}>תצוגה מקדימה</Text>
+          <Text style={styles.previewText}>{buildArcLinkPreviewText(previewInputs)}</Text>
+        </>
+      )}
 
       <View style={styles.stepButtons}>
         <Pressable style={styles.cancelButton} onPress={() => setStep("schedule")}>
@@ -592,6 +700,8 @@ const styles = StyleSheet.create({
   modeCardTitle: { fontSize: 16, fontWeight: "700", textAlign: "right", color: "#0a7ea4", marginBottom: 4 },
   modeCardBody: { fontSize: 14, textAlign: "right", color: "#333" },
   reviewLine: { fontSize: 15, textAlign: "right", color: "#333", marginBottom: 6 },
+  subheading: { fontSize: 15, fontWeight: "700", textAlign: "right", marginTop: 14, marginBottom: 6, color: "#0a7ea4" },
+  previewText: { fontSize: 14, textAlign: "right", color: "#333", lineHeight: 21, backgroundColor: "#E6F4FE", borderRadius: 8, padding: 12 },
   stepButtons: { flexDirection: "row-reverse", justifyContent: "space-between", marginTop: 20, gap: 10 },
   saveButton: { flex: 1, backgroundColor: "#0a7ea4", paddingVertical: 12, borderRadius: 10, alignItems: "center" },
   saveButtonText: { color: "#fff", fontWeight: "700", fontSize: 15 },

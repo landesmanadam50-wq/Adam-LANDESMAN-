@@ -103,6 +103,72 @@ test("the supportive-state cue is echoed as the SAME cue that begins the identit
 });
 
 // ---------------------------------------------------------------------------
+// Updated-ARC-structure task: Value + Future Mantra, read from the
+// destination (identity) profile via arc/arcLinkContent.ts's shared
+// resolvers -- never a second, parallel set of Bridging-only fields.
+// ---------------------------------------------------------------------------
+
+test("the identity step shows the destination ARC's own Value alongside the identity -- 'the value connected to the identity and action'", () => {
+  const supportive = profile();
+  const identity = profile({ desiredIdentity: "אדם ששומר על הגוף שלו", value: "בריאות וחופש" });
+  const steps = buildBridgingLinkSteps(supportive, identity, ctx({ variant: "full" }));
+  const identityStep = steps.find((s) => s.id === "identity")!;
+  assert.match(identityStep.lines.join(" "), /מבטא את הזהות אדם ששומר על הגוף שלו, מתוך הערך בריאות וחופש/);
+});
+
+test("Value alone (no identity configured) still shows a value-only line, never a dangling label", () => {
+  const supportive = profile();
+  const identity = profile({ value: "בריאות" });
+  const steps = buildBridgingLinkSteps(supportive, identity, ctx({ variant: "full" }));
+  const identityStep = steps.find((s) => s.id === "identity")!;
+  assert.match(identityStep.lines.join(" "), /פועל מתוך הערך בריאות/);
+});
+
+test("Future Mantra resolution order: an explicit ctx override wins over both the destination ARC's Future Mantra and its older Identity Mantra", () => {
+  const supportive = profile();
+  const identity = profile({
+    identityFutureOrientedMantra: "אני מתחיל היום בצעד קטן",
+    identityEncoding: { target: "identity", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "מנטרת זהות ישנה" },
+  });
+  const steps = buildBridgingLinkSteps(supportive, identity, ctx({ variant: "full", futureMantraOverride: "מנטרה מותאמת לגשר הזה" }));
+  const identityStep = steps.find((s) => s.id === "identity")!;
+  assert.match(identityStep.lines.join(" "), /מנטרה מותאמת לגשר הזה/);
+  assert.ok(!identityStep.lines.join(" ").includes("אני מתחיל היום בצעד קטן"));
+  assert.ok(!identityStep.lines.join(" ").includes("מנטרת זהות ישנה"));
+});
+
+test("Future Mantra resolution order: with no override, the destination ARC's own Future Mantra wins over its older Identity Mantra", () => {
+  const supportive = profile();
+  const identity = profile({
+    identityFutureOrientedMantra: "אני מתחיל היום בצעד קטן",
+    identityEncoding: { target: "identity", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "מנטרת זהות ישנה" },
+  });
+  const steps = buildBridgingLinkSteps(supportive, identity, ctx({ variant: "full" }));
+  const identityStep = steps.find((s) => s.id === "identity")!;
+  assert.match(identityStep.lines.join(" "), /אני מתחיל היום בצעד קטן/);
+  assert.ok(!identityStep.lines.join(" ").includes("מנטרת זהות ישנה"));
+});
+
+test("Future Mantra resolution order: falls back to the older Identity Mantra only when no Future Mantra is configured", () => {
+  const supportive = profile();
+  const identity = profile({
+    identityEncoding: { target: "identity", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "מנטרת זהות ישנה" },
+  });
+  const steps = buildBridgingLinkSteps(supportive, identity, ctx({ variant: "full" }));
+  const identityStep = steps.find((s) => s.id === "identity")!;
+  assert.match(identityStep.lines.join(" "), /מנטרת זהות ישנה/);
+});
+
+test("the short variant's identity step also carries Value + Future Mantra content -- not just the full variant", () => {
+  const supportive = profile();
+  const identity = profile({ desiredIdentity: "זהות", value: "ערך", identityFutureOrientedMantra: "מנטרה עתידית" });
+  const steps = buildBridgingLinkSteps(supportive, identity, ctx({ variant: "short" }));
+  const identityStep = steps.find((s) => s.id === "identity")!;
+  assert.match(identityStep.lines.join(" "), /מתוך הערך ערך/);
+  assert.match(identityStep.lines.join(" "), /מנטרה עתידית/);
+});
+
+// ---------------------------------------------------------------------------
 // Category-specific trigger wording (observer-perspective / safe recognition)
 // ---------------------------------------------------------------------------
 

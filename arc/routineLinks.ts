@@ -146,6 +146,17 @@ export interface BridgingLinkConfig {
   supportiveProtocolId: string;
   /** "full" rehearses the entire bridge (trigger -> cue -> supportive state -> identity -> action); "short" practices only the essential transition (cue -> identity -> action), skipping the standalone trigger-imagery step. */
   variant: "full" | "short";
+  /**
+   * Updated-ARC-structure task: an optional, Bridging-Link-specific
+   * override for the Future Mantra -- part of arc/arcLinkContent.ts's
+   * resolution order (override -> the destination ARC's own Future
+   * Mantra -> its older Identity Mantra -> ""). Editing this never
+   * changes the destination ArcBuild's own identityFutureOrientedMantra
+   * -- it is read only by this one Bridging Link. Optional/null for
+   * every Bridging Link that doesn't need different wording than its
+   * destination ARC's own Future Mantra.
+   */
+  futureMantraOverride?: string | null;
 }
 
 /**
@@ -233,6 +244,18 @@ export interface ArcLink {
   triggerLevels?: WeeklyTriggerLevel[] | null;
   /** Only meaningful when kind === "bridging" -- null/undefined for every standard Link, and for a Bridging Link whose config hasn't been completed yet. */
   bridging?: BridgingLinkConfig | null;
+  /**
+   * Updated-ARC-structure task: an optional, standard-Link-level
+   * override for the Future Mantra -- "Allow a link-level override only
+   * when the user wants different wording for a particular ARC Link.
+   * Editing the ARC Link version must not change the original ARC
+   * program." Resolved via arc/arcLinkContent.ts's resolveFutureMantra
+   * (override -> the referenced ARC's own Future Mantra -> its older
+   * Identity Mantra -> ""). Meaningless (ignored) when kind ===
+   * "bridging" -- a Bridging Link uses BridgingLinkConfig's own
+   * futureMantraOverride instead, since it references two ARCs.
+   */
+  futureMantraOverride?: string | null;
 }
 
 // ---------------------------------------------------------------------------

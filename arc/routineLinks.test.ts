@@ -243,6 +243,20 @@ test("a legacy ArcLink parsed from stored JSON (kind/triggerCategory/triggerLeve
   const list = upsertArcLinkInList([], legacy);
   assert.equal(list.length, 1);
   assert.equal(resolveArcLinkKind(list[0]), "standard");
+  assert.equal("futureMantraOverride" in legacy, false, "the Updated-ARC-structure task's own new field is also genuinely absent on a legacy record");
+});
+
+test("BridgingLinkConfig.futureMantraOverride round-trips through JSON (exactly what data/storage.ts does) and is absent on a Bridging Link that never set one", () => {
+  const withOverride = arcLink({
+    id: "bridge-with-override",
+    kind: "bridging",
+    bridging: { supportiveProtocolId: "state-build-1", variant: "full", futureMantraOverride: "מנטרה מותאמת" },
+  });
+  const roundTripped = JSON.parse(JSON.stringify(withOverride)) as ArcLink;
+  assert.equal(roundTripped.bridging!.futureMantraOverride, "מנטרה מותאמת");
+
+  const withoutOverride = arcLink({ id: "bridge-no-override", kind: "bridging", bridging: { supportiveProtocolId: "state-build-1", variant: "full" } });
+  assert.equal(withoutOverride.bridging!.futureMantraOverride, undefined);
 });
 
 test("multiple Bridging ARC Links (different supportive protocols/variants) coexist in the same list without overwriting one another", () => {

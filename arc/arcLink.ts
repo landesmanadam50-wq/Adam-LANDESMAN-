@@ -29,6 +29,7 @@
  * (arc/ is a lower layer; build/ depends on it, never the reverse).
  */
 
+import { resolveFutureMantra, resolveIdentityLabel, resolveSupportiveStateLabel, resolveValueLabel } from "./arcLinkContent.ts";
 import { getAwarenessInstruction, getCombinedAttentionInstruction, getExpandPresenceInstruction } from "./instructions.ts";
 import { getBodyImageryForText, safeTriggerText } from "./bodyImagery.ts";
 import type { BodyImagery } from "./bodyImagery.ts";
@@ -340,6 +341,16 @@ export interface ArcLinkRehearsalContext {
    * field existed.
    */
   triggerCategory?: ArcLinkTriggerCategory;
+  /**
+   * Updated-ARC-structure task: ArcLink.futureMantraOverride
+   * (arc/routineLinks.ts) -- see arc/arcLinkContent.ts's
+   * resolveFutureMantra for the full resolution order (override -> the
+   * referenced ARC's own Future Mantra -> its older Identity Mantra ->
+   * ""). Only read by buildArcLinkProtocolSteps' own encoding step;
+   * buildArcLinkSteps (the original, legacy entry point) never reads
+   * this field, so its behavior is completely unaffected.
+   */
+  futureMantraOverride?: string | null;
 }
 
 /**
@@ -420,12 +431,21 @@ export function buildArcLinkProtocolSteps(profile: ArcBuildProfile, choice: ArcL
   const routeKind: "interfering" | "supportive" | "legacy" = choice?.kind ?? "legacy";
 
   const actionLabel = target ? resolveActionLabel(profile, target) : safe(profile.beneficialAction);
-  const desiredStateLabel = target ? resolveDesiredStateLabel(profile, target) : "";
   const interferingLabel = target ? resolveInterferingLabel(profile, target) : "";
   const presenceColor = safe(profile.presenceColor);
   const regulationText = safe(profile.regulationTool);
   const encodingBodyLanguage = target ? resolveEncodingBodyLanguage(profile, target) : { cue: "", bodyImagery: null };
-  const mantra = target ? resolveMantra(profile, target) : "";
+  // Updated-ARC-structure task: identityLabel is the identity/state NAME
+  // itself (desiredIdentity for "identity", the state layer's own
+  // Desired State for "state" -- it has no separate identity concept);
+  // supportiveStateLabel is the SEPARATE internal condition that
+  // supports expressing it (identityDesiredState, identity-layer only).
+  // Never merged -- "preserve the conceptual separation between all of
+  // these components."
+  const identityLabel = target ? resolveIdentityLabel(profile, target) : "";
+  const supportiveStateLabel = target ? resolveSupportiveStateLabel(profile, target) : "";
+  const valueLabel = resolveValueLabel(profile);
+  const futureMantra = target ? resolveFutureMantra(profile, target, ctx.futureMantraOverride) : "";
 
   const steps: ArcLinkStep[] = [];
 
@@ -517,12 +537,18 @@ export function buildArcLinkProtocolSteps(profile: ArcBuildProfile, choice: ArcL
 
   const encodingImagery = getBodyImageryForText(encodingBodyLanguage.cue, encodingBodyLanguage.bodyImagery);
   const encodingLines: string[] = [];
-  if (desiredStateLabel && mantra) {
-    encodingLines.push(`דמיין שאתה מתחבר ל-${desiredStateLabel} ואומר לעצמך: “${mantra}”.`);
-  } else if (desiredStateLabel) {
-    encodingLines.push(`דמיין שאתה מתחבר ל-${desiredStateLabel}.`);
-  } else if (mantra) {
-    encodingLines.push(`דמיין שאתה אומר לעצמך: “${mantra}”.`);
+  if (supportiveStateLabel) {
+    encodingLines.push(`דמיין שאתה מתחבר למצב התומך הפנימי שלך: ${supportiveStateLabel}.`);
+  }
+  if (target === "identity" && identityLabel) {
+    encodingLines.push(valueLabel ? `מתוך המצב הזה אתה מבטא את הזהות ${identityLabel}, מתוך הערך ${valueLabel}.` : `מתוך המצב הזה אתה מבטא את הזהות ${identityLabel}.`);
+  } else if (target === "state" && identityLabel) {
+    encodingLines.push(valueLabel ? `דמיין שאתה מתחבר ל-${identityLabel}, מתוך הערך ${valueLabel}.` : `דמיין שאתה מתחבר ל-${identityLabel}.`);
+  } else if (valueLabel) {
+    encodingLines.push(`אתה פועל מתוך הערך ${valueLabel}.`);
+  }
+  if (futureMantra) {
+    encodingLines.push(`דמיין שאתה אומר לעצמך את המנטרה העתידית: “${futureMantra}”.`);
   }
   steps.push({
     id: "encoding",

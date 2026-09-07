@@ -31,6 +31,7 @@
  * state-recall steps.
  */
 
+import { resolveFutureMantra } from "./arcLinkContent.ts";
 import { getBodyImageryForText } from "./bodyImagery.ts";
 import type { BodyImagery } from "./bodyImagery.ts";
 import type { ArcLinkTriggerCategory } from "./routineLinks.ts";
@@ -52,14 +53,16 @@ export interface BridgingLinkRehearsalContext {
   triggerText: string;
   triggerCategory: ArcLinkTriggerCategory;
   variant: "full" | "short";
+  /** Updated-ARC-structure task: BridgingLinkConfig's own Future Mantra override (arc/routineLinks.ts) -- see arc/arcLinkContent.ts's resolveFutureMantra for the full resolution order. */
+  futureMantraOverride?: string | null;
 }
 
 function safe(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** The short supportive-state cue: the identity-layer's own lightweight body-language cue takes priority (a deliberately SHORT cue, the same "keep it short" intent as stateEncodingRegulationCue), falling back to the Full Regulation Cue -- both are candidates a trainee may have configured for exactly this purpose. */
-function resolveSupportiveCue(profile: ArcBuildProfile): { label: string; bodyImagery: BodyImagery | null } {
+/** The short supportive-state cue: the identity-layer's own lightweight body-language cue takes priority (a deliberately SHORT cue, the same "keep it short" intent as stateEncodingRegulationCue), falling back to the Full Regulation Cue -- both are candidates a trainee may have configured for exactly this purpose. Exported so build/ArcLinkBuildForm.tsx's BUILD preview reads the exact same resolution, never a second, drifted copy. */
+export function resolveSupportiveCue(profile: ArcBuildProfile): { label: string; bodyImagery: BodyImagery | null } {
   const label = safe(profile.stateEncoding?.bodyLanguageCue) || safe(profile.regulationTool);
   const bodyImagery = profile.stateEncoding?.bodyImagery ?? profile.regulationBodyImagery ?? null;
   return { label, bodyImagery };
@@ -67,6 +70,11 @@ function resolveSupportiveCue(profile: ArcBuildProfile): { label: string; bodyIm
 
 function resolveIdentityBodyLanguage(profile: ArcBuildProfile): { cue: string; bodyImagery: BodyImagery | null } {
   return { cue: safe(profile.identityEncoding?.bodyLanguageCue), bodyImagery: profile.identityEncoding?.bodyImagery ?? null };
+}
+
+/** The identity-and-action ARC's own Value ("why the identity and action matter") -- build-global, never merged with the identity/state/mantra/action text. */
+function resolveValueLabel(profile: ArcBuildProfile): string {
+  return safe(profile.value);
 }
 
 /** The trigger/context imagery step -- delegates its category-specific wording (plain/observer-perspective/safe-recognition) to arc/triggerImagery.ts's shared helper, also used by arc/arcLink.ts's own trigger step. */
@@ -95,9 +103,10 @@ export function buildBridgingLinkSteps(
   const interferingLabel = safe(supportiveProfile.interferingState);
 
   const identityLabel = safe(identityProfile.desiredIdentity);
+  const valueLabel = resolveValueLabel(identityProfile);
   const identityBodyLanguage = resolveIdentityBodyLanguage(identityProfile);
   const identityImagery = getBodyImageryForText(identityBodyLanguage.cue, identityBodyLanguage.bodyImagery);
-  const identityMantra = safe(identityProfile.identityEncoding?.mantra);
+  const futureMantra = resolveFutureMantra(identityProfile, "identity", ctx.futureMantraOverride);
   const actionLabel = safe(identityProfile.identityAction) || safe(identityProfile.beneficialAction);
 
   const connectionDiagram = isFull
@@ -146,12 +155,15 @@ export function buildBridgingLinkSteps(
   const identityLines: string[] = [
     "אותו רמז קצר הופך כעת להיות גם הטריגר שמתחיל את מעבר הזהות.",
   ];
-  if (identityLabel && identityMantra) {
-    identityLines.push(`דמיין שאתה מתחבר לזהות ${identityLabel} ואומר לעצמך: "${identityMantra}".`);
+  if (identityLabel && valueLabel) {
+    identityLines.push(`דמיין שאתה מבטא את הזהות ${identityLabel}, מתוך הערך ${valueLabel}.`);
   } else if (identityLabel) {
-    identityLines.push(`דמיין שאתה מתחבר לזהות ${identityLabel}.`);
-  } else if (identityMantra) {
-    identityLines.push(`דמיין שאתה אומר לעצמך: "${identityMantra}".`);
+    identityLines.push(`דמיין שאתה מבטא את הזהות ${identityLabel}.`);
+  } else if (valueLabel) {
+    identityLines.push(`דמיין שאתה פועל מתוך הערך ${valueLabel}.`);
+  }
+  if (futureMantra) {
+    identityLines.push(`דמיין שאתה אומר לעצמך את המנטרה העתידית: "${futureMantra}".`);
   }
   steps.push({
     id: "identity",

@@ -110,6 +110,7 @@ export default function ArcLinkScreen() {
           triggerText,
           triggerCategory,
           variant: link.bridging.variant,
+          futureMantraOverride: link.bridging.futureMantraOverride,
         });
         setBridgingSteps(steps);
         setBridgingIndex(0);
@@ -118,7 +119,7 @@ export default function ArcLinkScreen() {
         return;
       }
 
-      const ctx = { triggerText, mode: link.mode, triggerCategory };
+      const ctx = { triggerText, mode: link.mode, triggerCategory, futureMantraOverride: link.futureMantraOverride };
       setIntroSteps(buildArcLinkIntroSteps(existing.profile, ctx));
       setIntroIndex(0);
       setPhase("intro");
@@ -184,7 +185,7 @@ export default function ArcLinkScreen() {
     loadRoutineTriggers().then((triggers) => {
       const trigger = resolveRoutineTrigger(arcLink.triggerId, triggers);
       const triggerText = describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger);
-      const ctx = { triggerText, mode: arcLink.mode, triggerCategory: resolveArcLinkTriggerCategory(arcLink) };
+      const ctx = { triggerText, mode: arcLink.mode, triggerCategory: resolveArcLinkTriggerCategory(arcLink), futureMantraOverride: arcLink.futureMantraOverride };
       // Coherent-architecture task (#22 "With ARCHI"): once the route is
       // chosen (imagining selecting it in the app), with_archi mode ends
       // right after imagining pressing Start -- never the full
