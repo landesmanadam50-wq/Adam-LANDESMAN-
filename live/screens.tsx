@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Animated, AppState, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
+import { IDENTIFIED_NEED_UNKNOWN } from "../arc/types.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
@@ -951,6 +952,90 @@ export function TransitionCheckScreen({
     <View>
       <Title copy={copy} />
       <YesNoButtons labels={labels} onAnswer={onAnswer} />
+    </View>
+  );
+}
+
+/**
+ * Urge Check task: session-only fork ahead of the existing Stop stage --
+ * a plain yes/no, same minimal shape as TransitionCheckScreen above. The
+ * answer only ever sets ArcLiveState.hasUrge (see live/liveEventAdapter.ts's
+ * applyYesNoAnswer "urge_check" case); it is never written back to the
+ * saved program.
+ */
+export function UrgeCheckScreen({
+  copy,
+  labels,
+  onAnswer,
+}: {
+  copy: ArcStageCopy;
+  labels: YesNoLabels;
+  onAnswer: (yes: boolean) => void;
+}) {
+  return (
+    <View>
+      <Title copy={copy} />
+      <YesNoButtons labels={labels} onAnswer={onAnswer} />
+    </View>
+  );
+}
+
+const NEED_IDENTIFICATION_PRESETS = ["רגיעה", "אנרגיה", "נחמה", "גירוי", "הפוגה", "חיבור"];
+
+/**
+ * Urge Check task: "מה אתה באמת צריך עכשיו?" -- reached only on the
+ * urge-exists route, right after Preventive Action and before Presence
+ * Rating (see arc/arcEngine.ts's afterHabitPreventiveStage). Never forces
+ * an answer: a preset chip or the explicit "אני עדיין לא יודע" both
+ * resolve the stage immediately, same as InterferingThoughtCheckScreen's
+ * three-choice shape above. "אחר" reveals a short free-text entry,
+ * trimmed and defaulted to the "still don't know" sentinel by
+ * applyNeedIdentificationAnswer if left blank -- never validated/blocked
+ * here.
+ */
+export function NeedIdentificationScreen({
+  copy,
+  onAnswer,
+}: {
+  copy: ArcStageCopy;
+  onAnswer: (need: string) => void;
+}) {
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customText, setCustomText] = useState("");
+
+  if (showCustomInput) {
+    return (
+      <View>
+        <Title copy={copy} />
+        <TextInput
+          style={styles.textInput}
+          value={customText}
+          onChangeText={setCustomText}
+          placeholder="איזה צורך? אפשר בקצרה"
+          multiline
+          textAlign="right"
+        />
+        <PrimaryButton label="המשך" onPress={() => onAnswer(customText)} />
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <Title copy={copy} />
+      <View style={styles.chipRow}>
+        {NEED_IDENTIFICATION_PRESETS.map((need) => (
+          <Pressable key={need} style={styles.chip} onPress={() => onAnswer(need)}>
+            <Text style={styles.buttonText}>{need}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setShowCustomInput(true)}>
+        <Text style={styles.buttonText}>אחר</Text>
+      </Pressable>
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onAnswer(IDENTIFIED_NEED_UNKNOWN)}>
+        <Text style={styles.buttonText}>{IDENTIFIED_NEED_UNKNOWN}</Text>
+      </Pressable>
     </View>
   );
 }

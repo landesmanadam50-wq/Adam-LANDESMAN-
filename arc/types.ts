@@ -22,12 +22,25 @@ export type TriggerType = "reactive_emotion" | "reactive_urge" | "proactive";
 export type ArcStage =
   | "trigger_selection"
   /**
+   * Urge-check task: "האם יש כרגע דחף לבצע את ההרגל המפריע?" -- reached
+   * only from trigger_selection's reactive_urge (habit) branch, never by
+   * reactive_emotion or proactive sessions. "Yes" continues into the
+   * existing trigger_context/observer_pause (Stop)/Preventive Action
+   * sequence below, completely unchanged; "No" skips all three of those
+   * and goes straight to the existing presence_check. Session-only
+   * (ArcLiveState.hasUrge below) -- never written back to the saved
+   * program. See arc/arcEngine.ts's "urge_check"/"trigger_selection"
+   * cases and arc/stageCopy.ts's "urge_check" case for the copy.
+   */
+  | "urge_check"
+  /**
    * Reactive-only (#8 "Important Flow Distinction"): the session-specific
    * "what triggered this right now" recognition, asked once the reactive
    * target is resolved and before the existing Preventive Action -- see
    * arc/arcEngine.ts's module doc and ArcLiveState.triggerContext below.
    * Never reached for proactive sessions (Preserve Proactive Separation,
-   * unchanged).
+   * unchanged). For reactive_urge specifically, only reached once
+   * urge_check (above) has been answered "יש דחף".
    */
   | "trigger_context"
   /**
@@ -45,6 +58,20 @@ export type ArcStage =
   | "arc_thought_presence_recheck"
   | "preventive_action_check"
   | "preventive_action"
+  /**
+   * Urge-check task: "מה אתה באמת צריך עכשיו?" -- reached only for a
+   * reactive_urge session that confirmed an urge at urge_check,
+   * immediately after Stop (observer_pause)/Preventive Action and before
+   * Presence Rating (see arc/arcEngine.ts's afterHabitPreventiveStage,
+   * used by "observer_pause"/"preventive_action_check"/"preventive_action").
+   * Never forces an answer -- "אני עדיין לא יודע" is itself a valid,
+   * continuing choice, distinct from "not yet answered". The need
+   * belongs to the PERSON, never described as "the habit's need" -- see
+   * arc/stageCopy.ts's "need_identification" case. Session-only
+   * (ArcLiveState.identifiedNeed below); never changes the saved
+   * beneficial action.
+   */
+  | "need_identification"
   | "sensation_check"
   | "stay"
   /**
@@ -634,6 +661,32 @@ export interface ArcLiveState {
    */
   triggerKnown: boolean | null;
 
+  /**
+   * Urge-check task: the session-only answer to "האם יש כרגע דחף לבצע
+   * את ההרגל המפריע?" -- set once on "urge_check" (reactive_urge only)
+   * and never re-asked within the same session. null means "not yet
+   * answered" (the screen is still showing); true/false are both fully
+   * valid, explicitly-submitted answers. Never persisted to
+   * ArcBuildProfile or any saved program state -- applies only to THIS
+   * LIVE session, exactly like triggerContext above.
+   */
+  hasUrge: boolean | null;
+  /**
+   * Urge-check task: the session-only answer to "מה אתה באמת צריך
+   * עכשיו?" (need_identification, reactive_urge + hasUrge only) -- one
+   * of the seven preset need labels, the trainee's own short custom text
+   * (when "אחר" is chosen), or the "אני עדיין לא יודע" sentinel (see
+   * live/liveEventAdapter.ts's IDENTIFIED_NEED_UNKNOWN) when the trainee
+   * explicitly declines to identify one. null means "not yet answered"
+   * (the screen is still showing) -- NEVER conflated with "אני עדיין לא
+   * יודע", which is itself a real, continuing answer. Session-only,
+   * never written back to ArcBuildProfile and never used to change the
+   * saved beneficial action -- see arc/stageCopy.ts's "act" case for
+   * where it's optionally surfaced (mentioned, never substituted) once
+   * the beneficial action is presented.
+   */
+  identifiedNeed: string | null;
+
   presenceRating: number | null;
   sensationLocation: string | null;
   sensationIntensity: number | null;
@@ -767,12 +820,27 @@ export interface ArcLiveState {
   realActionCompleted: boolean;
 }
 
+/**
+ * Urge-check task: the explicit sentinel ArcLiveState.identifiedNeed
+ * carries when the trainee chooses "אני עדיין לא יודע" on
+ * need_identification -- a real, continuing answer (never confused with
+ * "not yet answered", i.e. null), but never a genuine identified need
+ * either. Callers that DISPLAY the need (e.g. arc/stageCopy.ts's "act"
+ * case) must skip this exact value rather than showing it as if it were
+ * one; callers that only need to know whether the stage was ANSWERED
+ * (arc/arcEngine.ts's "need_identification" case) treat it exactly like
+ * any other non-null value.
+ */
+export const IDENTIFIED_NEED_UNKNOWN = "אני עדיין לא יודע";
+
 export function createEmptyLiveState(): ArcLiveState {
   return {
     triggerType: null,
     selectedTarget: null,
     triggerContext: null,
     triggerKnown: null,
+    hasUrge: null,
+    identifiedNeed: null,
     presenceRating: null,
     sensationLocation: null,
     sensationIntensity: null,

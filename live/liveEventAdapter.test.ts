@@ -31,7 +31,7 @@ import {
   resolveEncodingTarget,
   resolveLiveRoute,
 } from "../arc/arcEngine.ts";
-import { createEmptyLiveState } from "../arc/types.ts";
+import { createEmptyLiveState, IDENTIFIED_NEED_UNKNOWN } from "../arc/types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
 import { getInlineRequiredRatingQuestion, getStageCopy } from "../arc/stageCopy.ts";
 import { getInstructionTimingStatus, INSTRUCTION_TIMING } from "../arc/instructionTiming.ts";
@@ -44,6 +44,7 @@ import {
   advanceLiveSession,
   applyAcceptanceWillingnessAnswer,
   applyInterferingThoughtAnswer,
+  applyNeedIdentificationAnswer,
   applyActionCompletion,
   applyActionImageryCompleted,
   applyAlternativeAction,
@@ -887,6 +888,53 @@ test("applyInterferingThoughtAnswer never touches the BUILD-configured Limiting 
   // impossible for it to write back onto stateLimitingBelief/identityLimitingBelief.
   assert.equal(Object.keys(result).includes("stateLimitingBelief"), false);
   assert.equal(result.interferingThoughtSessionText, "מחשבה של הרגע");
+});
+
+// --- Urge Check + Need Identification (route-selection task): session-only
+// fields that never touch the saved ArcBuildProfile, mirroring the
+// triggerContext/interferingThoughtSessionText precedent above.
+
+test("applyYesNoAnswer('urge_check', ...) sets hasUrge and nothing else", () => {
+  const session = createEmptyLiveState();
+  const yes = applyYesNoAnswer("urge_check", session, true);
+  assert.equal(yes.hasUrge, true);
+  assert.equal(yes.identifiedNeed, null);
+
+  const no = applyYesNoAnswer("urge_check", session, false);
+  assert.equal(no.hasUrge, false);
+});
+
+test("applyNeedIdentificationAnswer stores a preset or custom need as-is", () => {
+  const session = createEmptyLiveState();
+  const result = applyNeedIdentificationAnswer(session, "רגיעה");
+  assert.equal(result.identifiedNeed, "רגיעה");
+});
+
+test("applyNeedIdentificationAnswer trims surrounding whitespace on custom ('אחר') text", () => {
+  const session = createEmptyLiveState();
+  const result = applyNeedIdentificationAnswer(session, "  צורך אישי  ");
+  assert.equal(result.identifiedNeed, "צורך אישי");
+});
+
+test("applyNeedIdentificationAnswer falls back to IDENTIFIED_NEED_UNKNOWN for blank/whitespace-only custom text", () => {
+  const session = createEmptyLiveState();
+  const result = applyNeedIdentificationAnswer(session, "   ");
+  assert.equal(result.identifiedNeed, IDENTIFIED_NEED_UNKNOWN);
+});
+
+test("applyNeedIdentificationAnswer passes the explicit 'אני עדיין לא יודע' sentinel through unchanged", () => {
+  const session = createEmptyLiveState();
+  const result = applyNeedIdentificationAnswer(session, IDENTIFIED_NEED_UNKNOWN);
+  assert.equal(result.identifiedNeed, IDENTIFIED_NEED_UNKNOWN);
+});
+
+test("applyNeedIdentificationAnswer never touches the BUILD-configured program data -- session-only, exactly like triggerContext never touches challengeContext", () => {
+  const session = createEmptyLiveState();
+  const result = applyNeedIdentificationAnswer(session, "אנרגיה");
+  // No ArcBuildProfile is even passed into this function -- structurally
+  // impossible for it to write back onto any saved-program field.
+  assert.equal(Object.keys(result).includes("plannedAction"), false);
+  assert.equal(result.identifiedNeed, "אנרגיה");
 });
 
 // --- Dwell-time task: the Accept "לא" willingness sub-flow (#H-#M).

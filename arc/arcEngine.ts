@@ -702,6 +702,22 @@ function afterArcThought(triggerType: TriggerType | null): ArcStage {
   return getRouteAfterPresence(triggerType) === "proactive" ? "desired_state_check" : "sensation_check";
 }
 
+/**
+ * Urge-check task: whenever the Stop/Preventive-Action sequence would
+ * otherwise continue straight into "presence_check", a reactive_urge
+ * (habit) session routes through "need_identification" first instead --
+ * reactive_emotion/proactive sessions (whose own next stage may also
+ * happen to be "presence_check") are completely unaffected, since
+ * `nextStage` is only ever redirected when it's already "presence_check"
+ * AND the trigger type is specifically "reactive_urge". Any OTHER
+ * nextStage (e.g. "preventive_action_check" when a Preventive Action is
+ * mapped) passes through unchanged.
+ */
+export function afterHabitPreventiveStage(nextStage: ArcStage, triggerType: TriggerType | null): ArcStage {
+  if (nextStage === "presence_check" && triggerType === "reactive_urge") return "need_identification";
+  return nextStage;
+}
+
 // ---------------------------------------------------------------------------
 // The sequencer (#8, #9, #10, #11)
 // ---------------------------------------------------------------------------
@@ -717,7 +733,11 @@ export function getNextArcStage(
       if (state.triggerType === null) return result(current, state.loopIterationCount);
 
       if (state.triggerType === "reactive_urge") {
-        return result("trigger_context", state.loopIterationCount);
+        // Urge-check task: every reactive_urge (habit) session now opens
+        // with the Urge Check screen -- reactive_emotion/proactive are
+        // completely unaffected. See the "urge_check" case below for the
+        // Yes/No routing itself.
+        return result("urge_check", state.loopIterationCount);
       }
 
       if (state.triggerType === "reactive_emotion") {
@@ -732,6 +752,20 @@ export function getNextArcStage(
       // proactive -- unaffected by this change, per "Preserve Proactive Separation".
       return result("presence_check", state.loopIterationCount);
     }
+
+    // Urge-check task: "האם יש כרגע דחף לבצע את ההרגל המפריע?" --
+    // reachable only from trigger_selection's reactive_urge branch above,
+    // so this is never entered by reactive_emotion or proactive sessions.
+    // "Yes" continues into the existing Stop/Preventive-Action sequence
+    // (trigger_context -> observer_pause -> ...), completely unchanged
+    // from before this task. "No" skips trigger_context, observer_pause
+    // (Stop), and the Preventive Action question/stage entirely, going
+    // straight to the existing presence_check ("עד כמה אתה נוכח כרגע?")
+    // -- Need Identification (below) is a "there is an urge" concept
+    // only, so it's never reached on this branch either.
+    case "urge_check":
+      if (state.hasUrge === null) return result(current, state.loopIterationCount);
+      return result(state.hasUrge ? "trigger_context" : "presence_check", state.loopIterationCount);
 
     // Reactive-flow-strengthening task: session-specific trigger
     // recognition, always allowed to continue (an optional free-text
@@ -753,7 +787,7 @@ export function getNextArcStage(
     // recomputed differently.
     case "observer_pause": {
       const layer = resolveObserverPauseLayer(state.triggerType, state.selectedTarget, activeLayers, profile);
-      return result(afterReactiveTargetResolved(layer, profile), state.loopIterationCount);
+      return result(afterHabitPreventiveStage(afterReactiveTargetResolved(layer, profile), state.triggerType), state.loopIterationCount);
     }
 
     case "presence_check":
@@ -800,8 +834,23 @@ export function getNextArcStage(
     // presence_check, never back to sensation_check (that ordering is
     // now obsolete; see the module doc).
     case "preventive_action_check":
-      return result(state.wantsPreventiveAction === true ? "preventive_action" : "presence_check", state.loopIterationCount);
+      return result(
+        state.wantsPreventiveAction === true ? "preventive_action" : afterHabitPreventiveStage("presence_check", state.triggerType),
+        state.loopIterationCount
+      );
     case "preventive_action":
+      return result(afterHabitPreventiveStage("presence_check", state.triggerType), state.loopIterationCount);
+
+    // Urge-check task: "מה אתה באמת צריך עכשיו?" -- reached only for a
+    // reactive_urge session that answered "יש דחף" at urge_check (see
+    // afterHabitPreventiveStage above), immediately after Stop/Preventive
+    // Action and before Presence Rating. Never forces an answer -- "אני
+    // עדיין לא יודע" is itself a valid, continuing answer (any non-null
+    // identifiedNeed, that sentinel included, continues); only a
+    // genuinely unanswered stage (null) stays put. Always continues to
+    // the existing "presence_check", never anywhere else.
+    case "need_identification":
+      if (state.identifiedNeed === null) return result(current, state.loopIterationCount);
       return result("presence_check", state.loopIterationCount);
 
     case "sensation_check": {

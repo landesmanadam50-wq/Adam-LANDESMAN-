@@ -16,6 +16,7 @@ import {
   resolveEncodingRegulationCue,
   resolveEncodingTarget,
   resolveLiveRoute,
+  afterHabitPreventiveStage,
   resolveObserverPauseLayer,
   resolveTargetBridgeBelief,
   resolveTargetLimitingBelief,
@@ -690,19 +691,44 @@ test("arc_thought_presence_recheck stops looping once the safety cap is hit and 
 // Preventive action -- resolved per-target, surfaced BEFORE ARC Thought (#3)
 // ---------------------------------------------------------------------------
 
-test("reactive_urge routes through preventive_action_check (from trigger_selection, via the reactive-flow-strengthening task's trigger_context -> observer_pause, before ARC Thought) only when the habit layer's Preventive Action is configured", () => {
-  const s = state({ triggerType: "reactive_urge" });
+test("reactive_urge routes through preventive_action_check (from trigger_selection, via urge_check -> the reactive-flow-strengthening task's trigger_context -> observer_pause, before ARC Thought) only when the habit layer's Preventive Action is configured", () => {
+  // Urge-check task: trigger_selection now routes reactive_urge through
+  // urge_check first; only once "יש דחף" is answered does the existing
+  // trigger_context -> observer_pause sequence begin, unchanged.
+  const unanswered = state({ triggerType: "reactive_urge" });
+  const withUrge = state({ triggerType: "reactive_urge", hasUrge: true });
 
-  // trigger_selection always routes a reactive session through
-  // trigger_context first now, regardless of Preventive Action config.
   const withPlan = profile({ preventiveAction: "לצאת להליכה" });
-  assert.equal(getNextArcStage("trigger_selection", s, withPlan, ALL_LAYERS).stage, "trigger_context");
-  assert.equal(getNextArcStage("trigger_context", s, withPlan, ALL_LAYERS).stage, "observer_pause");
-  assert.equal(getNextArcStage("observer_pause", s, withPlan, ALL_LAYERS).stage, "preventive_action_check");
+  assert.equal(getNextArcStage("trigger_selection", unanswered, withPlan, ALL_LAYERS).stage, "urge_check");
+  assert.equal(getNextArcStage("urge_check", withUrge, withPlan, ALL_LAYERS).stage, "trigger_context");
+  assert.equal(getNextArcStage("trigger_context", withUrge, withPlan, ALL_LAYERS).stage, "observer_pause");
+  assert.equal(getNextArcStage("observer_pause", withUrge, withPlan, ALL_LAYERS).stage, "preventive_action_check");
 
   const withoutPlan = profile({ preventiveAction: null });
-  assert.equal(getNextArcStage("trigger_selection", s, withoutPlan, ALL_LAYERS).stage, "trigger_context");
-  assert.equal(getNextArcStage("observer_pause", s, withoutPlan, ALL_LAYERS).stage, "presence_check");
+  assert.equal(getNextArcStage("trigger_selection", unanswered, withoutPlan, ALL_LAYERS).stage, "urge_check");
+  assert.equal(
+    getNextArcStage("observer_pause", withUrge, withoutPlan, ALL_LAYERS).stage,
+    "need_identification",
+    "no Preventive Action configured -- routes through Need Identification instead of straight to presence_check"
+  );
+});
+
+test("urge_check: 'no urge' skips trigger_context/observer_pause/Preventive-Action/need_identification entirely, straight to presence_check; 'yes' continues into the existing sequence unchanged", () => {
+  const withPlan = profile({ preventiveAction: "לצאת להליכה" });
+  assert.equal(getNextArcStage("urge_check", state({ triggerType: "reactive_urge" }), withPlan, ALL_LAYERS).stage, "urge_check", "stays put until answered");
+  assert.equal(getNextArcStage("urge_check", state({ triggerType: "reactive_urge", hasUrge: false }), withPlan, ALL_LAYERS).stage, "presence_check");
+  assert.equal(getNextArcStage("urge_check", state({ triggerType: "reactive_urge", hasUrge: true }), withPlan, ALL_LAYERS).stage, "trigger_context");
+});
+
+test("need_identification: stays put until answered (any non-null value, including the 'אני עדיין לא יודע' sentinel), then always continues to presence_check", () => {
+  const p = profile();
+  assert.equal(
+    getNextArcStage("need_identification", state({ triggerType: "reactive_urge" }), p, ALL_LAYERS).stage,
+    "need_identification"
+  );
+  for (const need of ["רגיעה", "אני עדיין לא יודע", "משהו מותאם אישית"]) {
+    assert.equal(getNextArcStage("need_identification", state({ triggerType: "reactive_urge", identifiedNeed: need }), p, ALL_LAYERS).stage, "presence_check");
+  }
 });
 
 test("preventive_action_check branches on wantsPreventiveAction, then both branches continue to presence_check -- never back to sensation_check", () => {
@@ -1216,13 +1242,13 @@ test("resolveActPhase moves directly to 'performing' once Action Imagery is comp
 // insertion (#1-#4, #8, #9). Reactive-only, never reached by proactive
 // sessions ("Preserve Proactive Separation").
 
-test("reactive sessions (both reactive_urge and reactive_emotion) always route trigger_selection -> trigger_context -> observer_pause first, regardless of whether a Preventive Action is configured", () => {
+test("reactive_emotion always routes trigger_selection -> trigger_context -> observer_pause first, regardless of whether a Preventive Action is configured; reactive_urge now routes through urge_check first (see the urge_check-specific tests above)", () => {
   const withPreventive = profile({ preventiveAction: "לצאת להליכה", statePreventiveAction: "לנשום עמוק" });
   const withoutPreventive = profile({ preventiveAction: null, statePreventiveAction: null });
 
   for (const p of [withPreventive, withoutPreventive]) {
     const urge = state({ triggerType: "reactive_urge" });
-    assert.equal(getNextArcStage("trigger_selection", urge, p, ALL_LAYERS).stage, "trigger_context");
+    assert.equal(getNextArcStage("trigger_selection", urge, p, ALL_LAYERS).stage, "urge_check");
 
     const emotion = state({ triggerType: "reactive_emotion", selectedTarget: "state" });
     assert.equal(getNextArcStage("trigger_selection", emotion, p, ALL_LAYERS).stage, "trigger_context");
@@ -1345,6 +1371,11 @@ test("resolveObserverPauseLayer matches the engine's own 'observer_pause' transi
     const outcome = getNextArcStage("observer_pause", session, p, activeLayers);
     // The engine's own transition routes based on resolveTargetPreventiveAction(resolvedLayer, p) --
     // cross-checking against the SAME resolver used directly proves they agree.
-    assert.equal(outcome.stage, resolveTargetPreventiveAction(resolvedLayer, p) !== null ? "preventive_action_check" : "presence_check");
+    // Urge-check task: a reactive_urge session with no Preventive Action
+    // configured now lands on "need_identification" instead of
+    // "presence_check" directly (afterHabitPreventiveStage) -- reactive_emotion
+    // is unaffected either way.
+    const expectedFallback = afterHabitPreventiveStage("presence_check", state.triggerType);
+    assert.equal(outcome.stage, resolveTargetPreventiveAction(resolvedLayer, p) !== null ? "preventive_action_check" : expectedFallback);
   }
 });
