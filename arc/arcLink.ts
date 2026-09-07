@@ -32,7 +32,8 @@
 import { getAwarenessInstruction, getCombinedAttentionInstruction, getExpandPresenceInstruction } from "./instructions.ts";
 import { getBodyImageryForText, safeTriggerText } from "./bodyImagery.ts";
 import type { BodyImagery } from "./bodyImagery.ts";
-import type { ArcLinkMode } from "./routineLinks.ts";
+import type { ArcLinkMode, ArcLinkTriggerCategory } from "./routineLinks.ts";
+import { buildTriggerImageryContent } from "./triggerImagery.ts";
 import type { ArcBuildProfile } from "./types.ts";
 
 export type ArcLinkTarget = "state" | "identity" | "habit";
@@ -330,6 +331,15 @@ export type ArcLinkRouteChoice = { kind: "interfering" | "supportive"; target: A
 export interface ArcLinkRehearsalContext {
   triggerText: string;
   mode: ArcLinkMode;
+  /**
+   * Extended ARC Link trigger system: steers ONLY the trigger-imagery
+   * wording (arc/triggerImagery.ts) -- optional, defaulting to
+   * "scheduled" (the original, unconditional trigger-imagery wording)
+   * so every existing caller of buildArcLinkIntroSteps that doesn't
+   * pass this keeps producing exactly the same text as before this
+   * field existed.
+   */
+  triggerCategory?: ArcLinkTriggerCategory;
 }
 
 /**
@@ -350,6 +360,13 @@ export function buildArcLinkIntroSteps(profile: ArcBuildProfile, ctx: ArcLinkReh
       ? "בתרגול הזה תחזק את הקישור בין הטריגר שלך לבין הכניסה ל-ARCHI וביצוע ה-ARC האישי שלך."
       : "בתרגול הזה תחזק את הקישור בין הטריגר שלך לבין ביצוע ה-ARC האישי שלך מהזיכרון.";
 
+  const triggerCategory = ctx.triggerCategory ?? "scheduled";
+  const interferingLabel = triggerCategory === "reactive" ? (() => {
+    const target = resolveArcLinkTarget(profile);
+    return target ? resolveInterferingLabel(profile, target) : "";
+  })() : "";
+  const triggerContent = buildTriggerImageryContent(trigger, triggerCategory, interferingLabel);
+
   const steps: ArcLinkStep[] = [
     {
       id: "intro",
@@ -361,12 +378,8 @@ export function buildArcLinkIntroSteps(profile: ArcBuildProfile, ctx: ArcLinkReh
     {
       id: "trigger",
       title: "דמיין את הטריגר",
-      lines: [
-        "עצום עיניים ודמיין שהרגע הבא מתרחש:",
-        trigger || "הטריגר שהגדרת",
-        "דמיין היכן אתה נמצא, מה אתה רואה סביבך ומה אתה עושה באותו רגע. דמיין את הרגע כאילו הוא מתרחש עכשיו.",
-      ],
-      buttonLabel: "דמיינתי את הטריגר",
+      lines: triggerContent.lines,
+      buttonLabel: triggerContent.buttonLabel,
       bodyImagery: null,
     },
   ];

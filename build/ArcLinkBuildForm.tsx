@@ -5,17 +5,34 @@ import { deleteArcLink, upsertArcLink, upsertRoutineTrigger, upsertWeeklyAction 
 import { ARC_LINK_TRIGGER_TYPE_LABELS } from "../arc/bodyImagery.ts";
 import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
 import {
+  ARC_LINK_TRIGGER_CATEGORY_LABELS,
+  describeArcLinkKindAndCategory,
   generateArcLinkId,
   generateRoutineTriggerId,
   generateWeeklyActionId,
+  resolveArcLinkKind,
+  resolveArcLinkTriggerCategory,
 } from "../arc/routineLinks.ts";
-import type { ArcLink, ArcLinkMode, RoutineTrigger, WeeklyAction } from "../arc/routineLinks.ts";
+import type { ArcLink, ArcLinkKind, ArcLinkMode, ArcLinkTriggerCategory, RoutineTrigger, WeeklyAction } from "../arc/routineLinks.ts";
 import type { ArcBuild } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 
 const DAY_LABELS = ["א", "ב", "ג", "ד", "ה", "ו", "ש"]; // index === Date.getDay()
 
-type BuildStep = "protocol" | "weeklyAction" | "trigger" | "mode" | "schedule" | "review";
+/**
+ * Extended ARC Link trigger system: "category" (the 5-way type chip:
+ * מתוזמן/לשגרה/מניעתי/תגובתי/מגשר) and "bridging" (the Bridging ARC
+ * Link's own supportive-state-protocol + variant + category picker) are
+ * NEW steps, additive to the original 6-step flow -- shown ONLY for
+ * protocolType "arc" (kind/triggerCategory/bridging are all full-ARC
+ * concepts, since Bridging specifically needs a state ARC + an
+ * identity ARC, a split Mini ARC has no equivalent of). For "mini_arc",
+ * `step` starts at "protocol" exactly as before and NEVER visits either
+ * new step -- Mini ARC Link's own flow is byte-for-byte unchanged.
+ */
+type BuildStep = "category" | "bridging" | "protocol" | "weeklyAction" | "trigger" | "mode" | "schedule" | "review";
+
+const BRIDGING_CATEGORY_OPTIONS: ArcLinkTriggerCategory[] = ["routine", "preventive", "reactive"];
 
 interface ArcLinkFormState {
   id: string | null;
@@ -27,6 +44,10 @@ interface ArcLinkFormState {
   practiceTimeText: string;
   weeklyTargetText: string;
   enabled: boolean;
+  kind: ArcLinkKind;
+  triggerCategory: ArcLinkTriggerCategory;
+  bridgingSupportiveProtocolId: string | null;
+  bridgingVariant: "full" | "short";
 }
 
 function emptyForm(): ArcLinkFormState {
@@ -40,6 +61,10 @@ function emptyForm(): ArcLinkFormState {
     practiceTimeText: "",
     weeklyTargetText: "",
     enabled: true,
+    kind: "standard",
+    triggerCategory: "scheduled",
+    bridgingSupportiveProtocolId: null,
+    bridgingVariant: "full",
   };
 }
 
@@ -54,6 +79,10 @@ function formFromLink(link: ArcLink): ArcLinkFormState {
     practiceTimeText: link.practiceTime ?? "",
     weeklyTargetText: link.weeklyTarget !== null ? String(link.weeklyTarget) : "",
     enabled: link.enabled,
+    kind: resolveArcLinkKind(link),
+    triggerCategory: resolveArcLinkTriggerCategory(link),
+    bridgingSupportiveProtocolId: link.bridging?.supportiveProtocolId ?? null,
+    bridgingVariant: link.bridging?.variant ?? "full",
   };
 }
 
@@ -98,7 +127,7 @@ export default function ArcLinkBuildForm({
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<ArcLinkFormState>(editingLink ? formFromLink(editingLink) : emptyForm());
-  const [step, setStep] = useState<BuildStep>("protocol");
+  const [step, setStep] = useState<BuildStep>(protocolType === "arc" ? "category" : "protocol");
   const [newWeeklyActionName, setNewWeeklyActionName] = useState("");
   const [newTriggerType, setNewTriggerType] = useState<ArcLinkTriggerType>("time");
   const [newTriggerText, setNewTriggerText] = useState("");
@@ -151,6 +180,7 @@ export default function ArcLinkBuildForm({
 
   async function handleSave() {
     if (!form.protocolId || !form.weeklyActionId || !form.triggerId) return;
+    if (form.kind === "bridging" && !form.bridgingSupportiveProtocolId) return;
     const now = new Date().toISOString();
     const weeklyTarget = form.weeklyTargetText.trim() ? Number.parseInt(form.weeklyTargetText, 10) : null;
     const link: ArcLink = {
@@ -167,6 +197,10 @@ export default function ArcLinkBuildForm({
       enabled: form.enabled,
       createdAt: editingLink?.createdAt ?? now,
       updatedAt: now,
+      kind: form.kind,
+      triggerCategory: form.triggerCategory,
+      triggerLevels: editingLink?.triggerLevels ?? null,
+      bridging: form.kind === "bridging" && form.bridgingSupportiveProtocolId ? { supportiveProtocolId: form.bridgingSupportiveProtocolId, variant: form.bridgingVariant } : null,
     };
     await upsertArcLink(link);
     onSaved();
@@ -185,11 +219,110 @@ export default function ArcLinkBuildForm({
     });
   }
 
-  // ---- Step 1: select protocol ----
+  // ---- Step 0a: select ARC Link category (arc protocolType only -- Mini
+  // ARC Link never visits this step, so its own flow stays unchanged) ----
+  if (step === "category") {
+    return (
+      <View>
+        <Text style={styles.title}>איזה סוג ARC Link תרצה לבנות?</Text>
+        <View style={styles.chipRow}>
+          {(["scheduled", "routine", "preventive", "reactive"] as ArcLinkTriggerCategory[]).map((category) => (
+            <Pressable
+              key={category}
+              style={[styles.chip, form.kind === "standard" && form.triggerCategory === category && styles.chipSelected]}
+              onPress={() => setForm({ ...form, kind: "standard", triggerCategory: category })}
+            >
+              <Text style={styles.chipText}>{`ARC Link ${ARC_LINK_TRIGGER_CATEGORY_LABELS[category]}`}</Text>
+            </Pressable>
+          ))}
+          <Pressable
+            style={[styles.chip, form.kind === "bridging" && styles.chipSelected]}
+            onPress={() => setForm({ ...form, kind: "bridging", triggerCategory: form.triggerCategory === "scheduled" ? "routine" : form.triggerCategory })}
+          >
+            <Text style={styles.chipText}>ARC Link מגשר</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.emptyText}>
+          {form.kind === "bridging"
+            ? "מחבר בין רמז מצב תומך שכבר אימנת לבין הזהות הרצויה והפעולה המיטיבה."
+            : "מתוזמן: שעה קבועה. לשגרה: הקשר קבוע. מניעתי: זיהוי מוקדם של סיטואציה. תגובתי: זיהוי של מה שכבר מתחיל להופיע."}
+        </Text>
+        <View style={styles.stepButtons}>
+          <Pressable style={styles.cancelButton} onPress={onCancel}>
+            <Text style={styles.cancelButtonText}>ביטול</Text>
+          </Pressable>
+          <Pressable style={styles.saveButton} onPress={() => setStep(form.kind === "bridging" ? "bridging" : "protocol")}>
+            <Text style={styles.saveButtonText}>המשך</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // ---- Step 0b: Bridging ARC Link's own supportive-state ARC + variant +
+  // category (only reached when kind === "bridging") ----
+  if (step === "bridging") {
+    return (
+      <View>
+        <Text style={styles.title}>מהו ה-ARC של המצב התומך?</Text>
+        <Text style={styles.emptyText}>הרמז הקצר של ה-ARC הזה יהפוך להיות הטריגר שמתחיל את מעבר הזהות.</Text>
+        {arcBuilds.length === 0 && <Text style={styles.emptyText}>עדיין אין ARC שמור.</Text>}
+        {arcBuilds.map((build) => (
+          <Pressable
+            key={build.id}
+            style={[styles.optionRow, form.bridgingSupportiveProtocolId === build.id && styles.optionRowSelected]}
+            onPress={() => setForm({ ...form, bridgingSupportiveProtocolId: build.id })}
+          >
+            <Text style={styles.optionRowText}>{build.name}</Text>
+          </Pressable>
+        ))}
+
+        <Text style={styles.fieldLabel}>אורך התרגול</Text>
+        <View style={styles.chipRow}>
+          <Pressable style={[styles.chip, form.bridgingVariant === "full" && styles.chipSelected]} onPress={() => setForm({ ...form, bridgingVariant: "full" })}>
+            <Text style={styles.chipText}>מלא (כולל הטריגר והמצב התומך)</Text>
+          </Pressable>
+          <Pressable style={[styles.chip, form.bridgingVariant === "short" && styles.chipSelected]} onPress={() => setForm({ ...form, bridgingVariant: "short" })}>
+            <Text style={styles.chipText}>מקוצר (רמז ← זהות ← פעולה)</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.fieldLabel}>קטגוריית הטריגר</Text>
+        <View style={styles.chipRow}>
+          {BRIDGING_CATEGORY_OPTIONS.map((category) => (
+            <Pressable
+              key={category}
+              style={[styles.chip, form.triggerCategory === category && styles.chipSelected]}
+              onPress={() => setForm({ ...form, triggerCategory: category })}
+            >
+              <Text style={styles.chipText}>{ARC_LINK_TRIGGER_CATEGORY_LABELS[category]}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.stepButtons}>
+          <Pressable style={styles.cancelButton} onPress={() => setStep("category")}>
+            <Text style={styles.cancelButtonText}>חזרה</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.saveButton, !form.bridgingSupportiveProtocolId && styles.buttonDisabled]}
+            disabled={!form.bridgingSupportiveProtocolId}
+            onPress={() => setStep("protocol")}
+          >
+            <Text style={styles.saveButtonText}>המשך</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // ---- Step 1: select protocol (the identity+action ARC, when kind === "bridging") ----
   if (step === "protocol") {
     return (
       <View>
-        <Text style={styles.title}>{`איזה ${protocolLabel} תרצה לחבר לשגרה?`}</Text>
+        <Text style={styles.title}>
+          {form.kind === "bridging" ? `באיזה ${protocolLabel} נמצאת הזהות הרצויה והפעולה המיטיבה?` : `איזה ${protocolLabel} תרצה לחבר לשגרה?`}
+        </Text>
         {protocolOptions.length === 0 && <Text style={styles.emptyText}>{`עדיין אין ${protocolLabel} שמור.`}</Text>}
         {protocolOptions.map((build) => (
           <Pressable
@@ -201,8 +334,11 @@ export default function ArcLinkBuildForm({
           </Pressable>
         ))}
         <View style={styles.stepButtons}>
-          <Pressable style={styles.cancelButton} onPress={onCancel}>
-            <Text style={styles.cancelButtonText}>ביטול</Text>
+          <Pressable
+            style={styles.cancelButton}
+            onPress={() => (protocolType === "arc" ? setStep(form.kind === "bridging" ? "bridging" : "category") : onCancel())}
+          >
+            <Text style={styles.cancelButtonText}>{protocolType === "arc" ? "חזרה" : "ביטול"}</Text>
           </Pressable>
           <Pressable
             style={[styles.saveButton, !form.protocolId && styles.buttonDisabled]}
@@ -306,7 +442,7 @@ export default function ArcLinkBuildForm({
           <Pressable
             style={[styles.saveButton, !form.triggerId && styles.buttonDisabled]}
             disabled={!form.triggerId}
-            onPress={() => setStep("mode")}
+            onPress={() => setStep(form.kind === "bridging" ? "schedule" : "mode")}
           >
             <Text style={styles.saveButtonText}>המשך</Text>
           </Pressable>
@@ -371,7 +507,7 @@ export default function ArcLinkBuildForm({
           textAlign="right"
         />
         <View style={styles.stepButtons}>
-          <Pressable style={styles.cancelButton} onPress={() => setStep("mode")}>
+          <Pressable style={styles.cancelButton} onPress={() => setStep(form.kind === "bridging" ? "trigger" : "mode")}>
             <Text style={styles.cancelButtonText}>חזרה</Text>
           </Pressable>
           <Pressable style={styles.saveButton} onPress={() => setStep("review")}>
@@ -386,13 +522,28 @@ export default function ArcLinkBuildForm({
   const selectedProtocolName = form.protocolId ? protocolName(protocolType, form.protocolId, arcBuilds, miniArcBuilds) : "";
   const selectedWeeklyAction = localWeeklyActions.find((a) => a.id === form.weeklyActionId);
   const selectedTrigger = localTriggers.find((t) => t.id === form.triggerId);
+  const selectedBridgingProtocolName =
+    form.kind === "bridging" && form.bridgingSupportiveProtocolId ? protocolName("arc", form.bridgingSupportiveProtocolId, arcBuilds, miniArcBuilds) : "";
   return (
     <View>
       <Text style={styles.title}>סקירה</Text>
-      <Text style={styles.reviewLine}>{`פרוטוקול: ${selectedProtocolName}`}</Text>
+      {protocolType === "arc" && (
+        <Text style={styles.reviewLine}>{`סוג: ${describeArcLinkKindAndCategory({ kind: form.kind, triggerCategory: form.triggerCategory })}`}</Text>
+      )}
+      {form.kind === "bridging" ? (
+        <>
+          <Text style={styles.reviewLine}>{`ARC של המצב התומך: ${selectedBridgingProtocolName}`}</Text>
+          <Text style={styles.reviewLine}>{`ARC של הזהות והפעולה: ${selectedProtocolName}`}</Text>
+          <Text style={styles.reviewLine}>{`אורך התרגול: ${form.bridgingVariant === "full" ? "מלא" : "מקוצר"}`}</Text>
+        </>
+      ) : (
+        <Text style={styles.reviewLine}>{`פרוטוקול: ${selectedProtocolName}`}</Text>
+      )}
       <Text style={styles.reviewLine}>{`פעולה שבועית: ${selectedWeeklyAction?.name ?? ""}`}</Text>
       <Text style={styles.reviewLine}>{`טריגר: ${selectedTrigger?.text ?? ""}`}</Text>
-      <Text style={styles.reviewLine}>{form.mode === "with_archi" ? "אופן התרגול: עם ARCHI" : "אופן התרגול: ללא ARCHI"}</Text>
+      {form.kind !== "bridging" && (
+        <Text style={styles.reviewLine}>{form.mode === "with_archi" ? "אופן התרגול: עם ARCHI" : "אופן התרגול: ללא ARCHI"}</Text>
+      )}
       {form.practiceDays.length > 0 && <Text style={styles.reviewLine}>{`ימי תרגול: ${form.practiceDays.map((d) => DAY_LABELS[d]).join(", ")}`}</Text>}
       {form.practiceTimeText.trim() && <Text style={styles.reviewLine}>{`שעת תרגול: ${form.practiceTimeText.trim()}`}</Text>}
       {form.weeklyTargetText.trim() && <Text style={styles.reviewLine}>{`יעד שבועי: ${form.weeklyTargetText.trim()}`}</Text>}

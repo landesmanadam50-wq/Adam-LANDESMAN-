@@ -278,6 +278,40 @@ test("buildArcLinkIntroSteps: with_archi includes enter_archi with the diagram r
   assert.ok(!withoutArchi[0].lines.join(" ").includes("כניסה ל-ARCHI"));
 });
 
+// ---------------------------------------------------------------------------
+// Extended ARC Link trigger system: ctx.triggerCategory steers ONLY the
+// trigger-imagery step's wording (arc/triggerImagery.ts) -- optional,
+// defaulting to "scheduled" (exactly the pre-existing, unconditional text).
+// ---------------------------------------------------------------------------
+
+test("buildArcLinkIntroSteps: omitting triggerCategory (or passing 'scheduled') produces the exact original trigger-imagery text", () => {
+  const p = profile();
+  const withoutCategory = buildArcLinkIntroSteps(p, { triggerText: "בשעה 10:00", mode: "with_archi" });
+  const withScheduled = buildArcLinkIntroSteps(p, { triggerText: "בשעה 10:00", mode: "with_archi", triggerCategory: "scheduled" });
+  assert.deepEqual(withoutCategory, withScheduled);
+  const triggerStep = withoutCategory.find((s) => s.id === "trigger")!;
+  assert.match(triggerStep.lines.join(" "), /עצום עיניים ודמיין שהרגע הבא מתרחש/);
+});
+
+test("buildArcLinkIntroSteps: 'preventive' triggerCategory uses observer-perspective phrasing on the trigger step", () => {
+  const p = profile();
+  const steps = buildArcLinkIntroSteps(p, { triggerText: "לפני פגישה", mode: "with_archi", triggerCategory: "preventive" });
+  const triggerStep = steps.find((s) => s.id === "trigger")!;
+  assert.match(triggerStep.lines.join(" "), /רואה את עצמך מהצד/);
+  assert.match(triggerStep.lines.join(" "), /לפני פגישה/);
+});
+
+test("buildArcLinkIntroSteps: 'reactive' triggerCategory uses safe recognition-only wording, never an instruction to evoke/intensify", () => {
+  const p = profile({ internalAction: "סריקת גוף", interferingState: "מתח בבטן" });
+  const steps = buildArcLinkIntroSteps(p, { triggerText: "בשעה 10:00", mode: "with_archi", triggerCategory: "reactive" });
+  const triggerStep = steps.find((s) => s.id === "trigger")!;
+  assert.match(triggerStep.lines.join(" "), /שים לב למה שכבר נמצא עכשיו/);
+  assert.match(triggerStep.lines.join(" "), /מתח בבטן/);
+  for (const pattern of FORBIDDEN_INTERFERING_STATE_PATTERNS) {
+    assert.equal(pattern.test(triggerStep.lines.join(" ")), false);
+  }
+});
+
 test("buildArcLinkProtocolSteps: choice=null (legacy) reproduces buildArcLinkSteps' own protocol-steps content exactly", () => {
   const p = profile({ internalAction: "סריקת גוף", interferingState: "לחץ", beneficialAction: "לצאת להליכה" });
   const ctx = { triggerText: "בשעה 10:00", mode: "with_archi" as const };

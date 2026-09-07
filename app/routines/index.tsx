@@ -47,15 +47,19 @@ import { cancelRoutineNotification, reconcileRoutineNotifications, rescheduleRou
 import { buildRoutineListItems, generateRoutineId, resolveNextOccurrenceDate, resolveTodayOccurrenceDate, sortRoutineListItems } from "../../arc/routines.ts";
 import type { RoutineListItem, RoutineStatus } from "../../arc/routines.ts";
 import {
+  ARC_LINK_TRIGGER_CATEGORY_LABELS,
   arcLinkPracticeSchedule,
   countCompletionsThisWeek,
+  describeArcLinkKindAndCategory,
   describeTrigger,
   generateRoutineTriggerId,
   generateWeeklyActionId,
+  resolveArcLinkKind,
+  resolveArcLinkTriggerCategory,
   resolveRoutineTrigger,
   resolveWeeklyAction,
 } from "../../arc/routineLinks.ts";
-import type { ArcLink, RoutineTrigger, WeeklyAction } from "../../arc/routineLinks.ts";
+import type { ArcLink, ArcLinkTriggerCategory, RoutineTrigger, WeeklyAction } from "../../arc/routineLinks.ts";
 import { ARC_LINK_TRIGGER_TYPE_LABELS } from "../../arc/bodyImagery.ts";
 import type { ArcLinkTriggerType } from "../../arc/bodyImagery.ts";
 import { todayLocalDateString } from "../../program/dateUtils.ts";
@@ -77,6 +81,30 @@ function formatHm(hour: number, minute: number): string {
 
 function formatOccurrence(date: Date): string {
   return `יום ${DAY_FULL_NAMES[date.getDay()]}, ${formatHm(date.getHours(), date.getMinutes())}`;
+}
+
+/**
+ * Extended ARC Link trigger system: the additional, ADDITIVE category
+ * filter shown alongside the existing protocolType chip row (ARC Link /
+ * Mini ARC Link) in both ArcLinkManageSection and ArcLinkPracticeSection
+ * -- "all" plus the five UI-facing types. A Mini ARC Link is always
+ * kind "standard" + triggerCategory "scheduled" by construction (the
+ * category step is never shown for protocolType "mini_arc"), so it
+ * only ever matches "all" or "scheduled" here, never "bridging" or any
+ * other category -- exactly reflecting what Mini ARC Link can be.
+ */
+type CategoryFilter = "all" | ArcLinkTriggerCategory | "bridging";
+
+const CATEGORY_FILTER_LABELS: Record<CategoryFilter, string> = {
+  all: "הכול",
+  ...ARC_LINK_TRIGGER_CATEGORY_LABELS,
+  bridging: "מגשר",
+};
+
+function matchesCategoryFilter(link: ArcLink, filter: CategoryFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "bridging") return resolveArcLinkKind(link) === "bridging";
+  return resolveArcLinkKind(link) === "standard" && resolveArcLinkTriggerCategory(link) === filter;
 }
 
 /** "ראשון, שלישי וחמישי" -- Hebrew list join with a final "ו" before the last item. Empty for no days, matching a weekly action/Link with no schedule configured yet. */
@@ -424,6 +452,7 @@ function ArcLinkManageSection() {
   const [triggers, setTriggers] = useState<RoutineTrigger[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [filter, setFilter] = useState<LinkFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [building, setBuilding] = useState<{ protocolType: "arc" | "mini_arc"; editingLink: ArcLink | null } | null>(null);
 
   const reload = useCallback(() => {
@@ -450,7 +479,7 @@ function ArcLinkManageSection() {
     reload();
   }
 
-  const visibleLinks = links.filter((link) => filter === "all" || link.protocolType === filter);
+  const visibleLinks = links.filter((link) => (filter === "all" || link.protocolType === filter) && matchesCategoryFilter(link, categoryFilter));
 
   if (building) {
     return (
@@ -499,6 +528,13 @@ function ArcLinkManageSection() {
           <Text style={styles.chipText}>Mini ARC Link</Text>
         </Pressable>
       </View>
+      <View style={styles.chipRow}>
+        {(Object.keys(CATEGORY_FILTER_LABELS) as CategoryFilter[]).map((category) => (
+          <Pressable key={category} style={[styles.chip, categoryFilter === category && styles.chipSelected]} onPress={() => setCategoryFilter(category)}>
+            <Text style={styles.chipText}>{CATEGORY_FILTER_LABELS[category]}</Text>
+          </Pressable>
+        ))}
+      </View>
 
       {loaded && visibleLinks.length === 0 && <Text style={styles.emptyText}>עדיין אין קישורים שמורים.</Text>}
       {visibleLinks.map((link) => {
@@ -508,9 +544,10 @@ function ArcLinkManageSection() {
             : miniArcBuilds.find((b) => b.id === link.protocolId)?.name ?? "פרוטוקול לא נמצא";
         const weeklyAction = resolveWeeklyAction(link.weeklyActionId, weeklyActions);
         const trigger = resolveRoutineTrigger(link.triggerId, triggers);
+        const linkTypeLabel = link.protocolType === "arc" ? describeArcLinkKindAndCategory(link) : "Mini ARC Link";
         return (
           <View key={link.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{link.protocolType === "arc" ? `ARC Link – ${protocolName}` : `Mini ARC Link – ${protocolName}`}</Text>
+            <Text style={styles.cardTitle}>{`${linkTypeLabel} – ${protocolName}`}</Text>
             <Text style={styles.cardRow}>{`פעולה שבועית: ${weeklyAction?.name ?? "לא נמצאה"}`}</Text>
             <Text style={styles.cardRow}>{`טריגר: ${describeTrigger(trigger)}`}</Text>
             <Text style={styles.cardRow}>{link.mode === "with_archi" ? "אופן התרגול: עם ARCHI" : "אופן התרגול: ללא ARCHI"}</Text>
@@ -564,6 +601,7 @@ function ArcLinkPracticeSection() {
   const [triggers, setTriggers] = useState<RoutineTrigger[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [filter, setFilter] = useState<LinkFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
 
   const reload = useCallback(() => {
     Promise.all([loadArcLinks(), loadArcBuilds(), loadMiniArcBuilds(), loadRoutineTriggers()]).then(([loadedLinks, loadedArc, loadedMini, loadedTriggers]) => {
@@ -581,7 +619,7 @@ function ArcLinkPracticeSection() {
     }, [reload])
   );
 
-  const visibleLinks = links.filter((link) => filter === "all" || link.protocolType === filter);
+  const visibleLinks = links.filter((link) => (filter === "all" || link.protocolType === filter) && matchesCategoryFilter(link, categoryFilter));
 
   return (
     <View style={styles.section}>
@@ -598,6 +636,13 @@ function ArcLinkPracticeSection() {
         <Pressable style={[styles.chip, filter === "mini_arc" && styles.chipSelected]} onPress={() => setFilter("mini_arc")}>
           <Text style={styles.chipText}>Mini ARC Link</Text>
         </Pressable>
+      </View>
+      <View style={styles.chipRow}>
+        {(Object.keys(CATEGORY_FILTER_LABELS) as CategoryFilter[]).map((category) => (
+          <Pressable key={category} style={[styles.chip, categoryFilter === category && styles.chipSelected]} onPress={() => setCategoryFilter(category)}>
+            <Text style={styles.chipText}>{CATEGORY_FILTER_LABELS[category]}</Text>
+          </Pressable>
+        ))}
       </View>
 
       {loaded && visibleLinks.length === 0 && <Text style={styles.emptyText}>אין קישורים פעילים לתרגול כרגע.</Text>}
@@ -627,10 +672,11 @@ function ArcLinkPracticeSection() {
             nextPractice = next ? formatOccurrence(next) : null;
           }
         }
+        const linkTypeLabel = link.protocolType === "arc" ? describeArcLinkKindAndCategory(link) : "Mini ARC Link";
 
         return (
           <View key={link.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{link.protocolType === "arc" ? `ARC Link – ${protocolName}` : `Mini ARC Link – ${protocolName}`}</Text>
+            <Text style={styles.cardTitle}>{`${linkTypeLabel} – ${protocolName}`}</Text>
             <Text style={styles.cardRow}>{`טריגר: ${describeTrigger(trigger)}`}</Text>
             {beneficialAction && <Text style={styles.cardRow}>{`פעולה: ${beneficialAction}`}</Text>}
             <Text style={styles.cardRow}>{link.mode === "with_archi" ? "אופן התרגול: עם ARCHI" : "אופן התרגול: ללא ARCHI"}</Text>
