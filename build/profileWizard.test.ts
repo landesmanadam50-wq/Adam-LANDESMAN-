@@ -12,6 +12,7 @@ import {
   isStateArcDraftComplete,
   isIdentityArcDraftComplete,
   resolvesNeedsIdentity,
+  shouldShowProfileStep,
   GOAL_STEP_ORDER,
   STATE_ARC_STEP_ORDER,
   IDENTITY_ARC_STEP_ORDER,
@@ -772,4 +773,117 @@ test("legacy profile data (stateDwellTimes/identityDwellTimes missing entirely, 
   // The rest of the legacy profile is completely unaffected/unbroken.
   assert.equal(reloaded.supportiveState, draft.supportiveState);
   assert.equal(reloaded.desiredIdentity, draft.desiredIdentity);
+});
+
+// ---------------------------------------------------------------------------
+// Coherent-architecture task: Value / Identity Desired State / Supporting
+// Action / Limiting & Bridge Belief / Future-Oriented Mantra / Barrier Type
+// ---------------------------------------------------------------------------
+
+test("Value round-trips through buildProfileFromDraft -> draftFromProfileAndSelection, build-global regardless of target", () => {
+  const draft = filledTwoWeekDraft({ value: "בריאות וחופש" });
+  const profile = buildProfileFromDraft(draft);
+  assert.equal(profile.value, "בריאות וחופש");
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.equal(reloaded.value, "בריאות וחופש");
+});
+
+test("Value is null (never an empty string) when never filled in", () => {
+  const draft = filledTwoWeekDraft({ value: "" });
+  const profile = buildProfileFromDraft(draft);
+  assert.equal(profile.value, null);
+});
+
+test("identityDesiredState round-trips and stays distinct from desiredIdentity itself", () => {
+  const draft = filledTwoWeekDraft({ desiredIdentity: "אדם ממושמע", identityDesiredState: "אנרגטיות ונחישות" });
+  const profile = buildProfileFromDraft(draft);
+  assert.equal(profile.desiredIdentity, "אדם ממושמע");
+  assert.equal(profile.identityDesiredState, "אנרגטיות ונחישות");
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.equal(reloaded.identityDesiredState, "אנרגטיות ונחישות");
+});
+
+test("state and identity Supporting Action / Limiting Belief / Bridge Belief / Future-Oriented Mantra all round-trip independently, never mixed between layers", () => {
+  const draft = filledTwoWeekDraft({
+    stateSupportingAction: "מדיטציה קצרה",
+    identitySupportingAction: "הליכה קצרה",
+    stateLimitingBelief: "אין טעם להתחיל",
+    identityLimitingBelief: "אני תמיד נכשל",
+    stateBridgeBelief: "גם צעד קטן הוא התקדמות",
+    identityBridgeBelief: "אני בונה התמדה בהדרגה",
+    stateFutureOrientedMantra: "אני יכול להתקדם עכשיו לעבר רוגע",
+    identityFutureOrientedMantra: "אני אתחיל היום בצעד קטן",
+  });
+  const profile = buildProfileFromDraft(draft);
+  assert.equal(profile.stateSupportingAction, "מדיטציה קצרה");
+  assert.equal(profile.identitySupportingAction, "הליכה קצרה");
+  assert.equal(profile.stateLimitingBelief, "אין טעם להתחיל");
+  assert.equal(profile.identityLimitingBelief, "אני תמיד נכשל");
+  assert.equal(profile.stateBridgeBelief, "גם צעד קטן הוא התקדמות");
+  assert.equal(profile.identityBridgeBelief, "אני בונה התמדה בהדרגה");
+  assert.equal(profile.stateFutureOrientedMantra, "אני יכול להתקדם עכשיו לעבר רוגע");
+  assert.equal(profile.identityFutureOrientedMantra, "אני אתחיל היום בצעד קטן");
+
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.equal(reloaded.stateSupportingAction, "מדיטציה קצרה");
+  assert.equal(reloaded.identitySupportingAction, "הליכה קצרה");
+});
+
+test("Barrier Type round-trips per layer, and null (never classified) is preserved rather than defaulted", () => {
+  const draft = filledTwoWeekDraft({ stateBarrierType: "practical", identityBarrierType: null });
+  const profile = buildProfileFromDraft(draft);
+  assert.equal(profile.stateBarrierType, "practical");
+  assert.equal(profile.identityBarrierType, null);
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.equal(reloaded.stateBarrierType, "practical");
+  assert.equal(reloaded.identityBarrierType, null);
+});
+
+test("statePracticalAlternative/identityPracticalAlternative are only ever persisted when that layer's own barrierType is 'practical'", () => {
+  const internalDraft = filledTwoWeekDraft({ stateBarrierType: "internal", statePracticalAlternative: "פתרון שנרשם בטעות" });
+  const internalProfile = buildProfileFromDraft(internalDraft);
+  assert.equal(internalProfile.statePracticalAlternative, null, "never persisted when barrierType is 'internal'");
+
+  const practicalDraft = filledTwoWeekDraft({ stateBarrierType: "practical", statePracticalAlternative: "גרסה מצומצמת של האימון" });
+  const practicalProfile = buildProfileFromDraft(practicalDraft);
+  assert.equal(practicalProfile.statePracticalAlternative, "גרסה מצומצמת של האימון");
+});
+
+test("shouldShowProfileStep only shows statePracticalAlternative/identityPracticalAlternative once their own layer's barrierType is 'practical'", () => {
+  const draft = filledTwoWeekDraft();
+  assert.equal(shouldShowProfileStep("statePracticalAlternative", { ...draft, stateBarrierType: null }), false);
+  assert.equal(shouldShowProfileStep("statePracticalAlternative", { ...draft, stateBarrierType: "internal" }), false);
+  assert.equal(shouldShowProfileStep("statePracticalAlternative", { ...draft, stateBarrierType: "practical" }), true);
+  assert.equal(shouldShowProfileStep("identityPracticalAlternative", { ...draft, identityBarrierType: "practical" }), true);
+  assert.equal(shouldShowProfileStep("identityPracticalAlternative", { ...draft, identityBarrierType: "internal" }), false);
+});
+
+test("a legacy profile with every coherent-architecture field genuinely absent (as before this task existed) loads safely into a draft -- empty strings/null, never a crash or 'undefined'", () => {
+  const draft = filledTwoWeekDraft();
+  const legacyProfile = buildProfileFromDraft(draft);
+  for (const field of [
+    "value",
+    "identityDesiredState",
+    "stateSupportingAction",
+    "identitySupportingAction",
+    "stateLimitingBelief",
+    "stateBridgeBelief",
+    "identityLimitingBelief",
+    "identityBridgeBelief",
+    "stateFutureOrientedMantra",
+    "identityFutureOrientedMantra",
+    "stateBarrierType",
+    "statePracticalAlternative",
+    "identityBarrierType",
+    "identityPracticalAlternative",
+  ] as const) {
+    delete (legacyProfile as unknown as Record<string, unknown>)[field];
+  }
+  const reloaded = draftFromProfileAndSelection(legacyProfile, selectionFromDraft(draft));
+  assert.equal(reloaded.value, "");
+  assert.equal(reloaded.identityDesiredState, "");
+  assert.equal(reloaded.stateSupportingAction, "");
+  assert.equal(reloaded.stateBarrierType, null);
+  assert.equal(reloaded.identityBarrierType, null);
+  assert.equal(reloaded.statePracticalAlternative, "");
 });

@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
 import { getArcLink, getMiniArcBuild, loadRoutineTriggers, upsertArcLink } from "../data/storage.ts";
-import { buildMiniArcLinkSteps } from "../arc/miniArcLink.ts";
+import { buildMiniArcLinkStartConfirmationStep, buildMiniArcLinkSteps } from "../arc/miniArcLink.ts";
 import type { MiniArcLinkStep } from "../arc/miniArcLink.ts";
 import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
 import { describeTrigger, resolveRoutineTrigger } from "../arc/routineLinks.ts";
@@ -60,7 +60,20 @@ export default function MiniArcLinkScreen() {
       setArcLink(link);
       const trigger = resolveRoutineTrigger(link.triggerId, triggers);
       const triggerText = describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger);
-      setSteps(buildMiniArcLinkSteps(existing, { triggerText, mode: link.mode }));
+      const ctx = { triggerText, mode: link.mode };
+      const fullSteps = buildMiniArcLinkSteps(existing, ctx);
+      // Coherent-architecture task (#22/#24 "With ARCHI"): with_archi
+      // mode ends right after imagining opening ARCHI and pressing
+      // Start -- never the full Presence Color / naming / regulation /
+      // encoding / beneficial-action sequence, which only without_archi
+      // mode rehearses. Reuses the SAME intro/trigger/enter_archi
+      // content buildMiniArcLinkSteps already produced above (never a
+      // second, drifted copy of that text).
+      const steps =
+        link.mode === "with_archi"
+          ? [...fullSteps.filter((s) => s.id === "intro" || s.id === "trigger" || s.id === "enter_archi"), buildMiniArcLinkStartConfirmationStep(ctx)]
+          : fullSteps;
+      setSteps(steps);
       setIndex(0);
       setStatus("ready");
     });

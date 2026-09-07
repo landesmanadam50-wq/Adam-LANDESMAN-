@@ -86,6 +86,22 @@ export interface SessionLogEntry {
    */
   gratitudeMemoryDetail?: string | null;
   /**
+   * Coherent-architecture task (#13 "Evidence of Progress"): ONE small,
+   * user-supplied observation about what was different THIS time --
+   * "what did I do this time that I wouldn't have done before?" --
+   * collected on the SAME completion screen as Gratitude, right below
+   * it (live/screens.tsx's CompleteScreen), and saved together in the
+   * SAME updateLastSessionLogEntryGratitude() call for the same
+   * same-source guarantee Gratitude's own memory detail already has.
+   * Never inferred or auto-filled; null/absent whenever the trainee
+   * left it blank, and always absent on any entry logged before this
+   * field existed. arc/evidence.ts's buildEvidenceIndex derives a
+   * third EvidenceRecord source type from this field, so a trainee's
+   * own saved progress notes can be offered (never auto-applied) as
+   * optional support while editing a future Bridge Belief.
+   */
+  progressEvidence?: string | null;
+  /**
    * Evidence-encoding task: this session's own resolved context,
    * captured once at completion -- see SessionEvidenceContext above.
    * Optional/absent on any entry logged before this field existed;

@@ -7,12 +7,15 @@ import { getArcBuild, getArcLink, loadRoutineTriggers, upsertArcLink } from "../
 import {
   buildArcLinkIntroSteps,
   buildArcLinkProtocolSteps,
+  buildArcLinkStartConfirmationStep,
   buildArcLinkSteps,
   resolveArcLinkRouteOptions,
 } from "../arc/arcLink.ts";
 import type { ArcLinkRouteChoice, ArcLinkRouteOption, ArcLinkStep } from "../arc/arcLink.ts";
+import { buildBridgingLinkSteps } from "../arc/bridgingArcLink.ts";
+import type { BridgingLinkStep } from "../arc/bridgingArcLink.ts";
 import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
-import { describeTrigger, resolveRoutineTrigger } from "../arc/routineLinks.ts";
+import { describeTrigger, resolveArcLinkKind, resolveArcLinkTriggerCategory, resolveRoutineTrigger } from "../arc/routineLinks.ts";
 import type { ArcLink } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import type { ArcBuild } from "../arc/types.ts";
@@ -47,12 +50,19 @@ export default function ArcLinkScreen() {
   // linkId path.
   const [introSteps, setIntroSteps] = useState<ArcLinkStep[]>([]);
   const [introIndex, setIntroIndex] = useState(0);
-  const [phase, setPhase] = useState<"intro" | "choose" | "protocol">("intro");
+  const [phase, setPhase] = useState<"intro" | "choose" | "protocol" | "bridging">("intro");
   const [chooserPhase, setChooserPhase] = useState<RouteChooserPhase>(null);
   const [pendingKind, setPendingKind] = useState<"interfering" | "supportive" | null>(null);
   const [targetOptions, setTargetOptions] = useState<ArcLinkRouteOption[]>([]);
   const [protocolSteps, setProtocolSteps] = useState<ArcLinkStep[]>([]);
   const [protocolIndex, setProtocolIndex] = useState(0);
+
+  // Extended ARC Link trigger system: Bridging ARC Link's own step list --
+  // an entirely separate content sequence (arc/bridgingArcLink.ts), never
+  // the intro/choose/protocol machinery above. Only populated when
+  // resolveArcLinkKind(link) === "bridging".
+  const [bridgingSteps, setBridgingSteps] = useState<BridgingLinkStep[]>([]);
+  const [bridgingIndex, setBridgingIndex] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -86,7 +96,30 @@ export default function ArcLinkScreen() {
       }
       setArcLink(link);
       const trigger = resolveRoutineTrigger(link.triggerId, triggers);
-      const ctx = { triggerText: describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger), mode: link.mode };
+      const triggerText = describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger);
+      const triggerCategory = resolveArcLinkTriggerCategory(link);
+
+      if (resolveArcLinkKind(link) === "bridging" && link.bridging) {
+        const supportiveBuild = await getArcBuild(link.bridging.supportiveProtocolId);
+        if (cancelled) return;
+        if (!supportiveBuild) {
+          setStatus("notFound");
+          return;
+        }
+        const steps = buildBridgingLinkSteps(supportiveBuild.profile, existing.profile, {
+          triggerText,
+          triggerCategory,
+          variant: link.bridging.variant,
+          futureMantraOverride: link.bridging.futureMantraOverride,
+        });
+        setBridgingSteps(steps);
+        setBridgingIndex(0);
+        setPhase("bridging");
+        setStatus("ready");
+        return;
+      }
+
+      const ctx = { triggerText, mode: link.mode, triggerCategory, futureMantraOverride: link.futureMantraOverride };
       setIntroSteps(buildArcLinkIntroSteps(existing.profile, ctx));
       setIntroIndex(0);
       setPhase("intro");
@@ -152,7 +185,13 @@ export default function ArcLinkScreen() {
     loadRoutineTriggers().then((triggers) => {
       const trigger = resolveRoutineTrigger(arcLink.triggerId, triggers);
       const triggerText = describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger);
-      setProtocolSteps(buildArcLinkProtocolSteps(arcBuild.profile, choice, { triggerText, mode: arcLink.mode }));
+      const ctx = { triggerText, mode: arcLink.mode, triggerCategory: resolveArcLinkTriggerCategory(arcLink), futureMantraOverride: arcLink.futureMantraOverride };
+      // Coherent-architecture task (#22 "With ARCHI"): once the route is
+      // chosen (imagining selecting it in the app), with_archi mode ends
+      // right after imagining pressing Start -- never the full
+      // stage-by-stage rehearsal, which only without_archi mode shows.
+      const steps = arcLink.mode === "with_archi" ? [buildArcLinkStartConfirmationStep(ctx)] : buildArcLinkProtocolSteps(arcBuild.profile, choice, ctx);
+      setProtocolSteps(steps);
       setProtocolIndex(0);
       setPhase("protocol");
     });
@@ -302,6 +341,43 @@ export default function ArcLinkScreen() {
             </Pressable>
           ))}
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (phase === "bridging") {
+    const step = bridgingSteps[bridgingIndex];
+    if (!step) return null;
+    const isLastBridgingStep = bridgingIndex === bridgingSteps.length - 1;
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.content}>
+          {(step.id === "cue" || step.id === "identity") && step.bodyImagery ? (
+            <BodyImageryStep
+              title={step.title}
+              anchorLabel={step.bodyImagery.anchorLabel}
+              bodyImagery={step.bodyImagery.imagery}
+              extraLines={step.lines}
+              buttonLabel={step.buttonLabel}
+              onContinue={() => (isLastBridgingStep ? completePractice() : setBridgingIndex(bridgingIndex + 1))}
+            />
+          ) : (
+            <View>
+              <Text style={styles.title}>{step.title}</Text>
+              {step.lines.map((line, lineIndex) => (
+                <Text key={lineIndex} style={styles.body}>
+                  {line}
+                </Text>
+              ))}
+              <Pressable
+                style={[styles.button, styles.fullWidthButton]}
+                onPress={() => (isLastBridgingStep ? completePractice() : setBridgingIndex(bridgingIndex + 1))}
+              >
+                <Text style={styles.buttonText}>{step.buttonLabel}</Text>
+              </Pressable>
+            </View>
+          )}
+        </ScrollView>
       </SafeAreaView>
     );
   }

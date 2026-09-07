@@ -186,3 +186,100 @@ test("a legacy state-target ArcBuild with no saved presenceColor (null, pre-date
   assert.equal(saved.presenceColor, "כתום");
   assert.equal(saved.supportiveState, "רוגע", "the rest of the legacy build's data survives untouched");
 });
+
+// ---------------------------------------------------------------------------
+// Coherent-architecture task: buildArcBuildProfileForSave must null out the
+// OTHER layer's new fields too, exactly like it already does for
+// stateEncoding/identityEncoding/etc -- a state-target build never persists
+// identity-layer belief/mantra/barrier data, and vice versa.
+// ---------------------------------------------------------------------------
+
+function baseDraft(target: Target): ProfileDraft {
+  return draftForTarget(target, {
+    ...createEmptyDraft(),
+    presenceColor: "כחול",
+    regulationTool: "נשימה",
+    supportiveState: "רוגע",
+    challengeContext: "בבוקר",
+    interferingState: "לחץ",
+    internalAction: "סריקת גוף",
+    desiredIdentity: "משמעת עצמית",
+    identityChallengeContext: "לפני שיחה",
+    identityInterferingEmotion: "פחד",
+    beneficialAction: "לצאת להליכה",
+    negativeActionReductionEnabled: false,
+  });
+}
+
+test("a state-target save nulls out every identity-layer coherent-architecture field, even when the draft carries values for both layers", () => {
+  const draft: ProfileDraft = {
+    ...baseDraft("state"),
+    stateSupportingAction: "מדיטציה קצרה",
+    stateLimitingBelief: "אין טעם",
+    stateBridgeBelief: "גם קטן זה התקדמות",
+    stateFutureOrientedMantra: "אני מתקדם עכשיו",
+    stateBarrierType: "practical",
+    statePracticalAlternative: "גרסה מצומצמת",
+    identityDesiredState: "לא רלוונטי לזהות",
+    identitySupportingAction: "לא אמור להישמר",
+    identityLimitingBelief: "לא אמור להישמר",
+    identityBridgeBelief: "לא אמור להישמר",
+    identityFutureOrientedMantra: "לא אמור להישמר",
+    identityBarrierType: "internal",
+    identityPracticalAlternative: "לא אמור להישמר",
+  };
+  const saved = buildArcBuildProfileForSave("state", draft, "בוקר רגוע", "custom_arc_build");
+  assert.equal(saved.stateSupportingAction, "מדיטציה קצרה");
+  assert.equal(saved.stateBarrierType, "practical");
+  assert.equal(saved.statePracticalAlternative, "גרסה מצומצמת");
+  assert.equal(saved.identityDesiredState, null);
+  assert.equal(saved.identitySupportingAction, null);
+  assert.equal(saved.identityLimitingBelief, null);
+  assert.equal(saved.identityBridgeBelief, null);
+  assert.equal(saved.identityFutureOrientedMantra, null);
+  assert.equal(saved.identityBarrierType, null);
+  assert.equal(saved.identityPracticalAlternative, null);
+});
+
+test("an identity-target save nulls out every state-layer coherent-architecture field", () => {
+  const draft: ProfileDraft = {
+    ...baseDraft("identity"),
+    identitySupportingAction: "הליכה קצרה",
+    identityLimitingBelief: "אני תמיד נכשל",
+    identityBridgeBelief: "אני בונה בהדרגה",
+    identityFutureOrientedMantra: "אני אתחיל היום",
+    identityBarrierType: "internal",
+    stateSupportingAction: "לא אמור להישמר",
+    stateLimitingBelief: "לא אמור להישמר",
+    stateBridgeBelief: "לא אמור להישמר",
+    stateFutureOrientedMantra: "לא אמור להישמר",
+    stateBarrierType: "practical",
+    statePracticalAlternative: "לא אמור להישמר",
+  };
+  const saved = buildArcBuildProfileForSave("identity", draft, "משמעת", "custom_arc_build");
+  assert.equal(saved.identitySupportingAction, "הליכה קצרה");
+  assert.equal(saved.identityBarrierType, "internal");
+  assert.equal(saved.stateSupportingAction, null);
+  assert.equal(saved.stateLimitingBelief, null);
+  assert.equal(saved.stateBridgeBelief, null);
+  assert.equal(saved.stateFutureOrientedMantra, null);
+  assert.equal(saved.stateBarrierType, null);
+  assert.equal(saved.statePracticalAlternative, null);
+});
+
+test("a habit-target save nulls out every state- and identity-layer coherent-architecture field, keeping only build-global Value", () => {
+  const draft: ProfileDraft = {
+    ...baseDraft("habit"),
+    value: "בריאות וחופש",
+    stateSupportingAction: "לא אמור להישמר",
+    identitySupportingAction: "לא אמור להישמר",
+    stateBarrierType: "practical",
+    identityBarrierType: "internal",
+  };
+  const saved = buildArcBuildProfileForSave("habit", draft, "הרגל חדש", "custom_arc_build");
+  assert.equal(saved.value, "בריאות וחופש", "Value is build-global -- never nulled by target");
+  assert.equal(saved.stateSupportingAction, null);
+  assert.equal(saved.identitySupportingAction, null);
+  assert.equal(saved.stateBarrierType, null);
+  assert.equal(saved.identityBarrierType, null);
+});

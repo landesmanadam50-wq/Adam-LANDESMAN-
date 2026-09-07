@@ -288,10 +288,26 @@ export async function appendSessionLogEntry(entry: SessionLogEntry): Promise<voi
  * (defensive; shouldn't happen in practice since this is only ever
  * called right after appendSessionLogEntry).
  */
-export async function updateLastSessionLogEntryGratitude(gratitude: string | null, memoryDetail: string | null = null): Promise<void> {
+export async function updateLastSessionLogEntryGratitude(
+  gratitude: string | null,
+  memoryDetail: string | null = null,
+  /**
+   * Coherent-architecture task (#13 "Evidence of Progress"): the
+   * trainee's own optional progress note, saved onto this SAME entry
+   * in this SAME call -- see SessionLogEntry.progressEvidence's doc.
+   * Defaults to null so both pre-existing callers (there was only one)
+   * keep working unchanged.
+   */
+  progressEvidence: string | null = null
+): Promise<void> {
   const existing = await loadSessionLog();
   if (existing.length === 0) return;
-  existing[existing.length - 1] = { ...existing[existing.length - 1], gratitude, gratitudeMemoryDetail: memoryDetail };
+  existing[existing.length - 1] = {
+    ...existing[existing.length - 1],
+    gratitude,
+    gratitudeMemoryDetail: memoryDetail,
+    progressEvidence,
+  };
   await AsyncStorage.setItem(SESSION_LOG_KEY, JSON.stringify(existing));
 }
 

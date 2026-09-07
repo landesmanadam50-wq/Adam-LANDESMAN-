@@ -124,6 +124,7 @@ export default function LiveSessionScreen() {
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
   const [gratitudeText, setGratitudeText] = useState("");
   const [gratitudeMemoryDetailText, setGratitudeMemoryDetailText] = useState("");
+  const [progressEvidenceText, setProgressEvidenceText] = useState("");
   /**
    * Evidence-encoding task: derived once per session load from the
    * trainee's EXISTING session log (arc/evidence.ts's buildEvidenceIndex)
@@ -242,6 +243,7 @@ export default function LiveSessionScreen() {
         setPendingAlternativeActionDuration(null);
         setGratitudeText("");
         setGratitudeMemoryDetailText("");
+        setProgressEvidenceText("");
         setRoutineSuccessFocusSelectedMinutes(null);
 
         // The persisted run's own relatedRoutineId is authoritative over
@@ -383,9 +385,14 @@ export default function LiveSessionScreen() {
     // describing different sessions (#6/#13).
     const trimmedGratitude = gratitudeText.trim();
     const trimmedMemoryDetail = gratitudeMemoryDetailText.trim();
+    // Coherent-architecture task (#13 "Evidence of Progress"): saved in
+    // this SAME call, onto this SAME entry, alongside Gratitude -- see
+    // data/sessionLog.ts's SessionLogEntry.progressEvidence doc.
+    const trimmedProgressEvidence = progressEvidenceText.trim();
     updateLastSessionLogEntryGratitude(
       trimmedGratitude.length > 0 ? trimmedGratitude : null,
-      trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null
+      trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
+      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null
     ).then(() => {
       // Rebuilds the evidence index so a "סשן חדש" restart within this
       // SAME screen instance (no navigation, so useFocusEffect above
@@ -424,6 +431,7 @@ export default function LiveSessionScreen() {
       // render branch below), never here.
       setGratitudeText("");
       setGratitudeMemoryDetailText("");
+      setProgressEvidenceText("");
       setRoutineSuccessFocusSelectedMinutes(null);
       setRoutinePhase("successFocus");
       return;
@@ -440,6 +448,7 @@ export default function LiveSessionScreen() {
     setSessionStartedAt(new Date().toISOString());
     setGratitudeText("");
     setGratitudeMemoryDetailText("");
+    setProgressEvidenceText("");
   };
 
   // ARC Builds task: several ArcBuilds exist and none was resolved (no
@@ -717,6 +726,8 @@ export default function LiveSessionScreen() {
           onChangeGratitudeText={setGratitudeText}
           gratitudeMemoryDetailText={gratitudeMemoryDetailText}
           onChangeGratitudeMemoryDetailText={setGratitudeMemoryDetailText}
+          progressEvidenceText={progressEvidenceText}
+          onChangeProgressEvidenceText={setProgressEvidenceText}
           restartLabel={routine ? "המשך להתמקדות בהצלחה" : undefined}
           onRestart={restart}
         />

@@ -452,6 +452,32 @@ test("regulate always uses the Full Regulation Cue, never the Short Encoding Reg
   assert.ok(!copy.body.includes("נשיפה רגועה"), "Regulation must never use the shorter Encoding-only cue");
 });
 
+test("regulate appends the resolved layer's own Future-Oriented Mantra, verbatim, after the existing text -- coherent-architecture task", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8", stateFutureOrientedMantra: "אני אתחיל היום בצעד קטן." });
+  const copy = getStageCopy("regulate", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /^שים לב לתחושה שלך עכשיו\. השתמש בכלי הוויסות שלך: נשימה 4-7-8\./);
+  assert.match(copy.body, /אני אתחיל היום בצעד קטן\./);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("regulate never shows the OTHER layer's Future-Oriented Mantra -- only the resolved target's own", () => {
+  const p = profile({
+    regulationTool: "נשימה 4-7-8",
+    stateFutureOrientedMantra: "מנטרת המצב שלי",
+    identityFutureOrientedMantra: "מנטרת הזהות שלי",
+    internalAction: "סריקת גוף",
+  });
+  const stateCopy = getStageCopy("regulate", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(stateCopy.body, /מנטרת המצב שלי/);
+  assert.ok(!stateCopy.body.includes("מנטרת הזהות שלי"));
+});
+
+test("regulate's text is completely unchanged when no Future-Oriented Mantra is configured (legacy build)", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8" });
+  const copy = getStageCopy("regulate", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.equal(copy.body, "שים לב לתחושה שלך עכשיו. השתמש בכלי הוויסות שלך: נשימה 4-7-8.");
+});
+
 test("encode uses the Short Encoding Regulation Cue when configured, not the Full Regulation Cue's own text", () => {
   const p = profile({
     regulationTool: "הרפיית כתפיים + נשיפה איטית",

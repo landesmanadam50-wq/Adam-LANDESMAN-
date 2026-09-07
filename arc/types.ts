@@ -2,6 +2,21 @@ import type { ArcLinkSettings, BodyImagery } from "./bodyImagery.ts";
 
 export type DevelopmentLayer = "state" | "identity" | "habit";
 
+/**
+ * Coherent-architecture task (Value/Identity/Barrier/Bridge model,
+ * #12): whether a mapped barrier is something to work through
+ * internally (regulate/accept/encode) or a real external limitation
+ * (injury, no time, no equipment, wrong location) that emotional
+ * regulation can't solve. "practical" never auto-starts another
+ * emotional protocol -- see the corresponding statePracticalAlternative/
+ * identityPracticalAlternative fields on ArcBuildProfile below, offered
+ * instead as a practical solution / habit adjustment / minimal version
+ * / alternative action. null (a legacy build, or this step never
+ * answered) is always treated as "not yet classified" -- never
+ * defaulted to either value.
+ */
+export type BarrierType = "internal" | "practical";
+
 export type TriggerType = "reactive_emotion" | "reactive_urge" | "proactive";
 
 export type ArcStage =
@@ -311,6 +326,106 @@ export interface ArcBuildProfile {
    * backward-compatibility reason as EncodingProfile.bodyImagery.
    */
   regulationBodyImagery?: BodyImagery | null;
+
+  /**
+   * Coherent-architecture task (#1 "Add Value"): the "why" underneath
+   * the whole build -- Value -> Identity -> Habit, e.g. "בריאות
+   * וחופש". Build-global (like presenceColor/regulationTool), never
+   * merged with desiredIdentity/supportiveState/beneficialAction --
+   * BUILD keeps it a distinct, optional field, and normal ARC/LIVE
+   * never requires it to be filled in. Optional for the same
+   * backward-compatibility reason as linkSettings: every existing
+   * ArcBuildProfile object literal (tests included) keeps compiling
+   * unchanged, and a legacy build simply has no Value.
+   */
+  value?: string | null;
+
+  /**
+   * Coherent-architecture task (#2 "Separate Identity, Identity State
+   * and Identity-Based Action"): HOW the trainee wants to feel/act
+   * while expressing the identity (desiredIdentity, above) -- e.g.
+   * desiredIdentity "אדם ממושמע" vs identityDesiredState "אנרגטיות
+   * ונחישות". Deliberately its own field, never collapsed into
+   * desiredIdentity or into identityEncoding.target (which stays the
+   * identity itself, unchanged) -- a trainee may be able to perform
+   * identityAction while NOT yet experiencing this state (e.g.
+   * exercising while tired rather than energetic). Identity-only: the
+   * state layer's own supportiveState already plays this role for
+   * that layer, so there is no parallel "stateDesiredState" field.
+   * Optional/never required, for the same backward-compatibility
+   * reason as every other field in this block.
+   */
+  identityDesiredState?: string | null;
+
+  /**
+   * Coherent-architecture task (#5 "Separate Supporting Action from
+   * Identity-Based Action"): a smaller action that creates better
+   * conditions for the REAL Identity-Based Action (internalAction/
+   * identityAction, above) -- e.g. "מדיטציה קצרה" before "פעילות
+   * גופנית". Never a silent replacement for the Identity-Based Action
+   * itself; BUILD and any future LIVE surface must always reconnect
+   * the trainee to internalAction/identityAction afterward. Parallel
+   * per-layer fields, like statePreventiveAction/identityPreventiveAction
+   * above -- never mixed between layers. No habit-layer equivalent:
+   * the habit layer's own beneficialAction stays the single, minimal
+   * action it has always been.
+   */
+  stateSupportingAction?: string | null;
+  identitySupportingAction?: string | null;
+
+  /**
+   * Coherent-architecture task (#6 "Limiting Belief and Bridge
+   * Belief"): a thought/prediction that currently blocks action
+   * (stateLimitingBelief/identityLimitingBelief -- e.g. "אני אפסיק
+   * שוב, ולכן אין טעם להתחיל"), and a more believable, moderate,
+   * progress-oriented reframe of it (stateBridgeBelief/
+   * identityBridgeBelief -- e.g. "גם אימון קצר הוא התקדמות"). Kept as
+   * two clearly separate fields, never merged into one "belief" field
+   * or into identityEncoding.mantra (Identity Mantra, a different
+   * sentence type -- see stateFutureOrientedMantra's doc below for the
+   * full four-sentence-type distinction). Parallel per-layer fields,
+   * like every other ARC-Map field on this profile; no habit-layer
+   * equivalent (see stateSupportingAction's doc above).
+   */
+  stateLimitingBelief?: string | null;
+  stateBridgeBelief?: string | null;
+  identityLimitingBelief?: string | null;
+  identityBridgeBelief?: string | null;
+
+  /**
+   * Coherent-architecture task (#7/#8 "Future-Oriented Mantra"): the
+   * direction of movement right now -- e.g. "אני אתחיל היום בצעד
+   * קטן" -- distinct from Presence ("this is what's here now") and
+   * from Identity Mantra (identityEncoding.mantra/stateEncoding.mantra
+   * -- "the person I'm practicing becoming", said during Encoding).
+   * This one is surfaced between Presence and Encoding (see
+   * arc/futureOrientedMantra.ts / arc/stageCopy.ts's "regulate" case).
+   * Optional and never required -- omitted, the Regulation stage's
+   * existing text is completely unchanged. Parallel per-layer fields;
+   * no habit-layer equivalent (see stateSupportingAction's doc above).
+   */
+  stateFutureOrientedMantra?: string | null;
+  identityFutureOrientedMantra?: string | null;
+
+  /**
+   * Coherent-architecture task (#12 "Internal Versus Practical
+   * Barriers"): whether this layer's own mapped barrier is something
+   * to work through internally, or a real external limitation
+   * (injury, no time, no equipment, wrong location) -- see
+   * arc/types.ts's BarrierType doc. When "practical",
+   * statePracticalAlternative/identityPracticalAlternative holds the
+   * trainee's own saved practical solution / habit adjustment /
+   * minimal version / alternative action, never an emotional-
+   * regulation instruction. null (a legacy build, or never answered)
+   * is always treated as "not yet classified" -- BUILD and any future
+   * LIVE surface must never assume either value. Parallel per-layer
+   * fields; no habit-layer equivalent (see stateSupportingAction's doc
+   * above).
+   */
+  stateBarrierType?: BarrierType | null;
+  statePracticalAlternative?: string | null;
+  identityBarrierType?: BarrierType | null;
+  identityPracticalAlternative?: string | null;
 }
 
 /**
@@ -358,6 +473,20 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     negativeActionReductionEnabled: false,
     linkSettings: null,
     regulationBodyImagery: null,
+    value: null,
+    identityDesiredState: null,
+    stateSupportingAction: null,
+    identitySupportingAction: null,
+    stateLimitingBelief: null,
+    stateBridgeBelief: null,
+    identityLimitingBelief: null,
+    identityBridgeBelief: null,
+    stateFutureOrientedMantra: null,
+    identityFutureOrientedMantra: null,
+    stateBarrierType: null,
+    statePracticalAlternative: null,
+    identityBarrierType: null,
+    identityPracticalAlternative: null,
   };
 }
 

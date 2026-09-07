@@ -30,6 +30,136 @@ export type RoutineProtocolType = "arc" | "mini_arc";
 export type ArcLinkMode = "with_archi" | "without_archi";
 
 /**
+ * Extended ARC Link trigger system: two orthogonal, independently
+ * optional axes on ArcLink, both new.
+ *
+ * ArcLinkKind -- WHAT the Link rehearses. "standard" is every ArcLink
+ * that existed before this task (rehearses one referenced ARC/Mini ARC
+ * protocol via arc/arcLink.ts / arc/miniArcLink.ts, unchanged).
+ * "bridging" is the new Bridging ARC Link (arc/bridgingArcLink.ts) -- a
+ * rehearsed bridge from a previously-trained supportive-state cue
+ * straight into a desired identity and its beneficial action, using
+ * `bridging` below instead of the standard protocol rehearsal.
+ *
+ * ArcLinkTriggerCategory -- WHEN/how the trigger is framed, independent
+ * of kind (a Bridging Link still picks one, per its own BUILD step 9).
+ * "scheduled" is the original clock-time/routine trigger, unchanged
+ * behavior. "routine" is a routine/context trigger with no real-time
+ * framing beyond that. "preventive" rehearses noticing an external
+ * situation from an observer perspective, before any interfering state
+ * has a chance to build. "reactive" rehearses starting the Link once an
+ * interfering state or habit urge is ALREADY noticed -- using safe
+ * recognition-only wording, never an instruction to evoke or
+ * strengthen it.
+ *
+ * Both fields are optional on ArcLink so every existing stored record
+ * (all "standard"/"scheduled" by construction, since these fields
+ * didn't exist before) keeps loading and running unchanged -- see
+ * resolveArcLinkKind/resolveArcLinkTriggerCategory, the one place each
+ * missing value is safely defaulted.
+ */
+export type ArcLinkKind = "standard" | "bridging";
+export type ArcLinkTriggerCategory = "scheduled" | "routine" | "preventive" | "reactive";
+
+export function resolveArcLinkKind(link: Pick<ArcLink, "kind">): ArcLinkKind {
+  return link.kind === "bridging" ? "bridging" : "standard";
+}
+
+export function resolveArcLinkTriggerCategory(link: Pick<ArcLink, "triggerCategory">): ArcLinkTriggerCategory {
+  const category = link.triggerCategory;
+  return category === "routine" || category === "preventive" || category === "reactive" ? category : "scheduled";
+}
+
+export const ARC_LINK_TRIGGER_CATEGORY_LABELS: Record<ArcLinkTriggerCategory, string> = {
+  scheduled: "מתוזמן",
+  routine: "לשגרה",
+  preventive: "מניעתי",
+  reactive: "תגובתי",
+};
+
+/**
+ * The single, UI-facing label distinguishing all five ARC Link types
+ * ("Do not overcrowd the main screen... clearly distinguish"). A
+ * Bridging Link always shows as "ARC Link מגשר" regardless of its own
+ * triggerCategory (which still steers its LIVE wording); every standard
+ * Link shows "ARC Link <trigger-category label>".
+ */
+export function describeArcLinkKindAndCategory(link: Pick<ArcLink, "kind" | "triggerCategory">): string {
+  if (resolveArcLinkKind(link) === "bridging") return "ARC Link מגשר";
+  return `ARC Link ${ARC_LINK_TRIGGER_CATEGORY_LABELS[resolveArcLinkTriggerCategory(link)]}`;
+}
+
+/**
+ * Weekly trigger levels (Extended ARC Link task): how strong/challenging
+ * the IMAGINED scenario is for a given program week -- describes the
+ * rehearsed scenario, never an emotion the trainee must actually
+ * produce. 1 = first signs, 5 = a very challenging imagined situation.
+ * See resolveCurrentTriggerLevel for how a missing/older Link without
+ * any configured level safely defaults to 1.
+ */
+export type TriggerLevel = 1 | 2 | 3 | 4 | 5;
+
+export interface WeeklyTriggerLevel {
+  week: number;
+  level: TriggerLevel;
+}
+
+export const TRIGGER_LEVEL_LABELS: Record<TriggerLevel, string> = {
+  1: "סימנים ראשונים",
+  2: "תגובה קלה וברורה",
+  3: "תגובה בינונית",
+  4: "תגובה חזקה",
+  5: "מצב מאתגר מאוד",
+};
+
+/** The level configured for the highest week `<= currentWeek`, or 1 (the safe default) when none is configured yet -- never throws, never picks a level for a LATER week than the trainee has reached. */
+export function resolveCurrentTriggerLevel(levels: WeeklyTriggerLevel[] | null | undefined, currentWeek: number): TriggerLevel {
+  if (!levels || levels.length === 0) return 1;
+  let best: WeeklyTriggerLevel | null = null;
+  for (const entry of levels) {
+    if (entry.week <= currentWeek && (best === null || entry.week > best.week)) best = entry;
+  }
+  return best?.level ?? 1;
+}
+
+/** Pure upsert-by-week -- mirrors every other list helper in this file (by-key-only, never touches another week's entry). */
+export function upsertWeeklyTriggerLevel(levels: WeeklyTriggerLevel[], entry: WeeklyTriggerLevel): WeeklyTriggerLevel[] {
+  const index = levels.findIndex((existing) => existing.week === entry.week);
+  if (index === -1) return [...levels, entry];
+  return levels.map((existing, i) => (i === index ? entry : existing));
+}
+
+/**
+ * Bridging ARC Link's own config (Extended ARC Link task): references
+ * TWO ArcBuild profiles -- never copies -- the supportive-state source
+ * (supportiveProtocolId, providing its own supportiveState +
+ * regulationTool as the short cue) and the identity-and-action target,
+ * which is ArcLink's own EXISTING top-level protocolId/protocolType
+ * (providing desiredIdentity/identityEncoding/identityAction). The two
+ * may be the SAME ArcBuild (one build with both a state and an identity
+ * layer configured) or two different ones -- "If an ARC program
+ * already contains the required components, allow the Bridging ARC
+ * Link to reference those components rather than creating disconnected
+ * copies." See arc/bridgingArcLink.ts for the actual rehearsal content.
+ */
+export interface BridgingLinkConfig {
+  supportiveProtocolId: string;
+  /** "full" rehearses the entire bridge (trigger -> cue -> supportive state -> identity -> action); "short" practices only the essential transition (cue -> identity -> action), skipping the standalone trigger-imagery step. */
+  variant: "full" | "short";
+  /**
+   * Updated-ARC-structure task: an optional, Bridging-Link-specific
+   * override for the Future Mantra -- part of arc/arcLinkContent.ts's
+   * resolution order (override -> the destination ARC's own Future
+   * Mantra -> its older Identity Mantra -> ""). Editing this never
+   * changes the destination ArcBuild's own identityFutureOrientedMantra
+   * -- it is read only by this one Bridging Link. Optional/null for
+   * every Bridging Link that doesn't need different wording than its
+   * destination ARC's own Future Mantra.
+   */
+  futureMantraOverride?: string | null;
+}
+
+/**
  * A reusable, named trigger -- "מתי או אחרי מה תרצה לזכור להתחיל?".
  * Independent of any one protocol/weekly action, so the same trigger
  * (e.g. "אחרי ארוחת הערב") can be picked for several weekly actions or
@@ -100,6 +230,32 @@ export interface ArcLink {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Extended ARC Link trigger system (all four fields below are NEW and
+   * fully optional -- see resolveArcLinkKind/resolveArcLinkTriggerCategory/
+   * resolveCurrentTriggerLevel for their safe defaults on a legacy
+   * record that predates this task, and BridgingLinkConfig's own doc
+   * for `bridging`). Never set on a record unless the trainee actually
+   * configured it -- "Do not silently convert existing ARC Links into
+   * Bridging ARC Links."
+   */
+  kind?: ArcLinkKind;
+  triggerCategory?: ArcLinkTriggerCategory;
+  triggerLevels?: WeeklyTriggerLevel[] | null;
+  /** Only meaningful when kind === "bridging" -- null/undefined for every standard Link, and for a Bridging Link whose config hasn't been completed yet. */
+  bridging?: BridgingLinkConfig | null;
+  /**
+   * Updated-ARC-structure task: an optional, standard-Link-level
+   * override for the Future Mantra -- "Allow a link-level override only
+   * when the user wants different wording for a particular ARC Link.
+   * Editing the ARC Link version must not change the original ARC
+   * program." Resolved via arc/arcLinkContent.ts's resolveFutureMantra
+   * (override -> the referenced ARC's own Future Mantra -> its older
+   * Identity Mantra -> ""). Meaningless (ignored) when kind ===
+   * "bridging" -- a Bridging Link uses BridgingLinkConfig's own
+   * futureMantraOverride instead, since it references two ARCs.
+   */
+  futureMantraOverride?: string | null;
 }
 
 // ---------------------------------------------------------------------------

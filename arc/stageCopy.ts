@@ -11,6 +11,7 @@
 
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { getPresenceColorActivationLine, getPresenceColorReminder } from "./presenceColor.ts";
+import { getFutureOrientedMantraLine } from "./futureOrientedMantra.ts";
 import {
   needsCurrentActionResolution,
   needsReactiveStateSelection,
@@ -501,7 +502,16 @@ export function getStageCopy(
       // same existing text before segment-building, so timing/dwell stay
       // unchanged. Null (legacy/no color) leaves the text as-is.
       const regulationReminder = getPresenceColorReminder(profile.presenceColor, "regulation");
-      const text = regulationReminder ? `${baseRegulateText} ${regulationReminder}` : baseRegulateText;
+      // Coherent-architecture task (#7/#8): the optional Future-Oriented
+      // Mantra -- "the direction I'm moving toward now" -- surfaced here,
+      // between Presence (just completed) and Encoding (next), the exact
+      // placement the spec calls for. Appended after the Presence Color
+      // reminder, before the dwell segment; null (nothing saved for this
+      // layer, or a legacy build) leaves this stage's text completely
+      // unchanged.
+      const futureOrientedMantraLine = getFutureOrientedMantraLine(profile, layer);
+      const textWithColor = regulationReminder ? `${baseRegulateText} ${regulationReminder}` : baseRegulateText;
+      const text = futureOrientedMantraLine ? `${textWithColor} ${futureOrientedMantraLine}` : textWithColor;
       const segments = withTrailingDwellSegment([{ text, durationSeconds: INSTRUCTION_TIMING.regulate }], dwellSeconds);
       return { title: "ויסות", body: text, segments };
     }

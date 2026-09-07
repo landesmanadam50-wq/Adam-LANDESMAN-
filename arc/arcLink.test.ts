@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildArcLinkIntroSteps,
   buildArcLinkProtocolSteps,
+  buildArcLinkStartConfirmationStep,
   buildArcLinkSteps,
   resolveArcLinkRouteOptions,
   resolveArcLinkTarget,
@@ -277,7 +278,41 @@ test("buildArcLinkIntroSteps: with_archi includes enter_archi with the diagram r
   assert.ok(!withoutArchi[0].lines.join(" ").includes("כניסה ל-ARCHI"));
 });
 
-test("buildArcLinkProtocolSteps: choice=null (legacy) reproduces buildArcLinkSteps' own protocol-steps content exactly", () => {
+// ---------------------------------------------------------------------------
+// Extended ARC Link trigger system: ctx.triggerCategory steers ONLY the
+// trigger-imagery step's wording (arc/triggerImagery.ts) -- optional,
+// defaulting to "scheduled" (exactly the pre-existing, unconditional text).
+// ---------------------------------------------------------------------------
+
+test("buildArcLinkIntroSteps: omitting triggerCategory (or passing 'scheduled') produces the exact original trigger-imagery text", () => {
+  const p = profile();
+  const withoutCategory = buildArcLinkIntroSteps(p, { triggerText: "בשעה 10:00", mode: "with_archi" });
+  const withScheduled = buildArcLinkIntroSteps(p, { triggerText: "בשעה 10:00", mode: "with_archi", triggerCategory: "scheduled" });
+  assert.deepEqual(withoutCategory, withScheduled);
+  const triggerStep = withoutCategory.find((s) => s.id === "trigger")!;
+  assert.match(triggerStep.lines.join(" "), /עצום עיניים ודמיין שהרגע הבא מתרחש/);
+});
+
+test("buildArcLinkIntroSteps: 'preventive' triggerCategory uses observer-perspective phrasing on the trigger step", () => {
+  const p = profile();
+  const steps = buildArcLinkIntroSteps(p, { triggerText: "לפני פגישה", mode: "with_archi", triggerCategory: "preventive" });
+  const triggerStep = steps.find((s) => s.id === "trigger")!;
+  assert.match(triggerStep.lines.join(" "), /רואה את עצמך מהצד/);
+  assert.match(triggerStep.lines.join(" "), /לפני פגישה/);
+});
+
+test("buildArcLinkIntroSteps: 'reactive' triggerCategory uses safe recognition-only wording, never an instruction to evoke/intensify", () => {
+  const p = profile({ internalAction: "סריקת גוף", interferingState: "מתח בבטן" });
+  const steps = buildArcLinkIntroSteps(p, { triggerText: "בשעה 10:00", mode: "with_archi", triggerCategory: "reactive" });
+  const triggerStep = steps.find((s) => s.id === "trigger")!;
+  assert.match(triggerStep.lines.join(" "), /שים לב למה שכבר נמצא עכשיו/);
+  assert.match(triggerStep.lines.join(" "), /מתח בבטן/);
+  for (const pattern of FORBIDDEN_INTERFERING_STATE_PATTERNS) {
+    assert.equal(pattern.test(triggerStep.lines.join(" ")), false);
+  }
+});
+
+test("buildArcLinkProtocolSteps: choice=null (legacy) reproduces buildArcLinkSteps' own protocol-steps STEP ORDER exactly (its own encoding step CONTENT is intentionally updated -- see the Updated-ARC-structure tests below)", () => {
   const p = profile({ internalAction: "סריקת גוף", interferingState: "לחץ", beneficialAction: "לצאת להליכה" });
   const ctx = { triggerText: "בשעה 10:00", mode: "with_archi" as const };
   const legacySteps = buildArcLinkProtocolSteps(p, null, ctx);
@@ -348,4 +383,103 @@ test("buildArcLinkProtocolSteps never trips the interfering-state create/strengt
       }
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// Updated-ARC-structure task: buildArcLinkProtocolSteps' own encoding step
+// reads Value/Desired-Identity/Desired-Supportive-State/Future-Mantra from
+// the SAME updated ArcBuildProfile fields the main ARC BUILD model uses
+// (arc/arcLinkContent.ts) -- never merging identity with the internal
+// supportive state, and never silently preferring the older Identity
+// Mantra when a Future Mantra exists. buildArcLinkSteps (the original,
+// legacy entry point) is untouched -- see its own separate tests above.
+// ---------------------------------------------------------------------------
+
+test("buildArcLinkProtocolSteps' encoding step keeps the identity and its supportive state on SEPARATE lines -- never merged into one", () => {
+  const p = profile({ identityAction: "לדבר בבהירות", desiredIdentity: "מנהיג נחוש", identityDesiredState: "ביטחון ואנרגיה" });
+  const ctx = { triggerText: "לפני פגישה", mode: "with_archi" as const };
+  const steps = buildArcLinkProtocolSteps(p, { kind: "supportive", target: "identity" }, ctx);
+  const encoding = steps.find((s) => s.id === "encoding")!;
+  assert.match(encoding.lines.join(" "), /מתחבר למצב התומך הפנימי שלך: ביטחון ואנרגיה/);
+  assert.match(encoding.lines.join(" "), /מבטא את הזהות מנהיג נחוש/);
+});
+
+test("buildArcLinkProtocolSteps' encoding step shows the Value alongside the identity, never merged into the identity/state/mantra text -- omits it entirely when not configured", () => {
+  const withValue = profile({ identityAction: "לדבר בבהירות", desiredIdentity: "מנהיג נחוש", value: "אחריות ומצוינות" });
+  const withoutValue = profile({ identityAction: "לדבר בבהירות", desiredIdentity: "מנהיג נחוש" });
+  const ctx = { triggerText: "לפני פגישה", mode: "with_archi" as const };
+  const withValueEncoding = buildArcLinkProtocolSteps(withValue, { kind: "supportive", target: "identity" }, ctx).find((s) => s.id === "encoding")!;
+  const withoutValueEncoding = buildArcLinkProtocolSteps(withoutValue, { kind: "supportive", target: "identity" }, ctx).find((s) => s.id === "encoding")!;
+  assert.match(withValueEncoding.lines.join(" "), /מבטא את הזהות מנהיג נחוש, מתוך הערך אחריות ומצוינות/);
+  assert.match(withoutValueEncoding.lines.join(" "), /מבטא את הזהות מנהיג נחוש\./);
+  assert.ok(!withoutValueEncoding.lines.join(" ").includes("מתוך הערך"));
+});
+
+test("buildArcLinkProtocolSteps' encoding step's Future Mantra resolution order: ctx.futureMantraOverride wins over the profile's own Future Mantra, which wins over the older Identity Mantra", () => {
+  const p = profile({
+    identityAction: "לדבר בבהירות",
+    identityFutureOrientedMantra: "אני מתחיל היום בצעד קטן",
+    identityEncoding: { target: "identity", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "מנטרת זהות ישנה" },
+  });
+  const choice = { kind: "supportive", target: "identity" } as const;
+
+  const overrideCtx = { triggerText: "טריגר", mode: "with_archi" as const, futureMantraOverride: "מנטרה מותאמת לקישור" };
+  const overrideEncoding = buildArcLinkProtocolSteps(p, choice, overrideCtx).find((s) => s.id === "encoding")!;
+  assert.match(overrideEncoding.lines.join(" "), /מנטרה מותאמת לקישור/);
+  assert.ok(!overrideEncoding.lines.join(" ").includes("אני מתחיל היום בצעד קטן"));
+
+  const noOverrideCtx = { triggerText: "טריגר", mode: "with_archi" as const };
+  const futureMantraEncoding = buildArcLinkProtocolSteps(p, choice, noOverrideCtx).find((s) => s.id === "encoding")!;
+  assert.match(futureMantraEncoding.lines.join(" "), /אני מתחיל היום בצעד קטן/);
+  assert.ok(!futureMantraEncoding.lines.join(" ").includes("מנטרת זהות ישנה"));
+});
+
+test("buildArcLinkProtocolSteps' encoding step falls back to the older Identity Mantra only when no Future Mantra is configured anywhere", () => {
+  const p = profile({
+    identityAction: "לדבר בבהירות",
+    identityEncoding: { target: "identity", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "מנטרת זהות ישנה" },
+  });
+  const ctx = { triggerText: "טריגר", mode: "with_archi" as const };
+  const encoding = buildArcLinkProtocolSteps(p, { kind: "supportive", target: "identity" }, ctx).find((s) => s.id === "encoding")!;
+  assert.match(encoding.lines.join(" "), /מנטרת זהות ישנה/);
+});
+
+test("buildArcLinkProtocolSteps' encoding step for a STATE target never shows identityDesiredState (identity-layer only) -- uses supportiveState as its own identity-equivalent label", () => {
+  const p = profile({ internalAction: "סריקת גוף", supportiveState: "רוגע", value: "בריאות" });
+  const ctx = { triggerText: "טריגר", mode: "with_archi" as const };
+  const encoding = buildArcLinkProtocolSteps(p, { kind: "supportive", target: "state" }, ctx).find((s) => s.id === "encoding")!;
+  assert.match(encoding.lines.join(" "), /מתחבר ל-רוגע, מתוך הערך בריאות/);
+  assert.ok(!encoding.lines.join(" ").includes("מבטא את הזהות"), "state target never uses identity-expression phrasing");
+});
+
+test("buildArcLinkProtocolSteps' encoding step is empty (never a dangling label) for a habit-only build with none of the new fields configured", () => {
+  const p = profile({ beneficialAction: "לצאת להליכה" });
+  const ctx = { triggerText: "טריגר", mode: "with_archi" as const };
+  const encoding = buildArcLinkProtocolSteps(p, null, ctx).find((s) => s.id === "encoding")!;
+  assert.deepEqual(encoding.lines, []);
+});
+
+// ---------------------------------------------------------------------------
+// Coherent-architecture task (#22 "With ARCHI"): "Once the trainee imagines
+// pressing 'התחלת ARC', finish the Link rehearsal" -- buildArcLinkStartConfirmationStep
+// is the short ending live/ArcLinkScreen.tsx uses INSTEAD of
+// buildArcLinkProtocolSteps for with_archi mode. buildArcLinkProtocolSteps
+// itself stays fully capable of producing the full sequence for either mode
+// (already covered above) -- this is purely an additive, caller-level piece.
+// ---------------------------------------------------------------------------
+
+test("buildArcLinkStartConfirmationStep produces exactly one step, mentioning pressing Start and the saved trigger, never the full protocol content", () => {
+  const step = buildArcLinkStartConfirmationStep({ triggerText: "בשעה 10:00", mode: "with_archi" });
+  assert.equal(step.id, "archi_start_confirmation");
+  assert.match(step.lines.join(" "), /בשעה 10:00/);
+  assert.match(step.title, /התחלת ARC/);
+  assert.equal(step.bodyImagery, null);
+  assert.equal(step.buttonLabel, "סיום ARC Link");
+});
+
+test("buildArcLinkStartConfirmationStep is safe (never 'undefined'/'null') when the trigger text is blank", () => {
+  const step = buildArcLinkStartConfirmationStep({ triggerText: "", mode: "with_archi" });
+  const text = `${step.title} ${step.lines.join(" ")}`;
+  assert.ok(!text.includes("undefined"));
+  assert.ok(!text.includes("null"));
 });

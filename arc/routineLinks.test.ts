@@ -7,14 +7,19 @@ import {
   deleteArcLinkFromList,
   deleteRoutineTriggerFromList,
   deleteWeeklyActionFromList,
+  describeArcLinkKindAndCategory,
   describeTrigger,
+  resolveArcLinkKind,
+  resolveArcLinkTriggerCategory,
+  resolveCurrentTriggerLevel,
   resolveRoutineTrigger,
   resolveWeeklyAction,
   upsertArcLinkInList,
   upsertRoutineTriggerInList,
   upsertWeeklyActionInList,
+  upsertWeeklyTriggerLevel,
 } from "./routineLinks.ts";
-import type { ArcLink, RoutineTrigger, WeeklyAction } from "./routineLinks.ts";
+import type { ArcLink, RoutineTrigger, WeeklyAction, WeeklyTriggerLevel } from "./routineLinks.ts";
 
 function trigger(overrides: Partial<RoutineTrigger> = {}): RoutineTrigger {
   return { id: "trig-1", type: "time", text: "בשעה 10:00", time: "10:00", createdAt: "2026-01-01T00:00:00.000Z", ...overrides };
@@ -157,4 +162,152 @@ test("arcLinkPracticeSchedule returns null (never NaN/garbage) for a malformed p
   assert.equal(arcLinkPracticeSchedule({ practiceDays: [1], practiceTime: "not-a-time" }), null);
   assert.equal(arcLinkPracticeSchedule({ practiceDays: [1], practiceTime: "25:00" }), null);
   assert.equal(arcLinkPracticeSchedule({ practiceDays: [1], practiceTime: "10:70" }), null);
+});
+
+// ---------------------------------------------------------------------------
+// Extended ARC Link trigger system: kind/triggerCategory -- safe defaults
+// for every legacy record (both fields are new and optional)
+// ---------------------------------------------------------------------------
+
+test("resolveArcLinkKind defaults to 'standard' for a legacy record with no kind field at all", () => {
+  const legacy = arcLink();
+  delete (legacy as { kind?: unknown }).kind;
+  assert.equal(resolveArcLinkKind(legacy), "standard");
+  assert.equal(resolveArcLinkKind(arcLink({ kind: "bridging" })), "bridging");
+});
+
+test("resolveArcLinkTriggerCategory defaults to 'scheduled' for a legacy record with no triggerCategory field, and for any unrecognized value", () => {
+  const legacy = arcLink();
+  delete (legacy as { triggerCategory?: unknown }).triggerCategory;
+  assert.equal(resolveArcLinkTriggerCategory(legacy), "scheduled");
+  assert.equal(resolveArcLinkTriggerCategory(arcLink({ triggerCategory: "routine" })), "routine");
+  assert.equal(resolveArcLinkTriggerCategory(arcLink({ triggerCategory: "preventive" })), "preventive");
+  assert.equal(resolveArcLinkTriggerCategory(arcLink({ triggerCategory: "reactive" })), "reactive");
+});
+
+test("describeArcLinkKindAndCategory clearly distinguishes all five UI-facing ARC Link types", () => {
+  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "scheduled" })), "ARC Link מתוזמן");
+  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "routine" })), "ARC Link לשגרה");
+  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "preventive" })), "ARC Link מניעתי");
+  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "reactive" })), "ARC Link תגובתי");
+  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "bridging", triggerCategory: "reactive" })), "ARC Link מגשר");
+});
+
+test("a legacy ArcLink (no kind/triggerCategory at all) describes as the original 'ARC Link מתוזמן', never crashing", () => {
+  const legacy = arcLink();
+  delete (legacy as { kind?: unknown }).kind;
+  delete (legacy as { triggerCategory?: unknown }).triggerCategory;
+  assert.equal(describeArcLinkKindAndCategory(legacy), "ARC Link מתוזמן");
+});
+
+// ---------------------------------------------------------------------------
+// Weekly trigger levels
+// ---------------------------------------------------------------------------
+
+test("resolveCurrentTriggerLevel defaults to level 1 when no levels are configured", () => {
+  assert.equal(resolveCurrentTriggerLevel(null, 3), 1);
+  assert.equal(resolveCurrentTriggerLevel(undefined, 1), 1);
+  assert.equal(resolveCurrentTriggerLevel([], 5), 1);
+});
+
+test("resolveCurrentTriggerLevel picks the level configured for the highest week <= currentWeek, never a later week's level", () => {
+  const levels: WeeklyTriggerLevel[] = [
+    { week: 1, level: 1 },
+    { week: 3, level: 2 },
+    { week: 6, level: 4 },
+  ];
+  assert.equal(resolveCurrentTriggerLevel(levels, 1), 1);
+  assert.equal(resolveCurrentTriggerLevel(levels, 2), 1, "week 2 has no entry of its own -- falls back to the last configured week (1), never invents one");
+  assert.equal(resolveCurrentTriggerLevel(levels, 3), 2);
+  assert.equal(resolveCurrentTriggerLevel(levels, 5), 2);
+  assert.equal(resolveCurrentTriggerLevel(levels, 6), 4);
+  assert.equal(resolveCurrentTriggerLevel(levels, 10), 4);
+  assert.equal(resolveCurrentTriggerLevel(levels, 0), 1, "before any configured week -- safe default, never a crash");
+});
+
+// ---------------------------------------------------------------------------
+// End-to-end legacy-data + multi-Bridging-Link coexistence, at the list-CRUD
+// level (mirrors exactly what data/storage.ts's loadArcLinks/upsertArcLink do
+// -- a plain JSON.parse/JSON.stringify round trip with no field filtering).
+// ---------------------------------------------------------------------------
+
+test("a legacy ArcLink parsed from stored JSON (kind/triggerCategory/triggerLevels/bridging genuinely absent) loads, upserts, and describes safely -- never crashing, never silently becoming a Bridging Link", () => {
+  const legacyJson = JSON.stringify(arcLink({ id: "legacy-1" }));
+  const legacy = JSON.parse(legacyJson) as ArcLink;
+  assert.equal("kind" in legacy, false);
+  assert.equal(resolveArcLinkKind(legacy), "standard");
+  assert.equal(resolveArcLinkTriggerCategory(legacy), "scheduled");
+  assert.equal(describeArcLinkKindAndCategory(legacy), "ARC Link מתוזמן");
+  assert.equal(resolveCurrentTriggerLevel(legacy.triggerLevels, 3), 1);
+
+  const list = upsertArcLinkInList([], legacy);
+  assert.equal(list.length, 1);
+  assert.equal(resolveArcLinkKind(list[0]), "standard");
+  assert.equal("futureMantraOverride" in legacy, false, "the Updated-ARC-structure task's own new field is also genuinely absent on a legacy record");
+});
+
+test("BridgingLinkConfig.futureMantraOverride round-trips through JSON (exactly what data/storage.ts does) and is absent on a Bridging Link that never set one", () => {
+  const withOverride = arcLink({
+    id: "bridge-with-override",
+    kind: "bridging",
+    bridging: { supportiveProtocolId: "state-build-1", variant: "full", futureMantraOverride: "מנטרה מותאמת" },
+  });
+  const roundTripped = JSON.parse(JSON.stringify(withOverride)) as ArcLink;
+  assert.equal(roundTripped.bridging!.futureMantraOverride, "מנטרה מותאמת");
+
+  const withoutOverride = arcLink({ id: "bridge-no-override", kind: "bridging", bridging: { supportiveProtocolId: "state-build-1", variant: "full" } });
+  assert.equal(withoutOverride.bridging!.futureMantraOverride, undefined);
+});
+
+test("multiple Bridging ARC Links (different supportive protocols/variants) coexist in the same list without overwriting one another", () => {
+  const bridgingA = arcLink({
+    id: "bridge-a",
+    kind: "bridging",
+    triggerCategory: "reactive",
+    bridging: { supportiveProtocolId: "state-build-a", variant: "full" },
+  });
+  const bridgingB = arcLink({
+    id: "bridge-b",
+    kind: "bridging",
+    triggerCategory: "preventive",
+    bridging: { supportiveProtocolId: "state-build-b", variant: "short" },
+  });
+  let list = upsertArcLinkInList([], bridgingA);
+  list = upsertArcLinkInList(list, bridgingB);
+  assert.equal(list.length, 2);
+  assert.equal(list.find((l) => l.id === "bridge-a")!.bridging!.supportiveProtocolId, "state-build-a");
+  assert.equal(list.find((l) => l.id === "bridge-a")!.bridging!.variant, "full");
+  assert.equal(list.find((l) => l.id === "bridge-b")!.bridging!.supportiveProtocolId, "state-build-b");
+  assert.equal(list.find((l) => l.id === "bridge-b")!.bridging!.variant, "short");
+
+  // Editing one never corrupts the other's bridging config.
+  const editedA = upsertArcLinkInList(list, { ...bridgingA, bridging: { supportiveProtocolId: "state-build-a-v2", variant: "short" } });
+  assert.equal(editedA.find((l) => l.id === "bridge-a")!.bridging!.supportiveProtocolId, "state-build-a-v2");
+  assert.equal(editedA.find((l) => l.id === "bridge-b")!.bridging!.supportiveProtocolId, "state-build-b");
+
+  // Deleting one never touches the other.
+  const afterDelete = deleteArcLinkFromList(editedA, "bridge-a");
+  assert.equal(afterDelete.length, 1);
+  assert.equal(afterDelete[0].id, "bridge-b");
+});
+
+test("a JSON round trip (JSON.stringify then JSON.parse, exactly what data/storage.ts does) preserves kind/triggerCategory/bridging/triggerLevels intact", () => {
+  const original = arcLink({
+    id: "roundtrip-1",
+    kind: "bridging",
+    triggerCategory: "reactive",
+    bridging: { supportiveProtocolId: "state-build-1", variant: "full" },
+    triggerLevels: [{ week: 1, level: 2 }],
+  });
+  const roundTripped = JSON.parse(JSON.stringify(original)) as ArcLink;
+  assert.deepEqual(roundTripped, original);
+});
+
+test("upsertWeeklyTriggerLevel updates the matching week in place, never touching another week's entry", () => {
+  const levels: WeeklyTriggerLevel[] = [{ week: 1, level: 1 }, { week: 2, level: 2 }];
+  const updated = upsertWeeklyTriggerLevel(levels, { week: 1, level: 3 });
+  assert.equal(updated.find((l) => l.week === 1)!.level, 3);
+  assert.equal(updated.find((l) => l.week === 2)!.level, 2);
+  assert.equal(updated.length, 2);
+  assert.equal(upsertWeeklyTriggerLevel(levels, { week: 5, level: 2 }).length, 3, "appends a new week when it doesn't exist yet");
 });

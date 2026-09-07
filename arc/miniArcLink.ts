@@ -26,7 +26,9 @@ export type MiniArcLinkStepId =
   | "regulation"
   | "encoding"
   | "beneficial_action"
-  | "reinforce";
+  | "reinforce"
+  /** Coherent-architecture task (#22/#24 "With ARCHI"): the short ending used ONLY in "with_archi" mode -- see buildMiniArcLinkStartConfirmationStep's own doc. */
+  | "archi_start_confirmation";
 
 export interface MiniArcLinkStep {
   id: MiniArcLinkStepId;
@@ -177,4 +179,33 @@ export function buildMiniArcLinkSteps(build: MiniArcBuild, ctx: MiniArcLinkRehea
   });
 
   return steps;
+}
+
+/**
+ * Coherent-architecture task (#22/#24 "With ARCHI"): "With ARCHI,
+ * Mini ARC Link should finish after imagining opening ARCHI, selecting
+ * the correct Mini ARC and pressing Start" -- never the full Presence
+ * Color / naming / regulation / encoding / beneficial-action sequence,
+ * which only without_archi mode rehearses. Used by the Routine-page
+ * Practice flow (live/MiniArcLinkScreen.tsx) as the step appended
+ * right after intro/trigger/enter_archi in with_archi mode, in place
+ * of the rest of buildMiniArcLinkSteps' own sequence -- that function
+ * itself is untouched and still produces its full sequence regardless
+ * of mode (its own with_archi reinforce wording included), the same
+ * caller-level, additive relationship arc/arcLink.ts's
+ * buildArcLinkStartConfirmationStep has with buildArcLinkProtocolSteps.
+ */
+export function buildMiniArcLinkStartConfirmationStep(ctx: MiniArcLinkRehearsalContext = {}): MiniArcLinkStep {
+  const trigger = (ctx.triggerText ?? "").trim();
+  return {
+    id: "archi_start_confirmation",
+    title: "דמיין שאתה לוחץ על התחלה",
+    lines: [
+      "דמיין את עצמך לוחץ על הכפתור ומתחיל את ה-Mini ARC.",
+      "מכאן, ARCHI ידריך אותך דרך התהליך המדויק שלך.",
+      `כש${trigger || "הטריגר שלך"}, אני נכנס ל-ARCHI ומתחיל את ה-Mini ARC שלי.`,
+    ],
+    buttonLabel: "סיום Mini ARC Link",
+    bodyImagery: null,
+  };
 }
