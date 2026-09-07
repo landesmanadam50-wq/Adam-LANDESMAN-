@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildMiniArcLinkSteps } from "./miniArcLink.ts";
+import { buildMiniArcLinkStartConfirmationStep, buildMiniArcLinkSteps } from "./miniArcLink.ts";
 import type { MiniArcLinkStepId } from "./miniArcLink.ts";
 import type { MiniArcBuild } from "./miniArc.ts";
 // NOTE: see arc/arcLink.test.ts for why arc/instructions.ts's
@@ -167,4 +167,33 @@ test("ctx.triggerText overrides build.linkSettings' own trigger -- the new Routi
   const trigger = steps.find((s) => s.id === "trigger")!;
   assert.match(trigger.lines.join(" "), /אחרי ארוחת הערב/);
   assert.ok(!trigger.lines.join(" ").includes("בשעה 10:00"));
+});
+
+// ---------------------------------------------------------------------------
+// Coherent-architecture task (#22/#24 "With ARCHI"): "With ARCHI, Mini ARC
+// Link should finish after imagining opening ARCHI, selecting the correct
+// Mini ARC and pressing Start" -- buildMiniArcLinkStartConfirmationStep is
+// the short ending live/MiniArcLinkScreen.tsx appends after intro/trigger/
+// enter_archi for with_archi mode, INSTEAD of the rest of buildMiniArcLinkSteps'
+// own sequence. buildMiniArcLinkSteps itself is untouched (already covered
+// above) -- purely an additive, caller-level piece.
+// ---------------------------------------------------------------------------
+
+test("buildMiniArcLinkStartConfirmationStep produces exactly one step, mentioning pressing Start and the saved trigger, never the full protocol content", () => {
+  const step = buildMiniArcLinkStartConfirmationStep({ triggerText: "בשעה 10:00", mode: "with_archi" });
+  assert.equal(step.id, "archi_start_confirmation");
+  assert.match(step.lines.join(" "), /בשעה 10:00/);
+  assert.match(step.title, /התחלה/);
+  assert.equal(step.bodyImagery, null);
+  assert.equal(step.buttonLabel, "סיום Mini ARC Link");
+});
+
+test("buildMiniArcLinkStartConfirmationStep is safe (never 'undefined'/'null') when ctx is omitted or the trigger text is blank", () => {
+  const defaultStep = buildMiniArcLinkStartConfirmationStep();
+  const blankStep = buildMiniArcLinkStartConfirmationStep({ triggerText: "" });
+  for (const step of [defaultStep, blankStep]) {
+    const text = `${step.title} ${step.lines.join(" ")}`;
+    assert.ok(!text.includes("undefined"));
+    assert.ok(!text.includes("null"));
+  }
 });

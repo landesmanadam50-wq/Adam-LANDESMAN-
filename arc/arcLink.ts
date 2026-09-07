@@ -58,7 +58,9 @@ export type ArcLinkStepId =
   | "updated_sensation"
   | "encoding"
   | "beneficial_action"
-  | "reinforce";
+  | "reinforce"
+  /** Coherent-architecture task (#22 "With ARCHI"): the short ending used ONLY in "with_archi" mode -- see buildArcLinkStartConfirmationStep's own doc. */
+  | "archi_start_confirmation";
 
 export interface ArcLinkStep {
   id: ArcLinkStepId;
@@ -544,5 +546,36 @@ export function buildArcLinkProtocolSteps(profile: ArcBuildProfile, choice: ArcL
   steps.push({ id: "reinforce", title: "חיזוק הקישור", lines: reinforceLines, buttonLabel: "סיום ARC Link", bodyImagery: null });
 
   return steps;
+}
+
+/**
+ * Coherent-architecture task (#22 "With ARCHI"): "Once the trainee
+ * imagines pressing 'התחלת ARC', finish the Link rehearsal. Do not
+ * require imagining the remaining full protocol in With ARCHI mode
+ * because ARCHI will guide the real execution." Used by the
+ * Routine-page Practice flow (live/ArcLinkScreen.tsx) as the ENTIRE
+ * "protocol phase" in with_archi mode, in place of
+ * buildArcLinkProtocolSteps -- the route choice (interfering/
+ * supportive + which target) is still shown first, since Section 22
+ * itself says to imagine SELECTING the correct route in the app before
+ * pressing Start; only the full stage-by-stage rehearsal after that is
+ * skipped. buildArcLinkProtocolSteps itself is untouched and still
+ * supports being called with mode "with_archi" directly (its own
+ * tests cover that) -- this is an additive, caller-level choice, not a
+ * change to that function's own behavior.
+ */
+export function buildArcLinkStartConfirmationStep(ctx: ArcLinkRehearsalContext): ArcLinkStep {
+  const trigger = ctx.triggerText.trim();
+  return {
+    id: "archi_start_confirmation",
+    title: "דמיין שאתה לוחץ על 'התחלת ARC'",
+    lines: [
+      "דמיין את עצמך לוחץ על הכפתור ומתחיל את ה-ARC.",
+      "מכאן, ARCHI ידריך אותך דרך התהליך המדויק שלך.",
+      `כש${trigger || "הטריגר שלך"}, אני נכנס ל-ARCHI ומתחיל את ה-ARC שלי.`,
+    ],
+    buttonLabel: "סיום ARC Link",
+    bodyImagery: null,
+  };
 }
 

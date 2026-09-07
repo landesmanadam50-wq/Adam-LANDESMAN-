@@ -1460,6 +1460,8 @@ export function CompleteScreen({
   onChangeGratitudeText,
   gratitudeMemoryDetailText,
   onChangeGratitudeMemoryDetailText,
+  progressEvidenceText,
+  onChangeProgressEvidenceText,
   restartLabel = "סשן חדש",
   onRestart,
 }: {
@@ -1468,6 +1470,16 @@ export function CompleteScreen({
   onChangeGratitudeText: (text: string) => void;
   gratitudeMemoryDetailText: string;
   onChangeGratitudeMemoryDetailText: (text: string) => void;
+  /**
+   * Coherent-architecture task (#13 "Evidence of Progress"): ONE small,
+   * optional observation about what was different this time -- "מה
+   * עשית הפעם שלא היית עושה קודם?" -- collected here, independently of
+   * Gratitude (always shown, never gated on Gratitude having text),
+   * and saved onto the same SessionLogEntry in the same call. See
+   * data/sessionLog.ts's SessionLogEntry.progressEvidence doc.
+   */
+  progressEvidenceText: string;
+  onChangeProgressEvidenceText: (text: string) => void;
   /** Multiple Scheduled ARC + Success Focus Routines: a routine-launched session shows "המשך להתמקדות בהצלחה" here instead of "סשן חדש" -- onRestart, for that same session, continues into the routine's own post-ARC Success Focus timer rather than starting a brand-new session (see live/LiveSessionScreen.tsx's restart()). Every other, non-routine caller omits this and keeps the original label/behavior unchanged. */
   restartLabel?: string;
   onRestart: () => void;
@@ -1497,6 +1509,15 @@ export function CompleteScreen({
           />
         </View>
       )}
+      <Text style={styles.body}>מה עשית הפעם שלא היית עושה קודם? (רשות)</Text>
+      <TextInput
+        style={styles.textInput}
+        value={progressEvidenceText}
+        onChangeText={onChangeProgressEvidenceText}
+        placeholder="אפשר להשאיר ריק"
+        multiline
+        textAlign="right"
+      />
       <PrimaryButton label="סשן חדש" onPress={onRestart} />
     </View>
   );

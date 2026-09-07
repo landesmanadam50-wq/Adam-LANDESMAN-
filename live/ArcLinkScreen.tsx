@@ -7,6 +7,7 @@ import { getArcBuild, getArcLink, loadRoutineTriggers, upsertArcLink } from "../
 import {
   buildArcLinkIntroSteps,
   buildArcLinkProtocolSteps,
+  buildArcLinkStartConfirmationStep,
   buildArcLinkSteps,
   resolveArcLinkRouteOptions,
 } from "../arc/arcLink.ts";
@@ -152,7 +153,13 @@ export default function ArcLinkScreen() {
     loadRoutineTriggers().then((triggers) => {
       const trigger = resolveRoutineTrigger(arcLink.triggerId, triggers);
       const triggerText = describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger);
-      setProtocolSteps(buildArcLinkProtocolSteps(arcBuild.profile, choice, { triggerText, mode: arcLink.mode }));
+      const ctx = { triggerText, mode: arcLink.mode };
+      // Coherent-architecture task (#22 "With ARCHI"): once the route is
+      // chosen (imagining selecting it in the app), with_archi mode ends
+      // right after imagining pressing Start -- never the full
+      // stage-by-stage rehearsal, which only without_archi mode shows.
+      const steps = arcLink.mode === "with_archi" ? [buildArcLinkStartConfirmationStep(ctx)] : buildArcLinkProtocolSteps(arcBuild.profile, choice, ctx);
+      setProtocolSteps(steps);
       setProtocolIndex(0);
       setPhase("protocol");
     });

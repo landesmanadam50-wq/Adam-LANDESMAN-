@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildArcLinkIntroSteps,
   buildArcLinkProtocolSteps,
+  buildArcLinkStartConfirmationStep,
   buildArcLinkSteps,
   resolveArcLinkRouteOptions,
   resolveArcLinkTarget,
@@ -348,4 +349,29 @@ test("buildArcLinkProtocolSteps never trips the interfering-state create/strengt
       }
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// Coherent-architecture task (#22 "With ARCHI"): "Once the trainee imagines
+// pressing 'התחלת ARC', finish the Link rehearsal" -- buildArcLinkStartConfirmationStep
+// is the short ending live/ArcLinkScreen.tsx uses INSTEAD of
+// buildArcLinkProtocolSteps for with_archi mode. buildArcLinkProtocolSteps
+// itself stays fully capable of producing the full sequence for either mode
+// (already covered above) -- this is purely an additive, caller-level piece.
+// ---------------------------------------------------------------------------
+
+test("buildArcLinkStartConfirmationStep produces exactly one step, mentioning pressing Start and the saved trigger, never the full protocol content", () => {
+  const step = buildArcLinkStartConfirmationStep({ triggerText: "בשעה 10:00", mode: "with_archi" });
+  assert.equal(step.id, "archi_start_confirmation");
+  assert.match(step.lines.join(" "), /בשעה 10:00/);
+  assert.match(step.title, /התחלת ARC/);
+  assert.equal(step.bodyImagery, null);
+  assert.equal(step.buttonLabel, "סיום ARC Link");
+});
+
+test("buildArcLinkStartConfirmationStep is safe (never 'undefined'/'null') when the trigger text is blank", () => {
+  const step = buildArcLinkStartConfirmationStep({ triggerText: "", mode: "with_archi" });
+  const text = `${step.title} ${step.lines.join(" ")}`;
+  assert.ok(!text.includes("undefined"));
+  assert.ok(!text.includes("null"));
 });

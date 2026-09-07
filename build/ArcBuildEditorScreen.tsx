@@ -3,7 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcBuild, upsertArcBuild } from "../data/storage.ts";
+import { getArcBuild, loadSessionLog, upsertArcBuild } from "../data/storage.ts";
+import { buildEvidenceIndex, selectEncodingEvidence } from "../arc/evidence.ts";
+import type { EvidenceRecord } from "../arc/evidence.ts";
 import {
   createEmptyDraft,
   draftFromProfileAndSelection,
@@ -17,7 +19,7 @@ import { buildArcBuildProfileForSave, draftForTarget, inferTarget, isTargetDraft
 import { NEGATIVE_ACTION_MAX_DURATION_MINUTES, NEGATIVE_ACTION_MIN_DURATION_MINUTES } from "../program/engine.ts";
 import { ARC_LINK_TRIGGER_TYPE_LABELS } from "../arc/bodyImagery.ts";
 import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
-import type { ArcBuild, DwellTimes } from "../arc/types.ts";
+import type { ArcBuild, DevelopmentLayer, DwellTimes } from "../arc/types.ts";
 
 /**
  * ARC Builds task (correction): ONE screen editing ONE, SINGLE-target
@@ -335,6 +337,18 @@ export default function ArcBuildEditorScreen() {
   const [draft, setDraft] = useState<ProfileDraft>(createEmptyDraft());
   const [step, setStep] = useState<ProfileStep>("review");
   const [saveError, setSaveError] = useState<string | null>(null);
+  /**
+   * Coherent-architecture task (#13 "Evidence of Progress"): loaded
+   * once, from the trainee's own existing session history -- never a
+   * second store -- purely to offer (never auto-fill) a relevant saved
+   * observation while writing a Bridge Belief. See bridgeBeliefHint,
+   * below the "editing" render branch.
+   */
+  const [evidenceIndex, setEvidenceIndex] = useState<EvidenceRecord[]>([]);
+
+  useEffect(() => {
+    loadSessionLog().then((log) => setEvidenceIndex(buildEvidenceIndex(log)));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -480,6 +494,26 @@ export default function ArcBuildEditorScreen() {
   const isOptional = OPTIONAL_TEXT_STEPS.includes(step);
   const firstStep = stepOrderFor(activeTarget)[0];
 
+  // Coherent-architecture task (#13 "Evidence of Progress"): while
+  // writing a Bridge Belief, offer -- never auto-fill -- the trainee's
+  // own most relevant saved evidence (a completed action, a progress
+  // note, or Gratitude) for THIS target, reusing arc/evidence.ts's
+  // existing relevance/priority logic unchanged. Shown only on the
+  // Bridge Belief step itself; the trainee's own typed text is never
+  // touched by this.
+  const bridgeBeliefHint =
+    (step === "stateBridgeBelief" || step === "identityBridgeBelief") &&
+    selectEncodingEvidence(
+      evidenceIndex,
+      {
+        targetLayer: activeTarget as DevelopmentLayer,
+        identityLabel: (activeTarget === "state" ? draft.supportiveState : draft.desiredIdentity).trim() || null,
+        goal: draft.goal.trim() || null,
+        habit: draft.habit.trim() || null,
+      },
+      1
+    )[0];
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -495,6 +529,7 @@ export default function ArcBuildEditorScreen() {
               textAlign="right"
               autoFocus
             />
+            {bridgeBeliefHint && <Text style={styles.hint}>{`עדות שמורה שיכולה לעזור: ${bridgeBeliefHint.text}`}</Text>}
             <Pressable
               style={[styles.button, styles.fullWidthButton]}
               disabled={!isOptional && (draft[textField] as string).trim().length === 0}
@@ -718,6 +753,7 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 13, textAlign: "right", color: "#0a7ea4", marginBottom: 4 },
   title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 16 },
   body: { fontSize: 16, textAlign: "right", marginBottom: 8 },
+  hint: { fontSize: 13, textAlign: "right", color: "#666", marginTop: 8, marginBottom: 8 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 8 },
   buttonRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12 },
   button: {

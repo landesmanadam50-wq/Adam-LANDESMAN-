@@ -171,6 +171,59 @@ test("a single session with BOTH a completed action and written Gratitude yields
   assert.ok(records.every((r) => r.memoryDetail === "שמתי לב שהכתפיים שלי נרגעו"));
 });
 
+// --- Coherent-architecture task (#13 "Evidence of Progress") --------------
+
+test("buildEvidenceIndex derives a progress_evidence record only when the trainee's own progress note is non-empty, trimming whitespace-only text to nothing", () => {
+  const withNote = sessionEntry({ progressEvidence: "התחלתי הפעם בלי לדחות" });
+  const emptyNote = sessionEntry({ progressEvidence: "" });
+  const whitespaceOnly = sessionEntry({ progressEvidence: "   " });
+  const noNote = sessionEntry({ progressEvidence: null });
+
+  assert.equal(buildEvidenceIndex([withNote]).filter((r) => r.sourceType === "progress_evidence").length, 1);
+  assert.equal(buildEvidenceIndex([emptyNote]).filter((r) => r.sourceType === "progress_evidence").length, 0);
+  assert.equal(buildEvidenceIndex([whitespaceOnly]).filter((r) => r.sourceType === "progress_evidence").length, 0);
+  assert.equal(buildEvidenceIndex([noNote]).filter((r) => r.sourceType === "progress_evidence").length, 0);
+});
+
+test("a session with a completed action, written Gratitude, AND a progress note yields three records, all sharing the SAME sourceSessionId and SAME memoryDetail", () => {
+  const entry = sessionEntry({
+    id: "shared-session",
+    success: true,
+    context: disciplineContext,
+    gratitude: "הצלחתי להישאר עם התחושה",
+    gratitudeMemoryDetail: "שמתי לב שהכתפיים שלי נרגעו",
+    progressEvidence: "התחלתי הפעם בלי לדחות",
+  });
+  const records = buildEvidenceIndex([entry]);
+  assert.equal(records.length, 3);
+  assert.ok(records.every((r) => r.sourceSessionId === "shared-session"));
+  assert.ok(records.every((r) => r.memoryDetail === "שמתי לב שהכתפיים שלי נרגעו"));
+  assert.ok(records.some((r) => r.sourceType === "progress_evidence" && r.text === "התחלתי הפעם בלי לדחות"));
+});
+
+test("progress_evidence ranks between beneficial_action and gratitude: preferred over Gratitude, but a completed action still wins when equally relevant", () => {
+  const progressOnly: EvidenceRecord[] = [
+    { sourceType: "gratitude", sourceSessionId: "g1", timestamp: "2026-01-01T00:00:00.000Z", text: "תודה", memoryDetail: null, ...disciplineContext },
+    {
+      sourceType: "progress_evidence",
+      sourceSessionId: "p1",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      text: "לא ויתרתי הפעם",
+      memoryDetail: null,
+      ...disciplineContext,
+    },
+  ];
+  const [selected] = selectEncodingEvidence(progressOnly, disciplineContext);
+  assert.equal(selected.sourceType, "progress_evidence", "progress_evidence outranks gratitude when equally relevant");
+
+  const allThree: EvidenceRecord[] = [
+    ...progressOnly,
+    { sourceType: "beneficial_action", sourceSessionId: "b1", timestamp: "2026-01-01T00:00:00.000Z", text: "פעולה שהושלמה", memoryDetail: null, ...disciplineContext },
+  ];
+  const [top] = selectEncodingEvidence(allThree, disciplineContext);
+  assert.equal(top.sourceType, "beneficial_action", "a completed action still outranks progress_evidence when equally relevant");
+});
+
 test("buildEvidenceIndex never fabricates a memoryDetail -- absent/empty gratitudeMemoryDetail on the source entry always yields null, never invented text", () => {
   const noDetail = sessionEntry({ success: true, context: disciplineContext, gratitudeMemoryDetail: null });
   const emptyDetail = sessionEntry({ success: true, context: disciplineContext, gratitudeMemoryDetail: "   " });
@@ -188,10 +241,10 @@ test("legacy SessionLogEntry data (no context, no gratitudeMemoryDetail field at
     success: true,
     fall: false,
     gratitude: "תודה על היום",
-    // context and gratitudeMemoryDetail intentionally omitted entirely.
+    // context, gratitudeMemoryDetail, and progressEvidence intentionally omitted entirely.
   };
   const records = buildEvidenceIndex([legacy]);
-  // success:true but no context.currentAction -> no beneficial_action record; gratitude present -> one gratitude record.
+  // success:true but no context.currentAction -> no beneficial_action record; no progressEvidence field at all -> no progress_evidence record; gratitude present -> one gratitude record.
   assert.equal(records.length, 1);
   assert.equal(records[0].sourceType, "gratitude");
   assert.equal(records[0].memoryDetail, null);

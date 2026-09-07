@@ -46,7 +46,16 @@
 import type { ArcBuildProfile, DevelopmentLayer, EncodingProfile } from "./types.ts";
 import type { SessionEvidenceContext, SessionLogEntry } from "../data/sessionLog.ts";
 
-export type EvidenceSourceType = "beneficial_action" | "gratitude";
+/**
+ * Coherent-architecture task (#13): "progress_evidence" is the
+ * trainee's own explicit note about what was different this time
+ * (SessionLogEntry.progressEvidence) -- a real, self-reported
+ * behavioral observation, distinct from a completed action
+ * (beneficial_action) and from a Gratitude reflection (gratitude).
+ * Derived the exact same way (verbatim, from the trainee's own stored
+ * text, never generated) -- see this module's own anti-fabrication doc.
+ */
+export type EvidenceSourceType = "beneficial_action" | "progress_evidence" | "gratitude";
 
 /**
  * A lightweight, DERIVED view of one real stored fact from a single
@@ -246,6 +255,26 @@ export function buildEvidenceIndex(sessionLog: SessionLogEntry[]): EvidenceRecor
       });
     }
 
+    // Coherent-architecture task (#13): a trainee's own explicit
+    // progress note, exactly parallel to the Gratitude branch right
+    // below -- verbatim text, same context snapshot, never invented.
+    const progressEvidenceText = entry.progressEvidence?.trim() || null;
+    if (progressEvidenceText) {
+      records.push({
+        sourceType: "progress_evidence",
+        sourceSessionId: entry.id,
+        timestamp: entry.finishedAt,
+        text: progressEvidenceText,
+        memoryDetail,
+        targetLayer: ctx?.targetLayer ?? null,
+        identityLabel: ctx?.identityLabel ?? null,
+        goal: ctx?.goal ?? null,
+        habit: ctx?.habit ?? null,
+        interferingState: ctx?.interferingState ?? null,
+        challengeContext: ctx?.challengeContext ?? null,
+      });
+    }
+
     const gratitudeText = entry.gratitude?.trim() || null;
     if (gratitudeText) {
       records.push({
@@ -323,7 +352,12 @@ export function selectEncodingEvidence(
     .map((record) => ({ record, score: relevanceScore(record, context) }))
     .filter((entry) => entry.score >= MIN_RELEVANCE_SCORE);
 
-  const sourceTypeRank = (type: EvidenceSourceType) => (type === "beneficial_action" ? 0 : 1);
+  // Coherent-architecture task (#13): progress_evidence ranks between
+  // beneficial_action and gratitude -- a self-reported behavioral
+  // observation is still real, first-person evidence, one step more
+  // specific than a bare completed-action label but not a general
+  // Gratitude reflection.
+  const sourceTypeRank = (type: EvidenceSourceType) => (type === "beneficial_action" ? 0 : type === "progress_evidence" ? 1 : 2);
   scored.sort((a, b) => {
     if (a.score !== b.score) return b.score - a.score;
     const typeDiff = sourceTypeRank(a.record.sourceType) - sourceTypeRank(b.record.sourceType);
