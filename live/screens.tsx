@@ -584,6 +584,61 @@ export function PreventiveActionCheckScreen({
   );
 }
 
+/**
+ * ARC-BUILD-to-LIVE connection task: Awareness of the interfering
+ * thought -- three choices, the third ("מופיעה מחשבה אחרת") revealing
+ * an optional free-text entry for a session-specific thought. All local
+ * component state (never lifted to LiveSessionScreen, unlike
+ * TriggerContextScreen's controlled pending text) since nothing here
+ * needs to survive a re-render from the parent -- onAnswer fires once,
+ * on whichever choice the trainee makes, and the stage always advances
+ * from there. Never presents the "different" text field as required:
+ * leaving it blank and pressing Continue still submits "different" with
+ * a null session text.
+ */
+export function InterferingThoughtCheckScreen({
+  copy,
+  onAnswer,
+}: {
+  copy: ArcStageCopy;
+  onAnswer: (choice: "present" | "absent" | "different", sessionText: string | null) => void;
+}) {
+  const [showDifferentInput, setShowDifferentInput] = useState(false);
+  const [differentText, setDifferentText] = useState("");
+
+  if (showDifferentInput) {
+    return (
+      <View>
+        <Title copy={copy} />
+        <TextInput
+          style={styles.textInput}
+          value={differentText}
+          onChangeText={setDifferentText}
+          placeholder="אפשר לתאר בקצרה, או להשאיר ריק"
+          multiline
+          textAlign="right"
+        />
+        <PrimaryButton label="המשך" onPress={() => onAnswer("different", differentText)} />
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <Title copy={copy} />
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onAnswer("present", null)}>
+        <Text style={styles.buttonText}>כן, היא נמצאת עכשיו</Text>
+      </Pressable>
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onAnswer("absent", null)}>
+        <Text style={styles.buttonText}>לא</Text>
+      </Pressable>
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setShowDifferentInput(true)}>
+        <Text style={styles.buttonText}>מופיעה מחשבה אחרת</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 const SENSATION_LOCATION_VALIDATION_MESSAGE = "בחר איפה התחושה מורגשת בגוף, כתוב מיקום אחר, או בחר 'לא ברור לי איפה'.";
 
 /**

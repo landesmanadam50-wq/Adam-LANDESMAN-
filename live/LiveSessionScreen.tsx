@@ -72,6 +72,7 @@ import {
   applyActionImageryCompleted,
   applyAlternativeAction,
   applyBeneficialActionDurationSelected,
+  applyInterferingThoughtAnswer,
   applyNegativeActionStarted,
   applyPlannedActionConfirmed,
   applyRegulationToolUsed,
@@ -623,6 +624,7 @@ export default function LiveSessionScreen() {
             commitAdvance(applySensationAnswer(session, location, value));
           }}
           onYesNoAnswer={(yes) => commitAdvance(applyYesNoAnswer(stage, session, yes))}
+          onInterferingThoughtAnswer={(choice, sessionText) => commitAdvance(applyInterferingThoughtAnswer(session, choice, sessionText))}
           onSelectTarget={(target) => setSession(applyTargetSelection(session, target))}
           onSelectReactiveExperience={(target) => commitAdvance(applyTargetSelection(session, target))}
           onGenericContinue={() => commitAdvance(session)}

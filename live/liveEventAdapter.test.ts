@@ -43,6 +43,7 @@ import { createInitialProgress } from "../program/progress.ts";
 import {
   advanceLiveSession,
   applyAcceptanceWillingnessAnswer,
+  applyInterferingThoughtAnswer,
   applyActionCompletion,
   applyActionImageryCompleted,
   applyAlternativeAction,
@@ -843,6 +844,49 @@ test("Feeling/intensity merge: answering accept's willingness question (either t
   assert.equal(answeredNo.acceptanceNeeded, true, "no -> acceptanceNeeded true, same existing mapping as before the merge");
   assert.equal(answeredNo.currentArcStage, session.currentArcStage, "answering alone never advances currentArcStage");
   assert.equal(answeredNo.acceptanceWillingnessLoopCount, 1, "no -> starts (or advances) the unwillingness sub-flow's own dedicated counter");
+});
+
+// ---------------------------------------------------------------------------
+// ARC-BUILD-to-LIVE connection task: applyInterferingThoughtAnswer
+// ---------------------------------------------------------------------------
+
+test("applyInterferingThoughtAnswer records the choice, and only keeps session text for 'different'", () => {
+  const session = createEmptyLiveState();
+
+  const present = applyInterferingThoughtAnswer(session, "present", null);
+  assert.equal(present.interferingThoughtChoice, "present");
+  assert.equal(present.interferingThoughtSessionText, null);
+
+  const absent = applyInterferingThoughtAnswer(session, "absent", null);
+  assert.equal(absent.interferingThoughtChoice, "absent");
+  assert.equal(absent.interferingThoughtSessionText, null);
+
+  const different = applyInterferingThoughtAnswer(session, "different", "אני לא מספיק מוכן");
+  assert.equal(different.interferingThoughtChoice, "different");
+  assert.equal(different.interferingThoughtSessionText, "אני לא מספיק מוכן");
+});
+
+test("applyInterferingThoughtAnswer trims the session text and drops a blank/whitespace-only one to null", () => {
+  const session = createEmptyLiveState();
+  const trimmed = applyInterferingThoughtAnswer(session, "different", "  משהו  ");
+  assert.equal(trimmed.interferingThoughtSessionText, "משהו");
+  const blank = applyInterferingThoughtAnswer(session, "different", "   ");
+  assert.equal(blank.interferingThoughtSessionText, null);
+});
+
+test("applyInterferingThoughtAnswer discards any stray session text when the choice isn't 'different'", () => {
+  const session = createEmptyLiveState();
+  const result = applyInterferingThoughtAnswer(session, "present", "טקסט שגוי");
+  assert.equal(result.interferingThoughtSessionText, null);
+});
+
+test("applyInterferingThoughtAnswer never touches the BUILD-configured Limiting Belief -- session-only, exactly like triggerContext never touches challengeContext", () => {
+  const session = createEmptyLiveState();
+  const result = applyInterferingThoughtAnswer(session, "different", "מחשבה של הרגע");
+  // No ArcBuildProfile is even passed into this function -- structurally
+  // impossible for it to write back onto stateLimitingBelief/identityLimitingBelief.
+  assert.equal(Object.keys(result).includes("stateLimitingBelief"), false);
+  assert.equal(result.interferingThoughtSessionText, "מחשבה של הרגע");
 });
 
 // --- Dwell-time task: the Accept "לא" willingness sub-flow (#H-#M).

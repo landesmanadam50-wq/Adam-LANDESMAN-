@@ -17,6 +17,8 @@ import {
   resolveEncodingTarget,
   resolveLiveRoute,
   resolveObserverPauseLayer,
+  resolveTargetBridgeBelief,
+  resolveTargetLimitingBelief,
   resolveTargetPreventiveAction,
 } from "./arcEngine.ts";
 import { createEmptyLiveState, createEmptyArcBuildProfile, generateArcBuildId } from "./types.ts";
@@ -756,6 +758,33 @@ test("state, identity, and habit Preventive Actions never leak into each other, 
 });
 
 // ---------------------------------------------------------------------------
+// ARC-BUILD-to-LIVE connection task: interfering thought (Limiting
+// Belief) and empowering interpretation (Bridge Belief) resolvers
+// ---------------------------------------------------------------------------
+
+test("resolveTargetLimitingBelief/resolveTargetBridgeBelief never leak into each other or between state/identity, and habit always resolves to null", () => {
+  const p = profile({
+    stateLimitingBelief: "מחשבת מצב מפריעה",
+    stateBridgeBelief: "פרשנות מצב מקדמת",
+    identityLimitingBelief: "מחשבת זהות מפריעה",
+    identityBridgeBelief: "פרשנות זהות מקדמת",
+  });
+  assert.equal(resolveTargetLimitingBelief("state", p), "מחשבת מצב מפריעה");
+  assert.equal(resolveTargetLimitingBelief("identity", p), "מחשבת זהות מפריעה");
+  assert.equal(resolveTargetLimitingBelief("habit", p), null);
+  assert.equal(resolveTargetBridgeBelief("state", p), "פרשנות מצב מקדמת");
+  assert.equal(resolveTargetBridgeBelief("identity", p), "פרשנות זהות מקדמת");
+  assert.equal(resolveTargetBridgeBelief("habit", p), null);
+  assert.notEqual(resolveTargetLimitingBelief("state", p), resolveTargetBridgeBelief("state", p), "the interfering thought and the empowering interpretation must never be confused");
+});
+
+test("resolveTargetLimitingBelief/resolveTargetBridgeBelief return null (never throw) for a legacy build with neither field configured", () => {
+  const p = profile();
+  assert.equal(resolveTargetLimitingBelief("state", p), null);
+  assert.equal(resolveTargetBridgeBelief("identity", p), null);
+});
+
+// ---------------------------------------------------------------------------
 // Encoding regulation -- a lightweight per-target Short Encoding
 // Regulation Cue, distinct from the Full Regulation Cue used during
 // Regulation itself
@@ -810,8 +839,41 @@ test("sensation_check branches into all four reactive intensity bands", () => {
   assert.equal(getNextArcStage("sensation_check", state({ sensationIntensity: 2 }), p, ALL_LAYERS).stage, "encode");
 });
 
-test("stay always continues to accept", () => {
+test("stay continues straight to accept when the resolved target has no Limiting Belief configured (legacy/unconfigured build)", () => {
   assert.equal(getNextArcStage("stay", state(), profile(), ALL_LAYERS).stage, "accept");
+});
+
+// ---------------------------------------------------------------------------
+// ARC-BUILD-to-LIVE connection task: interfering_thought_check
+// ---------------------------------------------------------------------------
+
+test("stay routes to interfering_thought_check when the resolved target's own Limiting Belief is configured", () => {
+  const p = profile({ stateLimitingBelief: "אתה חייב להתרכז" });
+  const outcome = getNextArcStage("stay", state({ triggerType: "reactive_emotion" }), p, ALL_LAYERS);
+  assert.equal(outcome.stage, "interfering_thought_check");
+});
+
+test("stay routes to interfering_thought_check using the IDENTITY layer's own Limiting Belief when identity is the resolved target", () => {
+  const p = profile({ identityAction: "לדבר בבהירות", identityLimitingBelief: "אני לא מספיק טוב" });
+  const outcome = getNextArcStage("stay", state({ triggerType: "reactive_emotion", selectedTarget: "identity" }), p, ALL_LAYERS);
+  assert.equal(outcome.stage, "interfering_thought_check");
+});
+
+test("interfering_thought_check stays put until answered, then always continues to accept", () => {
+  const p = profile({ stateLimitingBelief: "אתה חייב להתרכז" });
+  const unanswered = getNextArcStage("interfering_thought_check", state(), p, ALL_LAYERS);
+  assert.equal(unanswered.stage, "interfering_thought_check");
+
+  for (const choice of ["present", "absent", "different"] as const) {
+    const answered = getNextArcStage("interfering_thought_check", state({ interferingThoughtChoice: choice }), p, ALL_LAYERS);
+    assert.equal(answered.stage, "accept", `choice=${choice} must continue to accept`);
+  }
+});
+
+test("once answered, a later 'stay' visit (the accept -> sensation_check re-check loop) skips interfering_thought_check entirely -- asked at most once per session", () => {
+  const p = profile({ stateLimitingBelief: "אתה חייב להתרכז" });
+  const outcome = getNextArcStage("stay", state({ triggerType: "reactive_emotion", interferingThoughtChoice: "present" }), p, ALL_LAYERS);
+  assert.equal(outcome.stage, "accept");
 });
 
 test("accept loops back to sensation_check (an intensity re-check), incrementing loopIterationCount", () => {

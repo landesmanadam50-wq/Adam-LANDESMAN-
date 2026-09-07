@@ -174,6 +174,27 @@ export function applyYesNoAnswer(stage: ArcStage, session: ArcLiveState, yes: bo
  * selection or no-rating Continue does, exactly as answering "כן" alone
  * already worked before this addition.
  */
+/**
+ * ARC-BUILD-to-LIVE connection task: the interfering_thought_check
+ * stage's own three-way answer -- "present" ("כן, היא נמצאת עכשיו"),
+ * "absent" ("לא"), or "different" ("מופיעה מחשבה אחרת", with an
+ * optional session-specific thought). sessionText is only ever kept for
+ * "different" -- session-only, exactly like triggerContext never
+ * touches the BUILD-configured Challenge Context: this NEVER overwrites
+ * ArcBuildProfile.stateLimitingBelief/identityLimitingBelief.
+ */
+export function applyInterferingThoughtAnswer(
+  session: ArcLiveState,
+  choice: "present" | "absent" | "different",
+  sessionText: string | null
+): ArcLiveState {
+  return {
+    ...session,
+    interferingThoughtChoice: choice,
+    interferingThoughtSessionText: choice === "different" ? (sessionText?.trim() || null) : null,
+  };
+}
+
 export function applyAcceptanceWillingnessAnswer(session: ArcLiveState, yes: boolean): ArcLiveState {
   if (yes) return { ...session, acceptanceNeeded: false };
   return { ...session, acceptanceNeeded: true, acceptanceWillingnessLoopCount: session.acceptanceWillingnessLoopCount + 1 };
