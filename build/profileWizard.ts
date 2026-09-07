@@ -66,7 +66,7 @@
  * build/ArcBuildEditorScreen.tsx's finishAndSave.
  */
 
-import type { ArcBuildProfile, DwellTimes, EncodingProfile } from "../arc/types.ts";
+import type { ArcBuildProfile, BarrierType, DwellTimes, EncodingProfile } from "../arc/types.ts";
 import { bodyImageryFromCustomFields } from "../arc/bodyImagery.ts";
 import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
 import type { ArcProgramSelection, KnownProgramPath } from "../program/programTypes.ts";
@@ -177,6 +177,27 @@ export type ProfileStep =
   /** ARC Link task: the identity layer's own optional encoding body-imagery fields, parallel to stateEncodingBodyParts/stateEncodingMovementText. */
   | "identityEncodingBodyParts"
   | "identityEncodingMovementText"
+  /** Coherent-architecture task (#1): the build-global "why" -- see ArcBuildProfile.value's doc. Always optional. */
+  | "value"
+  /** Coherent-architecture task (#2): identity-only -- how the trainee wants to feel/act while expressing the identity, distinct from desiredIdentity itself. Always optional. */
+  | "identityDesiredState"
+  /** Coherent-architecture task (#12): internal-vs-practical barrier classification -- custom-rendered (2-way chip), not a generic text step. Parallel per-layer. */
+  | "stateBarrierType"
+  | "identityBarrierType"
+  /** Coherent-architecture task (#12): only shown once its own layer's barrierType is "practical". */
+  | "statePracticalAlternative"
+  | "identityPracticalAlternative"
+  /** Coherent-architecture task (#5): a smaller action that creates better conditions for the real Identity-Based Action -- never a silent replacement for it. Parallel per-layer, always optional. */
+  | "stateSupportingAction"
+  | "identitySupportingAction"
+  /** Coherent-architecture task (#6): the thought currently blocking action, and a more believable, moderate reframe of it -- two distinct fields, parallel per-layer, always optional. */
+  | "stateLimitingBelief"
+  | "stateBridgeBelief"
+  | "identityLimitingBelief"
+  | "identityBridgeBelief"
+  /** Coherent-architecture task (#7/#8): the direction of movement right now, shown between Presence and Encoding -- distinct from Identity Mantra (stateMantra/identityMantra, said during Encoding). Parallel per-layer, always optional. */
+  | "stateFutureOrientedMantra"
+  | "identityFutureOrientedMantra"
   | "review";
 
 /**
@@ -359,6 +380,23 @@ export interface ProfileDraft {
   /** ARC Link task: the identity layer's own custom encoding-imagery fields, parallel to stateEncodingBodyParts/stateEncodingMovementText -- never mixed with them. */
   identityEncodingBodyParts: string;
   identityEncodingMovementText: string;
+
+  /** Coherent-architecture task -- see ArcBuildProfile's corresponding fields' own docs (arc/types.ts) for what each represents. All always optional; empty text is always a valid, saveable answer. */
+  value: string;
+  identityDesiredState: string;
+  stateSupportingAction: string;
+  identitySupportingAction: string;
+  stateLimitingBelief: string;
+  stateBridgeBelief: string;
+  identityLimitingBelief: string;
+  identityBridgeBelief: string;
+  stateFutureOrientedMantra: string;
+  identityFutureOrientedMantra: string;
+  /** null = not yet classified this BUILD session (matches hasPreventiveAction's own tri-state pattern). */
+  stateBarrierType: BarrierType | null;
+  statePracticalAlternative: string;
+  identityBarrierType: BarrierType | null;
+  identityPracticalAlternative: string;
 }
 
 export function createEmptyDraft(): ProfileDraft {
@@ -418,6 +456,20 @@ export function createEmptyDraft(): ProfileDraft {
     stateEncodingMovementText: "",
     identityEncodingBodyParts: "",
     identityEncodingMovementText: "",
+    value: "",
+    identityDesiredState: "",
+    stateSupportingAction: "",
+    identitySupportingAction: "",
+    stateLimitingBelief: "",
+    stateBridgeBelief: "",
+    identityLimitingBelief: "",
+    identityBridgeBelief: "",
+    stateFutureOrientedMantra: "",
+    identityFutureOrientedMantra: "",
+    stateBarrierType: null,
+    statePracticalAlternative: "",
+    identityBarrierType: null,
+    identityPracticalAlternative: "",
   };
 }
 
@@ -528,6 +580,20 @@ export function draftFromProfileAndSelection(
     stateEncodingMovementText: profile.stateEncoding?.bodyImagery?.imageryText ?? "",
     identityEncodingBodyParts: (profile.identityEncoding?.bodyImagery?.bodyParts ?? []).join(", "),
     identityEncodingMovementText: profile.identityEncoding?.bodyImagery?.imageryText ?? "",
+    value: profile.value ?? "",
+    identityDesiredState: profile.identityDesiredState ?? "",
+    stateSupportingAction: profile.stateSupportingAction ?? "",
+    identitySupportingAction: profile.identitySupportingAction ?? "",
+    stateLimitingBelief: profile.stateLimitingBelief ?? "",
+    stateBridgeBelief: profile.stateBridgeBelief ?? "",
+    identityLimitingBelief: profile.identityLimitingBelief ?? "",
+    identityBridgeBelief: profile.identityBridgeBelief ?? "",
+    stateFutureOrientedMantra: profile.stateFutureOrientedMantra ?? "",
+    identityFutureOrientedMantra: profile.identityFutureOrientedMantra ?? "",
+    stateBarrierType: profile.stateBarrierType ?? null,
+    statePracticalAlternative: profile.statePracticalAlternative ?? "",
+    identityBarrierType: profile.identityBarrierType ?? null,
+    identityPracticalAlternative: profile.identityPracticalAlternative ?? "",
   };
 }
 
@@ -571,6 +637,14 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
       return resolvesNeedsIdentity(draft) && draft.identityWantsShortEncodingRegulationCue === true;
     case "preventiveActionDescription":
       return draft.hasPreventiveAction === true;
+    // Coherent-architecture task (#12): the practical-alternative text
+    // step only makes sense once its own layer's barrier has actually
+    // been classified as "practical" -- never shown for "internal" or
+    // for a barrier not yet classified at all (null).
+    case "statePracticalAlternative":
+      return draft.stateBarrierType === "practical";
+    case "identityPracticalAlternative":
+      return draft.identityBarrierType === "practical";
     default:
       return true;
   }
@@ -900,5 +974,30 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
       triggerText: draft.linkTriggerText.trim(),
     },
     regulationBodyImagery: bodyImageryFromCustomFields(draft.regulationBodyParts, draft.regulationMovementText),
+
+    // Coherent-architecture task: build-global, like goal/presenceColor -- never gated on needsState/needsIdentity.
+    value: draft.value.trim() ? draft.value.trim() : null,
+    // Identity-only (see ArcBuildProfile.identityDesiredState's doc) -- gated on needsIdentity exactly like desiredIdentity/identityChallengeContext above.
+    identityDesiredState: needsIdentity && draft.identityDesiredState.trim() ? draft.identityDesiredState.trim() : null,
+    stateSupportingAction: draft.needsState && draft.stateSupportingAction.trim() ? draft.stateSupportingAction.trim() : null,
+    identitySupportingAction: needsIdentity && draft.identitySupportingAction.trim() ? draft.identitySupportingAction.trim() : null,
+    stateLimitingBelief: draft.needsState && draft.stateLimitingBelief.trim() ? draft.stateLimitingBelief.trim() : null,
+    stateBridgeBelief: draft.needsState && draft.stateBridgeBelief.trim() ? draft.stateBridgeBelief.trim() : null,
+    identityLimitingBelief: needsIdentity && draft.identityLimitingBelief.trim() ? draft.identityLimitingBelief.trim() : null,
+    identityBridgeBelief: needsIdentity && draft.identityBridgeBelief.trim() ? draft.identityBridgeBelief.trim() : null,
+    stateFutureOrientedMantra:
+      draft.needsState && draft.stateFutureOrientedMantra.trim() ? draft.stateFutureOrientedMantra.trim() : null,
+    identityFutureOrientedMantra:
+      needsIdentity && draft.identityFutureOrientedMantra.trim() ? draft.identityFutureOrientedMantra.trim() : null,
+    stateBarrierType: draft.needsState ? draft.stateBarrierType : null,
+    statePracticalAlternative:
+      draft.needsState && draft.stateBarrierType === "practical" && draft.statePracticalAlternative.trim()
+        ? draft.statePracticalAlternative.trim()
+        : null,
+    identityBarrierType: needsIdentity ? draft.identityBarrierType : null,
+    identityPracticalAlternative:
+      needsIdentity && draft.identityBarrierType === "practical" && draft.identityPracticalAlternative.trim()
+        ? draft.identityPracticalAlternative.trim()
+        : null,
   };
 }

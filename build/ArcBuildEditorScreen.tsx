@@ -65,17 +65,28 @@ import type { ArcBuild, DwellTimes } from "../arc/types.ts";
 
 const STATE_STEPS: ProfileStep[] = [
   "presenceColor",
+  // Coherent-architecture task: build-global "why", asked once regardless of target.
+  "value",
   "supportiveState",
   "challengeContext",
   "interferingState",
+  // Coherent-architecture task (#12 "Barrier map"): classify the mapped barrier before anything else is built around it.
+  "stateBarrierType",
+  "statePracticalAlternative",
   "internalAction",
   "internalActionBodyCue",
   "statePreventiveAction",
+  // Coherent-architecture task (#5/#6 "Building the bridge"): Supporting Action, then Limiting/Bridge Belief.
+  "stateSupportingAction",
+  "stateLimitingBelief",
+  "stateBridgeBelief",
   "regulationTool",
   "regulationBodyParts",
   "regulationMovementText",
   "stateEncodingRegulationCueAsk",
   "stateEncodingRegulationCue",
+  // Coherent-architecture task (#7/#8): the Future-Oriented Mantra, distinct from Identity Mantra (stateMantra, right after it).
+  "stateFutureOrientedMantra",
   "stateMantra",
   "stateBodyLanguageCue",
   "stateEncodingBodyParts",
@@ -88,17 +99,26 @@ const STATE_STEPS: ProfileStep[] = [
 
 const IDENTITY_STEPS: ProfileStep[] = [
   "presenceColor",
+  "value",
   "desiredIdentity",
+  // Coherent-architecture task (#2): how the trainee wants to feel/act while expressing this identity, distinct from the identity itself.
+  "identityDesiredState",
   "identityChallengeContext",
   "identityInterferingEmotion",
+  "identityBarrierType",
+  "identityPracticalAlternative",
   "identityAction",
   "identityActionBodyCue",
   "identityPreventiveAction",
+  "identitySupportingAction",
+  "identityLimitingBelief",
+  "identityBridgeBelief",
   "regulationTool",
   "regulationBodyParts",
   "regulationMovementText",
   "identityEncodingRegulationCueAsk",
   "identityEncodingRegulationCue",
+  "identityFutureOrientedMantra",
   "identityMantra",
   "identityBodyLanguageCue",
   "identityEncodingBodyParts",
@@ -111,6 +131,7 @@ const IDENTITY_STEPS: ProfileStep[] = [
 
 const HABIT_STEPS: ProfileStep[] = [
   "presenceColor",
+  "value",
   "beneficialAction",
   "beneficialActionBodyCue",
   "preventiveActionAsk",
@@ -134,6 +155,7 @@ function stepOrderFor(target: Target): ProfileStep[] {
 
 const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   presenceColor: "באיזה צבע מתמלאת הנוכחות שלך?",
+  value: "מהו הערך שעומד מאחורי הזהות וההרגל הזה? (רשות, למשל בריאות וחופש)",
   supportiveState: "מה המצב הרצוי שתרצה לחוש יותר?",
   challengeContext: "באילו מצבים המצב הרצוי הזה במיוחד רלוונטי? (הקשר האתגר)",
   interferingState: "מה נוטה להפריע למצב הרצוי הזה? (לזיהוי בלבד)",
@@ -144,8 +166,15 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   stateEncodingRegulationCue: "מהו כלי הוויסות הקצר לקידוד?",
   stateMantra: "יש לך מנטרה למצב הזה? (רשות)",
   stateBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך במצב הזה? (רשות, למשל כתפיים משוחררות)",
+  stateBarrierType: "המכשול שמפריע הוא בעיקר פנימי או מעשי?",
+  statePracticalAlternative: "מהו פתרון מעשי, גרסה מצומצמת או פעולה חלופית שיכולים לעזור? (רשות)",
+  stateSupportingAction: "יש פעולה תומכת קצרה שיוצרת תנאים טובים יותר לפעולה המרכזית? (רשות, למשל מדיטציה קצרה)",
+  stateLimitingBelief: "יש מחשבה שמפריעה לך להתחיל? (רשות)",
+  stateBridgeBelief: "מהי פרשנות מאמינה ומתקדמת יותר למחשבה הזו? (רשות)",
+  stateFutureOrientedMantra: "לאיזה כיוון אתה מתקדם עכשיו? (רשות, מנטרה מכוונת עתיד)",
 
   desiredIdentity: "מה הזהות הרצויה?",
+  identityDesiredState: "איך תרצה להרגיש ולפעול כשאתה מבטא את הזהות הזו? (רשות)",
   identityChallengeContext: "באילו מצבים הזהות הרצויה הזו במיוחד רלוונטית? (הקשר האתגר)",
   identityInterferingEmotion: "מה נוטה להפריע לזהות הזו? (לזיהוי בלבד)",
   identityAction: "מה הפעולה שמבטאת את הזהות הזו?",
@@ -155,6 +184,12 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   identityEncodingRegulationCue: "מהו כלי הוויסות הקצר לקידוד?",
   identityMantra: "יש לך מנטרה לזהות הזו? (רשות)",
   identityBodyLanguageCue: "איך תרצה שתהיה שפת הגוף שלך בזהות הזו? (רשות)",
+  identityBarrierType: "המכשול שמפריע הוא בעיקר פנימי או מעשי?",
+  identityPracticalAlternative: "מהו פתרון מעשי, גרסה מצומצמת או פעולה חלופית שיכולים לעזור? (רשות)",
+  identitySupportingAction: "יש פעולה תומכת קצרה שיוצרת תנאים טובים יותר לפעולה המרכזית? (רשות, למשל מדיטציה קצרה)",
+  identityLimitingBelief: "יש מחשבה שמפריעה לך להתחיל? (רשות)",
+  identityBridgeBelief: "מהי פרשנות מאמינה ומתקדמת יותר למחשבה הזו? (רשות)",
+  identityFutureOrientedMantra: "לאיזה כיוון אתה מתקדם עכשיו? (רשות, מנטרה מכוונת עתיד)",
 
   beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע? (ההרגל הרצוי)",
   beneficialActionBodyCue: "איזה עוגן גופני תרצה לשמור בזמן ביצוע הפעולה? (רשות)",
@@ -181,22 +216,34 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
 
 const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   presenceColor: "presenceColor",
+  value: "value",
   supportiveState: "supportiveState",
   challengeContext: "challengeContext",
   interferingState: "interferingState",
+  statePracticalAlternative: "statePracticalAlternative",
   internalAction: "internalAction",
   internalActionBodyCue: "internalActionBodyCue",
   statePreventiveAction: "statePreventiveAction",
+  stateSupportingAction: "stateSupportingAction",
+  stateLimitingBelief: "stateLimitingBelief",
+  stateBridgeBelief: "stateBridgeBelief",
+  stateFutureOrientedMantra: "stateFutureOrientedMantra",
   stateEncodingRegulationCue: "stateEncodingRegulationCue",
   stateMantra: "stateMantra",
   stateBodyLanguageCue: "stateBodyLanguageCue",
 
   desiredIdentity: "desiredIdentity",
+  identityDesiredState: "identityDesiredState",
   identityChallengeContext: "identityChallengeContext",
   identityInterferingEmotion: "identityInterferingEmotion",
+  identityPracticalAlternative: "identityPracticalAlternative",
   identityAction: "identityAction",
   identityActionBodyCue: "identityActionBodyCue",
   identityPreventiveAction: "identityPreventiveAction",
+  identitySupportingAction: "identitySupportingAction",
+  identityLimitingBelief: "identityLimitingBelief",
+  identityBridgeBelief: "identityBridgeBelief",
+  identityFutureOrientedMantra: "identityFutureOrientedMantra",
   identityEncodingRegulationCue: "identityEncodingRegulationCue",
   identityMantra: "identityMantra",
   identityBodyLanguageCue: "identityBodyLanguageCue",
@@ -234,6 +281,18 @@ const OPTIONAL_TEXT_STEPS: ProfileStep[] = [
   "stateEncodingMovementText",
   "identityEncodingBodyParts",
   "identityEncodingMovementText",
+  "value",
+  "identityDesiredState",
+  "statePracticalAlternative",
+  "identityPracticalAlternative",
+  "stateSupportingAction",
+  "identitySupportingAction",
+  "stateLimitingBelief",
+  "stateBridgeBelief",
+  "identityLimitingBelief",
+  "identityBridgeBelief",
+  "stateFutureOrientedMantra",
+  "identityFutureOrientedMantra",
 ];
 
 const ASK_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
@@ -469,6 +528,33 @@ export default function ArcBuildEditorScreen() {
           </View>
         )}
 
+        {(step === "stateBarrierType" || step === "identityBarrierType") && (
+          <View>
+            <View style={styles.chipRow}>
+              {(
+                [
+                  { value: "internal" as const, label: "חסם פנימי" },
+                  { value: "practical" as const, label: "חסם מעשי" },
+                ]
+              ).map((option) => {
+                const field = step === "stateBarrierType" ? "stateBarrierType" : "identityBarrierType";
+                return (
+                  <Pressable
+                    key={option.value}
+                    style={[styles.chip, draft[field] === option.value && styles.chipSelected]}
+                    onPress={() => goNext({ ...draft, [field]: option.value })}
+                  >
+                    <Text style={styles.buttonText}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => goNext(draft)}>
+              <Text style={styles.buttonText}>דלג (רשות)</Text>
+            </Pressable>
+          </View>
+        )}
+
         {step === "linkTriggerType" && (
           <View>
             <View style={styles.chipRow}>
@@ -537,26 +623,54 @@ export default function ArcBuildEditorScreen() {
         {step === "review" && (
           <View>
             <Text style={styles.body}>{`צבע נוכחות: ${draft.presenceColor}`}</Text>
+            {draft.value.trim() && <Text style={styles.body}>{`ערך: ${draft.value}`}</Text>}
             {activeTarget === "state" && (
               <>
                 <Text style={styles.body}>{`מצב רצוי: ${draft.supportiveState}`}</Text>
                 <Text style={styles.body}>{`נוטה להפריע: ${draft.interferingState}`}</Text>
                 <Text style={styles.body}>{`הקשר אתגר: ${draft.challengeContext}`}</Text>
+                {draft.stateBarrierType && (
+                  <Text style={styles.body}>{`סוג המכשול: ${draft.stateBarrierType === "internal" ? "חסם פנימי" : "חסם מעשי"}`}</Text>
+                )}
+                {draft.statePracticalAlternative && (
+                  <Text style={styles.body}>{`פתרון מעשי: ${draft.statePracticalAlternative}`}</Text>
+                )}
                 {draft.internalAction && <Text style={styles.body}>{`פעולה פנימית: ${draft.internalAction}`}</Text>}
                 {draft.statePreventiveAction && <Text style={styles.body}>{`פעולה מונעת: ${draft.statePreventiveAction}`}</Text>}
+                {draft.stateSupportingAction && <Text style={styles.body}>{`פעולה תומכת: ${draft.stateSupportingAction}`}</Text>}
+                {draft.stateLimitingBelief && <Text style={styles.body}>{`מחשבה מגבילה: ${draft.stateLimitingBelief}`}</Text>}
+                {draft.stateBridgeBelief && <Text style={styles.body}>{`אמונת גשר: ${draft.stateBridgeBelief}`}</Text>}
+                {draft.stateFutureOrientedMantra && (
+                  <Text style={styles.body}>{`מנטרה מכוונת עתיד: ${draft.stateFutureOrientedMantra}`}</Text>
+                )}
                 {draft.stateBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.stateBodyLanguageCue}`}</Text>}
-                {draft.stateMantra && <Text style={styles.body}>{`מנטרה: ${draft.stateMantra}`}</Text>}
+                {draft.stateMantra && <Text style={styles.body}>{`מנטרת זהות: ${draft.stateMantra}`}</Text>}
               </>
             )}
             {activeTarget === "identity" && (
               <>
                 <Text style={styles.body}>{`זהות רצויה: ${draft.desiredIdentity}`}</Text>
+                {draft.identityDesiredState && <Text style={styles.body}>{`מצב הזהות הרצוי: ${draft.identityDesiredState}`}</Text>}
                 <Text style={styles.body}>{`נוטה להפריע: ${draft.identityInterferingEmotion}`}</Text>
                 <Text style={styles.body}>{`הקשר אתגר: ${draft.identityChallengeContext}`}</Text>
+                {draft.identityBarrierType && (
+                  <Text style={styles.body}>
+                    {`סוג המכשול: ${draft.identityBarrierType === "internal" ? "חסם פנימי" : "חסם מעשי"}`}
+                  </Text>
+                )}
+                {draft.identityPracticalAlternative && (
+                  <Text style={styles.body}>{`פתרון מעשי: ${draft.identityPracticalAlternative}`}</Text>
+                )}
                 {draft.identityAction && <Text style={styles.body}>{`פעולה: ${draft.identityAction}`}</Text>}
                 {draft.identityPreventiveAction && <Text style={styles.body}>{`פעולה מונעת: ${draft.identityPreventiveAction}`}</Text>}
+                {draft.identitySupportingAction && <Text style={styles.body}>{`פעולה תומכת: ${draft.identitySupportingAction}`}</Text>}
+                {draft.identityLimitingBelief && <Text style={styles.body}>{`מחשבה מגבילה: ${draft.identityLimitingBelief}`}</Text>}
+                {draft.identityBridgeBelief && <Text style={styles.body}>{`אמונת גשר: ${draft.identityBridgeBelief}`}</Text>}
+                {draft.identityFutureOrientedMantra && (
+                  <Text style={styles.body}>{`מנטרה מכוונת עתיד: ${draft.identityFutureOrientedMantra}`}</Text>
+                )}
                 {draft.identityBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.identityBodyLanguageCue}`}</Text>}
-                {draft.identityMantra && <Text style={styles.body}>{`מנטרה: ${draft.identityMantra}`}</Text>}
+                {draft.identityMantra && <Text style={styles.body}>{`מנטרת זהות: ${draft.identityMantra}`}</Text>}
               </>
             )}
             {activeTarget === "habit" && (
