@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { deleteArcGoalFromList, duplicateArcGoal, upsertArcGoalInList } from "./arcGoals.ts";
+import { deleteArcGoalFromList, duplicateArcGoal, normalizeArcGoal, upsertArcGoalInList } from "./arcGoals.ts";
 import { createEmptyArcGoal } from "./types.ts";
 import type { ArcGoal } from "./types.ts";
 
@@ -109,4 +109,95 @@ test("createEmptyArcGoal starts with every optional field at its own empty/null 
   assert.equal(g.desiredResult, "");
   assert.equal(g.identityProtocolId, null);
   assert.deepEqual(g.interferingMappings, []);
+  assert.deepEqual(g.urgeMappings, [], "Urge route task: a brand-new goal starts with no urge mappings either");
+});
+
+// --- Urge route task: duplicateArcGoal's own urgeMappings treatment,
+// parallel to interferingMappings above.
+
+test("duplicateArcGoal gives each urge mapping its OWN new id, copying urgeArcId/miniArcId as references, never following/duplicating them", () => {
+  const original = goal({
+    urgeMappings: [
+      { id: "um1", urgeArcId: "urge-1", need: "רגיעה", miniArcId: "mini-1", executionMode: "full", identityProtocolId: null, goalAction: null },
+    ],
+  });
+  const copy = duplicateArcGoal(original, "g-copy", "2024-06-01T00:00:00.000Z");
+  assert.equal(copy.urgeMappings.length, 1);
+  assert.notEqual(copy.urgeMappings[0].id, "um1");
+  assert.equal(copy.urgeMappings[0].urgeArcId, "urge-1", "the SAME referenced UrgeArc, not a duplicate of it");
+  assert.equal(copy.urgeMappings[0].miniArcId, "mini-1", "the SAME referenced Mini ARC, not a duplicate of it");
+  assert.equal(copy.urgeMappings[0].need, "רגיעה");
+  // The original goal's own mapping id is completely untouched.
+  assert.equal(original.urgeMappings[0].id, "um1");
+});
+
+// --- Urge route task: normalizeArcGoal's own safe-default backfill.
+
+test("normalizeArcGoal backfills a completely missing urgeMappings array to [] -- an old goal saved before the Urge route existed loads without error", () => {
+  const legacyGoal = { ...goal(), urgeMappings: undefined } as unknown as ArcGoal;
+  const normalized = normalizeArcGoal(legacyGoal);
+  assert.deepEqual(normalized.urgeMappings, []);
+});
+
+test("normalizeArcGoal backfills a missing interferingMappings array to [] the same way", () => {
+  const legacyGoal = { ...goal(), interferingMappings: undefined } as unknown as ArcGoal;
+  const normalized = normalizeArcGoal(legacyGoal);
+  assert.deepEqual(normalized.interferingMappings, []);
+});
+
+test("normalizeArcGoal backfills every interfering mapping's new optional fields to their safe defaults -- miniArcId/identityProtocolId/goalAction null, executionMode 'full'", () => {
+  const legacyMapping = { id: "m1", interferingState: "עייפות", supportiveProtocolId: "s1", supportiveAction: "a1" };
+  const g = goal({ interferingMappings: [legacyMapping] });
+  const normalized = normalizeArcGoal(g);
+  assert.equal(normalized.interferingMappings[0].miniArcId, null);
+  assert.equal(normalized.interferingMappings[0].executionMode, "full", "'full' -- every pre-existing mapping's only real bridge was always the Full protocol");
+  assert.equal(normalized.interferingMappings[0].identityProtocolId, null);
+  assert.equal(normalized.interferingMappings[0].goalAction, null);
+  // The mapping's own pre-existing fields are completely untouched.
+  assert.equal(normalized.interferingMappings[0].interferingState, "עייפות");
+  assert.equal(normalized.interferingMappings[0].supportiveProtocolId, "s1");
+  assert.equal(normalized.interferingMappings[0].supportiveAction, "a1");
+});
+
+test("normalizeArcGoal backfills every urge mapping's new optional fields to the same safe defaults", () => {
+  const partialUrgeMapping = { id: "um1", urgeArcId: "urge-1", need: "רגיעה" };
+  const g = goal({ urgeMappings: [partialUrgeMapping as never] });
+  const normalized = normalizeArcGoal(g);
+  assert.equal(normalized.urgeMappings[0].miniArcId, null);
+  assert.equal(normalized.urgeMappings[0].executionMode, "full");
+  assert.equal(normalized.urgeMappings[0].identityProtocolId, null);
+  assert.equal(normalized.urgeMappings[0].goalAction, null);
+  assert.equal(normalized.urgeMappings[0].urgeArcId, "urge-1");
+  assert.equal(normalized.urgeMappings[0].need, "רגיעה");
+});
+
+test("normalizeArcGoal never overwrites an already-configured field with its default", () => {
+  const g = goal({
+    interferingMappings: [
+      {
+        id: "m1",
+        interferingState: "עייפות",
+        supportiveProtocolId: "s1",
+        supportiveAction: "a1",
+        miniArcId: "mini-1",
+        executionMode: "choose",
+        identityProtocolId: "identity-override",
+        goalAction: "פעולה מותאמת",
+      },
+    ],
+  });
+  const normalized = normalizeArcGoal(g);
+  assert.equal(normalized.interferingMappings[0].miniArcId, "mini-1");
+  assert.equal(normalized.interferingMappings[0].executionMode, "choose");
+  assert.equal(normalized.interferingMappings[0].identityProtocolId, "identity-override");
+  assert.equal(normalized.interferingMappings[0].goalAction, "פעולה מותאמת");
+});
+
+test("normalizeArcGoal leaves every other ArcGoal field completely untouched", () => {
+  const g = goal({ name: "כושר", goalAction: "לרוץ", desiredResult: "מרתון" });
+  const normalized = normalizeArcGoal(g);
+  assert.equal(normalized.name, "כושר");
+  assert.equal(normalized.goalAction, "לרוץ");
+  assert.equal(normalized.desiredResult, "מרתון");
+  assert.equal(normalized.id, g.id);
 });

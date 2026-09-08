@@ -3,10 +3,18 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcGoal, loadArcBuilds, upsertArcGoal } from "../data/storage.ts";
+import { getArcGoal, loadArcBuilds, loadMiniArcBuilds, loadUrgeArcs, upsertArcGoal } from "../data/storage.ts";
 import { inferTarget } from "./arcBuildSave.ts";
-import { generateArcGoalMappingId } from "../arc/types.ts";
-import type { ArcBuild, ArcGoal, ArcGoalInterferingMapping } from "../arc/types.ts";
+import { generateArcGoalMappingId, generateArcGoalUrgeMappingId } from "../arc/types.ts";
+import type { ArcBuild, ArcGoal, ArcGoalInterferingMapping, ArcGoalUrgeMapping, ExecutionMode, UrgeArc } from "../arc/types.ts";
+import type { MiniArcBuild } from "../arc/miniArc.ts";
+
+const EXECUTION_MODE_LABELS: Record<ExecutionMode, string> = {
+  full: "ARC מלא",
+  mini: "Mini ARC",
+  choose: "בחירה בזמן אמת",
+};
+const EXECUTION_MODES: ExecutionMode[] = ["full", "mini", "choose"];
 
 /**
  * ARC Goal task: ONE screen editing ONE ArcGoal -- the goal's own
@@ -22,7 +30,16 @@ import type { ArcBuild, ArcGoal, ArcGoalInterferingMapping } from "../arc/types.
  * reused since there is no branching-by-target here.
  */
 
-type Step = "name" | "description" | "value" | "goalAction" | "desiredResult" | "identityProtocol" | "interferingMappings" | "review";
+type Step =
+  | "name"
+  | "description"
+  | "value"
+  | "goalAction"
+  | "desiredResult"
+  | "identityProtocol"
+  | "urgeMappings"
+  | "interferingMappings"
+  | "review";
 
 const STEP_ORDER: Step[] = [
   "name",
@@ -31,6 +48,7 @@ const STEP_ORDER: Step[] = [
   "goalAction",
   "desiredResult",
   "identityProtocol",
+  "urgeMappings",
   "interferingMappings",
   "review",
 ];
@@ -42,6 +60,7 @@ const STEP_TITLES: Record<Step, string> = {
   goalAction: "מהי הפעולה הקשורה למטרה?",
   desiredResult: "מהי התוצאה הרצויה?",
   identityProtocol: "פרוטוקול הזהות המחובר למטרה",
+  urgeMappings: "דחפים שעלולים להפריע (מסלול הדחף)",
   interferingMappings: "מצבים פנימיים שעלולים להפריע",
   review: "סיכום",
 };
@@ -52,16 +71,23 @@ export default function ArcGoalEditorScreen() {
   const [goal, setGoal] = useState<ArcGoal | null>(null);
   const [step, setStep] = useState<Step>("name");
   const [arcBuilds, setArcBuilds] = useState<ArcBuild[]>([]);
+  const [urgeArcs, setUrgeArcs] = useState<UrgeArc[]>([]);
+  const [miniArcBuilds, setMiniArcBuilds] = useState<MiniArcBuild[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const reloadArcBuilds = useCallback(() => {
     loadArcBuilds().then(setArcBuilds);
   }, []);
 
+  const reloadUrgeArcsAndMiniArcs = useCallback(() => {
+    loadUrgeArcs().then(setUrgeArcs);
+    loadMiniArcBuilds().then(setMiniArcBuilds);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     if (!id) return;
-    Promise.all([getArcGoal(id), loadArcBuilds()]).then(([existing, builds]) => {
+    Promise.all([getArcGoal(id), loadArcBuilds(), loadUrgeArcs(), loadMiniArcBuilds()]).then(([existing, builds, urgeArcList, miniArcList]) => {
       if (cancelled) return;
       if (!existing) {
         setStatus("notFound");
@@ -69,6 +95,8 @@ export default function ArcGoalEditorScreen() {
       }
       setGoal(existing);
       setArcBuilds(builds);
+      setUrgeArcs(urgeArcList);
+      setMiniArcBuilds(miniArcList);
       setStatus("editing");
     });
     return () => {
@@ -115,6 +143,32 @@ export default function ArcGoalEditorScreen() {
   function removeMapping(mappingId: string) {
     if (!goal) return;
     patchGoal({ interferingMappings: goal.interferingMappings.filter((m) => m.id !== mappingId) });
+  }
+
+  function addUrgeMapping() {
+    if (!goal) return;
+    const mapping: ArcGoalUrgeMapping = {
+      id: generateArcGoalUrgeMappingId(),
+      urgeArcId: "",
+      need: null,
+      miniArcId: null,
+      executionMode: "full",
+      identityProtocolId: null,
+      goalAction: null,
+    };
+    patchGoal({ urgeMappings: [...goal.urgeMappings, mapping] });
+  }
+
+  function updateUrgeMapping(mappingId: string, patch: Partial<ArcGoalUrgeMapping>) {
+    if (!goal) return;
+    patchGoal({
+      urgeMappings: goal.urgeMappings.map((m) => (m.id === mappingId ? { ...m, ...patch } : m)),
+    });
+  }
+
+  function removeUrgeMapping(mappingId: string) {
+    if (!goal) return;
+    patchGoal({ urgeMappings: goal.urgeMappings.filter((m) => m.id !== mappingId) });
   }
 
   function isComplete(g: ArcGoal): boolean {
@@ -273,10 +327,113 @@ export default function ArcGoalEditorScreen() {
           </View>
         )}
 
+        {step === "urgeMappings" && (
+          <View>
+            <Text style={styles.hint}>
+              דוגמה: דחף ← Urge ARC ← Mini ARC/ARC מלא ← פעולה מיטיבה חלופית ← פרוטוקול הזהות ← פעולת המטרה. אפשר לחבר כמה דחפים
+              לאותו פרוטוקול זהות.
+            </Text>
+            {urgeArcs.length === 0 && (
+              <Text style={styles.hint}>עדיין אין לך Urge ARC. אפשר ליצור אחד במסך "Urge ARC" ולחזור לכאן.</Text>
+            )}
+            {goal.urgeMappings.map((mapping, index) => (
+              <View key={mapping.id} style={styles.mappingCard}>
+                <Text style={styles.mappingLabel}>{`דחף ${index + 1}`}</Text>
+                <Text style={styles.fieldLabel}>Urge ARC מחובר</Text>
+                <View style={styles.chipColumn}>
+                  {urgeArcs.map((urgeArc) => (
+                    <Pressable
+                      key={urgeArc.id}
+                      style={[styles.chip, mapping.urgeArcId === urgeArc.id && styles.chipSelected]}
+                      onPress={() => updateUrgeMapping(mapping.id, { urgeArcId: urgeArc.id })}
+                    >
+                      <Text style={styles.buttonText}>{urgeArc.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.fieldLabel}>הצורך שהדחף הזה מנסה לענות עליו (רשות -- לתצוגה מקדימה בזמן זיהוי הצורך)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={mapping.need ?? ""}
+                  onChangeText={(text) => updateUrgeMapping(mapping.id, { need: text.trim().length > 0 ? text : null })}
+                  textAlign="right"
+                />
+                <Text style={styles.fieldLabel}>Mini ARC מהיר מחובר (רשות)</Text>
+                <View style={styles.chipColumn}>
+                  <Pressable
+                    style={[styles.chip, mapping.miniArcId === null && styles.chipSelected]}
+                    onPress={() => updateUrgeMapping(mapping.id, { miniArcId: null })}
+                  >
+                    <Text style={styles.buttonText}>ללא</Text>
+                  </Pressable>
+                  {miniArcBuilds.map((miniArc) => (
+                    <Pressable
+                      key={miniArc.id}
+                      style={[styles.chip, mapping.miniArcId === miniArc.id && styles.chipSelected]}
+                      onPress={() => updateUrgeMapping(mapping.id, { miniArcId: miniArc.id })}
+                    >
+                      <Text style={styles.buttonText}>{miniArc.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.fieldLabel}>מסלול ביצוע</Text>
+                <View style={[styles.chipColumn, styles.chipRow]}>
+                  {EXECUTION_MODES.map((mode) => (
+                    <Pressable
+                      key={mode}
+                      style={[styles.chip, (mapping.executionMode ?? "full") === mode && styles.chipSelected]}
+                      onPress={() => updateUrgeMapping(mapping.id, { executionMode: mode })}
+                    >
+                      <Text style={styles.buttonText}>{EXECUTION_MODE_LABELS[mode]}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.fieldLabel}>פרוטוקול זהות מחובר (רשות -- אם ריק, ייעשה שימוש בפרוטוקול הזהות של המטרה)</Text>
+                <View style={styles.chipColumn}>
+                  <Pressable
+                    style={[styles.chip, mapping.identityProtocolId === null && styles.chipSelected]}
+                    onPress={() => updateUrgeMapping(mapping.id, { identityProtocolId: null })}
+                  >
+                    <Text style={styles.buttonText}>ברירת מחדל של המטרה</Text>
+                  </Pressable>
+                  {identityBuilds.map((build) => (
+                    <Pressable
+                      key={build.id}
+                      style={[styles.chip, mapping.identityProtocolId === build.id && styles.chipSelected]}
+                      onPress={() => updateUrgeMapping(mapping.id, { identityProtocolId: build.id })}
+                    >
+                      <Text style={styles.buttonText}>{build.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.fieldLabel}>פעולת מטרה מחוברת (רשות -- אם ריק, ייעשה שימוש בפעולת המטרה הכללית)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={mapping.goalAction ?? ""}
+                  onChangeText={(text) => updateUrgeMapping(mapping.id, { goalAction: text.trim().length > 0 ? text : null })}
+                  textAlign="right"
+                />
+                <Pressable style={styles.removeButton} onPress={() => removeUrgeMapping(mapping.id)}>
+                  <Text style={styles.deleteText}>הסר דחף</Text>
+                </Pressable>
+              </View>
+            ))}
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={addUrgeMapping}>
+              <Text style={styles.buttonText}>+ הוסף דחף</Text>
+            </Pressable>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={reloadUrgeArcsAndMiniArcs}>
+              <Text style={styles.buttonText}>רענן רשימה</Text>
+            </Pressable>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={goNext}>
+              <Text style={styles.buttonText}>המשך</Text>
+            </Pressable>
+          </View>
+        )}
+
         {step === "interferingMappings" && (
           <View>
             <Text style={styles.hint}>
-              דוגמה: עייפות ← פרוטוקול אנרגיה ← פעולה תומכת קצרה ← פרוטוקול הזהות ← פעולת המטרה.
+              דוגמה: עייפות ← פרוטוקול אנרגיה ← Mini ARC/ARC מלא ← פעולה תומכת קצרה ← פרוטוקול הזהות ← פעולת המטרה.
             </Text>
             {goal.interferingMappings.map((mapping, index) => (
               <View key={mapping.id} style={styles.mappingCard}>
@@ -308,6 +465,61 @@ export default function ArcGoalEditorScreen() {
                   onChangeText={(text) => updateMapping(mapping.id, { supportiveAction: text })}
                   textAlign="right"
                 />
+                <Text style={styles.fieldLabel}>Mini ARC מהיר מחובר (רשות)</Text>
+                <View style={styles.chipColumn}>
+                  <Pressable
+                    style={[styles.chip, (mapping.miniArcId ?? null) === null && styles.chipSelected]}
+                    onPress={() => updateMapping(mapping.id, { miniArcId: null })}
+                  >
+                    <Text style={styles.buttonText}>ללא</Text>
+                  </Pressable>
+                  {miniArcBuilds.map((miniArc) => (
+                    <Pressable
+                      key={miniArc.id}
+                      style={[styles.chip, mapping.miniArcId === miniArc.id && styles.chipSelected]}
+                      onPress={() => updateMapping(mapping.id, { miniArcId: miniArc.id })}
+                    >
+                      <Text style={styles.buttonText}>{miniArc.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.fieldLabel}>מסלול ביצוע</Text>
+                <View style={[styles.chipColumn, styles.chipRow]}>
+                  {EXECUTION_MODES.map((mode) => (
+                    <Pressable
+                      key={mode}
+                      style={[styles.chip, (mapping.executionMode ?? "full") === mode && styles.chipSelected]}
+                      onPress={() => updateMapping(mapping.id, { executionMode: mode })}
+                    >
+                      <Text style={styles.buttonText}>{EXECUTION_MODE_LABELS[mode]}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.fieldLabel}>פרוטוקול זהות מחובר (רשות -- אם ריק, ייעשה שימוש בפרוטוקול הזהות של המטרה)</Text>
+                <View style={styles.chipColumn}>
+                  <Pressable
+                    style={[styles.chip, (mapping.identityProtocolId ?? null) === null && styles.chipSelected]}
+                    onPress={() => updateMapping(mapping.id, { identityProtocolId: null })}
+                  >
+                    <Text style={styles.buttonText}>ברירת מחדל של המטרה</Text>
+                  </Pressable>
+                  {identityBuilds.map((build) => (
+                    <Pressable
+                      key={build.id}
+                      style={[styles.chip, mapping.identityProtocolId === build.id && styles.chipSelected]}
+                      onPress={() => updateMapping(mapping.id, { identityProtocolId: build.id })}
+                    >
+                      <Text style={styles.buttonText}>{build.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.fieldLabel}>פעולת מטרה מחוברת (רשות -- אם ריק, ייעשה שימוש בפעולת המטרה הכללית)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={mapping.goalAction ?? ""}
+                  onChangeText={(text) => updateMapping(mapping.id, { goalAction: text.trim().length > 0 ? text : null })}
+                  textAlign="right"
+                />
                 <Pressable style={styles.removeButton} onPress={() => removeMapping(mapping.id)}>
                   <Text style={styles.deleteText}>הסר מיפוי</Text>
                 </Pressable>
@@ -316,7 +528,13 @@ export default function ArcGoalEditorScreen() {
             <Pressable style={[styles.button, styles.fullWidthButton]} onPress={addMapping}>
               <Text style={styles.buttonText}>+ הוסף מיפוי</Text>
             </Pressable>
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={reloadArcBuilds}>
+            <Pressable
+              style={[styles.button, styles.fullWidthButton]}
+              onPress={() => {
+                reloadArcBuilds();
+                reloadUrgeArcsAndMiniArcs();
+              }}
+            >
               <Text style={styles.buttonText}>רענן רשימה</Text>
             </Pressable>
             <Pressable style={[styles.button, styles.fullWidthButton]} onPress={goNext}>
@@ -335,7 +553,8 @@ export default function ArcGoalEditorScreen() {
             <Text style={styles.body}>
               {`פרוטוקול זהות: ${identityBuilds.find((b) => b.id === goal.identityProtocolId)?.name ?? "לא נבחר"}`}
             </Text>
-            <Text style={styles.body}>{`מספר מיפויים: ${goal.interferingMappings.length}`}</Text>
+            <Text style={styles.body}>{`מספר דחפים (מסלול הדחף): ${goal.urgeMappings.length}`}</Text>
+            <Text style={styles.body}>{`מספר מיפויים (מצבים פנימיים): ${goal.interferingMappings.length}`}</Text>
             {!isComplete(goal) && <Text style={styles.errorText}>יש להשלים שם, פעולה קשורה למטרה ותוצאה רצויה לפני השמירה.</Text>}
             {saveError && <Text style={styles.errorText}>{saveError}</Text>}
             <Pressable style={[styles.button, styles.fullWidthButton, !isComplete(goal) && styles.buttonDisabled]} disabled={!isComplete(goal)} onPress={handleSave}>
@@ -375,6 +594,7 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
   textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16 },
   chipColumn: { gap: 8, marginTop: 8 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap" },
   chip: { backgroundColor: "#E6F4FE", paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, alignItems: "center" },
   chipSelected: { backgroundColor: "#0a7ea4" },
   backButton: { marginTop: 24, alignItems: "center" },
