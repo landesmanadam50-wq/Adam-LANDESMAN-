@@ -72,6 +72,7 @@ import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
 import type { ArcProgramSelection, KnownProgramPath } from "../program/programTypes.ts";
 import { deriveNeedsFromLegacyProgramPath, resolveCurrentPreset } from "../program/selection.ts";
 import { clampDwellSeconds, DEFAULT_DWELL_TIMES } from "../arc/dwellTimes.ts";
+import { hasSuccessfulPerformanceConfigured } from "../arc/successfulPerformance.ts";
 import {
   isNegativeActionReductionEnabled,
   NEGATIVE_ACTION_MAX_DURATION_MINUTES,
@@ -198,6 +199,23 @@ export type ProfileStep =
   /** Coherent-architecture task (#7/#8): the direction of movement right now, shown between Presence and Encoding -- distinct from Identity Mantra (stateMantra/identityMantra, said during Encoding). Parallel per-layer, always optional. */
   | "stateFutureOrientedMantra"
   | "identityFutureOrientedMantra"
+  /**
+   * ARC Goal task: the optional Successful Performance section (spec
+   * section 4) -- identity-only, see ArcBuildProfile.identitySuccessfulPerformance-prefixed
+   * fields' own doc (arc/types.ts). "Ask" gates every sub-step below,
+   * mirroring preventiveActionAsk/negativeActionEnabledAsk's own
+   * tri-state pattern -- "לא" (or never answered) skips the whole
+   * section, exactly like a legacy build that never saw this step.
+   */
+  | "successfulPerformanceAsk"
+  | "successfulPerformanceAction"
+  | "successfulPerformanceQualities"
+  | "successfulPerformanceCustomQuality"
+  | "successfulPerformanceResult"
+  /** Distinct from identityMantra (Identity Mantra) and identityFutureOrientedMantra (Future-Oriented Mantra) -- see ArcBuildProfile.identitySuccessMantra's own doc for the full three-mantra-type distinction. */
+  | "successMantra"
+  /** Result Imagery's own separately configured duration -- Action Imagery duration reuses the existing identityActionImageryDwellSeconds field/step (dwellTimes) unchanged. */
+  | "successfulPerformanceResultDuration"
   | "review";
 
 /**
@@ -321,6 +339,8 @@ export interface ProfileDraft {
   /** Coordinated timer/dwell task (Part 16-18, 20-23): the state layer's own Presence/Stop-Imagery dwell, parallel to the five original dwell fields above -- same string-for-TextInput-binding convention. */
   statePresenceDwellSeconds: string;
   stateStopImageryDwellSeconds: string;
+  /** ARC Goal task: paired with identityResultImageryDwellSeconds below -- the state layer carries this field only for shape symmetry with dwellTimesFromDraft (never surfaced as its own editable UI row; Successful Performance is identity-only). */
+  stateResultImageryDwellSeconds: string;
 
   desiredIdentity: string;
   identityChallengeContext: string;
@@ -344,6 +364,22 @@ export interface ProfileDraft {
   /** Parallel to statePresenceDwellSeconds/stateStopImageryDwellSeconds -- never mixed with them. */
   identityPresenceDwellSeconds: string;
   identityStopImageryDwellSeconds: string;
+  /** ARC Goal task: Result Imagery duration -- the identity layer's own half of the extended Action Imagery sequence (see arc/successfulPerformance.ts), edited in the Successful Performance section rather than the generic dwell-times step, but stored/resolved through the exact same DwellTimes mechanism as every field above. */
+  identityResultImageryDwellSeconds: string;
+
+  /**
+   * ARC Goal task: the optional Successful Performance section (spec
+   * section 4) -- see ArcBuildProfile.identitySuccessfulPerformance*'s
+   * own doc for what each represents. Identity-only, all optional;
+   * empty/[] is always a valid, saveable "not configured" answer.
+   */
+  /** null = not yet decided this BUILD session (matches hasPreventiveAction/negativeActionReductionEnabled's own tri-state pattern) -- "לא" (or never answered) means every field below stays unset/unpersisted, exactly like a legacy build that never saw this section. */
+  identityWantsSuccessfulPerformance: boolean | null;
+  identitySuccessfulPerformanceAction: string;
+  identitySuccessfulPerformanceQualities: string[];
+  identitySuccessfulPerformanceCustomQuality: string;
+  identitySuccessfulPerformanceResult: string;
+  identitySuccessMantra: string;
 
   /** null = not yet decided this BUILD session (matches needsState/hasPreventiveAction's own tri-state pattern) -- must be explicitly answered before the GOAL phase can complete. */
   negativeActionReductionEnabled: boolean | null;
@@ -423,6 +459,7 @@ export function createEmptyDraft(): ProfileDraft {
     stateActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.actionImageryDwellSeconds),
     statePresenceDwellSeconds: String(DEFAULT_DWELL_TIMES.presenceDwellSeconds),
     stateStopImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.stopImageryDwellSeconds),
+    stateResultImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.resultImageryDwellSeconds),
     desiredIdentity: "",
     identityChallengeContext: "",
     identityInterferingEmotion: "",
@@ -440,6 +477,13 @@ export function createEmptyDraft(): ProfileDraft {
     identityActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.actionImageryDwellSeconds),
     identityPresenceDwellSeconds: String(DEFAULT_DWELL_TIMES.presenceDwellSeconds),
     identityStopImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.stopImageryDwellSeconds),
+    identityResultImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.resultImageryDwellSeconds),
+    identityWantsSuccessfulPerformance: null,
+    identitySuccessfulPerformanceAction: "",
+    identitySuccessfulPerformanceQualities: [],
+    identitySuccessfulPerformanceCustomQuality: "",
+    identitySuccessfulPerformanceResult: "",
+    identitySuccessMantra: "",
     negativeActionReductionEnabled: null,
     habit: "",
     negativeActionBaseDurationMinutes: null,
@@ -527,6 +571,9 @@ export function draftFromProfileAndSelection(
     stateStopImageryDwellSeconds: String(
       profile.stateDwellTimes?.stopImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.stopImageryDwellSeconds
     ),
+    stateResultImageryDwellSeconds: String(
+      profile.stateDwellTimes?.resultImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.resultImageryDwellSeconds
+    ),
     desiredIdentity: profile.desiredIdentity ?? "",
     identityChallengeContext: profile.identityChallengeContext ?? "",
     identityInterferingEmotion: profile.identityInterferingEmotion ?? "",
@@ -550,6 +597,20 @@ export function draftFromProfileAndSelection(
     identityStopImageryDwellSeconds: String(
       profile.identityDwellTimes?.stopImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.stopImageryDwellSeconds
     ),
+    identityResultImageryDwellSeconds: String(
+      profile.identityDwellTimes?.resultImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.resultImageryDwellSeconds
+    ),
+    // Truthy check (never "!== null"), same reasoning as
+    // stateWantsShortEncodingRegulationCue above: a profile stored
+    // before this field existed has every one of these fields missing
+    // entirely (undefined), never presuming the section was configured
+    // for a build that never saw this step at all.
+    identityWantsSuccessfulPerformance: hasSuccessfulPerformanceConfigured(profile) ? true : null,
+    identitySuccessfulPerformanceAction: profile.identitySuccessfulPerformanceAction ?? "",
+    identitySuccessfulPerformanceQualities: profile.identitySuccessfulPerformanceQualities ?? [],
+    identitySuccessfulPerformanceCustomQuality: profile.identitySuccessfulPerformanceCustomQuality ?? "",
+    identitySuccessfulPerformanceResult: profile.identitySuccessfulPerformanceResult ?? "",
+    identitySuccessMantra: profile.identitySuccessMantra ?? "",
     // Negative Action reduction task: resolved via the same
     // legacy-fallback resolver LIVE itself uses (program/engine.ts's
     // isNegativeActionReductionEnabled) so BUILD and LIVE can never
@@ -645,6 +706,18 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
       return draft.stateBarrierType === "practical";
     case "identityPracticalAlternative":
       return draft.identityBarrierType === "practical";
+    // ARC Goal task: the Successful Performance sub-steps only show once
+    // both this build actually targets identity AND the trainee opted
+    // into the section at all -- "לא" (or never answered) skips every
+    // one of them, exactly like preventiveActionDescription/habit's own
+    // ask-gated pattern above.
+    case "successfulPerformanceAction":
+    case "successfulPerformanceQualities":
+    case "successfulPerformanceCustomQuality":
+    case "successfulPerformanceResult":
+    case "successMantra":
+    case "successfulPerformanceResultDuration":
+      return resolvesNeedsIdentity(draft) && draft.identityWantsSuccessfulPerformance === true;
     default:
       return true;
   }
@@ -750,6 +823,7 @@ function dwellTimesFromDraft(draft: {
   actionImagery: string;
   presence: string;
   stopImagery: string;
+  resultImagery: string;
 }): DwellTimes {
   return {
     sensationDwellSeconds: parseDwellField(draft.sensation, DEFAULT_DWELL_TIMES.sensationDwellSeconds),
@@ -759,6 +833,7 @@ function dwellTimesFromDraft(draft: {
     actionImageryDwellSeconds: parseDwellField(draft.actionImagery, DEFAULT_DWELL_TIMES.actionImageryDwellSeconds),
     presenceDwellSeconds: parseDwellField(draft.presence, DEFAULT_DWELL_TIMES.presenceDwellSeconds),
     stopImageryDwellSeconds: parseDwellField(draft.stopImagery, DEFAULT_DWELL_TIMES.stopImageryDwellSeconds),
+    resultImageryDwellSeconds: parseDwellField(draft.resultImagery, DEFAULT_DWELL_TIMES.resultImageryDwellSeconds),
   };
 }
 
@@ -888,6 +963,7 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
           actionImagery: draft.stateActionImageryDwellSeconds,
           presence: draft.statePresenceDwellSeconds,
           stopImagery: draft.stateStopImageryDwellSeconds,
+          resultImagery: draft.stateResultImageryDwellSeconds,
         })
       : null,
 
@@ -941,8 +1017,29 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
           actionImagery: draft.identityActionImageryDwellSeconds,
           presence: draft.identityPresenceDwellSeconds,
           stopImagery: draft.identityStopImageryDwellSeconds,
+          resultImagery: draft.identityResultImageryDwellSeconds,
         })
       : null,
+    identitySuccessfulPerformanceAction:
+      needsIdentity && draft.identityWantsSuccessfulPerformance === true && draft.identitySuccessfulPerformanceAction.trim()
+        ? draft.identitySuccessfulPerformanceAction.trim()
+        : null,
+    identitySuccessfulPerformanceQualities:
+      needsIdentity && draft.identityWantsSuccessfulPerformance === true && draft.identitySuccessfulPerformanceQualities.length > 0
+        ? draft.identitySuccessfulPerformanceQualities
+        : null,
+    identitySuccessfulPerformanceCustomQuality:
+      needsIdentity && draft.identityWantsSuccessfulPerformance === true && draft.identitySuccessfulPerformanceCustomQuality.trim()
+        ? draft.identitySuccessfulPerformanceCustomQuality.trim()
+        : null,
+    identitySuccessfulPerformanceResult:
+      needsIdentity && draft.identityWantsSuccessfulPerformance === true && draft.identitySuccessfulPerformanceResult.trim()
+        ? draft.identitySuccessfulPerformanceResult.trim()
+        : null,
+    identitySuccessMantra:
+      needsIdentity && draft.identityWantsSuccessfulPerformance === true && draft.identitySuccessMantra.trim()
+        ? draft.identitySuccessMantra.trim()
+        : null,
 
     // Negative Action reduction task: both the free-text action and its
     // duration are only ever persisted while the tool is actually

@@ -20,6 +20,7 @@ import { NEGATIVE_ACTION_MAX_DURATION_MINUTES, NEGATIVE_ACTION_MIN_DURATION_MINU
 import { ARC_LINK_TRIGGER_TYPE_LABELS } from "../arc/bodyImagery.ts";
 import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
 import type { ArcBuild, DevelopmentLayer, DwellTimes } from "../arc/types.ts";
+import { EXECUTION_QUALITY_PRESETS } from "../arc/successfulPerformance.ts";
 
 /**
  * ARC Builds task (correction): ONE screen editing ONE, SINGLE-target
@@ -125,6 +126,16 @@ const IDENTITY_STEPS: ProfileStep[] = [
   "identityBodyLanguageCue",
   "identityEncodingBodyParts",
   "identityEncodingMovementText",
+  // ARC Goal task: the optional Successful Performance section (spec
+  // section 4) -- identity-only, gated on "successfulPerformanceAsk"
+  // below (see build/profileWizard.ts's shouldShowProfileStep).
+  "successfulPerformanceAsk",
+  "successfulPerformanceAction",
+  "successfulPerformanceQualities",
+  "successfulPerformanceCustomQuality",
+  "successfulPerformanceResult",
+  "successMantra",
+  "successfulPerformanceResultDuration",
   "dwellTimes",
   "linkTriggerType",
   "linkTriggerText",
@@ -193,6 +204,14 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   identityBridgeBelief: "מהי פרשנות מאמינה ומתקדמת יותר למחשבה הזו? (רשות)",
   identityFutureOrientedMantra: "לאיזה כיוון אתה מתקדם עכשיו? (רשות, מנטרה מכוונת עתיד)",
 
+  successfulPerformanceAsk: "האם תרצה להוסיף דמיון ביצוע מוצלח לפעולה הזו? (רשות)",
+  successfulPerformanceAction: "איזו פעולה תרצה לדמיין שאתה מבצע? (רשות, ברירת מחדל: הפעולה שהגדרת)",
+  successfulPerformanceQualities: "באיזו איכות תרצה לבצע את הפעולה? (רשות, אפשר לבחור כמה)",
+  successfulPerformanceCustomQuality: "איכות נוספת משלך? (רשות)",
+  successfulPerformanceResult: "מהי התוצאה המוצלחת הרצויה? (רשות)",
+  successMantra: "משפט ביטחון להצלחת הפעולה או התוצאה? (רשות)",
+  successfulPerformanceResultDuration: "כמה זמן תרצה להישאר בדמיון התוצאה לאחר סיום ההנחיה?",
+
   beneficialAction: "מה הפעולה המיטיבה שתרצה לבצע? (ההרגל הרצוי)",
   beneficialActionBodyCue: "איזה עוגן גופני תרצה לשמור בזמן ביצוע הפעולה? (רשות)",
   preventiveActionAsk: "יש לך פעולה מונעת מוגדרת מראש?",
@@ -250,6 +269,11 @@ const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   identityMantra: "identityMantra",
   identityBodyLanguageCue: "identityBodyLanguageCue",
 
+  successfulPerformanceAction: "identitySuccessfulPerformanceAction",
+  successfulPerformanceCustomQuality: "identitySuccessfulPerformanceCustomQuality",
+  successfulPerformanceResult: "identitySuccessfulPerformanceResult",
+  successMantra: "identitySuccessMantra",
+
   beneficialAction: "beneficialAction",
   beneficialActionBodyCue: "beneficialActionBodyCue",
   preventiveActionDescription: "preventiveActionDescription",
@@ -295,6 +319,10 @@ const OPTIONAL_TEXT_STEPS: ProfileStep[] = [
   "identityBridgeBelief",
   "stateFutureOrientedMantra",
   "identityFutureOrientedMantra",
+  "successfulPerformanceAction",
+  "successfulPerformanceCustomQuality",
+  "successfulPerformanceResult",
+  "successMantra",
 ];
 
 const ASK_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
@@ -304,6 +332,7 @@ const ASK_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
 const YESNO_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   preventiveActionAsk: "hasPreventiveAction",
   negativeActionEnabledAsk: "negativeActionReductionEnabled",
+  successfulPerformanceAsk: "identityWantsSuccessfulPerformance",
 };
 
 const NEGATIVE_ACTION_DURATION_OPTIONS: number[] = Array.from(
@@ -590,6 +619,52 @@ export default function ArcBuildEditorScreen() {
           </View>
         )}
 
+        {step === "successfulPerformanceQualities" && (
+          <View>
+            <View style={styles.chipRow}>
+              {EXECUTION_QUALITY_PRESETS.map((quality) => {
+                const selected = draft.identitySuccessfulPerformanceQualities.includes(quality);
+                return (
+                  <Pressable
+                    key={quality}
+                    style={[styles.chip, selected && styles.chipSelected]}
+                    onPress={() => {
+                      const next = selected
+                        ? draft.identitySuccessfulPerformanceQualities.filter((q) => q !== quality)
+                        : [...draft.identitySuccessfulPerformanceQualities, quality];
+                      setDraft({ ...draft, identitySuccessfulPerformanceQualities: next });
+                    }}
+                  >
+                    <Text style={styles.buttonText}>{quality}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => goNext(draft)}>
+              <Text style={styles.buttonText}>המשך</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {step === "successfulPerformanceResultDuration" && (
+          <View>
+            <View style={styles.dwellRow}>
+              <Text style={styles.dwellLabel}>דמיון התוצאה</Text>
+              <TextInput
+                style={styles.dwellInput}
+                value={draft.identityResultImageryDwellSeconds}
+                onChangeText={(text) => setDraft({ ...draft, identityResultImageryDwellSeconds: text.replace(/[^0-9]/g, "") })}
+                keyboardType="numeric"
+                textAlign="center"
+              />
+              <Text style={styles.dwellUnit}>שניות</Text>
+            </View>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => goNext(draft)}>
+              <Text style={styles.buttonText}>המשך</Text>
+            </Pressable>
+          </View>
+        )}
+
         {step === "linkTriggerType" && (
           <View>
             <View style={styles.chipRow}>
@@ -706,6 +781,23 @@ export default function ArcBuildEditorScreen() {
                 )}
                 {draft.identityBodyLanguageCue && <Text style={styles.body}>{`שפת גוף: ${draft.identityBodyLanguageCue}`}</Text>}
                 {draft.identityMantra && <Text style={styles.body}>{`מנטרת זהות: ${draft.identityMantra}`}</Text>}
+                {draft.identityWantsSuccessfulPerformance === true && (
+                  <>
+                    {draft.identitySuccessfulPerformanceAction && (
+                      <Text style={styles.body}>{`פעולה לדמיון ביצוע מוצלח: ${draft.identitySuccessfulPerformanceAction}`}</Text>
+                    )}
+                    {draft.identitySuccessfulPerformanceQualities.length > 0 && (
+                      <Text style={styles.body}>{`איכויות ביצוע: ${draft.identitySuccessfulPerformanceQualities.join(", ")}`}</Text>
+                    )}
+                    {draft.identitySuccessfulPerformanceCustomQuality && (
+                      <Text style={styles.body}>{`איכות נוספת: ${draft.identitySuccessfulPerformanceCustomQuality}`}</Text>
+                    )}
+                    {draft.identitySuccessfulPerformanceResult && (
+                      <Text style={styles.body}>{`תוצאה מוצלחת רצויה: ${draft.identitySuccessfulPerformanceResult}`}</Text>
+                    )}
+                    {draft.identitySuccessMantra && <Text style={styles.body}>{`משפט הצלחה: ${draft.identitySuccessMantra}`}</Text>}
+                  </>
+                )}
               </>
             )}
             {activeTarget === "habit" && (

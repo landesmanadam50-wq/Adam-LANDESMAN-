@@ -413,7 +413,30 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       }
 
       if (actPhase === "imagery") {
-        return <ActionImageryScreen copy={copy} onContinue={props.onActionImageryContinue} />;
+        // ARC Goal task: resolved fresh here (never stored/cached) --
+        // the exact same resolveEncodingTarget call arc/stageCopy.ts's
+        // own "act" case already makes for this same phase, so the
+        // extended sequence (live/screens.tsx's ActionImageryScreen)
+        // can never name a different action/cue than the ORIGINAL,
+        // unmodified single-step copy already shown when nothing here
+        // is configured.
+        const { layer, actionLabel: currentAction, actionBodyCue } = resolveEncodingTarget({
+          activeLayers,
+          triggerType: session.triggerType,
+          selectedTarget: session.selectedTarget,
+          buildProfile: profile,
+          selectedAction: session.selectedAction,
+        });
+        return (
+          <ActionImageryScreen
+            copy={copy}
+            profile={profile}
+            layer={layer}
+            currentAction={currentAction}
+            actionBodyCue={actionBodyCue}
+            onContinue={props.onActionImageryContinue}
+          />
+        );
       }
 
       // actPhase === "performing": the actual timed Action. Timer-update

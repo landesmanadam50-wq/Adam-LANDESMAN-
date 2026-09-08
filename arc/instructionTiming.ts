@@ -143,6 +143,8 @@ export const INSTRUCTION_TIMING = {
   observerPerspective: 5,
   observerPause: 4,
   observerSafetyRecognition: 4,
+  /** ARC Goal task: the Result Imagery half of the extended Action Imagery sequence (arc/successfulPerformance.ts) -- same instruction-reveal pacing as actionImagery above. */
+  resultImagery: 5,
 } as const;
 
 export interface InstructionTimingStatus {

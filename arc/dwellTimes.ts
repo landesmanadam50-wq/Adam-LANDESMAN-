@@ -49,6 +49,7 @@ export const DEFAULT_DWELL_TIMES: DwellTimes = {
   actionImageryDwellSeconds: 8,
   presenceDwellSeconds: 8,
   stopImageryDwellSeconds: 8,
+  resultImageryDwellSeconds: 8,
 };
 
 /**
