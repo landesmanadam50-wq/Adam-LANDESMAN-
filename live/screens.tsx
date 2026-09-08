@@ -27,6 +27,8 @@ import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
 import { getInstructionTimingStatus } from "../arc/instructionTiming.ts";
 import type { InstructionSegment } from "../arc/instructionTiming.ts";
+import { getMiniArcStageCopy } from "../arc/miniArc.ts";
+import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { getAcceptanceReadinessRecheckQuestion, getAcceptanceUnwillingnessAcknowledgment, getPreventiveActionReinforcement } from "../arc/stageCopy.ts";
 import { hasTrailingDwellSegment } from "../arc/dwellTimes.ts";
 import { formatRemainingTime, generateTimerRunId, getActionTimerStatusFromStartedAt } from "../arc/actionTimer.ts";
@@ -999,12 +1001,21 @@ const NEED_IDENTIFICATION_PRESETS = ["רגיעה", "אנרגיה", "נחמה", "
  * trimmed and defaulted to the "still don't know" sentinel by
  * applyNeedIdentificationAnswer if left blank -- never validated/blocked
  * here.
+ *
+ * ARC Goal Urge route task: `presets` is now an explicit prop rather
+ * than always this file's own NEED_IDENTIFICATION_PRESETS constant, so
+ * ARC Goal's own 9-item need list (spec section 5) can reuse this exact
+ * component/UX without changing regular ARC's existing 6-item list or
+ * its own call site in live/ArcLiveRenderer.tsx, which keeps passing no
+ * `presets` at all.
  */
 export function NeedIdentificationScreen({
   copy,
+  presets = NEED_IDENTIFICATION_PRESETS,
   onAnswer,
 }: {
   copy: ArcStageCopy;
+  presets?: string[];
   onAnswer: (need: string) => void;
 }) {
   const [showCustomInput, setShowCustomInput] = useState(false);
@@ -1031,7 +1042,7 @@ export function NeedIdentificationScreen({
     <View>
       <Title copy={copy} />
       <View style={styles.chipRow}>
-        {NEED_IDENTIFICATION_PRESETS.map((need) => (
+        {presets.map((need) => (
           <Pressable key={need} style={styles.chip} onPress={() => onAnswer(need)}>
             <Text style={styles.buttonText}>{need}</Text>
           </Pressable>
@@ -1043,6 +1054,168 @@ export function NeedIdentificationScreen({
       <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onAnswer(IDENTIFIED_NEED_UNKNOWN)}>
         <Text style={styles.buttonText}>{IDENTIFIED_NEED_UNKNOWN}</Text>
       </Pressable>
+    </View>
+  );
+}
+
+const TRIGGER_IDENTIFICATION_CATEGORIES = [
+  { key: "situation", label: "מצב" },
+  { key: "event", label: "אירוע" },
+  { key: "cue", label: "גירוי חיצוני" },
+  { key: "thought", label: "מחשבה" },
+  { key: "person", label: "אדם" },
+  { key: "context", label: "הקשר" },
+];
+
+/**
+ * ARC Goal Urge/Supportive-state route task (spec section 2): the very
+ * first stage of the new trigger-identification prefix, reached right
+ * after Presence and before Third-Person Imagery -- "מה הפעיל אצלך את
+ * הרגש או את הדחף?". A category chip answers immediately with that
+ * category's own label (recognition only, exactly matching
+ * ReactiveStateSelectScreen's "recognition-only" precedent above); "אחר"
+ * reveals a short free-text description instead, mirroring
+ * NeedIdentificationScreen's own chip+custom shape. Never asks the
+ * trainee to deliberately create or intensify the emotion/urge -- there
+ * is no rating, no "how strong is it" here, only naming what happened.
+ */
+export function TriggerIdentificationScreen({ copy, onAnswer }: { copy: ArcStageCopy; onAnswer: (description: string) => void }) {
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customText, setCustomText] = useState("");
+
+  if (showCustomInput) {
+    return (
+      <View>
+        <Title copy={copy} />
+        <TextInput
+          style={styles.textInput}
+          value={customText}
+          onChangeText={setCustomText}
+          placeholder="מה קרה? אפשר בקצרה"
+          multiline
+          textAlign="right"
+        />
+        <PrimaryButton label="המשך" onPress={() => onAnswer(customText)} />
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <Title copy={copy} />
+      <View style={styles.chipRow}>
+        {TRIGGER_IDENTIFICATION_CATEGORIES.map(({ key, label }) => (
+          <Pressable key={key} style={styles.chip} onPress={() => onAnswer(label)}>
+            <Text style={styles.buttonText}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setShowCustomInput(true)}>
+        <Text style={styles.buttonText}>אחר</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * ARC Goal task (spec section 7): the 3-way reassessment shown right
+ * after ARC Thought, replacing the old binary
+ * goal_interference_check -- "מה אתה צריך עכשיו לפני המעבר לפרוטוקול
+ * הזהות?". Never assumes the original emotion/urge is still present:
+ * all three options are always live choices, never pre-selected.
+ * `showUrgeOption`/`showSupportiveOption` hide a route this goal has
+ * nothing configured for (mirrors needsGoalInterferenceDetour's own "an
+ * empty mapping list has nothing to offer" rule) -- "direct" is always
+ * offered.
+ */
+export function ReassessmentScreen({
+  showUrgeOption,
+  showSupportiveOption,
+  onSelect,
+}: {
+  showUrgeOption: boolean;
+  showSupportiveOption: boolean;
+  onSelect: (choice: "urge" | "supportive" | "direct") => void;
+}) {
+  return (
+    <View>
+      <Text style={styles.title}>מה אתה צריך עכשיו לפני המעבר לפרוטוקול הזהות?</Text>
+      {showUrgeOption && (
+        <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onSelect("urge")}>
+          <Text style={styles.buttonText}>יש עדיין דחף</Text>
+        </Pressable>
+      )}
+      {showSupportiveOption && (
+        <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onSelect("supportive")}>
+          <Text style={styles.buttonText}>אני צריך מצב פנימי רצוי ותומך</Text>
+        </Pressable>
+      )}
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onSelect("direct")}>
+        <Text style={styles.buttonText}>לא נדרשת עבודה נוספת — אפשר לעבור לזהות</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * ARC Goal task (spec section 12): the live "real-time choice" ask,
+ * shown only for a mapping whose configured executionMode is "choose"
+ * -- "באיזה מסלול תרצה להשתמש עכשיו?". Every other mapping (executionMode
+ * "full"/"mini") never reaches this screen at all -- resolveExecutionMode
+ * decides those without asking.
+ */
+export function ExecutionModeChoiceScreen({ onSelect }: { onSelect: (mode: "full" | "mini") => void }) {
+  return (
+    <View>
+      <Text style={styles.title}>באיזה מסלול תרצה להשתמש עכשיו?</Text>
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onSelect("full")}>
+        <Text style={styles.buttonText}>מסלול מלא</Text>
+      </Pressable>
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onSelect("mini")}>
+        <Text style={styles.buttonText}>Mini ARC מהיר</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * ARC Goal Mini ARC integration task (spec sections 13-14): renders
+ * exactly the "regulation"/"encoding" steps of an existing Mini ARC
+ * build, reusing arc/miniArc.ts's own pure getMiniArcStageCopy -- the
+ * SAME copy a standalone Mini ARC session shows for these two stages,
+ * never a re-authored copy of its own, and never mutating/duplicating
+ * the referenced MiniArcBuild. Deliberately never renders
+ * "pause"/"name_state"/"imagery"/"action"/"complete": ARC Goal's own
+ * trigger/imagery/Stop/need-identification prefix and ARC Thought
+ * already covered everything "pause"/"name_state" would ask again, and
+ * the final bridge action (the mapping's own beneficial-alternative/
+ * supportive action, not the Mini ARC build's own beneficialAction
+ * field) is shown by the existing urge/supportive-action confirm screen
+ * that follows this component -- see arc/arcGoalEngine.ts's
+ * mini_arc_embedded stage. `reminderLine` is shown once, only ahead of
+ * "regulation", and only for the Urge route (a brief reminder of the
+ * need already identified earlier this session, spec section 14 -- "לא
+ * לחזור על... זיהוי הצורך").
+ */
+export function EmbeddedMiniArcScreen({
+  stage,
+  build,
+  reminderLine,
+  onContinue,
+}: {
+  stage: "regulation" | "encoding";
+  build: MiniArcBuild;
+  reminderLine: string | null;
+  onContinue: () => void;
+}) {
+  const copy = getMiniArcStageCopy(stage, build);
+  return (
+    <View>
+      {reminderLine ? <Text style={styles.body}>{reminderLine}</Text> : null}
+      <Text style={styles.title}>{copy.title}</Text>
+      <Text style={styles.body}>{copy.body}</Text>
+      {copy.secondaryBody ? <Text style={styles.body}>{copy.secondaryBody}</Text> : null}
+      <PrimaryButton label={copy.buttonLabel} onPress={onContinue} />
     </View>
   );
 }

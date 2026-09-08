@@ -9,8 +9,8 @@
  * independent, distinguished only by their own stable id, never by name.
  */
 
-import type { ArcGoal, ArcGoalInterferingMapping } from "./types.ts";
-import { generateArcGoalMappingId } from "./types.ts";
+import type { ArcGoal, ArcGoalInterferingMapping, ArcGoalUrgeMapping } from "./types.ts";
+import { generateArcGoalMappingId, generateArcGoalUrgeMappingId } from "./types.ts";
 
 /** Updates the one goal matching `goal.id` in place if found, otherwise appends it as a new goal at the end. Never reorders or re-indexes the rest of the list, and never matches by anything other than id. */
 export function upsertArcGoalInList(goals: ArcGoal[], goal: ArcGoal): ArcGoal[] {
@@ -46,7 +46,52 @@ export function duplicateArcGoal(goal: ArcGoal, newId: string, now: string): Arc
       ...mapping,
       id: generateArcGoalMappingId(),
     })),
+    // ARC Goal task (Urge route): same "own new id per row, references
+    // copied as-is" treatment as interferingMappings above.
+    urgeMappings: goal.urgeMappings.map((mapping: ArcGoalUrgeMapping) => ({
+      ...mapping,
+      id: generateArcGoalUrgeMappingId(),
+    })),
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+/**
+ * ARC Goal task (Urge route + Mini ARC integration): safe-default
+ * backfill for every field added to ArcGoal/ArcGoalInterferingMapping
+ * after they were first saved -- the same "defensive defaulting at read
+ * time, no migration step" idiom resolveDwellSecondsFor and
+ * deriveActiveLayersForArcBuild already use elsewhere. Called once,
+ * every time an ArcGoal is loaded (data/storage.ts's loadArcGoals/
+ * getArcGoal) -- never at save time, so a goal loaded and re-saved
+ * without ever touching the new fields still round-trips its old shape
+ * plus these safe defaults, never losing data.
+ *
+ * `urgeMappings` missing entirely (a goal saved before the Urge route
+ * existed) becomes []. Each interfering mapping missing
+ * miniArcId/executionMode/identityProtocolId/goalAction gets them
+ * defaulted to null/"full"/null/null respectively -- "full" specifically
+ * because every pre-existing mapping's only real bridge was always the
+ * Full Supportive-State ARC; treating an unconfigured mapping as
+ * anything else would silently change its live behavior.
+ */
+export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
+  return {
+    ...goal,
+    interferingMappings: (goal.interferingMappings ?? []).map((mapping) => ({
+      ...mapping,
+      miniArcId: mapping.miniArcId ?? null,
+      executionMode: mapping.executionMode ?? "full",
+      identityProtocolId: mapping.identityProtocolId ?? null,
+      goalAction: mapping.goalAction ?? null,
+    })),
+    urgeMappings: (goal.urgeMappings ?? []).map((mapping) => ({
+      ...mapping,
+      miniArcId: mapping.miniArcId ?? null,
+      executionMode: mapping.executionMode ?? "full",
+      identityProtocolId: mapping.identityProtocolId ?? null,
+      goalAction: mapping.goalAction ?? null,
+    })),
   };
 }

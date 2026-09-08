@@ -4,23 +4,76 @@ import assert from "node:assert/strict";
 import {
   createArcGoalInnerInitialSession,
   createArcGoalOuterInitialSession,
+  createArcGoalUrgeInnerInitialSession,
   createEmptyArcGoalLiveState,
+  findUrgeArcForNeed,
   getGoalActionConfirmCopy,
-  getNextGoalUiStage,
   getSupportiveActionConfirmCopy,
-  needsGoalInterferenceDetour,
-  resolveAfterSupportiveActionConfirmed,
+  getThirdPersonImageryCopy,
+  getTriggerIdentificationCopy,
+  getUrgeActionConfirmCopy,
+  getUrgeNeedIdentificationCopy,
+  needsReassessmentDetour,
+  needsTriggerPrefixDetour,
+  resolveAfterBridgeConfirmed,
+  resolveAfterEmbeddedMiniArcStage,
+  resolveAfterExecutionModeChoice,
+  resolveAfterReassessment,
+  resolveAfterThirdPersonImagery,
+  resolveAfterTriggerIdentification,
+  resolveAfterUrgeNeedIdentification,
+  resolveBridgeEntryUiStage,
+  resolveExecutionMode,
   resolveSelectedMapping,
+  resolveSelectedUrgeMapping,
+  selectSupportiveMapping,
+  selectUrgeMapping,
   shouldInterceptInnerAtAct,
+  TRIGGER_DESCRIPTION_UNSPECIFIED,
+  urgeArcToProfile,
 } from "./arcGoalEngine.ts";
 import type { ArcGoalLiveState, ArcGoalUiStage } from "./arcGoalEngine.ts";
-import { createEmptyArcGoal } from "./types.ts";
-import type { ArcBuildProfile, ArcGoal, ArcGoalInterferingMapping, ArcStage } from "./types.ts";
+import { containsInductionPattern } from "./instructions.ts";
+import { createEmptyArcGoal, createEmptyUrgeArc, IDENTIFIED_NEED_UNKNOWN } from "./types.ts";
+import type { ArcBuildProfile, ArcGoal, ArcGoalInterferingMapping, ArcGoalUrgeMapping, ArcStage, UrgeArc } from "./types.ts";
 import { advanceLiveSession } from "../live/liveEventAdapter.ts";
 import { createEmptyArcBuildProfile } from "./types.ts";
 
 function mapping(overrides: Partial<ArcGoalInterferingMapping> = {}): ArcGoalInterferingMapping {
-  return { id: "m1", interferingState: "עייפות", supportiveProtocolId: "state-1", supportiveAction: "לשתות מים", ...overrides };
+  return {
+    id: "m1",
+    interferingState: "עייפות",
+    supportiveProtocolId: "state-1",
+    supportiveAction: "לשתות מים",
+    miniArcId: null,
+    executionMode: "full",
+    identityProtocolId: null,
+    goalAction: null,
+    ...overrides,
+  };
+}
+
+function urgeMapping(overrides: Partial<ArcGoalUrgeMapping> = {}): ArcGoalUrgeMapping {
+  return {
+    id: "um1",
+    urgeArcId: "urge-1",
+    need: null,
+    miniArcId: null,
+    executionMode: "full",
+    identityProtocolId: null,
+    goalAction: null,
+    ...overrides,
+  };
+}
+
+function urgeArc(overrides: Partial<UrgeArc> = {}): UrgeArc {
+  return {
+    ...createEmptyUrgeArc("urge-1", "דחף לעישון", "2024-01-01T00:00:00.000Z"),
+    interferingAction: "להדליק סיגריה",
+    regulationAnchor: "נשימה עמוקה",
+    beneficialAlternativeAction: "לשתות כוס מים",
+    ...overrides,
+  };
 }
 
 function goal(overrides: Partial<ArcGoal> = {}): ArcGoal {
@@ -34,10 +87,17 @@ function goal(overrides: Partial<ArcGoal> = {}): ArcGoal {
 }
 
 function identityProfile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
-  return { ...createEmptyArcBuildProfile(), desiredIdentity: "מוזיקאי", identityAction: "להקליט שיר", regulationTool: "נשימה", presenceColor: "כחול", ...overrides };
+  return {
+    ...createEmptyArcBuildProfile(),
+    desiredIdentity: "מוזיקאי",
+    identityAction: "להקליט שיר",
+    regulationTool: "נשימה",
+    presenceColor: "כחול",
+    ...overrides,
+  };
 }
 
-// --- createArcGoalOuterInitialSession / createArcGoalInnerInitialSession
+// --- createArcGoalOuterInitialSession / createArcGoalInnerInitialSession / createArcGoalUrgeInnerInitialSession
 
 test("createArcGoalOuterInitialSession pre-seeds triggerType=proactive, resolving trigger_selection to presence_check in one hop, with no trigger_selection screen ever shown", () => {
   const session = createArcGoalOuterInitialSession();
@@ -52,24 +112,202 @@ test("createArcGoalInnerInitialSession pre-seeds triggerType=reactive_emotion an
   assert.equal(session.selectedTarget, "state");
 });
 
-// --- needsGoalInterferenceDetour
+test("createArcGoalUrgeInnerInitialSession pre-seeds triggerType=reactive_urge and selectedTarget=habit -- the same unambiguous pairing a regular reactive_urge session always resolves to", () => {
+  const session = createArcGoalUrgeInnerInitialSession();
+  assert.equal(session.triggerType, "reactive_urge");
+  assert.equal(session.selectedTarget, "habit");
+});
 
-test("needsGoalInterferenceDetour is true for an unresolved goal with at least one mapping", () => {
+// --- urgeArcToProfile
+
+test("urgeArcToProfile maps habit/beneficialAction/regulationTool from the UrgeArc, leaving preventiveAction null (the Stop already happened in the prefix)", () => {
+  const u = urgeArc({ interferingAction: "להדליק סיגריה", beneficialAlternativeAction: "לשתות מים", regulationAnchor: "נשימה" });
+  const profile = urgeArcToProfile(u);
+  assert.equal(profile.habit, "להדליק סיגריה");
+  assert.equal(profile.beneficialAction, "לשתות מים");
+  assert.equal(profile.regulationTool, "נשימה");
+  assert.equal(profile.preventiveAction, null);
+});
+
+test("urgeArcToProfile never persists anything -- every other field stays at createEmptyArcBuildProfile's own safe default", () => {
+  const profile = urgeArcToProfile(urgeArc());
+  assert.equal(profile.desiredIdentity, null);
+  assert.equal(profile.supportiveState, null);
+  assert.equal(profile.presenceColor, null);
+});
+
+test("the real engine resolves a reactive_urge/habit session driven by urgeArcToProfile exactly like any other habit-target session -- act's own actionLabel is the UrgeArc's beneficialAlternativeAction", () => {
+  const profile = urgeArcToProfile(urgeArc({ beneficialAlternativeAction: "לשתות כוס מים" }));
+  let session = createArcGoalUrgeInnerInitialSession();
+  let stage: ArcStage = "sensation_check";
+  session = { ...session, sensationIntensity: 2, sensationLocation: "חזה" };
+  let hop = advanceLiveSession(stage, session, profile, ["habit"]);
+  session = hop.session;
+  stage = hop.stage;
+  // Walk forward until "act" (loop-safety cap mirrors other full-walk tests below).
+  let iterations = 0;
+  while (stage !== "act" && iterations < 20) {
+    iterations++;
+    hop = advanceLiveSession(stage, session, profile, ["habit"]);
+    session = hop.session;
+    stage = hop.stage;
+  }
+  assert.equal(stage, "act");
+});
+
+// --- needsTriggerPrefixDetour
+
+test("needsTriggerPrefixDetour is true the first time presence_check resolves into either ARC Thought entry stage", () => {
+  const state = createEmptyArcGoalLiveState();
+  assert.equal(needsTriggerPrefixDetour("arc_thought_awareness", state), true);
+  assert.equal(needsTriggerPrefixDetour("arc_thought_expand_presence", state), true);
+});
+
+test("needsTriggerPrefixDetour is false once triggerPrefixResolved, even for the same next stage", () => {
+  const state = { ...createEmptyArcGoalLiveState(), triggerPrefixResolved: true };
+  assert.equal(needsTriggerPrefixDetour("arc_thought_awareness", state), false);
+  assert.equal(needsTriggerPrefixDetour("arc_thought_expand_presence", state), false);
+});
+
+test("needsTriggerPrefixDetour is false for any other next stage -- never intercepts a later ARC-Thought loop-back", () => {
+  const state = createEmptyArcGoalLiveState();
+  assert.equal(needsTriggerPrefixDetour("arc_thought_presence_recheck", state), false);
+  assert.equal(needsTriggerPrefixDetour("desired_state_check", state), false);
+});
+
+// --- Trigger-identification prefix transitions
+
+test("resolveAfterTriggerIdentification records the trimmed description and moves to third_person_imagery", () => {
+  const result = resolveAfterTriggerIdentification(createEmptyArcGoalLiveState(), "  מצב בעבודה  ");
+  assert.equal(result.triggerDescription, "מצב בעבודה");
+  assert.equal(result.uiStage, "third_person_imagery");
+});
+
+test("resolveAfterTriggerIdentification falls back to the unspecified placeholder for blank text -- never forces the trainee to answer", () => {
+  const result = resolveAfterTriggerIdentification(createEmptyArcGoalLiveState(), "   ");
+  assert.equal(result.triggerDescription, TRIGGER_DESCRIPTION_UNSPECIFIED);
+});
+
+test("resolveAfterThirdPersonImagery routes into urge_need_identification when this goal has any urgeMappings", () => {
+  const g = goal({ urgeMappings: [urgeMapping()] });
+  const result = resolveAfterThirdPersonImagery(g, createEmptyArcGoalLiveState());
+  assert.equal(result.uiStage, "urge_need_identification");
+  assert.equal(result.triggerPrefixResolved, false, "not yet resolved -- Urge Need Identification still needs to run");
+});
+
+test("resolveAfterThirdPersonImagery resolves the prefix immediately when this goal has zero urgeMappings", () => {
+  const g = goal({ urgeMappings: [] });
+  const result = resolveAfterThirdPersonImagery(g, createEmptyArcGoalLiveState());
+  assert.equal(result.uiStage, "outer");
+  assert.equal(result.triggerPrefixResolved, true);
+});
+
+test("resolveAfterUrgeNeedIdentification records the identified need and resolves the prefix", () => {
+  const result = resolveAfterUrgeNeedIdentification(createEmptyArcGoalLiveState(), "רגיעה");
+  assert.equal(result.identifiedNeed, "רגיעה");
+  assert.equal(result.uiStage, "outer");
+  assert.equal(result.triggerPrefixResolved, true);
+});
+
+// --- needsReassessmentDetour
+
+test("needsReassessmentDetour is true for an unresolved goal with at least one urge mapping", () => {
+  const g = goal({ urgeMappings: [urgeMapping()], interferingMappings: [] });
+  assert.equal(needsReassessmentDetour(g, createEmptyArcGoalLiveState()), true);
+});
+
+test("needsReassessmentDetour is true for an unresolved goal with at least one interfering mapping", () => {
+  const g = goal({ urgeMappings: [], interferingMappings: [mapping()] });
+  assert.equal(needsReassessmentDetour(g, createEmptyArcGoalLiveState()), true);
+});
+
+test("needsReassessmentDetour is false once reassessmentResolved, even with mappings present", () => {
   const g = goal({ interferingMappings: [mapping()] });
-  assert.equal(needsGoalInterferenceDetour(g, createEmptyArcGoalLiveState()), true);
+  assert.equal(needsReassessmentDetour(g, { ...createEmptyArcGoalLiveState(), reassessmentResolved: true }), false);
 });
 
-test("needsGoalInterferenceDetour is false once interferenceResolved, even with mappings present", () => {
-  const g = goal({ interferingMappings: [mapping()] });
-  assert.equal(needsGoalInterferenceDetour(g, { ...createEmptyArcGoalLiveState(), interferenceResolved: true }), false);
+test("needsReassessmentDetour is false for a goal with neither urge nor interfering mappings -- nothing to reassess for", () => {
+  const g = goal({ urgeMappings: [], interferingMappings: [] });
+  assert.equal(needsReassessmentDetour(g, createEmptyArcGoalLiveState()), false);
 });
 
-test("needsGoalInterferenceDetour is false for a goal with zero interfering mappings -- nothing to check for", () => {
-  const g = goal({ interferingMappings: [] });
-  assert.equal(needsGoalInterferenceDetour(g, createEmptyArcGoalLiveState()), false);
+// --- resolveAfterReassessment
+
+test("resolveAfterReassessment 'direct' resumes the outer run immediately -- never assumes the original emotion/urge is still present", () => {
+  const g = goal({ urgeMappings: [urgeMapping()], interferingMappings: [mapping()] });
+  const result = resolveAfterReassessment("direct", g, createEmptyArcGoalLiveState());
+  assert.equal(result.uiStage, "outer");
+  assert.equal(result.goalState.reassessmentResolved, true);
+  assert.equal(result.goalState.reassessmentChoice, "direct");
+  assert.equal(result.goalState.selectedMappingId, null);
+  assert.equal(result.goalState.selectedUrgeMappingId, null);
 });
 
-// --- shouldInterceptInnerAtAct
+test("resolveAfterReassessment 'urge' with exactly one urge mapping auto-selects it and skips straight to inner", () => {
+  const only = urgeMapping({ id: "only-urge" });
+  const g = goal({ urgeMappings: [only] });
+  const result = resolveAfterReassessment("urge", g, createEmptyArcGoalLiveState());
+  assert.equal(result.uiStage, "inner");
+  assert.equal(result.goalState.selectedUrgeMappingId, "only-urge");
+  assert.equal(result.goalState.reassessmentChoice, "urge");
+});
+
+test("resolveAfterReassessment 'urge' with 2+ urge mappings shows urge_select instead of auto-selecting", () => {
+  const g = goal({ urgeMappings: [urgeMapping({ id: "a" }), urgeMapping({ id: "b" })] });
+  const result = resolveAfterReassessment("urge", g, createEmptyArcGoalLiveState());
+  assert.equal(result.uiStage, "urge_select");
+  assert.equal(result.goalState.selectedUrgeMappingId, null);
+});
+
+test("resolveAfterReassessment 'supportive' with exactly one interfering mapping auto-selects it and skips straight to inner", () => {
+  const only = mapping({ id: "only-supportive" });
+  const g = goal({ interferingMappings: [only] });
+  const result = resolveAfterReassessment("supportive", g, createEmptyArcGoalLiveState());
+  assert.equal(result.uiStage, "inner");
+  assert.equal(result.goalState.selectedMappingId, "only-supportive");
+  assert.equal(result.goalState.reassessmentChoice, "supportive");
+});
+
+test("resolveAfterReassessment 'supportive' with 2+ interfering mappings shows supportive_state_select instead of auto-selecting", () => {
+  const g = goal({ interferingMappings: [mapping({ id: "a" }), mapping({ id: "b" })] });
+  const result = resolveAfterReassessment("supportive", g, createEmptyArcGoalLiveState());
+  assert.equal(result.uiStage, "supportive_state_select");
+  assert.equal(result.goalState.selectedMappingId, null);
+});
+
+// --- selectUrgeMapping / selectSupportiveMapping / resolveSelectedUrgeMapping / resolveSelectedMapping
+
+test("selectUrgeMapping records the chosen id and moves straight to inner", () => {
+  const result = selectUrgeMapping(createEmptyArcGoalLiveState(), "um-2");
+  assert.equal(result.selectedUrgeMappingId, "um-2");
+  assert.equal(result.uiStage, "inner");
+});
+
+test("selectSupportiveMapping records the chosen id and moves straight to inner", () => {
+  const result = selectSupportiveMapping(createEmptyArcGoalLiveState(), "m-2");
+  assert.equal(result.selectedMappingId, "m-2");
+  assert.equal(result.uiStage, "inner");
+});
+
+test("resolveSelectedUrgeMapping returns null before any urge mapping is selected, and the exact match once selected", () => {
+  const a = urgeMapping({ id: "a" });
+  const b = urgeMapping({ id: "b" });
+  const g = goal({ urgeMappings: [a, b] });
+  assert.equal(resolveSelectedUrgeMapping(g, createEmptyArcGoalLiveState()), null);
+  const selected = resolveSelectedUrgeMapping(g, { ...createEmptyArcGoalLiveState(), selectedUrgeMappingId: "b" });
+  assert.equal(selected, b);
+});
+
+test("resolveSelectedMapping returns null before any mapping is selected, and the exact match once selected", () => {
+  const a = mapping({ id: "a" });
+  const b = mapping({ id: "b" });
+  const g = goal({ interferingMappings: [a, b] });
+  assert.equal(resolveSelectedMapping(g, createEmptyArcGoalLiveState()), null);
+  const selected = resolveSelectedMapping(g, { ...createEmptyArcGoalLiveState(), selectedMappingId: "b" });
+  assert.equal(selected, b);
+});
+
+// --- shouldInterceptInnerAtAct (unchanged, shared by both routes)
 
 test("shouldInterceptInnerAtAct is true only when the inner run's own next stage is 'act'", () => {
   assert.equal(shouldInterceptInnerAtAct("act"), true);
@@ -77,126 +315,83 @@ test("shouldInterceptInnerAtAct is true only when the inner run's own next stage
   assert.equal(shouldInterceptInnerAtAct("sensation_check"), false);
 });
 
-// --- resolveSelectedMapping
+// --- resolveExecutionMode / resolveBridgeEntryUiStage / resolveAfterExecutionModeChoice
 
-test("resolveSelectedMapping returns null before any mapping is selected", () => {
-  const g = goal({ interferingMappings: [mapping()] });
-  assert.equal(resolveSelectedMapping(g, createEmptyArcGoalLiveState()), null);
+test("resolveExecutionMode passes 'full' and 'choose' through unchanged", () => {
+  assert.equal(resolveExecutionMode("full", true), "full");
+  assert.equal(resolveExecutionMode("full", false), "full");
+  assert.equal(resolveExecutionMode("choose", true), "choose");
+  assert.equal(resolveExecutionMode("choose", false), "choose");
 });
 
-test("resolveSelectedMapping returns the exact matching mapping by id", () => {
-  const m1 = mapping({ id: "m1" });
-  const m2 = mapping({ id: "m2", interferingState: "לחץ" });
-  const g = goal({ interferingMappings: [m1, m2] });
-  const result = resolveSelectedMapping(g, { ...createEmptyArcGoalLiveState(), selectedMappingId: "m2" });
-  assert.equal(result, m2);
+test("resolveExecutionMode passes 'mini' through when the referenced Mini ARC still exists", () => {
+  assert.equal(resolveExecutionMode("mini", true), "mini");
 });
 
-// --- getNextGoalUiStage: goal_interference_check
-
-test("goal_interference_check stays put until answered", () => {
-  const g = goal({ interferingMappings: [mapping()] });
-  const { uiStage } = getNextGoalUiStage("goal_interference_check", g, createEmptyArcGoalLiveState());
-  assert.equal(uiStage, "goal_interference_check");
+test("resolveExecutionMode falls back 'mini' -> 'full' when the referenced Mini ARC is missing/deleted -- handle deleted/missing referenced protocols safely", () => {
+  assert.equal(resolveExecutionMode("mini", false), "full");
 });
 
-test("goal_interference_check 'לא' resolves straight to outer, marking interferenceResolved", () => {
-  const g = goal({ interferingMappings: [mapping(), mapping({ id: "m2" })] });
-  const state = { ...createEmptyArcGoalLiveState(), hasGoalInterference: false };
-  const result = getNextGoalUiStage("goal_interference_check", g, state);
+test("resolveBridgeEntryUiStage routes 'mini' to mini_arc_embedded regardless of route", () => {
+  assert.equal(resolveBridgeEntryUiStage("urge", "mini"), "mini_arc_embedded");
+  assert.equal(resolveBridgeEntryUiStage("supportive", "mini"), "mini_arc_embedded");
+});
+
+test("resolveBridgeEntryUiStage routes 'full' to the route's own confirm screen", () => {
+  assert.equal(resolveBridgeEntryUiStage("urge", "full"), "urge_action_confirm");
+  assert.equal(resolveBridgeEntryUiStage("supportive", "full"), "supportive_action_confirm");
+});
+
+test("resolveAfterExecutionModeChoice 'full' goes straight to the route's confirm screen with no miniArcStage set", () => {
+  const result = resolveAfterExecutionModeChoice("urge", createEmptyArcGoalLiveState(), "full");
+  assert.equal(result.uiStage, "urge_action_confirm");
+  assert.equal(result.goalState.executionMode, "full");
+  assert.equal(result.goalState.miniArcStage, null);
+});
+
+test("resolveAfterExecutionModeChoice 'mini' goes to mini_arc_embedded, starting at 'regulation'", () => {
+  const result = resolveAfterExecutionModeChoice("supportive", createEmptyArcGoalLiveState(), "mini");
+  assert.equal(result.uiStage, "mini_arc_embedded");
+  assert.equal(result.goalState.executionMode, "mini");
+  assert.equal(result.goalState.miniArcStage, "regulation");
+});
+
+// --- resolveAfterEmbeddedMiniArcStage
+
+test("resolveAfterEmbeddedMiniArcStage walks 'regulation' -> 'encoding' first", () => {
+  const state = { ...createEmptyArcGoalLiveState(), miniArcStage: "regulation" as const };
+  const result = resolveAfterEmbeddedMiniArcStage("urge", state);
+  assert.equal(result.uiStage, "mini_arc_embedded");
+  assert.equal(result.goalState.miniArcStage, "encoding");
+});
+
+test("resolveAfterEmbeddedMiniArcStage hands off from 'encoding' to the route's own bridge confirm screen, clearing miniArcStage", () => {
+  const state = { ...createEmptyArcGoalLiveState(), miniArcStage: "encoding" as const };
+  const urgeResult = resolveAfterEmbeddedMiniArcStage("urge", state);
+  assert.equal(urgeResult.uiStage, "urge_action_confirm");
+  assert.equal(urgeResult.goalState.miniArcStage, null);
+  const supportiveResult = resolveAfterEmbeddedMiniArcStage("supportive", state);
+  assert.equal(supportiveResult.uiStage, "supportive_action_confirm");
+  assert.equal(supportiveResult.goalState.miniArcStage, null);
+});
+
+// --- resolveAfterBridgeConfirmed
+
+test("resolveAfterBridgeConfirmed marks reassessmentResolved, resumes at outer, and clears the bridge-only fields", () => {
+  const state: ArcGoalLiveState = {
+    ...createEmptyArcGoalLiveState(),
+    reassessmentChoice: "urge",
+    selectedUrgeMappingId: "um1",
+    executionMode: "mini",
+    miniArcStage: "encoding",
+  };
+  const result = resolveAfterBridgeConfirmed(state);
+  assert.equal(result.reassessmentResolved, true);
   assert.equal(result.uiStage, "outer");
-  assert.equal(result.goalState.interferenceResolved, true);
-});
-
-test("goal_interference_check 'כן' with exactly one mapping auto-selects it and skips straight to inner", () => {
-  const only = mapping({ id: "only-one" });
-  const g = goal({ interferingMappings: [only] });
-  const state = { ...createEmptyArcGoalLiveState(), hasGoalInterference: true };
-  const result = getNextGoalUiStage("goal_interference_check", g, state);
-  assert.equal(result.uiStage, "inner");
-  assert.equal(result.goalState.selectedMappingId, "only-one");
-});
-
-test("goal_interference_check 'כן' with 2+ mappings shows the state-select screen instead of auto-selecting", () => {
-  const g = goal({ interferingMappings: [mapping({ id: "a" }), mapping({ id: "b" })] });
-  const state = { ...createEmptyArcGoalLiveState(), hasGoalInterference: true };
-  const result = getNextGoalUiStage("goal_interference_check", g, state);
-  assert.equal(result.uiStage, "goal_interfering_state_select");
-  assert.equal(result.goalState.selectedMappingId, null);
-});
-
-// --- getNextGoalUiStage: goal_interfering_state_select
-
-test("goal_interfering_state_select stays put until a mapping is selected", () => {
-  const g = goal({ interferingMappings: [mapping({ id: "a" }), mapping({ id: "b" })] });
-  const { uiStage } = getNextGoalUiStage("goal_interfering_state_select", g, createEmptyArcGoalLiveState());
-  assert.equal(uiStage, "goal_interfering_state_select");
-});
-
-test("goal_interfering_state_select advances to inner once a mapping is selected", () => {
-  const g = goal({ interferingMappings: [mapping({ id: "a" }), mapping({ id: "b" })] });
-  const state = { ...createEmptyArcGoalLiveState(), selectedMappingId: "b" };
-  const { uiStage } = getNextGoalUiStage("goal_interfering_state_select", g, state);
-  assert.equal(uiStage, "inner");
-});
-
-test("getNextGoalUiStage returns every other uiStage unchanged -- it is never the source of truth for outer/inner/supportive_action_confirm/goal_action_confirm's own transitions", () => {
-  const g = goal({ interferingMappings: [mapping()] });
-  for (const uiStage of ["outer", "inner", "supportive_action_confirm", "goal_action_confirm"] as const) {
-    const result = getNextGoalUiStage(uiStage, g, createEmptyArcGoalLiveState());
-    assert.equal(result.uiStage, uiStage);
-  }
-});
-
-// --- resolveAfterSupportiveActionConfirmed
-
-test("resolveAfterSupportiveActionConfirmed marks interferenceResolved without touching any other field", () => {
-  const state = { ...createEmptyArcGoalLiveState(), hasGoalInterference: true, selectedMappingId: "m1" };
-  const result = resolveAfterSupportiveActionConfirmed(state);
-  assert.equal(result.interferenceResolved, true);
-  assert.equal(result.hasGoalInterference, true);
-  assert.equal(result.selectedMappingId, "m1");
-});
-
-// --- Full end-to-end orchestration trace: "כן" branch with a single mapping
-
-test("end-to-end: 'כן' branch with a single mapping walks goal_interference_check -> inner -> (act intercepted) -> supportive_action_confirm -> back to outer, never re-asking the identity protocol", () => {
-  const only = mapping({ id: "only", supportiveAction: "לשתות מים" });
-  const g = goal({ interferingMappings: [only] });
-  let goalState = createEmptyArcGoalLiveState();
-
-  // Reached goal_interference_check because desired_state_check would be next and there's something to check.
-  assert.equal(needsGoalInterferenceDetour(g, goalState), true);
-
-  goalState = { ...goalState, hasGoalInterference: true };
-  let hop = getNextGoalUiStage("goal_interference_check", g, goalState);
-  assert.equal(hop.uiStage, "inner");
-  goalState = hop.goalState;
-  assert.equal(goalState.selectedMappingId, "only");
-
-  const selected = resolveSelectedMapping(g, goalState);
-  assert.equal(selected, only);
-  const confirmCopy = getSupportiveActionConfirmCopy(selected!);
-  assert.equal(confirmCopy.body, "לשתות מים");
-
-  // The inner run's own transition reaching "act" is where the screen intercepts.
-  assert.equal(shouldInterceptInnerAtAct("act"), true);
-
-  goalState = resolveAfterSupportiveActionConfirmed(goalState);
-  assert.equal(goalState.interferenceResolved, true);
-
-  // The outer run, already paused at "desired_state_check", is never intercepted again this session.
-  assert.equal(needsGoalInterferenceDetour(g, goalState), false);
-});
-
-test("end-to-end: 'לא' branch skips the supportive-state protocol entirely and never shows the state-select screen", () => {
-  const g = goal({ interferingMappings: [mapping(), mapping({ id: "m2" })] });
-  let goalState: ArcGoalLiveState = { ...createEmptyArcGoalLiveState(), hasGoalInterference: false };
-  const hop = getNextGoalUiStage("goal_interference_check", g, goalState);
-  assert.equal(hop.uiStage, "outer");
-  goalState = hop.goalState;
-  assert.equal(goalState.interferenceResolved, true);
-  assert.equal(goalState.selectedMappingId, null, "no mapping is ever selected on the 'לא' branch");
+  assert.equal(result.executionMode, null);
+  assert.equal(result.miniArcStage, null);
+  // The selection itself is preserved -- only the bridge-only transient fields are cleared.
+  assert.equal(result.selectedUrgeMappingId, "um1");
 });
 
 // --- Copy builders
@@ -204,6 +399,11 @@ test("end-to-end: 'לא' branch skips the supportive-state protocol entirely and
 test("getSupportiveActionConfirmCopy shows exactly the mapping's own supportiveAction, never that protocol's internalAction", () => {
   const m = mapping({ supportiveAction: "נשימה עמוקה אחת" });
   assert.equal(getSupportiveActionConfirmCopy(m).body, "נשימה עמוקה אחת");
+});
+
+test("getUrgeActionConfirmCopy shows exactly the UrgeArc's own beneficialAlternativeAction", () => {
+  const u = urgeArc({ beneficialAlternativeAction: "לצאת להליכה קצרה" });
+  assert.equal(getUrgeActionConfirmCopy(u).body, "לצאת להליכה קצרה");
 });
 
 test("getGoalActionConfirmCopy shows the goal's own action and, when set, the desired result -- distinct from the identity protocol's own action", () => {
@@ -219,31 +419,83 @@ test("getGoalActionConfirmCopy omits the result line entirely when no desired re
   assert.equal(copy.body, "לעבוד על השיר");
 });
 
-// --- Full-walk integration test: drives the REAL engine (advanceLiveSession,
-// the exact function live/ArcGoalSessionScreen.tsx itself calls) through
-// both the outer identity run and a transient inner supportive-state
-// run, exactly mirroring that screen's own orchestration logic without
-// any React involved -- verifies the wiring between
-// arc/arcGoalEngine.ts and the completely unmodified arc/arcEngine.ts
-// end to end, not just each piece in isolation.
+test("getTriggerIdentificationCopy uses the exact spec wording and never asks the trainee to evoke/intensify anything", () => {
+  const copy = getTriggerIdentificationCopy();
+  assert.equal(copy.title, "מה הפעיל אצלך את הרגש או את הדחף?");
+  assert.equal(containsInductionPattern(copy.title), false);
+});
 
-test("full walk ('כן' branch): reaches goal_action_confirm via the real engine, resuming the identity run at exactly desired_state_check with no re-ask of the identity protocol", () => {
-  const identity = identityProfile({
-    desiredIdentity: "מוזיקאי",
-    identityChallengeContext: "לפני הקלטה",
-    identityInterferingEmotion: "פחד",
-    identityAction: "להקליט שיר",
-  });
-  const supportive: ArcBuildProfile = {
-    ...createEmptyArcBuildProfile(),
-    supportiveState: "אנרגיה",
-    challengeContext: "בבוקר",
-    interferingState: "עייפות",
-    internalAction: "לשתות מים",
-    regulationTool: "נשימה",
-    presenceColor: "כחול",
-  };
-  const g = goal({ identityProtocolId: "identity-1", interferingMappings: [mapping({ supportiveProtocolId: "state-1" })] });
+test("getThirdPersonImageryCopy's segments use the exact spec wording, pass the induction-pattern safety check, and carry a trailing dwell segment", () => {
+  const copy = getThirdPersonImageryCopy(identityProfile());
+  assert.ok(copy.segments && copy.segments.length >= 2, "at least the two spec lines, plus the trailing dwell segment");
+  assert.match(copy.body, /דמיין את המצב מהצד/);
+  assert.match(copy.body, /דמיין שאתה מזהה את הרגע/);
+  assert.equal(containsInductionPattern(copy.body), false);
+  for (const segment of copy.segments!) {
+    assert.equal(containsInductionPattern(segment.text), false, `segment "${segment.text}" must never trip the induction-pattern denylist`);
+  }
+});
+
+test("getThirdPersonImageryCopy never instructs the trainee to intensify the feeling or urge", () => {
+  const copy = getThirdPersonImageryCopy(identityProfile());
+  assert.match(copy.body, /בלי לנסות להגביר אותו/);
+});
+
+test("getUrgeNeedIdentificationCopy uses the exact spec wording", () => {
+  const copy = getUrgeNeedIdentificationCopy();
+  assert.equal(copy.title, "על איזה צורך הדחף מנסה לענות?");
+  assert.equal(containsInductionPattern(copy.title), false);
+});
+
+// --- findUrgeArcForNeed
+
+test("findUrgeArcForNeed resolves the first urge mapping whose own need matches, via urgeArcsById", () => {
+  const u = urgeArc({ id: "urge-1" });
+  const g = goal({ urgeMappings: [urgeMapping({ urgeArcId: "urge-1", need: "רגיעה" })] });
+  const result = findUrgeArcForNeed(g, { "urge-1": u }, "רגיעה");
+  assert.equal(result, u);
+});
+
+test("findUrgeArcForNeed returns null when no mapping matches the need, or the reference no longer resolves", () => {
+  const g = goal({ urgeMappings: [urgeMapping({ urgeArcId: "urge-1", need: "רגיעה" })] });
+  assert.equal(findUrgeArcForNeed(g, { "urge-1": urgeArc() }, "שליטה"), null, "no mapping matches this need");
+  assert.equal(findUrgeArcForNeed(g, {}, "רגיעה"), null, "the referenced UrgeArc was deleted");
+});
+
+test("findUrgeArcForNeed never invents a preview for the 'still don't know' sentinel", () => {
+  const g = goal({ urgeMappings: [urgeMapping({ urgeArcId: "urge-1", need: IDENTIFIED_NEED_UNKNOWN })] });
+  assert.equal(findUrgeArcForNeed(g, { "urge-1": urgeArc() }, IDENTIFIED_NEED_UNKNOWN), null);
+});
+
+// ---------------------------------------------------------------------------
+// Full-walk integration tests: drive the REAL engine (advanceLiveSession,
+// the exact function live/ArcGoalSessionScreen.tsx itself calls) through
+// the outer identity run plus a transient inner run, exactly mirroring
+// that screen's own orchestration logic without any React involved.
+// Covers all five post-reassessment route combinations: urge/full,
+// urge/mini, supportive/full, supportive/mini, and direct.
+// ---------------------------------------------------------------------------
+
+interface WalkResult {
+  uiStage: ArcGoalUiStage;
+  goalState: ArcGoalLiveState;
+  outerStage: ArcStage;
+  outerSession: ReturnType<typeof createArcGoalOuterInitialSession>;
+  sawTriggerPrefix: boolean;
+  sawReassessment: boolean;
+  sawInnerRun: boolean;
+}
+
+function runFullWalk(options: {
+  g: ArcGoal;
+  identity: ArcBuildProfile;
+  reassessmentChoice: "urge" | "supportive" | "direct";
+  supportiveProfile?: ArcBuildProfile;
+  urgeProfile?: ArcBuildProfile;
+  executionModePick?: "full" | "mini";
+  miniArcSteps?: number; // how many mini_arc_embedded continues to apply (regulation, encoding)
+}): WalkResult {
+  const { g, identity, reassessmentChoice, supportiveProfile, urgeProfile, executionModePick, miniArcSteps = 2 } = options;
 
   let outerSession = createArcGoalOuterInitialSession();
   let outerStage: ArcStage = "trigger_selection";
@@ -252,105 +504,21 @@ test("full walk ('כן' branch): reaches goal_action_confirm via the real engine
     outerSession = hop.session;
     outerStage = hop.stage;
   }
-  assert.equal(outerStage, "presence_check", "sanity: the very first hop resolves straight to Presence, no trigger_selection screen");
+  assert.equal(outerStage, "presence_check");
 
   let innerSession = createArcGoalInnerInitialSession();
   let innerStage: ArcStage = "sensation_check";
   let goalState = createEmptyArcGoalLiveState();
   let uiStage: ArcGoalUiStage = "outer";
-  let sawGoalInterferenceCheck = false;
+  let sawTriggerPrefix = false;
+  let sawReassessment = false;
   let sawInnerRun = false;
+  let miniStepsApplied = 0;
 
   let iterations = 0;
-  while (uiStage !== "goal_action_confirm" && iterations < 60) {
+  while (uiStage !== "goal_action_confirm" && iterations < 120) {
     iterations++;
 
-    if (uiStage === "outer") {
-      if (outerStage === "presence_check" || outerStage === "arc_thought_presence_recheck") {
-        outerSession = { ...outerSession, presenceRating: 8 }; // high presence -- skip the full ARC Thought loop
-      }
-      if (outerStage === "desired_state_check") {
-        outerSession = { ...outerSession, desiredStateRating: 8 }; // above the regulation threshold -- straight to encode
-      }
-      const hop = advanceLiveSession(outerStage, outerSession, identity, ["identity"]);
-      outerSession = hop.session;
-      outerStage = hop.stage;
-      if (outerStage === "desired_state_check" && needsGoalInterferenceDetour(g, goalState)) {
-        uiStage = "goal_interference_check";
-      } else if (outerStage === "complete") {
-        // Mirrors live/ArcGoalSessionScreen.tsx's handleCompleteContinue --
-        // the CompleteScreen's own gratitude UI has no further engine
-        // logic, so this test moves straight to the final meta-stage.
-        uiStage = "goal_action_confirm";
-      }
-      continue;
-    }
-
-    if (uiStage === "goal_interference_check") {
-      sawGoalInterferenceCheck = true;
-      const hop = getNextGoalUiStage("goal_interference_check", g, { ...goalState, hasGoalInterference: true });
-      uiStage = hop.uiStage;
-      goalState = hop.goalState;
-      if (uiStage === "inner") {
-        innerSession = createArcGoalInnerInitialSession();
-        innerStage = "sensation_check";
-      }
-      continue;
-    }
-
-    if (uiStage === "inner") {
-      sawInnerRun = true;
-      if (innerStage === "sensation_check") {
-        innerSession = { ...innerSession, sensationIntensity: 2, sensationLocation: "חזה" }; // low intensity -- straight to encode
-      }
-      const hop = advanceLiveSession(innerStage, innerSession, supportive, ["state"]);
-      innerSession = hop.session;
-      innerStage = hop.stage;
-      if (shouldInterceptInnerAtAct(innerStage)) {
-        uiStage = "supportive_action_confirm";
-      }
-      continue;
-    }
-
-    if (uiStage === "supportive_action_confirm") {
-      goalState = resolveAfterSupportiveActionConfirmed(goalState);
-      uiStage = "outer";
-      continue;
-    }
-  }
-
-  assert.equal(uiStage, "goal_action_confirm", "sanity: the walk must actually reach the final meta-stage");
-  assert.equal(sawGoalInterferenceCheck, true, "the interference detour must have been shown at least once");
-  assert.equal(sawInnerRun, true, "the inner supportive-state run must have actually executed");
-  assert.equal(outerStage, "complete", "the outer identity run reached its own real completion, never short-circuited");
-  assert.equal(outerSession.desiredStateRating, 8, "resuming at desired_state_check never re-asked/reset the identity protocol's own rating");
-  assert.equal(goalState.interferenceResolved, true);
-});
-
-test("full walk ('לא' branch): skips the supportive-state protocol entirely and the outer run never pauses", () => {
-  const identity = identityProfile({
-    desiredIdentity: "מוזיקאי",
-    identityChallengeContext: "לפני הקלטה",
-    identityInterferingEmotion: "פחד",
-    identityAction: "להקליט שיר",
-  });
-  const g = goal({ identityProtocolId: "identity-1", interferingMappings: [mapping()] });
-
-  let outerSession = createArcGoalOuterInitialSession();
-  let outerStage: ArcStage = "trigger_selection";
-  {
-    const hop = advanceLiveSession(outerStage, outerSession, identity, ["identity"]);
-    outerSession = hop.session;
-    outerStage = hop.stage;
-  }
-
-  let goalState = createEmptyArcGoalLiveState();
-  let uiStage: ArcGoalUiStage = "outer";
-  let sawInnerRun = false;
-
-  let iterations = 0;
-  while (uiStage !== "goal_action_confirm" && iterations < 60) {
-    iterations++;
     if (uiStage === "outer") {
       if (outerStage === "presence_check" || outerStage === "arc_thought_presence_recheck") {
         outerSession = { ...outerSession, presenceRating: 8 };
@@ -361,26 +529,209 @@ test("full walk ('לא' branch): skips the supportive-state protocol entirely an
       const hop = advanceLiveSession(outerStage, outerSession, identity, ["identity"]);
       outerSession = hop.session;
       outerStage = hop.stage;
-      if (outerStage === "desired_state_check" && needsGoalInterferenceDetour(g, goalState)) {
-        uiStage = "goal_interference_check";
-      } else if (outerStage === "complete") {
+
+      if (needsTriggerPrefixDetour(outerStage, goalState)) {
+        uiStage = "trigger_identification";
+        continue;
+      }
+      if (outerStage === "desired_state_check" && needsReassessmentDetour(g, goalState)) {
+        uiStage = "reassessment";
+        continue;
+      }
+      if (outerStage === "complete") {
         uiStage = "goal_action_confirm";
       }
       continue;
     }
-    if (uiStage === "goal_interference_check") {
-      const hop = getNextGoalUiStage("goal_interference_check", g, { ...goalState, hasGoalInterference: false });
+
+    if (uiStage === "trigger_identification") {
+      sawTriggerPrefix = true;
+      goalState = resolveAfterTriggerIdentification(goalState, "מצב לדוגמה");
+      uiStage = goalState.uiStage;
+      continue;
+    }
+
+    if (uiStage === "third_person_imagery") {
+      goalState = resolveAfterThirdPersonImagery(g, goalState);
+      uiStage = goalState.uiStage;
+      continue;
+    }
+
+    if (uiStage === "urge_need_identification") {
+      goalState = resolveAfterUrgeNeedIdentification(goalState, "רגיעה");
+      uiStage = goalState.uiStage;
+      continue;
+    }
+
+    if (uiStage === "reassessment") {
+      sawReassessment = true;
+      const hop = resolveAfterReassessment(reassessmentChoice, g, goalState);
+      uiStage = hop.uiStage;
+      goalState = hop.goalState;
+      if (uiStage === "inner") {
+        innerSession = reassessmentChoice === "urge" ? createArcGoalUrgeInnerInitialSession() : createArcGoalInnerInitialSession();
+        innerStage = "sensation_check";
+      }
+      continue;
+    }
+
+    if (uiStage === "urge_select") {
+      const only = g.urgeMappings[0];
+      goalState = selectUrgeMapping(goalState, only.id);
+      uiStage = goalState.uiStage;
+      innerSession = createArcGoalUrgeInnerInitialSession();
+      innerStage = "sensation_check";
+      continue;
+    }
+
+    if (uiStage === "supportive_state_select") {
+      const only = g.interferingMappings[0];
+      goalState = selectSupportiveMapping(goalState, only.id);
+      uiStage = goalState.uiStage;
+      innerSession = createArcGoalInnerInitialSession();
+      innerStage = "sensation_check";
+      continue;
+    }
+
+    if (uiStage === "inner") {
+      sawInnerRun = true;
+      const profile = reassessmentChoice === "urge" ? urgeProfile! : supportiveProfile!;
+      const activeLayers = reassessmentChoice === "urge" ? (["habit"] as const) : (["state"] as const);
+      if (innerStage === "sensation_check") {
+        innerSession = { ...innerSession, sensationIntensity: 2, sensationLocation: "חזה" };
+      }
+      const hop = advanceLiveSession(innerStage, innerSession, profile, activeLayers as never);
+      innerSession = hop.session;
+      innerStage = hop.stage;
+      if (shouldInterceptInnerAtAct(innerStage)) {
+        const route = reassessmentChoice === "urge" ? "urge" : "supportive";
+        const configuredMode = (route === "urge" ? resolveSelectedUrgeMapping(g, goalState)! : resolveSelectedMapping(g, goalState)!).executionMode!;
+        const hasMiniArc = (route === "urge" ? resolveSelectedUrgeMapping(g, goalState)! : resolveSelectedMapping(g, goalState)!).miniArcId !== null;
+        const resolvedMode = resolveExecutionMode(configuredMode, hasMiniArc);
+        if (resolvedMode === "choose") {
+          uiStage = "execution_mode_choice";
+        } else {
+          const nextUiStage = resolveBridgeEntryUiStage(route, resolvedMode);
+          goalState = { ...goalState, uiStage: nextUiStage, executionMode: resolvedMode, miniArcStage: resolvedMode === "mini" ? "regulation" : null };
+          uiStage = nextUiStage;
+        }
+      }
+      continue;
+    }
+
+    if (uiStage === "execution_mode_choice") {
+      const route = reassessmentChoice === "urge" ? "urge" : "supportive";
+      const hop = resolveAfterExecutionModeChoice(route, goalState, executionModePick!);
       uiStage = hop.uiStage;
       goalState = hop.goalState;
       continue;
     }
-    if (uiStage === "inner") {
-      sawInnerRun = true;
-      break;
+
+    if (uiStage === "mini_arc_embedded") {
+      const route = reassessmentChoice === "urge" ? "urge" : "supportive";
+      if (miniStepsApplied < miniArcSteps) {
+        miniStepsApplied++;
+      }
+      const hop = resolveAfterEmbeddedMiniArcStage(route, goalState);
+      uiStage = hop.uiStage;
+      goalState = hop.goalState;
+      continue;
+    }
+
+    if (uiStage === "urge_action_confirm" || uiStage === "supportive_action_confirm") {
+      goalState = resolveAfterBridgeConfirmed(goalState);
+      uiStage = "outer";
+      continue;
     }
   }
 
-  assert.equal(uiStage, "goal_action_confirm");
-  assert.equal(sawInnerRun, false, "the supportive-state protocol must never run on the 'לא' branch");
-  assert.equal(goalState.selectedMappingId, null);
+  return { uiStage, goalState, outerStage, outerSession, sawTriggerPrefix, sawReassessment, sawInnerRun };
+}
+
+test("full walk (direct route): trigger prefix runs once, reassessment offers 'direct', and the outer run reaches completion with no inner run at all", () => {
+  const identity = identityProfile();
+  const g = goal({ urgeMappings: [urgeMapping()], interferingMappings: [mapping()] });
+  const result = runFullWalk({ g, identity, reassessmentChoice: "direct" });
+  assert.equal(result.uiStage, "goal_action_confirm");
+  assert.equal(result.sawTriggerPrefix, true);
+  assert.equal(result.sawReassessment, true);
+  assert.equal(result.sawInnerRun, false, "the direct route never touches urge/supportive protocols");
+  assert.equal(result.outerStage, "complete");
+  assert.equal(result.goalState.reassessmentChoice, "direct");
+});
+
+test("full walk (urge/full route): reaches goal_action_confirm via the real urge inner run and the urge_action_confirm bridge", () => {
+  const identity = identityProfile();
+  const urge = urgeArc({ beneficialAlternativeAction: "לשתות כוס מים" });
+  const g = goal({ urgeMappings: [urgeMapping({ urgeArcId: urge.id, executionMode: "full" })] });
+  const urgeProfile = urgeArcToProfile(urge);
+  const result = runFullWalk({ g, identity, reassessmentChoice: "urge", urgeProfile });
+  assert.equal(result.uiStage, "goal_action_confirm");
+  assert.equal(result.sawInnerRun, true);
+  assert.equal(result.outerStage, "complete");
+  assert.equal(result.goalState.reassessmentResolved, true);
+  assert.equal(result.goalState.executionMode, null, "cleared once the bridge is confirmed");
+});
+
+test("full walk (urge/mini route): the embedded Mini ARC's regulation/encoding steps run before handing off to the SAME urge_action_confirm bridge", () => {
+  const identity = identityProfile();
+  const urge = urgeArc();
+  const g = goal({ urgeMappings: [urgeMapping({ urgeArcId: urge.id, executionMode: "mini", miniArcId: "mini-1" })] });
+  const urgeProfile = urgeArcToProfile(urge);
+  const result = runFullWalk({ g, identity, reassessmentChoice: "urge", urgeProfile });
+  assert.equal(result.uiStage, "goal_action_confirm");
+  assert.equal(result.outerStage, "complete");
+});
+
+test("full walk (supportive/full route): reaches goal_action_confirm via the real supportive-state inner run and the supportive_action_confirm bridge", () => {
+  const identity = identityProfile();
+  const supportive: ArcBuildProfile = {
+    ...createEmptyArcBuildProfile(),
+    supportiveState: "אנרגיה",
+    interferingState: "עייפות",
+    internalAction: "לשתות מים",
+    regulationTool: "נשימה",
+    presenceColor: "כחול",
+  };
+  const g = goal({ interferingMappings: [mapping({ supportiveProtocolId: "state-1", executionMode: "full" })] });
+  const result = runFullWalk({ g, identity, reassessmentChoice: "supportive", supportiveProfile: supportive });
+  assert.equal(result.uiStage, "goal_action_confirm");
+  assert.equal(result.sawInnerRun, true);
+  assert.equal(result.outerStage, "complete");
+});
+
+test("full walk (supportive/mini route): the embedded Mini ARC's steps run before handing off to the SAME supportive_action_confirm bridge", () => {
+  const identity = identityProfile();
+  const supportive: ArcBuildProfile = {
+    ...createEmptyArcBuildProfile(),
+    supportiveState: "אנרגיה",
+    interferingState: "עייפות",
+    internalAction: "לשתות מים",
+    regulationTool: "נשימה",
+    presenceColor: "כחול",
+  };
+  const g = goal({ interferingMappings: [mapping({ supportiveProtocolId: "state-1", executionMode: "mini", miniArcId: "mini-1" })] });
+  const result = runFullWalk({ g, identity, reassessmentChoice: "supportive", supportiveProfile: supportive });
+  assert.equal(result.uiStage, "goal_action_confirm");
+  assert.equal(result.outerStage, "complete");
+});
+
+test("full walk (urge/choose route): a 'choose' mapping prompts execution_mode_choice live, and picking 'full' reaches the same bridge", () => {
+  const identity = identityProfile();
+  const urge = urgeArc();
+  const g = goal({ urgeMappings: [urgeMapping({ urgeArcId: urge.id, executionMode: "choose" })] });
+  const urgeProfile = urgeArcToProfile(urge);
+  const result = runFullWalk({ g, identity, reassessmentChoice: "urge", urgeProfile, executionModePick: "full" });
+  assert.equal(result.uiStage, "goal_action_confirm");
+});
+
+test("full walk: a mapping configured for 'mini' whose Mini ARC was deleted (miniArcId null) falls back safely to the full bridge", () => {
+  const identity = identityProfile();
+  const urge = urgeArc();
+  // executionMode "mini" but no miniArcId configured -- resolveExecutionMode must fall back to "full".
+  const g = goal({ urgeMappings: [urgeMapping({ urgeArcId: urge.id, executionMode: "mini", miniArcId: null })] });
+  const urgeProfile = urgeArcToProfile(urge);
+  const result = runFullWalk({ g, identity, reassessmentChoice: "urge", urgeProfile });
+  assert.equal(result.uiStage, "goal_action_confirm");
+  assert.equal(result.goalState.reassessmentResolved, true);
 });

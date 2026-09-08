@@ -109,6 +109,17 @@ export default function Home() {
           </Pressable>
         </Link>
 
+        {/* ARC Goal Urge route task: Urge ARC is a building block referenced
+            from an ARC Goal's own urge mappings (build/ArcGoalEditorScreen.tsx),
+            never launched standalone -- listed here purely so it can be
+            authored ahead of, or independently of, any specific goal, same
+            reasoning as Mini ARC/ARC Goals above. */}
+        <Link href="/urge-arcs" asChild>
+          <Pressable style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>Urge ARC</Text>
+          </Pressable>
+        </Link>
+
         {hasArcBuilds === false && (
           <Link href="/build" asChild>
             <Pressable style={styles.button}>

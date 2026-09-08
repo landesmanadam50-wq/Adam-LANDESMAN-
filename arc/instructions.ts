@@ -37,7 +37,7 @@ export const INDUCTION_PATTERN_DENYLIST: RegExp[] = [
   /תזכור/,
   /^זכור /,
   / זכור /,
-  // "imagine" is banned EXCEPT four sanctioned phrasings: (1) Action
+  // "imagine" is banned EXCEPT seven sanctioned phrasings: (1) Action
   // Imagery ("imagine yourself starting/beginning [the desired
   // action]" -- Action Body Cue task: "מתחיל", not "מבצע את", to read
   // as natural Hebrew against an infinitive action like "ללמוד" -- see
@@ -62,13 +62,24 @@ export const INDUCTION_PATTERN_DENYLIST: RegExp[] = [
   // PERFORMING the action" -- arc/successfulPerformance.ts) -- like the
   // existing Action Imagery exception, currentAction there only ever
   // sources from the trainee's own configured positive action, never
-  // the interfering state; and (5) that same sequence's Result Imagery
+  // the interfering state; (5) that same sequence's Result Imagery
   // step ("imagine that the action succeeds and you achieve the
   // desired result") -- the imagined content is the trainee's own
-  // configured desired result, never anything interfering. Any other
-  // "imagine" usage -- e.g. imagining a feeling/craving/distraction
-  // directly -- still trips this pattern.
-  /דמיין(?! את עצמך מתחיל| לרגע את מה שקרה| את עצמך לרגע| את עצמך מבצע| שהפעולה מצליחה)/,
+  // configured desired result, never anything interfering; (6) the
+  // ARC Goal Urge/Supportive-state route's own trigger-identification
+  // prefix (spec sections 3-4, arc/arcGoalEngine.ts's
+  // getThirdPersonImageryCopy) -- "imagine the situation from the
+  // side, as if you're watching yourself in the situation. Notice
+  // what triggered the feeling or urge, without trying to intensify
+  // it" -- same observer's-distance recognition as (2)/(3), and its
+  // own sentence explicitly says not to intensify it; and (7) that
+  // same prefix's imagined-Stop line -- "imagine that you recognize
+  // the moment the feeling or urge begins and stop before the
+  // automatic reaction" -- recognition of the already-familiar Stop
+  // moment, never an instruction to evoke or intensify anything. Any
+  // other "imagine" usage -- e.g. imagining a feeling/craving/
+  // distraction directly -- still trips this pattern.
+  /דמיין(?! את עצמך מתחיל| לרגע את מה שקרה| את עצמך לרגע| את עצמך מבצע| שהפעולה מצליחה| את המצב מהצד| שאתה מזהה את הרגע)/,
   /תחזק את/,
   // "hold/keep X in awareness/mind/the head" -- covers "בתודעה"/"בראש"
   // in addition to "במודעות".

@@ -641,11 +641,89 @@ export function generateArcBuildId(): string {
  * goal's Identity ARC (see arc/arcGoalEngine.ts) -- never the protocol's
  * full "act" stage.
  */
+/**
+ * ARC Goal task (Urge/Supportive-State routes): how a mapping's bridge
+ * protocol runs live -- "full" always runs the Full protocol (state- or
+ * habit-adapted engine run, see arc/arcGoalEngine.ts), "mini" always
+ * runs the linked Mini ARC inline (never navigates to /mini-arc/live,
+ * see EmbeddedMiniArcScreen), "choose" asks the trainee live, once per
+ * session, via the new execution_mode_choice stage. Optional on
+ * existing ArcGoalInterferingMapping rows -- missing/undefined always
+ * normalizes to "full" (arc/arcGoals.ts's normalizeArcGoal), matching
+ * exactly what every pre-existing mapping already does today.
+ */
+export type ExecutionMode = "full" | "mini" | "choose";
+
 export interface ArcGoalInterferingMapping {
   id: string;
   interferingState: string;
   supportiveProtocolId: string;
   supportiveAction: string;
+  /**
+   * ARC Goal task (Mini ARC integration): an optional REFERENCE to an
+   * existing MiniArcBuild (arc/miniArc.ts) -- never a copy of its
+   * content. null means no Mini ARC is linked to this mapping, so
+   * executionMode is always treated as "full" regardless of its own
+   * saved value (see resolveExecutionMode, arc/arcGoalEngine.ts).
+   */
+  miniArcId?: string | null;
+  executionMode?: ExecutionMode;
+  /** Per-mapping override of ArcGoal.identityProtocolId/goalAction below -- null (the default) falls back to the goal-level field, so most mappings never need to set these. */
+  identityProtocolId?: string | null;
+  goalAction?: string | null;
+}
+
+/**
+ * ARC Goal task (Urge route, spec sections 8-9, 15): one row of the ARC
+ * Goal Urge mapping -- connects a trigger/urge to its UrgeArc protocol
+ * (arc/types.ts's UrgeArc, below) and optionally a Mini ARC, exactly
+ * parallel to ArcGoalInterferingMapping's own reference-only shape.
+ * `need` is this mapping's own tag (one of the Need Identification
+ * presets, or a custom need, or null) -- used only to preview this
+ * mapping's UrgeArc.beneficialAlternativeAction once a matching need is
+ * identified (spec section 5); it never gates or auto-selects this
+ * mapping at urge_select, which the trainee always chooses explicitly.
+ */
+export interface ArcGoalUrgeMapping {
+  id: string;
+  urgeArcId: string;
+  need: string | null;
+  miniArcId?: string | null;
+  executionMode?: ExecutionMode;
+  identityProtocolId?: string | null;
+  goalAction?: string | null;
+}
+
+/**
+ * ARC Goal task (Urge route, spec section 9): a lightweight, standalone
+ * protocol for a specific urge -- deliberately NOT a habit-target
+ * ArcBuild ("do not treat the urge itself as an ordinary emotion") and
+ * deliberately WITHOUT its own identityProtocolId/goalAction (kept at
+ * the ArcGoalUrgeMapping level instead, mirroring how
+ * ArcGoalInterferingMapping already keeps those off the referenced
+ * supportive-state ArcBuild) -- so the same UrgeArc can be reused by
+ * several different mappings/goals, each potentially bridging into a
+ * different Identity ARC, without ever duplicating this protocol's own
+ * content (spec section 19's "a protocol may support several targets
+ * or goals", carried over from the original ARC Goal architecture).
+ * Any number of these can exist at once, exactly like MiniArcBuild/
+ * ArcBuild (data/storage.ts's loadUrgeArcs/saveUrgeArcs).
+ */
+export interface UrgeArc {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  /** The interfering action/habit this urge drives toward -- recognition-only, never something LIVE asks the trainee to evoke or intensify. */
+  interferingAction: string;
+  mappedTriggers: string[];
+  underlyingNeeds: string[];
+  /** Optional custom Stop cue override -- null means the shared, goal-level third-person-imagery/Stop prefix (arc/arcGoalEngine.ts) is used as-is, with no urge-specific variation. */
+  stopCue: string | null;
+  regulationAnchor: string;
+  acceptanceContent: string | null;
+  /** The bridge action shown once this urge's own Full protocol run reaches (but does not itself perform) "act" -- see urge_action_confirm, arc/arcGoalEngine.ts. */
+  beneficialAlternativeAction: string;
 }
 
 /**
@@ -690,6 +768,8 @@ export interface ArcGoal {
   desiredResult: string;
   identityProtocolId: string | null;
   interferingMappings: ArcGoalInterferingMapping[];
+  /** ARC Goal task (Urge route): parallel to interferingMappings above, one row per mapped urge. Defaults to [] for every ArcGoal saved before this field existed -- see arc/arcGoals.ts's normalizeArcGoal. */
+  urgeMappings: ArcGoalUrgeMapping[];
   createdAt: string;
   updatedAt: string;
 }
@@ -704,6 +784,16 @@ export function generateArcGoalMappingId(): string {
   return `arcgoalmap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Same id-pattern for an urge-mapping row -- a distinct prefix from generateArcGoalMappingId so the two are never confused when debugging stored data. */
+export function generateArcGoalUrgeMappingId(): string {
+  return `arcgoalurgemap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Same stable-id-string pattern as generateArcBuildId/generateMiniArcId. */
+export function generateUrgeArcId(): string {
+  return `urgearc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** A fresh, empty ArcGoal for a brand-new goal -- every optional field null/[] exactly like a trainee who hasn't configured anything yet. */
 export function createEmptyArcGoal(id: string, name: string, now: string): ArcGoal {
   return {
@@ -715,8 +805,26 @@ export function createEmptyArcGoal(id: string, name: string, now: string): ArcGo
     desiredResult: "",
     identityProtocolId: null,
     interferingMappings: [],
+    urgeMappings: [],
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+/** A fresh, empty UrgeArc for a brand-new urge protocol. */
+export function createEmptyUrgeArc(id: string, name: string, now: string): UrgeArc {
+  return {
+    id,
+    name,
+    createdAt: now,
+    updatedAt: now,
+    interferingAction: "",
+    mappedTriggers: [],
+    underlyingNeeds: [],
+    stopCue: null,
+    regulationAnchor: "",
+    acceptanceContent: null,
+    beneficialAlternativeAction: "",
   };
 }
 

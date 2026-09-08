@@ -12,12 +12,13 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { generateArcBuildId } from "../arc/types.ts";
-import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcProgramProgress } from "../arc/types.ts";
+import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcProgramProgress, UrgeArc } from "../arc/types.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
-import { deleteArcGoalFromList, upsertArcGoalInList } from "../arc/arcGoals.ts";
+import { deleteArcGoalFromList, normalizeArcGoal, upsertArcGoalInList } from "../arc/arcGoals.ts";
+import { deleteUrgeArcFromList, upsertUrgeArcInList } from "../arc/urgeArcs.ts";
 import {
   deleteArcLinkFromList,
   deleteRoutineTriggerFromList,
@@ -41,6 +42,8 @@ const ARC_BUILDS_KEY = "archi.arcBuilds.v1";
 const MINI_ARC_BUILDS_KEY = "archi.miniArcBuilds.v1";
 /** ARC Goal task: a brand-new, independent collection, storing only REFERENCES to existing ArcBuilds (never their content) -- see arc/types.ts's ArcGoal doc. No legacy migration: there is no prior data format for ARC Goal, so an absent key simply means "no ARC Goals yet". Deleting/editing an ArcGoal never touches ARC_BUILDS_KEY/PROFILE_KEY/MINI_ARC_BUILDS_KEY, and vice versa. */
 const ARC_GOALS_KEY = "archi.arcGoals.v1";
+/** Urge route task: a brand-new, independent collection storing full UrgeArc records -- never read/written by regular ARC, Mini ARC, or ARC Goal's own key. No legacy migration: there is no prior data format for UrgeArc, so an absent key simply means "no Urge ARCs yet". ArcGoal.urgeMappings only ever stores a UrgeArc's id, never its content -- deleting/editing a UrgeArc never touches ARC_GOALS_KEY, and vice versa. */
+const ARC_URGE_ARCS_KEY = "archi.urgeArcs.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -216,13 +219,19 @@ export async function deleteMiniArcBuild(id: string): Promise<void> {
  * ARC Goal task: an independent collection, parallel to loadMiniArcBuilds
  * above -- same "no legacy migration, defensive parse degrades to an
  * empty list rather than crashing" shape.
+ *
+ * Urge route task: every parsed goal is run through normalizeArcGoal so
+ * fields added after a goal was first saved (urgeMappings, and each
+ * mapping's miniArcId/executionMode/identityProtocolId/goalAction) always
+ * come back with their safe defaults -- callers never need to null-check
+ * these themselves.
  */
 export async function loadArcGoals(): Promise<ArcGoal[]> {
   const raw = await AsyncStorage.getItem(ARC_GOALS_KEY);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as ArcGoal[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(normalizeArcGoal) : [];
   } catch (error) {
     console.warn("[storage] Stored ARC Goals are not valid JSON -- returning an empty list rather than crashing.", error);
     return [];
@@ -249,6 +258,48 @@ export async function upsertArcGoal(goal: ArcGoal): Promise<void> {
 export async function deleteArcGoal(id: string): Promise<void> {
   const goals = await loadArcGoals();
   await saveArcGoals(deleteArcGoalFromList(goals, id));
+}
+
+/**
+ * Urge route task: a brand-new, independent collection, storing full
+ * UrgeArc records (mirrors ARC_BUILDS_KEY, not MINI_ARC_BUILDS_KEY's
+ * reference-only ArcGoal collection -- a UrgeArc IS the protocol, not a
+ * reference to one). No legacy migration: there is no prior data format
+ * for UrgeArc, so an absent key simply means "no Urge ARCs yet". Same
+ * defensive parse as loadMiniArcBuilds/loadArcGoals.
+ */
+export async function loadUrgeArcs(): Promise<UrgeArc[]> {
+  const raw = await AsyncStorage.getItem(ARC_URGE_ARCS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as UrgeArc[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored Urge ARCs are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveArcGoals/saveMiniArcBuilds' own style. */
+export async function saveUrgeArcs(urgeArcs: UrgeArc[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_URGE_ARCS_KEY, JSON.stringify(urgeArcs));
+}
+
+export async function getUrgeArc(id: string): Promise<UrgeArc | null> {
+  const urgeArcs = await loadUrgeArcs();
+  return urgeArcs.find((urgeArc) => urgeArc.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/urgeArcs.ts's upsertUrgeArcInList. Updates the one matching Urge ARC in place, never touching any other Urge ARC's own fields, or appends it as new. */
+export async function upsertUrgeArc(urgeArc: UrgeArc): Promise<void> {
+  const urgeArcs = await loadUrgeArcs();
+  await saveUrgeArcs(upsertUrgeArcInList(urgeArcs, urgeArc));
+}
+
+/** Removes exactly the one matching Urge ARC (by id) -- see arc/urgeArcs.ts's deleteUrgeArcFromList. Every other Urge ARC is left completely untouched; a no-op if the id doesn't match any row. Mappings referencing a deleted UrgeArc are handled safely at read time by the live engine, not here -- this never cascades into ArcGoal.urgeMappings. */
+export async function deleteUrgeArc(id: string): Promise<void> {
+  const urgeArcs = await loadUrgeArcs();
+  await saveUrgeArcs(deleteUrgeArcFromList(urgeArcs, id));
 }
 
 /**

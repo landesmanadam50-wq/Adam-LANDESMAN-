@@ -27,33 +27,54 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
-import { createEmptyLiveState } from "../arc/types.ts";
+import { createEmptyLiveState, IDENTIFIED_NEED_UNKNOWN } from "../arc/types.ts";
+import type { UrgeArc } from "../arc/types.ts";
 import { getAvailableLiveTriggers, resolveEncodingTarget } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
 import { buildEvidenceIndex, buildSessionEvidenceContext } from "../arc/evidence.ts";
 import type { EvidenceRecord } from "../arc/evidence.ts";
+import type { MiniArcBuild } from "../arc/miniArc.ts";
 import {
   appendSessionLogEntry,
   clearTimerRun,
   getArcGoal,
   loadArcBuilds,
+  loadMiniArcBuilds,
   loadSessionLog,
+  loadUrgeArcs,
   updateLastSessionLogEntryGratitude,
 } from "../data/storage.ts";
 import {
   createArcGoalInnerInitialSession,
   createArcGoalOuterInitialSession,
+  createArcGoalUrgeInnerInitialSession,
   createEmptyArcGoalLiveState,
+  findUrgeArcForNeed,
   getGoalActionConfirmCopy,
-  getNextGoalUiStage,
   getSupportiveActionConfirmCopy,
-  GOAL_INTERFERENCE_CHECK_LABELS,
-  GOAL_INTERFERENCE_CHECK_QUESTION,
+  getThirdPersonImageryCopy,
+  getTriggerIdentificationCopy,
+  getUrgeActionConfirmCopy,
+  getUrgeNeedIdentificationCopy,
   GOAL_INTERFERING_STATE_SELECT_TITLE,
-  needsGoalInterferenceDetour,
-  resolveAfterSupportiveActionConfirmed,
+  needsReassessmentDetour,
+  needsTriggerPrefixDetour,
+  resolveAfterBridgeConfirmed,
+  resolveAfterEmbeddedMiniArcStage,
+  resolveAfterExecutionModeChoice,
+  resolveAfterReassessment,
+  resolveAfterThirdPersonImagery,
+  resolveAfterTriggerIdentification,
+  resolveAfterUrgeNeedIdentification,
+  resolveExecutionMode,
   resolveSelectedMapping,
+  resolveSelectedUrgeMapping,
+  selectSupportiveMapping,
+  selectUrgeMapping,
   shouldInterceptInnerAtAct,
+  URGE_NEED_IDENTIFICATION_PRESETS,
+  URGE_SELECT_TITLE,
+  urgeArcToProfile,
 } from "../arc/arcGoalEngine.ts";
 import type { ArcGoalLiveState, ArcGoalUiStage } from "../arc/arcGoalEngine.ts";
 import {
@@ -81,6 +102,14 @@ import {
 import { DEFERRAL_OPTIONS, scheduleFutureSuccessFocus } from "../data/reminders.ts";
 import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
 import type { ArcLiveRendererProps } from "./ArcLiveRenderer.tsx";
+import {
+  EmbeddedMiniArcScreen,
+  ExecutionModeChoiceScreen,
+  InstructionScreen,
+  NeedIdentificationScreen,
+  ReassessmentScreen,
+  TriggerIdentificationScreen,
+} from "./screens.tsx";
 
 type Status = "loading" | "notFound" | "noIdentityProtocol" | "running";
 
@@ -100,6 +129,8 @@ export default function ArcGoalSessionScreen() {
   const [goal, setGoal] = useState<ArcGoal | null>(null);
   const [identityProfile, setIdentityProfile] = useState<ArcBuildProfile | null>(null);
   const [arcBuildsById, setArcBuildsById] = useState<Record<string, ArcBuild>>({});
+  const [urgeArcsById, setUrgeArcsById] = useState<Record<string, UrgeArc>>({});
+  const [miniArcsById, setMiniArcsById] = useState<Record<string, MiniArcBuild>>({});
   const [evidenceIndex, setEvidenceIndex] = useState<EvidenceRecord[]>([]);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
 
@@ -131,7 +162,8 @@ export default function ArcGoalSessionScreen() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      Promise.all([getArcGoal(goalId), loadArcBuilds(), loadSessionLog()]).then(([loadedGoal, builds, sessionLog]) => {
+      Promise.all([getArcGoal(goalId), loadArcBuilds(), loadSessionLog(), loadUrgeArcs(), loadMiniArcBuilds()]).then(
+        ([loadedGoal, builds, sessionLog, urgeArcs, miniArcBuilds]) => {
         if (cancelled) return;
         if (!loadedGoal) {
           setStatus("notFound");
@@ -140,6 +172,12 @@ export default function ArcGoalSessionScreen() {
         const byId: Record<string, ArcBuild> = {};
         for (const build of builds) byId[build.id] = build;
         setArcBuildsById(byId);
+        const urgeById: Record<string, UrgeArc> = {};
+        for (const urgeArc of urgeArcs) urgeById[urgeArc.id] = urgeArc;
+        setUrgeArcsById(urgeById);
+        const miniById: Record<string, MiniArcBuild> = {};
+        for (const miniArc of miniArcBuilds) miniById[miniArc.id] = miniArc;
+        setMiniArcsById(miniById);
         setGoal(loadedGoal);
         const identityBuild = loadedGoal.identityProtocolId ? byId[loadedGoal.identityProtocolId] : undefined;
         if (!identityBuild) {
@@ -159,7 +197,8 @@ export default function ArcGoalSessionScreen() {
         setGratitudeMemoryDetailText("");
         setProgressEvidenceText("");
         setStatus("running");
-      });
+        }
+      );
       return () => {
         cancelled = true;
       };
@@ -218,10 +257,14 @@ export default function ArcGoalSessionScreen() {
     setOuterSession(nextSession);
     setOuterStage(nextStage);
     clearPendingFields();
-    if (nextStage === "desired_state_check" && needsGoalInterferenceDetour(goal, goalState)) {
+    if (needsTriggerPrefixDetour(nextStage, goalState)) {
+      setGoalState((current) => ({ ...current, uiStage: "trigger_identification" }));
+      return;
+    }
+    if (nextStage === "desired_state_check" && needsReassessmentDetour(goal, goalState)) {
       setInnerSession(createArcGoalInnerInitialSession());
       setInnerStage("sensation_check");
-      setGoalState((current) => ({ ...current, uiStage: "goal_interference_check" }));
+      setGoalState((current) => ({ ...current, uiStage: "reassessment" }));
       return;
     }
     if (nextStage === "complete") {
@@ -236,13 +279,48 @@ export default function ArcGoalSessionScreen() {
     return arcBuildsById[mapping.supportiveProtocolId]?.profile ?? null;
   }
 
+  function resolveUrgeProfile(): ArcBuildProfile | null {
+    if (!goal) return null;
+    const mapping = resolveSelectedUrgeMapping(goal, goalState);
+    if (!mapping) return null;
+    const urgeArc = urgeArcsById[mapping.urgeArcId];
+    if (!urgeArc) return null;
+    return urgeArcToProfile(urgeArc);
+  }
+
+  function currentInnerContext(): { profile: ArcBuildProfile; activeLayers: DevelopmentLayer[] } | null {
+    if (goalState.reassessmentChoice === "urge") {
+      const profile = resolveUrgeProfile();
+      return profile ? { profile, activeLayers: ["habit"] } : null;
+    }
+    const profile = resolveSupportiveProfile();
+    return profile ? { profile, activeLayers: ["state"] } : null;
+  }
+
   function commitAdvanceInner(patchedSession: ArcLiveState, transitionStage: ArcStage = innerStage) {
-    const supportiveProfile = resolveSupportiveProfile();
-    if (!supportiveProfile) return;
-    const { session: nextSession, stage: nextStage } = advanceLiveSession(transitionStage, patchedSession, supportiveProfile, ["state"]);
+    if (!goal) return;
+    const ctx = currentInnerContext();
+    if (!ctx) return;
+    const { session: nextSession, stage: nextStage } = advanceLiveSession(transitionStage, patchedSession, ctx.profile, ctx.activeLayers);
     clearPendingFields();
     if (shouldInterceptInnerAtAct(nextStage)) {
-      setGoalState((current) => ({ ...current, uiStage: "supportive_action_confirm" }));
+      const route: "urge" | "supportive" = goalState.reassessmentChoice === "urge" ? "urge" : "supportive";
+      const mapping = route === "urge" ? resolveSelectedUrgeMapping(goal, goalState) : resolveSelectedMapping(goal, goalState);
+      const configuredMode = mapping?.executionMode ?? "full";
+      const miniArcId = mapping?.miniArcId ?? null;
+      const hasMiniArc = miniArcId !== null && Boolean(miniArcsById[miniArcId]);
+      const resolvedMode = resolveExecutionMode(configuredMode, hasMiniArc);
+      if (resolvedMode === "choose") {
+        setGoalState((current) => ({ ...current, uiStage: "execution_mode_choice" }));
+        return;
+      }
+      const nextUiStage: ArcGoalUiStage = resolvedMode === "mini" ? "mini_arc_embedded" : route === "urge" ? "urge_action_confirm" : "supportive_action_confirm";
+      setGoalState((current) => ({
+        ...current,
+        uiStage: nextUiStage,
+        executionMode: resolvedMode,
+        miniArcStage: resolvedMode === "mini" ? "regulation" : null,
+      }));
       return;
     }
     setInnerSession(nextSession);
@@ -403,34 +481,95 @@ export default function ArcGoalSessionScreen() {
     );
   }
 
-  if (goalState.uiStage === "goal_interference_check") {
+  if (goalState.uiStage === "trigger_identification") {
     return (
       <SafeAreaView style={styles.safeArea}>
         <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
-        <View style={styles.content}>
-          <Text style={styles.title}>{GOAL_INTERFERENCE_CHECK_QUESTION}</Text>
-          <View style={styles.buttonRow}>
-            <Pressable
-              style={styles.button}
-              onPress={() => applyGoalHop(getNextGoalUiStage("goal_interference_check", goal, { ...goalState, hasGoalInterference: true }))}
-            >
-              <Text style={styles.buttonText}>{GOAL_INTERFERENCE_CHECK_LABELS.yes}</Text>
-            </Pressable>
-            <Pressable
-              style={styles.button}
-              onPress={() =>
-                applyGoalHop(getNextGoalUiStage("goal_interference_check", goal, { ...goalState, hasGoalInterference: false }))
-              }
-            >
-              <Text style={styles.buttonText}>{GOAL_INTERFERENCE_CHECK_LABELS.no}</Text>
-            </Pressable>
-          </View>
-        </View>
+        <ScrollView contentContainerStyle={styles.content}>
+          <TriggerIdentificationScreen
+            copy={getTriggerIdentificationCopy()}
+            onAnswer={(description) => setGoalState((current) => resolveAfterTriggerIdentification(current, description))}
+          />
+        </ScrollView>
       </SafeAreaView>
     );
   }
 
-  if (goalState.uiStage === "goal_interfering_state_select") {
+  if (goalState.uiStage === "third_person_imagery") {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <InstructionScreen
+            copy={getThirdPersonImageryCopy(identityProfile!)}
+            onContinue={() => setGoalState((current) => resolveAfterThirdPersonImagery(goal, current))}
+          />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "urge_need_identification") {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <NeedIdentificationScreen
+            copy={getUrgeNeedIdentificationCopy()}
+            presets={URGE_NEED_IDENTIFICATION_PRESETS}
+            onAnswer={(need) => setGoalState((current) => resolveAfterUrgeNeedIdentification(current, need))}
+          />
+          {(() => {
+            if (goalState.identifiedNeed === null) return null;
+            const previewUrgeArc = findUrgeArcForNeed(goal, urgeArcsById, goalState.identifiedNeed);
+            if (!previewUrgeArc) return null;
+            return <Text style={styles.body}>{`פעולה מיטיבה אפשרית: ${previewUrgeArc.beneficialAlternativeAction}`}</Text>;
+          })()}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "reassessment") {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <ReassessmentScreen
+            showUrgeOption={goal.urgeMappings.length > 0}
+            showSupportiveOption={goal.interferingMappings.length > 0}
+            onSelect={(choice) => applyGoalHop(resolveAfterReassessment(choice, goal, goalState))}
+          />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "urge_select") {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.title}>{URGE_SELECT_TITLE}</Text>
+          {goal.urgeMappings.map((mapping) => {
+            const urgeArc = urgeArcsById[mapping.urgeArcId];
+            if (!urgeArc) return null;
+            return (
+              <Pressable
+                key={mapping.id}
+                style={[styles.button, styles.fullWidthButton]}
+                onPress={() => setGoalState((current) => selectUrgeMapping(current, mapping.id))}
+              >
+                <Text style={styles.buttonText}>{urgeArc.name}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "supportive_state_select") {
     return (
       <SafeAreaView style={styles.safeArea}>
         <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
@@ -440,16 +579,84 @@ export default function ArcGoalSessionScreen() {
             <Pressable
               key={mapping.id}
               style={[styles.button, styles.fullWidthButton]}
-              onPress={() =>
-                applyGoalHop(
-                  getNextGoalUiStage("goal_interfering_state_select", goal, { ...goalState, selectedMappingId: mapping.id })
-                )
-              }
+              onPress={() => setGoalState((current) => selectSupportiveMapping(current, mapping.id))}
             >
               <Text style={styles.buttonText}>{mapping.interferingState}</Text>
             </Pressable>
           ))}
         </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "execution_mode_choice") {
+    const route: "urge" | "supportive" = goalState.reassessmentChoice === "urge" ? "urge" : "supportive";
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <View style={styles.content}>
+          <ExecutionModeChoiceScreen
+            onSelect={(mode) => applyGoalHop(resolveAfterExecutionModeChoice(route, goalState, mode))}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "mini_arc_embedded") {
+    const route: "urge" | "supportive" = goalState.reassessmentChoice === "urge" ? "urge" : "supportive";
+    const mapping = route === "urge" ? resolveSelectedUrgeMapping(goal, goalState) : resolveSelectedMapping(goal, goalState);
+    const miniArc = mapping?.miniArcId ? miniArcsById[mapping.miniArcId] : undefined;
+    if (!miniArc || goalState.miniArcStage === null) {
+      return (
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.content}>
+            <Text style={styles.title}>ה־Mini ARC המחובר לא נמצא</Text>
+          </View>
+        </SafeAreaView>
+      );
+    }
+    const reminderLine =
+      route === "urge" && goalState.identifiedNeed !== null && goalState.identifiedNeed !== IDENTIFIED_NEED_UNKNOWN
+        ? `הצורך שזיהית: ${goalState.identifiedNeed}`
+        : null;
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <EmbeddedMiniArcScreen
+            stage={goalState.miniArcStage}
+            build={miniArc}
+            reminderLine={reminderLine}
+            onContinue={() => applyGoalHop(resolveAfterEmbeddedMiniArcStage(route, goalState))}
+          />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "urge_action_confirm") {
+    const mapping = resolveSelectedUrgeMapping(goal, goalState);
+    const urgeArc = mapping ? urgeArcsById[mapping.urgeArcId] : undefined;
+    const copy = urgeArc ? getUrgeActionConfirmCopy(urgeArc) : { title: "פעולה מיטיבה חלופית", body: "" };
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <View style={styles.content}>
+          <Text style={styles.title}>{copy.title}</Text>
+          <Text style={styles.body}>{copy.body}</Text>
+          <Pressable
+            style={[styles.button, styles.fullWidthButton]}
+            onPress={() => {
+              const resolved = resolveAfterBridgeConfirmed(goalState);
+              setInnerSession(createArcGoalUrgeInnerInitialSession());
+              setInnerStage("sensation_check");
+              setGoalState(resolved);
+            }}
+          >
+            <Text style={styles.buttonText}>המשך</Text>
+          </Pressable>
+        </View>
       </SafeAreaView>
     );
   }
@@ -466,10 +673,10 @@ export default function ArcGoalSessionScreen() {
           <Pressable
             style={[styles.button, styles.fullWidthButton]}
             onPress={() => {
-              const resolved = resolveAfterSupportiveActionConfirmed(goalState);
+              const resolved = resolveAfterBridgeConfirmed(goalState);
               setInnerSession(createArcGoalInnerInitialSession());
               setInnerStage("sensation_check");
-              setGoalState({ ...resolved, uiStage: "outer" });
+              setGoalState(resolved);
             }}
           >
             <Text style={styles.buttonText}>המשך</Text>
@@ -496,28 +703,30 @@ export default function ArcGoalSessionScreen() {
   }
 
   if (goalState.uiStage === "inner") {
-    const supportiveProfile = resolveSupportiveProfile();
-    if (!supportiveProfile) {
+    const innerCtx = currentInnerContext();
+    if (!innerCtx) {
+      const notFoundText = goalState.reassessmentChoice === "urge" ? "הדחף המחובר לא נמצא" : "הפרוטוקול התומך לא נמצא";
       return (
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.content}>
-            <Text style={styles.title}>הפרוטוקול התומך לא נמצא</Text>
+            <Text style={styles.title}>{notFoundText}</Text>
           </View>
         </SafeAreaView>
       );
     }
+    const { profile: innerProfile, activeLayers: innerActiveLayers } = innerCtx;
     const rendererProps = buildRendererProps(
       {
         session: innerSession,
         stage: innerStage,
-        profile: supportiveProfile,
-        activeLayers: ["state"],
+        profile: innerProfile,
+        activeLayers: innerActiveLayers,
         setSession: setInnerSession,
         commitAdvance: commitAdvanceInner,
       },
       () => {}
     );
-    const copy = getStageCopy(innerStage, supportiveProfile, innerSession, ["state"], evidenceIndex);
+    const copy = getStageCopy(innerStage, innerProfile, innerSession, innerActiveLayers, evidenceIndex);
     return (
       <SafeAreaView style={styles.safeArea}>
         <Stack.Screen options={{ title: `ARC Goal LIVE — ${copy.title}` }} />
