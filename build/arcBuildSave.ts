@@ -154,6 +154,11 @@ export function buildArcBuildProfileForSave(target: Target, draft: ProfileDraft,
           identityFutureOrientedMantra: null,
           identityBarrierType: null,
           identityPracticalAlternative: null,
+          identitySuccessfulPerformanceAction: null,
+          identitySuccessfulPerformanceQualities: null,
+          identitySuccessfulPerformanceCustomQuality: null,
+          identitySuccessfulPerformanceResult: null,
+          identitySuccessMantra: null,
         }
       : target === "identity"
         ? {
@@ -213,6 +218,11 @@ export function buildArcBuildProfileForSave(target: Target, draft: ProfileDraft,
             statePracticalAlternative: null,
             identityBarrierType: null,
             identityPracticalAlternative: null,
+            identitySuccessfulPerformanceAction: null,
+            identitySuccessfulPerformanceQualities: null,
+            identitySuccessfulPerformanceCustomQuality: null,
+            identitySuccessfulPerformanceResult: null,
+            identitySuccessMantra: null,
           };
 
   return { ...profile, programPath: existingProgramPath };

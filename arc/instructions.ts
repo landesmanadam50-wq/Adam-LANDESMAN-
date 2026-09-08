@@ -52,15 +52,23 @@ export const INDUCTION_PATTERN_DENYLIST: RegExp[] = [
   // event that already occurred, from an observer's distance, never an
   // instruction to evoke/recreate/intensify the feeling itself; its own
   // very next segment explicitly says so ("no need to re-evoke or
-  // strengthen"); and (3) the unknown-trigger refinement's own shorter
+  // strengthen"); (3) the unknown-trigger refinement's own shorter
   // observer_pause variant ("imagine YOURSELF for a moment as if seeing
   // yourself from the side") -- used precisely when no specific
   // trigger/situation is known at all, so it never references or
   // infers any event, only the trainee's own position, an even
-  // lower-risk phrasing than (2). Any other "imagine" usage -- e.g.
-  // imagining a feeling/craving/distraction directly -- still trips
-  // this pattern.
-  /דמיין(?! את עצמך מתחיל| לרגע את מה שקרה| את עצמך לרגע)/,
+  // lower-risk phrasing than (2); (4) ARC Goal task: the extended
+  // Action Imagery's Process/Action Imagery step ("imagine yourself
+  // PERFORMING the action" -- arc/successfulPerformance.ts) -- like the
+  // existing Action Imagery exception, currentAction there only ever
+  // sources from the trainee's own configured positive action, never
+  // the interfering state; and (5) that same sequence's Result Imagery
+  // step ("imagine that the action succeeds and you achieve the
+  // desired result") -- the imagined content is the trainee's own
+  // configured desired result, never anything interfering. Any other
+  // "imagine" usage -- e.g. imagining a feeling/craving/distraction
+  // directly -- still trips this pattern.
+  /דמיין(?! את עצמך מתחיל| לרגע את מה שקרה| את עצמך לרגע| את עצמך מבצע| שהפעולה מצליחה)/,
   /תחזק את/,
   // "hold/keep X in awareness/mind/the head" -- covers "בתודעה"/"בראש"
   // in addition to "במודעות".

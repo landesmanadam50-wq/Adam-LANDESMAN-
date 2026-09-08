@@ -98,6 +98,17 @@ export default function Home() {
           </Pressable>
         </Link>
 
+        {/* ARC Goal task: an independent top-level area (spec section 18),
+            available regardless of whether the trainee has any full ARC
+            Build yet -- same reasoning as Mini ARC above. Creating/editing
+            goals never requires an ArcBuild to exist first; running one
+            live does (gated inside live/ArcGoalSessionScreen.tsx itself). */}
+        <Link href="/goals" asChild>
+          <Pressable style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>ARC Goals</Text>
+          </Pressable>
+        </Link>
+
         {hasArcBuilds === false && (
           <Link href="/build" asChild>
             <Pressable style={styles.button}>

@@ -12,11 +12,12 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { generateArcBuildId } from "../arc/types.ts";
-import type { ArcBuild, ArcBuildProfile, ArcProgramProgress } from "../arc/types.ts";
+import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcProgramProgress } from "../arc/types.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
+import { deleteArcGoalFromList, upsertArcGoalInList } from "../arc/arcGoals.ts";
 import {
   deleteArcLinkFromList,
   deleteRoutineTriggerFromList,
@@ -38,6 +39,8 @@ const PILOT_STARTED_AT_KEY = "archi.pilotStartedAt.v1";
 const ARC_BUILDS_KEY = "archi.arcBuilds.v1";
 /** Mini ARC task: a brand-new, independent collection -- never read/written by any full-ARC code path, never migrated from or into ARC_BUILDS_KEY/PROFILE_KEY. Deleting/editing/duplicating a Mini ARC can never affect a full ArcBuild, and vice versa. */
 const MINI_ARC_BUILDS_KEY = "archi.miniArcBuilds.v1";
+/** ARC Goal task: a brand-new, independent collection, storing only REFERENCES to existing ArcBuilds (never their content) -- see arc/types.ts's ArcGoal doc. No legacy migration: there is no prior data format for ARC Goal, so an absent key simply means "no ARC Goals yet". Deleting/editing an ArcGoal never touches ARC_BUILDS_KEY/PROFILE_KEY/MINI_ARC_BUILDS_KEY, and vice versa. */
+const ARC_GOALS_KEY = "archi.arcGoals.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -207,6 +210,45 @@ export async function upsertMiniArcBuild(build: MiniArcBuild): Promise<void> {
 export async function deleteMiniArcBuild(id: string): Promise<void> {
   const builds = await loadMiniArcBuilds();
   await saveMiniArcBuilds(deleteMiniArcFromList(builds, id));
+}
+
+/**
+ * ARC Goal task: an independent collection, parallel to loadMiniArcBuilds
+ * above -- same "no legacy migration, defensive parse degrades to an
+ * empty list rather than crashing" shape.
+ */
+export async function loadArcGoals(): Promise<ArcGoal[]> {
+  const raw = await AsyncStorage.getItem(ARC_GOALS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcGoal[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ARC Goals are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveArcBuilds/saveMiniArcBuilds' own style. */
+export async function saveArcGoals(goals: ArcGoal[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_GOALS_KEY, JSON.stringify(goals));
+}
+
+export async function getArcGoal(id: string): Promise<ArcGoal | null> {
+  const goals = await loadArcGoals();
+  return goals.find((goal) => goal.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/arcGoals.ts's upsertArcGoalInList. Updates the one matching goal in place, never touching any other goal's own fields, or appends it as new. */
+export async function upsertArcGoal(goal: ArcGoal): Promise<void> {
+  const goals = await loadArcGoals();
+  await saveArcGoals(upsertArcGoalInList(goals, goal));
+}
+
+/** Removes exactly the one matching ArcGoal (by id) -- see arc/arcGoals.ts's deleteArcGoalFromList. Every other ArcGoal (and every referenced ArcBuild, which this never touches) is left completely untouched; a no-op if the id doesn't match any goal. */
+export async function deleteArcGoal(id: string): Promise<void> {
+  const goals = await loadArcGoals();
+  await saveArcGoals(deleteArcGoalFromList(goals, id));
 }
 
 /**

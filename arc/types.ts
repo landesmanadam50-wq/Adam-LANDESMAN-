@@ -174,6 +174,24 @@ export interface DwellTimes {
    * resolved layer -- see arc/arcEngine.ts's resolveObserverPauseLayer.
    */
   stopImageryDwellSeconds: number;
+  /**
+   * ARC Goal task: how long, after the successful-result imagery
+   * instruction finishes revealing, before the subtle dwell cue fires
+   * and the trainee can continue -- the Result Imagery half of the
+   * extended Action Imagery sequence (see arc/successfulPerformance.ts),
+   * distinct from actionImageryDwellSeconds above (the Process/Action
+   * Imagery half). Resolved via the exact same resolveDwellSecondsFor
+   * mechanism, from whichever layer's Successful Performance section is
+   * configured -- today only ever "identity" (see
+   * ArcBuildProfile.identitySuccessfulPerformance* below), but stored on
+   * the shared DwellTimes shape rather than a bespoke field so it works
+   * identically for any layer BUILD later extends this to. A legacy
+   * profile stored before this field existed has it missing entirely
+   * (`undefined` once JSON.parse'd), resolved the exact same way as
+   * every other DwellTimes field: fall back to
+   * DEFAULT_DWELL_TIMES.resultImageryDwellSeconds.
+   */
+  resultImageryDwellSeconds: number;
 }
 
 export interface ArcBuildProfile {
@@ -482,6 +500,54 @@ export interface ArcBuildProfile {
   statePracticalAlternative?: string | null;
   identityBarrierType?: BarrierType | null;
   identityPracticalAlternative?: string | null;
+
+  /**
+   * ARC Goal task: an OPTIONAL extension to the Identity ARC's own
+   * Action Imagery -- see arc/successfulPerformance.ts's
+   * hasSuccessfulPerformanceConfigured/EXECUTION_QUALITY_PRESETS and
+   * live/screens.tsx's ActionImageryScreen, which reads these fields
+   * directly (never a copy of them). Identity-only, deliberately: this
+   * is configured on Identity Build, general-purpose (usable by any
+   * identity-layer session -- both a regular ARC identity session AND
+   * ARC Goal's own referenced identity protocol get it "for free", the
+   * same unmodified way), never a field on ArcGoal itself -- ARC Goal
+   * only stores a REFERENCE to the identity ArcBuild
+   * (ArcGoal.identityProtocolId), never a duplicate of its content (see
+   * that interface's own doc for the full "reuse via reference" rule).
+   * Every field here is fully optional -- when none of them are set for
+   * this identity target, Action Imagery renders EXACTLY as it always
+   * has (a single "דמיין את עצמך מתחיל X" instruction, no quality
+   * clause, no Result Imagery, no mantra): this section can never
+   * "leak" into a session that never configured it, satisfying "do not
+   * force goal fields into regular ARC."
+   *
+   * - identitySuccessfulPerformanceAction: an optional override for
+   *   which action is imagined here -- when null/blank, falls back to
+   *   identityAction itself (the same action the "act" stage already
+   *   performs), never invented separately.
+   * - identitySuccessfulPerformanceQualities: a subset of
+   *   EXECUTION_QUALITY_PRESETS (e.g. ["מדויקת","עקבית","מקצועית"]),
+   *   read into the fixed Hebrew clause "אתה מבצע את הפעולה בצורה X, Y
+   *   ו-Z."
+   * - identitySuccessfulPerformanceCustomQuality: one additional
+   *   trainee-written quality, appended alongside the presets above.
+   * - identitySuccessfulPerformanceResult: the desired successful
+   *   result -- when blank, the whole Result Imagery step is skipped
+   *   entirely (nothing to imagine).
+   * - identitySuccessMantra: distinct from identityEncoding.mantra
+   *   (Identity Mantra -- "who I am practising being") and from
+   *   stateFutureOrientedMantra/identityFutureOrientedMantra
+   *   (Future-Oriented Mantra -- "the direction I'm moving toward
+   *   now") -- this is confidence in the success of THIS upcoming
+   *   action/result specifically, shown only after Result Imagery, and
+   *   only ever if configured ("Do not display a mantra that the user
+   *   did not configure").
+   */
+  identitySuccessfulPerformanceAction?: string | null;
+  identitySuccessfulPerformanceQualities?: string[] | null;
+  identitySuccessfulPerformanceCustomQuality?: string | null;
+  identitySuccessfulPerformanceResult?: string | null;
+  identitySuccessMantra?: string | null;
 }
 
 /**
@@ -543,12 +609,115 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     statePracticalAlternative: null,
     identityBarrierType: null,
     identityPracticalAlternative: null,
+    identitySuccessfulPerformanceAction: null,
+    identitySuccessfulPerformanceQualities: null,
+    identitySuccessfulPerformanceCustomQuality: null,
+    identitySuccessfulPerformanceResult: null,
+    identitySuccessMantra: null,
   };
 }
 
 /** Same stable-id-string pattern already used for ScheduledRoutine (arc/routines.ts's generateRoutineId) -- unique per build, never derived from array position, so an ArcBuild's identity survives reordering/deletion of any other build. */
 export function generateArcBuildId(): string {
   return `arcbuild-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * ARC Goal task: one row of the ARC Goal linking page (spec section 3)
+ * -- connects an interfering internal state to the supportive-state ARC
+ * protocol needed in response, and the short bridge/trigger action that
+ * carries the trainee from that protocol into the goal's Identity ARC.
+ * `supportiveProtocolId` is a REFERENCE to an existing ArcBuild (its
+ * `target` should be "state" -- resolved by whichever layer its own
+ * needsState/needsIdentity/needsHabit flags mark active; the ARC Goal
+ * build UI only ever offers state-targeted builds here) -- never a copy
+ * of that build's content, so editing the referenced protocol later
+ * (e.g. from `/build`) is immediately reflected here, and the same
+ * supportive-state protocol may be reused by several mappings/goals at
+ * once. `supportiveAction` is deliberately its own field, distinct from
+ * that protocol's own internalAction: it's the lightweight, mapping-
+ * level bridge shown once the supportive-state protocol's own Encoding
+ * is complete, immediately before the trainee auto-continues into the
+ * goal's Identity ARC (see arc/arcGoalEngine.ts) -- never the protocol's
+ * full "act" stage.
+ */
+export interface ArcGoalInterferingMapping {
+  id: string;
+  interferingState: string;
+  supportiveProtocolId: string;
+  supportiveAction: string;
+}
+
+/**
+ * ARC Goal task: a goal-oriented protocol connecting supportive states,
+ * identity, action and result (spec sections 1-2). Any number of these
+ * can exist at once, exactly like ArcBuild above (data/storage.ts's
+ * loadArcGoals/saveArcGoals, a plain array keyed by its own stable id,
+ * never by array position).
+ *
+ * Deliberately reference-only, never duplicating content (spec's own
+ * "Reuse existing protocols through references instead of duplicating
+ * their content" architecture rule): `identityProtocolId` points at an
+ * existing ArcBuild (target "identity"), and each mapping in
+ * `interferingMappings` points at an existing ArcBuild (target "state").
+ * Successful-performance imagery, Result Imagery, and the Success
+ * Mantra are NOT duplicated onto ArcGoal either -- they live entirely on
+ * the referenced identity ArcBuildProfile's own
+ * identitySuccessfulPerformance-prefixed fields and identitySuccessMantra
+ * (see that interface's own doc), since Successful Performance is a general
+ * Identity Build extension, not an ArcGoal-specific concept. A single
+ * identity protocol (and a single supportive-state protocol) may be
+ * referenced by several different ArcGoalInterferingMappings, several
+ * different ArcGoals, or both at once -- editing the referenced
+ * ArcBuild is immediately reflected everywhere it's referenced, with no
+ * separate "keep in sync" step needed.
+ *
+ * `goalAction`/`desiredResult` are the goal's OWN fields, distinct from
+ * the identity protocol's own identityAction -- per the spec's stated
+ * hierarchy (Goal -> Identity protocol -> Supportive states -> Goal-
+ * related action -> Desired result), the goal-related action is the
+ * outermost, real-world action the trainee performs once the Identity
+ * ARC (imagined practice) is complete -- see arc/arcGoalEngine.ts's
+ * final "goal action" step, reached only after the outer identity run's
+ * own "complete" stage.
+ */
+export interface ArcGoal {
+  id: string;
+  name: string;
+  description: string | null;
+  value: string | null;
+  goalAction: string;
+  desiredResult: string;
+  identityProtocolId: string | null;
+  interferingMappings: ArcGoalInterferingMapping[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Same stable-id-string pattern as generateArcBuildId. */
+export function generateArcGoalId(): string {
+  return `arcgoal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Same id-pattern for a mapping row, scoped within its own ArcGoal (never reused across goals). */
+export function generateArcGoalMappingId(): string {
+  return `arcgoalmap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** A fresh, empty ArcGoal for a brand-new goal -- every optional field null/[] exactly like a trainee who hasn't configured anything yet. */
+export function createEmptyArcGoal(id: string, name: string, now: string): ArcGoal {
+  return {
+    id,
+    name,
+    description: null,
+    value: null,
+    goalAction: "",
+    desiredResult: "",
+    identityProtocolId: null,
+    interferingMappings: [],
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 export interface ArcProgramProgress {

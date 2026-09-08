@@ -10,11 +10,18 @@
  * rule. Those all live in arc/arcEngine.ts and arc/engine.ts.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Animated, AppState, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import type { DevelopmentLayer, TriggerType } from "../arc/types.ts";
+import type { ArcBuildProfile, DevelopmentLayer, TriggerType } from "../arc/types.ts";
 import { IDENTIFIED_NEED_UNKNOWN } from "../arc/types.ts";
+import {
+  getProcessActionImageryCopy,
+  getResultImageryCopy,
+  getSuccessMantraCopy,
+  hasResultImageryConfigured,
+  hasSuccessfulPerformanceConfigured,
+} from "../arc/successfulPerformance.ts";
 import type { ArcStageCopy, YesNoLabels } from "../arc/stageCopy.ts";
 import type { ProactiveTarget, ReactiveExperience } from "../arc/arcEngine.ts";
 import { hasSensationLocationResponse, hasValidAlternativeAction } from "./liveEventAdapter.ts";
@@ -1219,15 +1226,81 @@ export function ActionChoiceScreen({
   );
 }
 
+type SuccessfulPerformancePhase = "action" | "result" | "mantra";
+
+/** The ordered sub-phases the extended sequence actually has something to show for -- "action" always, "result"/"mantra" only when configured. Precomputed once so no phase ever needs to auto-skip itself during render (see ActionImageryScreen below). */
+function resolveSuccessfulPerformancePhases(profile: ArcBuildProfile): SuccessfulPerformancePhase[] {
+  const phases: SuccessfulPerformancePhase[] = ["action"];
+  if (hasResultImageryConfigured(profile)) phases.push("result");
+  if (getSuccessMantraCopy(profile) !== null) phases.push("mantra");
+  return phases;
+}
+
 /**
  * Action Imagery: currentAction, imagined while maintaining the same
  * Body-Language Cue carried over from Encoding -- copy.segments already
  * contains that single, configured-duration segment (see
  * arc/stageCopy.ts's "act" case). This is instruction-practice time
  * only; the real Action Timer hasn't started (see ActionScreen below).
+ *
+ * ARC Goal task: when this identity target's optional Successful
+ * Performance section (arc/successfulPerformance.ts) is configured,
+ * this becomes a short, one-directional, "stay on this same page, step
+ * through with local state, fire onContinue once at the very end"
+ * sequence -- the same established pattern AcceptScreen/RegulationScreen/
+ * SuccessFocusRetrospectiveScreen already use -- instead of a new page:
+ * Process + Action Imagery (extended with the configured execution
+ * qualities) -> Result Imagery (only if a desired result was configured)
+ * -> the optional Success Mantra (only if one was configured, never
+ * displayed otherwise). `copy` (the ORIGINAL, single-step Action
+ * Imagery copy from arc/stageCopy.ts's own unmodified "act" case) is
+ * used verbatim, completely unchanged, whenever nothing in this section
+ * was configured -- so a legacy profile, or any profile that never
+ * touches this section, renders exactly as before this task.
  */
-export function ActionImageryScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinue: () => void }) {
-  return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
+export function ActionImageryScreen({
+  copy,
+  profile,
+  layer,
+  currentAction,
+  actionBodyCue,
+  onContinue,
+}: {
+  copy: ArcStageCopy;
+  profile: ArcBuildProfile;
+  layer: DevelopmentLayer;
+  currentAction: string | null;
+  actionBodyCue: string | null;
+  onContinue: () => void;
+}) {
+  const extended = hasSuccessfulPerformanceConfigured(profile);
+  const phases = useMemo(() => (extended ? resolveSuccessfulPerformancePhases(profile) : []), [extended, profile]);
+  const [phaseIndex, setPhaseIndex] = useState(0);
+
+  if (!extended) {
+    return <TimedInstructionBody copy={copy} onContinue={onContinue} />;
+  }
+
+  const phase = phases[phaseIndex];
+  const isLastPhase = phaseIndex === phases.length - 1;
+  const advance = () => (isLastPhase ? onContinue() : setPhaseIndex((index) => index + 1));
+
+  if (phase === "action") {
+    const actionCopy = getProcessActionImageryCopy(profile, layer, currentAction, actionBodyCue);
+    return <TimedInstructionBody key="successful-performance-action" copy={actionCopy} onContinue={advance} />;
+  }
+  if (phase === "result") {
+    const resultCopy = getResultImageryCopy(profile, layer);
+    return <TimedInstructionBody key="successful-performance-result" copy={resultCopy} onContinue={advance} />;
+  }
+  // phase === "mantra" -- guaranteed non-null here: resolveSuccessfulPerformancePhases only ever includes "mantra" once getSuccessMantraCopy already confirmed one exists.
+  const mantraCopy = getSuccessMantraCopy(profile)!;
+  return (
+    <View>
+      <Title copy={mantraCopy} />
+      <PrimaryButton label="המשך" onPress={advance} />
+    </View>
+  );
 }
 
 const BENEFICIAL_ACTION_DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];

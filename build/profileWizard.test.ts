@@ -674,7 +674,7 @@ test("REGRESSION: a legacy profile where negativeActionReductionEnabled is genui
   assert.equal(draft.habit, "גלילה ברשת");
 });
 
-test("buildProfileFromDraft saves the state target's seven dwell values (coordinated timer/dwell task: presence + stop-imagery joined the original five), applying the correct defaults when left unedited", () => {
+test("buildProfileFromDraft saves the state target's eight dwell values (ARC Goal task: resultImagery joined presence + stop-imagery), applying the correct defaults when left unedited", () => {
   const p = buildProfileFromDraft(filledStateOnlyDraft());
   assert.deepEqual(p.stateDwellTimes, {
     sensationDwellSeconds: 8,
@@ -684,6 +684,7 @@ test("buildProfileFromDraft saves the state target's seven dwell values (coordin
     actionImageryDwellSeconds: 8,
     presenceDwellSeconds: 8,
     stopImageryDwellSeconds: 8,
+    resultImageryDwellSeconds: 8,
   });
 });
 
@@ -707,6 +708,7 @@ test("buildProfileFromDraft saves a state target's CUSTOMIZED dwell values exact
     actionImageryDwellSeconds: 8,
     presenceDwellSeconds: 12,
     stopImageryDwellSeconds: 6,
+    resultImageryDwellSeconds: 8,
   });
 });
 
@@ -886,4 +888,122 @@ test("a legacy profile with every coherent-architecture field genuinely absent (
   assert.equal(reloaded.stateBarrierType, null);
   assert.equal(reloaded.identityBarrierType, null);
   assert.equal(reloaded.statePracticalAlternative, "");
+});
+
+// --- ARC Goal task: the optional Successful Performance section, gated
+// end-to-end on identityWantsSuccessfulPerformance -- mirrors the
+// existing hasPreventiveAction/negativeActionReductionEnabled tri-state
+// ask-gate pattern tested throughout this file.
+
+test("successfulPerformance* sub-steps are hidden until identityWantsSuccessfulPerformance is explicitly true, even for an identity-targeted draft", () => {
+  const draft = filledTwoWeekDraft({ identityWantsSuccessfulPerformance: null });
+  for (const step of [
+    "successfulPerformanceAction",
+    "successfulPerformanceQualities",
+    "successfulPerformanceCustomQuality",
+    "successfulPerformanceResult",
+    "successMantra",
+    "successfulPerformanceResultDuration",
+  ] as const) {
+    assert.equal(shouldShowProfileStep(step, draft), false, `${step} must stay hidden while unanswered`);
+  }
+  assert.equal(
+    shouldShowProfileStep("successfulPerformanceAction", filledTwoWeekDraft({ identityWantsSuccessfulPerformance: false })),
+    false,
+    "must stay hidden once explicitly declined"
+  );
+});
+
+test("successfulPerformance* sub-steps show once identityWantsSuccessfulPerformance is true AND this draft actually needs identity", () => {
+  const draft = filledTwoWeekDraft({ identityWantsSuccessfulPerformance: true });
+  for (const step of [
+    "successfulPerformanceAction",
+    "successfulPerformanceQualities",
+    "successfulPerformanceCustomQuality",
+    "successfulPerformanceResult",
+    "successMantra",
+    "successfulPerformanceResultDuration",
+  ] as const) {
+    assert.equal(shouldShowProfileStep(step, draft), true, `${step} must show once opted in`);
+  }
+});
+
+test("successfulPerformance* sub-steps never show for a habit-only draft, even if identityWantsSuccessfulPerformance is somehow true", () => {
+  const draft = filledHabitOnlyDraft({ identityWantsSuccessfulPerformance: true });
+  assert.equal(shouldShowProfileStep("successfulPerformanceAction", draft), false);
+});
+
+test("buildProfileFromDraft persists every Successful Performance field only when identityWantsSuccessfulPerformance is true", () => {
+  const draft = filledTwoWeekDraft({
+    identityWantsSuccessfulPerformance: true,
+    identitySuccessfulPerformanceAction: "לרוץ מרתון",
+    identitySuccessfulPerformanceQualities: ["מדויקת", "עקבית"],
+    identitySuccessfulPerformanceCustomQuality: "בגאווה",
+    identitySuccessfulPerformanceResult: "לחצות את קו הסיום",
+    identitySuccessMantra: "אני אצליח",
+  });
+  const p = buildProfileFromDraft(draft);
+  assert.equal(p.identitySuccessfulPerformanceAction, "לרוץ מרתון");
+  assert.deepEqual(p.identitySuccessfulPerformanceQualities, ["מדויקת", "עקבית"]);
+  assert.equal(p.identitySuccessfulPerformanceCustomQuality, "בגאווה");
+  assert.equal(p.identitySuccessfulPerformanceResult, "לחצות את קו הסיום");
+  assert.equal(p.identitySuccessMantra, "אני אצליח");
+});
+
+test("buildProfileFromDraft discards every Successful Performance field when identityWantsSuccessfulPerformance is false, even if the text fields were previously filled in", () => {
+  const draft = filledTwoWeekDraft({
+    identityWantsSuccessfulPerformance: false,
+    identitySuccessfulPerformanceAction: "לרוץ מרתון",
+    identitySuccessfulPerformanceQualities: ["מדויקת"],
+    identitySuccessfulPerformanceCustomQuality: "בגאווה",
+    identitySuccessfulPerformanceResult: "לחצות את קו הסיום",
+    identitySuccessMantra: "אני אצליח",
+  });
+  const p = buildProfileFromDraft(draft);
+  assert.equal(p.identitySuccessfulPerformanceAction, null);
+  assert.equal(p.identitySuccessfulPerformanceQualities, null);
+  assert.equal(p.identitySuccessfulPerformanceCustomQuality, null);
+  assert.equal(p.identitySuccessfulPerformanceResult, null);
+  assert.equal(p.identitySuccessMantra, null);
+});
+
+test("buildProfileFromDraft never persists Successful Performance fields for a habit-only draft (resolvesNeedsIdentity false), regardless of identityWantsSuccessfulPerformance", () => {
+  const habitProfile = buildProfileFromDraft(
+    filledHabitOnlyDraft({ identityWantsSuccessfulPerformance: true, identitySuccessMantra: "x" })
+  );
+  assert.equal(habitProfile.identitySuccessMantra, null);
+});
+
+test("Successful Performance fields persist across a save/load round trip via draftFromProfileAndSelection, exactly as entered", () => {
+  const draft = filledTwoWeekDraft({
+    identityWantsSuccessfulPerformance: true,
+    identitySuccessfulPerformanceQualities: ["מדויקת", "רגועה"],
+    identitySuccessfulPerformanceResult: "לחצות את קו הסיום",
+    identityResultImageryDwellSeconds: "15",
+  });
+  const profile = buildProfileFromDraft(draft);
+  const selection = selectionFromDraft(draft);
+  const roundTripped = draftFromProfileAndSelection(profile, selection);
+  assert.equal(roundTripped.identityWantsSuccessfulPerformance, true);
+  assert.deepEqual(roundTripped.identitySuccessfulPerformanceQualities, ["מדויקת", "רגועה"]);
+  assert.equal(roundTripped.identitySuccessfulPerformanceResult, "לחצות את קו הסיום");
+  assert.equal(roundTripped.identityResultImageryDwellSeconds, "15");
+});
+
+test("draftFromProfileAndSelection infers identityWantsSuccessfulPerformance=null (never presumed true) for a legacy profile that never saw this section", () => {
+  const draft = filledTwoWeekDraft();
+  const legacyProfile = buildProfileFromDraft(draft);
+  const reloaded = draftFromProfileAndSelection(legacyProfile, selectionFromDraft(draft));
+  assert.equal(reloaded.identityWantsSuccessfulPerformance, null);
+  assert.equal(reloaded.identitySuccessfulPerformanceAction, "");
+  assert.deepEqual(reloaded.identitySuccessfulPerformanceQualities, []);
+});
+
+test("buildProfileFromDraft leaves every Successful Performance field at null for a fully-answered draft that never touched this section", () => {
+  const p = buildProfileFromDraft(filledTwoWeekDraft());
+  assert.equal(p.identitySuccessfulPerformanceAction, null);
+  assert.equal(p.identitySuccessfulPerformanceQualities, null);
+  assert.equal(p.identitySuccessfulPerformanceCustomQuality, null);
+  assert.equal(p.identitySuccessfulPerformanceResult, null);
+  assert.equal(p.identitySuccessMantra, null);
 });

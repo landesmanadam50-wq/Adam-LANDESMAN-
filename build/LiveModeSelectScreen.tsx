@@ -22,8 +22,16 @@ import type { ArcBuild } from "../arc/types.ts";
  * asks which mode. "ARC רגיל" pushes to the EXACT SAME /live route
  * with the SAME buildId param as before this feature existed --
  * normal ARC's own entry point and behavior are completely unchanged.
+ *
+ * ARC Goal task: one new top-level gate ("mode" below), shown BEFORE
+ * any ArcBuild is loaded -- "ARC Goal" (spec section 6's "two clear
+ * primary options") pushes straight to /arc-goal/select
+ * (build/ArcGoalSelectScreen.tsx), never touching this screen's own
+ * ArcBuild-picker state at all. "ARC רגיל" reveals the EXACT same
+ * picker/mode flow this screen has always had, completely unchanged.
  */
 export default function LiveModeSelectScreen() {
+  const [mode, setMode] = useState<"chooser" | "regular">("chooser");
   // Weekly Routine + ARC Link management task: an optional `buildId` param
   // -- when a weekly action is linked to a specific ArcBuild, its own
   // "start" button pre-selects that build directly instead of always
@@ -54,9 +62,30 @@ export default function LiveModeSelectScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      reload();
-    }, [reload])
+      // ARC Goal task: only load ArcBuilds (and only redirect to /build
+      // when none exist) once the trainee has actually chosen "ARC
+      // רגיל" -- otherwise a trainee with zero ArcBuilds but at least
+      // one ArcGoal would never even see the chooser below, redirected
+      // away before they could pick "ARC Goal" at all.
+      if (mode === "regular") reload();
+    }, [reload, mode])
   );
+
+  if (mode === "chooser") {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.content}>
+          <Text style={styles.title}>מה תרצה לתרגל?</Text>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setMode("regular")}>
+            <Text style={styles.buttonText}>ARC רגיל</Text>
+          </Pressable>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.push("/arc-goal/select")}>
+            <Text style={styles.buttonText}>ARC Goal</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!builds) {
     return (

@@ -77,6 +77,10 @@ export default function RootLayout() {
         <Stack.Screen name="live/select" options={{ title: "מה תרצה לתרגל?" }} />
         <Stack.Screen name="arc-link/[id]" options={{ title: "ARC Link" }} />
         <Stack.Screen name="mini-arc-link/[id]" options={{ title: "Mini ARC Link" }} />
+        <Stack.Screen name="goals/index" options={{ title: "מטרות ARC Goal" }} />
+        <Stack.Screen name="goals/[id]" options={{ title: "עריכת מטרה" }} />
+        <Stack.Screen name="arc-goal/select" options={{ title: "מה תרצה לתרגל?" }} />
+        <Stack.Screen name="arc-goal/live/[goalId]" options={{ title: "ARC Goal LIVE" }} />
       </Stack>
       <StatusBar style="auto" />
     </SafeAreaProvider>
