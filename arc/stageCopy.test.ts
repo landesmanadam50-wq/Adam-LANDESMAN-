@@ -846,45 +846,87 @@ test("stages the timed-reveal system doesn't apply to carry segments: null, unch
   }
 });
 
-test("ARC Thought's awareness/combined-attention sub-stages each carry exactly one segment, matching their own configured duration", () => {
+test("ARC Thought's awareness/combined-attention sub-stages each carry their own instruction segment plus the new free-breathing segment (section 1), matching their own configured durations -- no Energy Color segment at stage 1, but present from stage 2 onward when a color is saved (section 2)", () => {
   const p = profile();
   const s = liveState();
   const awareness = getStageCopy("arc_thought_awareness", p, s, ["state"]);
-  assert.equal(awareness.segments?.length, 1);
+  assert.equal(awareness.segments?.length, 2, "instruction + free-breathing -- never Energy Color at stage 1");
   assert.equal(awareness.segments?.[0].durationSeconds, INSTRUCTION_TIMING.arcThoughtAwareness);
-  assert.equal(awareness.segments?.[0].text, awareness.body);
+  assert.equal(awareness.segments?.[1].durationSeconds, INSTRUCTION_TIMING.freeBreathing);
+  assert.equal(awareness.body, `${awareness.segments?.[0].text} ${awareness.segments?.[1].text}`);
 
   const combined = getStageCopy("arc_thought_combined_attention", p, s, ["state"]);
-  assert.equal(combined.segments?.length, 1);
+  assert.equal(combined.segments?.length, 2, "no Energy Color segment: profile() has presenceColor: null");
   assert.equal(combined.segments?.[0].durationSeconds, INSTRUCTION_TIMING.arcThoughtCombinedAttention);
+  assert.equal(combined.segments?.[1].durationSeconds, INSTRUCTION_TIMING.freeBreathing);
+
+  const combinedWithColor = getStageCopy("arc_thought_combined_attention", profile({ presenceColor: "ורוד" }), s, ["state"]);
+  assert.equal(combinedWithColor.segments?.length, 3, "energy color + instruction + free-breathing");
+  assert.equal(combinedWithColor.segments?.[0].text, "שים לב כיצד האנרגיה בצבע ורוד מתפשטת בגופך ומחזירה אותך לנוכחות.");
 });
 
-test("arc_thought_expand_presence carries its own instruction segment plus a trailing dwell segment sized from the CURRENT layer's own configured Presence dwell (default 8s, unconfigured here) -- the inline-merged Presence Rating's reveal gate (coordinated timer/dwell task)", () => {
+test("arc_thought_expand_presence carries its own instruction segment, the free-breathing segment, plus a trailing dwell segment sized from the CURRENT layer's own configured Presence dwell (default 8s, unconfigured here) -- the inline-merged Presence Rating's reveal gate (coordinated timer/dwell task)", () => {
+  // Unified Presence/Mantra/Trigger/Imagery spec, sections 1-2: no
+  // Energy Color segment here (profile() has presenceColor: null), so
+  // this is instruction -> free-breathing -> trailing dwell, in order.
   const expand = getStageCopy("arc_thought_expand_presence", profile(), liveState(), ["state"]);
-  assert.equal(expand.segments?.length, 2, "the instruction segment plus the trailing dwell segment");
+  assert.equal(expand.segments?.length, 3, "the instruction segment, the free-breathing segment, plus the trailing dwell segment");
   assert.equal(expand.segments?.[0].durationSeconds, INSTRUCTION_TIMING.arcThoughtExpandPresence);
   assert.equal(expand.segments?.[0].text.length > 0, true, "the real instruction text stays on the first segment");
-  assert.equal(expand.segments?.[1].durationSeconds, DEFAULT_DWELL_TIMES.presenceDwellSeconds);
-  assert.equal(expand.segments?.[1].text, "", "the trailing dwell segment carries no text of its own");
-  assert.equal(expand.body, expand.segments?.[0].text, "body stays exactly the spoken instruction text, unaffected by the trailing dwell segment");
+  assert.equal(expand.segments?.[1].durationSeconds, INSTRUCTION_TIMING.freeBreathing);
+  assert.equal(expand.segments?.[1].text.length > 0, true, "the free-breathing line is its own segment");
+  assert.equal(expand.segments?.[2].durationSeconds, DEFAULT_DWELL_TIMES.presenceDwellSeconds);
+  assert.equal(expand.segments?.[2].text, "", "the trailing dwell segment carries no text of its own");
+  assert.equal(
+    expand.body,
+    `${expand.segments?.[0].text} ${expand.segments?.[1].text}`,
+    "body stays the instruction + breathing text, unaffected by the trailing dwell segment"
+  );
 });
 
 test("arc_thought_expand_presence's trailing dwell honors a customized Presence dwell for the active state layer, distinct from the default -- proves it's a real per-trainee configured value, not a hard-coded constant", () => {
   const p = profile({ stateDwellTimes: { presenceDwellSeconds: 15 } });
   const expand = getStageCopy("arc_thought_expand_presence", p, liveState(), ["state"]);
-  assert.equal(expand.segments?.[1].durationSeconds, 15);
+  assert.equal(expand.segments?.[2].durationSeconds, 15);
 });
 
-test("Stay/Presence reveals the current-sensation segment first, then the natural-breath segment, then a trailing dwell segment sized from the CURRENT target's own configured Sensation/Awareness dwell (default 8s, unconfigured here) -- the exact spec example, 4s then 8s then the dwell", () => {
+test("Unified Presence/Mantra/Trigger/Imagery spec, section 2: arc_thought_expand_presence prepends the Energy Color line as its own LEADING segment when a color is saved, ahead of both the instruction and the breathing line", () => {
+  const p = profile({ presenceColor: "כחול" });
+  const expand = getStageCopy("arc_thought_expand_presence", p, liveState(), ["state"]);
+  assert.equal(expand.segments?.length, 4, "energy color + instruction + breathing + trailing dwell");
+  assert.equal(
+    expand.segments?.[0].text,
+    "שים לב כיצד האנרגיה בצבע כחול מתפשטת בגופך ומחזירה אותך לנוכחות.",
+    "energy color is the very first segment"
+  );
+  assert.equal(expand.segments?.[0].durationSeconds, INSTRUCTION_TIMING.energyColor);
+});
+
+test("Stay/Presence reveals the current-sensation segment first, then the natural-breath segment, then the new free-breathing segment, then a trailing dwell segment sized from the CURRENT target's own configured Sensation/Awareness dwell (default 8s, unconfigured here) -- the exact spec example, 4s then 8s then the dwell", () => {
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 1: the new
+  // free-breathing line coexists with (never replaces) Stay's own
+  // pre-existing natural-breath awareness line.
   const p = profile();
   const copy = getStageCopy("stay", p, liveState(), ["state"]);
-  assert.equal(copy.segments?.length, 3, "the two instruction segments plus the trailing dwell segment");
+  assert.equal(copy.segments?.length, 4, "the two existing instruction segments, the new free-breathing segment, plus the trailing dwell segment");
   assert.equal(copy.segments?.[0].text, "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה.");
   assert.equal(copy.segments?.[0].durationSeconds, INSTRUCTION_TIMING.stayCurrentSensation);
   assert.equal(copy.segments?.[1].text, "שים לב גם לנשימה כפי שהיא מתרחשת מעצמה.");
   assert.equal(copy.segments?.[1].durationSeconds, INSTRUCTION_TIMING.stayNaturalBreath);
-  assert.equal(copy.segments?.[2].text, "", "the trailing dwell segment carries no text of its own");
-  assert.equal(copy.segments?.[2].durationSeconds, DEFAULT_DWELL_TIMES.sensationDwellSeconds);
+  assert.equal(copy.segments?.[2].text.length > 0, true, "the new free-breathing segment carries text");
+  assert.equal(copy.segments?.[2].durationSeconds, INSTRUCTION_TIMING.freeBreathing);
+  assert.equal(copy.segments?.[3].text, "", "the trailing dwell segment carries no text of its own");
+  assert.equal(copy.segments?.[3].durationSeconds, DEFAULT_DWELL_TIMES.sensationDwellSeconds);
+});
+
+test("Unified Presence/Mantra/Trigger/Imagery spec, section 5: Stay Mantra is appended after the trailing dwell segment when configured, and skipped entirely (no extra segment) when not", () => {
+  const withoutMantra = getStageCopy("stay", profile(), liveState(), ["state"]);
+  assert.equal(withoutMantra.segments?.length, 4, "no extra segment when stayMantra is unset");
+
+  const withMantra = getStageCopy("stay", profile({ stayMantra: "אני יכול להישאר לרגע עם מה שכבר נמצא כאן." }), liveState(), ["state"]);
+  assert.equal(withMantra.segments?.length, 5, "one more segment: the Stay Mantra, after the trailing dwell");
+  assert.equal(withMantra.segments?.[4].durationSeconds, INSTRUCTION_TIMING.mantra);
+  assert.equal(withMantra.segments?.[4].text.includes("אני יכול להישאר לרגע עם מה שכבר נמצא כאן."), true);
 });
 
 test("Stay/Presence's breath segment stays non-regulatory -- no slow/deepen/extend-exhale/rhythm-change wording, that stays exclusive to Regulation", () => {
@@ -1209,27 +1251,56 @@ test("trigger_context asks the exact specified trigger question, as a free-text 
   assert.equal(copy.segments, null, "not a timed/gated stage -- the trainee is never blocked here");
 });
 
-test("observer_pause (KNOWN trigger) reveals the observer-perspective-of-the-situation line, then the pause line, then the explicit safety/recognition line, in that exact order and exact wording -- the currently working known-trigger path, unregressed", () => {
+test("Unified Presence/Mantra/Trigger/Imagery spec, section 7: observer_pause defaults to the PRESENT-MOMENT perspective line when sideObservationMode is unset (null), for a non-urge trigger", () => {
   const p = profile();
-  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion", triggerKnown: true }), ["state"]);
+  const copy = getStageCopy(
+    "observer_pause",
+    p,
+    liveState({ triggerType: "reactive_emotion", sideObservationMode: null }),
+    ["state"]
+  );
   assert.ok(copy.segments, "must be a timed/progressive-reveal screen, reusing the existing instruction-timing mechanism");
   const texts = copy.segments!.map((s) => s.text).filter((t) => t.length > 0);
   assert.deepEqual(texts, [
-    "דמיין לרגע את מה שקרה כאילו אתה רואה את הסיטואציה מהצד, ואת עצמך בתוכה.",
-    "ראה את עצמך עוצר לכמה שניות לפני התגובה.",
-    "אין צורך לעורר מחדש או לחזק את הרגש או הדחף — רק לראות את מה שקרה.",
+    "זהה מה הציף אותך. כעת ראה את עצמך מהצד כפי שאתה ברגע הזה — שים לב לתנוחת הגוף, להבעת הפנים ולמה שכבר מתרחש בתוכך.",
   ]);
 });
 
-test("observer_pause (UNKNOWN trigger) reveals only the shorter two-line sequence: observing ONESELF from the side (no situation/event referenced), then the same pause line -- never the situation-imagery or safety-recognition lines", () => {
+test("Unified Presence/Mantra/Trigger/Imagery spec, section 7: observer_pause shows the PREVIOUS-SITUATION perspective line only when sideObservationMode is explicitly 'previous'", () => {
   const p = profile();
-  for (const triggerKnown of [false, null] as const) {
-    const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion", triggerKnown }), ["state"]);
+  const copy = getStageCopy(
+    "observer_pause",
+    p,
+    liveState({ triggerType: "reactive_emotion", sideObservationMode: "previous" }),
+    ["state"]
+  );
+  const texts = copy.segments!.map((s) => s.text).filter((t) => t.length > 0);
+  assert.deepEqual(texts, [
+    "ראה את עצמך מהצד בסיטואציה שהציפה אותך. התבונן במה שהתרחש, בתנוחת הגוף ובהבעת הפנים, בלי לנסות לשנות את החוויה.",
+  ]);
+});
+
+test("Unified Presence/Mantra/Trigger/Imagery spec, section 8: the Stop visualization line appears ONLY on the urge route (triggerType === 'reactive_urge'), appended after the perspective line -- never for reactive_emotion/proactive", () => {
+  const p = profile();
+  const urgeCopy = getStageCopy(
+    "observer_pause",
+    p,
+    liveState({ triggerType: "reactive_urge", sideObservationMode: "present" }),
+    ["habit"]
+  );
+  const urgeTexts = urgeCopy.segments!.map((s) => s.text).filter((t) => t.length > 0);
+  assert.deepEqual(urgeTexts, [
+    "זהה מה הציף אותך. כעת ראה את עצמך מהצד כפי שאתה ברגע הזה — שים לב לתנוחת הגוף, להבעת הפנים ולמה שכבר מתרחש בתוכך.",
+    "ראה את עצמך עוצר ולא מבצע כרגע את הפעולה שאליה הדחף מושך.",
+  ]);
+
+  for (const triggerType of ["reactive_emotion", "proactive"] as const) {
+    const copy = getStageCopy("observer_pause", p, liveState({ triggerType, sideObservationMode: "present" }), ["state"]);
     const texts = copy.segments!.map((s) => s.text).filter((t) => t.length > 0);
-    assert.deepEqual(
-      texts,
-      ["דמיין את עצמך לרגע כאילו אתה רואה את עצמך מהצד.", "ראה את עצמך עוצר לכמה שניות לפני התגובה."],
-      `triggerKnown=${triggerKnown}`
+    assert.equal(
+      texts.some((t) => t.includes("עוצר ולא מבצע")),
+      false,
+      `Stop visualization must never appear for triggerType=${triggerType}`
     );
   }
 });
@@ -1256,22 +1327,24 @@ test("observer_pause's trailing dwell resolves the HABIT layer's dwell (always t
   assert.equal(last.durationSeconds, DEFAULT_DWELL_TIMES.stopImageryDwellSeconds);
 });
 
-test("observer_pause's copy never trips the induction-pattern audit -- it is recognition/rehearsal only, never an instruction to evoke, hold, or intensify the interfering emotion/urge -- for both the known- and unknown-trigger variants", () => {
+test("observer_pause's copy never trips the induction-pattern audit -- it is recognition/rehearsal only, never an instruction to evoke, hold, or intensify the interfering emotion/urge -- for both the present-moment and previous-situation variants, urge and non-urge alike", () => {
   const p = profile();
-  for (const triggerKnown of [true, false, null] as const) {
-    const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion", triggerKnown }), ["state"]);
-    assert.equal(containsInductionPattern(copy.body), false, `triggerKnown=${triggerKnown}`);
-    for (const forbidden of ["תחזק", "תחזיק", "עורר מחדש את", "השאר את הרגש פעיל"]) {
-      assert.ok(!copy.body.includes(forbidden), `triggerKnown=${triggerKnown} must never contain: "${forbidden}"`);
+  for (const sideObservationMode of ["present", "previous", null] as const) {
+    for (const triggerType of ["reactive_emotion", "reactive_urge"] as const) {
+      const copy = getStageCopy("observer_pause", p, liveState({ triggerType, sideObservationMode }), [triggerType === "reactive_urge" ? "habit" : "state"]);
+      assert.equal(containsInductionPattern(copy.body), false, `sideObservationMode=${sideObservationMode} triggerType=${triggerType}`);
+      for (const forbidden of ["תחזק", "תחזיק", "עורר מחדש את", "השאר את הרגש פעיל"]) {
+        assert.ok(!copy.body.includes(forbidden), `sideObservationMode=${sideObservationMode} must never contain: "${forbidden}"`);
+      }
     }
   }
 });
 
-test("unknown-trigger observer_pause never invents or infers a triggering situation/event -- no imagery text references any specific event, only the trainee's own position", () => {
+test("present-moment observer_pause never reconstructs a past event -- no imagery text references any specific past situation/event, only the trainee's own present position", () => {
   const p = profile();
-  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion", triggerKnown: false }), ["state"]);
-  for (const situationWord of ["מה שקרה", "הסיטואציה", "האירוע"]) {
-    assert.ok(!copy.body.includes(situationWord), `must never reference an unidentified situation/event: "${situationWord}"`);
+  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion", sideObservationMode: "present" }), ["state"]);
+  for (const situationWord of ["מה שקרה", "האירוע"]) {
+    assert.ok(!copy.body.includes(situationWord), `present-moment observation must never reference a reconstructed past event: "${situationWord}"`);
   }
 });
 
@@ -1279,34 +1352,7 @@ test("unknown-trigger observer_pause never invents or infers a triggering situat
 // Presence Color task
 // ---------------------------------------------------------------------------
 
-test("Presence Stage 3 (arc_thought_expand_presence) appends the color activation line to the SAME instruction segment when a color is saved -- never a new segment, never changing its duration", () => {
-  const withColor = profile({ presenceColor: "סגול" });
-  const withoutColor = profile({ presenceColor: null });
-
-  const withColorCopy = getStageCopy("arc_thought_expand_presence", withColor, liveState(), ["state"]);
-  const withoutColorCopy = getStageCopy("arc_thought_expand_presence", withoutColor, liveState(), ["state"]);
-
-  // Same segment count/timing as the pre-existing (no-color) behavior --
-  // only the first segment's TEXT grows.
-  assert.equal(withColorCopy.segments?.length, withoutColorCopy.segments?.length, "segment count unchanged (still the instruction segment plus the trailing dwell segment)");
-  assert.equal(withColorCopy.segments?.[0].durationSeconds, withoutColorCopy.segments?.[0].durationSeconds);
-  assert.equal(withColorCopy.segments?.[1].durationSeconds, withoutColorCopy.segments?.[1].durationSeconds);
-
-  assert.match(withColorCopy.segments![0].text, /בצבע שבחרת: סגול/);
-  assert.ok(withColorCopy.segments![0].text.startsWith(withoutColorCopy.segments![0].text), "the original instruction text stays intact at the start");
-  assert.equal(withColorCopy.body, withColorCopy.segments![0].text);
-
-  // No color -- exactly the pre-existing Stage 3 text, untouched.
-  assert.ok(!withoutColorCopy.segments![0].text.includes("בצבע שבחרת"));
-});
-
-test("Presence Stage 3 retains all its existing content (bodily sensations / breath-adjacent phrasing untouched by this task, sounds, visual-field expansion) when a color is active -- the activation line is appended, nothing is removed", () => {
-  const withoutColor = getStageCopy("arc_thought_expand_presence", profile({ presenceColor: null }), liveState(), ["state"]);
-  const withColor = getStageCopy("arc_thought_expand_presence", profile({ presenceColor: "כחול" }), liveState(), ["state"]);
-  assert.ok(withColor.segments![0].text.includes(withoutColor.segments![0].text), "every existing word of Stage 3's instruction survives verbatim");
-});
-
-test("Presence Color thread reminders: each of the 9 remaining sections gets exactly one short, appended reminder naming the CURRENT build's own saved color -- never a new screen/segment/timer", () => {
+test("Unified Presence/Mantra/Trigger/Imagery spec, section 2: Energy Color in the Body is now PREPENDED (a new leading segment, or prepended text) at every one of its LIVE placements -- never appended, never changing any OTHER segment's own duration", () => {
   const color = "סגול";
   const p = profile({
     presenceColor: color,
@@ -1315,92 +1361,89 @@ test("Presence Color thread reminders: each of the 9 remaining sections gets exa
   });
   const withoutColorP = { ...p, presenceColor: null };
   const activeLayers: DevelopmentLayer[] = ["state"];
+  const energyColorLine = "שים לב כיצד האנרגיה בצבע סגול מתפשטת בגופך ומחזירה אותך לנוכחות.";
 
-  // Awareness ("stay")
+  // Presence stage 3 (arc_thought_expand_presence): leading segment, one segment more than without color, every OTHER segment's duration untouched.
+  {
+    const withColor = getStageCopy("arc_thought_expand_presence", p, liveState(), activeLayers);
+    const withoutColor = getStageCopy("arc_thought_expand_presence", withoutColorP, liveState(), activeLayers);
+    assert.equal(withColor.segments?.length, (withoutColor.segments?.length ?? 0) + 1, "one extra leading segment for the color");
+    assert.equal(withColor.segments![0].text, energyColorLine);
+    assert.deepEqual(
+      withColor.segments!.slice(1).map((s) => s.durationSeconds),
+      withoutColor.segments!.map((s) => s.durationSeconds),
+      "every other segment's own duration is untouched"
+    );
+  }
+
+  // Awareness ("stay"): leading segment.
   {
     const withColor = getStageCopy("stay", p, liveState(), activeLayers);
     const withoutColor = getStageCopy("stay", withoutColorP, liveState(), activeLayers);
-    assert.equal(withColor.segments?.length, withoutColor.segments?.length, "stay: segment count unchanged");
-    assert.deepEqual(
-      withColor.segments!.map((s) => s.durationSeconds),
-      withoutColor.segments!.map((s) => s.durationSeconds),
-      "stay: no duration changed"
-    );
-    assert.match(withColor.segments![1].text, new RegExp(color));
-    assert.ok(withColor.segments![1].text.startsWith(withoutColor.segments![1].text));
+    assert.equal(withColor.segments?.length, (withoutColor.segments?.length ?? 0) + 1, "stay: one extra leading segment for the color");
+    assert.equal(withColor.segments![0].text, energyColorLine);
   }
 
-  // Acceptance ("accept")
+  // Acceptance ("accept"): folded into body (no segments), prepended.
   {
     const withColor = getStageCopy("accept", p, liveState(), activeLayers);
     const withoutColor = getStageCopy("accept", withoutColorP, liveState(), activeLayers);
     assert.equal(withColor.segments, null);
-    assert.match(withColor.body, new RegExp(color));
-    assert.ok(withColor.body.startsWith(withoutColor.body));
+    assert.ok(withColor.body.startsWith(energyColorLine), "accept: energy color leads the body text");
+    assert.ok(withColor.body.endsWith(withoutColor.body), "accept: the original question/breathing text is otherwise unchanged, just prefixed");
   }
 
-  // Regulation ("regulate")
+  // Regulation ("regulate"): leading segment.
   {
     const withColor = getStageCopy("regulate", p, liveState(), activeLayers);
     const withoutColor = getStageCopy("regulate", withoutColorP, liveState(), activeLayers);
-    assert.deepEqual(
-      withColor.segments!.map((s) => s.durationSeconds),
-      withoutColor.segments!.map((s) => s.durationSeconds),
-      "regulate: no duration changed"
-    );
-    assert.match(withColor.segments![0].text, new RegExp(color));
+    assert.equal(withColor.segments?.length, (withoutColor.segments?.length ?? 0) + 1, "regulate: one extra leading segment for the color");
+    assert.equal(withColor.segments![0].text, energyColorLine);
   }
 
-  // Encoding: Updated Sensation (segment 0), Encoding/body-language
-  // (the body-language segment), Identity/Mantra (the mantra segment).
+  // Encoding: leading segment, ahead of Updated Sensation.
   {
     const withColor = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), activeLayers);
     const withoutColor = getStageCopy("encode", withoutColorP, liveState({ triggerType: "reactive_emotion" }), activeLayers);
-    assert.equal(withColor.segments?.length, withoutColor.segments?.length, "encode: segment count unchanged");
-    assert.deepEqual(
-      withColor.segments!.map((s) => s.durationSeconds),
-      withoutColor.segments!.map((s) => s.durationSeconds),
-      "encode: no duration changed"
-    );
-    // segment 0: Updated Sensation
-    assert.match(withColor.segments![0].text, new RegExp(color));
-    // segment 2: the body-language cue (see the "Encoding preserves its exact 4-piece order" test above for this layout)
-    assert.match(withColor.segments![2].text, new RegExp(color));
-    // segment 3: the mantra
-    assert.match(withColor.segments![3].text, new RegExp(color));
+    assert.equal(withColor.segments?.length, (withoutColor.segments?.length ?? 0) + 1, "encode: one extra leading segment for the color");
+    assert.equal(withColor.segments![0].text, energyColorLine);
+    assert.equal(withColor.segments![1].text, withoutColor.segments![0].text, "Updated Sensation is still the very next segment, unchanged");
   }
 
-  // Action Imagery
+  // Action Imagery: prepended to the SAME single segment's text (no new segment -- this phase has exactly one instruction segment).
   {
     const base = { triggerType: "reactive_urge" as const, plannedActionConfirmed: true };
     const habitP = profile({ presenceColor: color, beneficialAction: "לגשת ולפתוח שיחה", stateEncoding: null });
     const habitWithoutColorP = { ...habitP, presenceColor: null };
     const withColor = getStageCopy("act", habitP, liveState(base), ["habit"]);
     const withoutColor = getStageCopy("act", habitWithoutColorP, liveState(base), ["habit"]);
-    assert.deepEqual(
-      withColor.segments!.map((s) => s.durationSeconds),
-      withoutColor.segments!.map((s) => s.durationSeconds),
-      "action imagery: no duration changed"
-    );
-    assert.match(withColor.segments![0].text, new RegExp(color));
+    assert.equal(withColor.segments?.length, withoutColor.segments?.length, "action imagery: same segment count -- text is prepended in place");
+    assert.equal(withColor.segments![0].text, `${energyColorLine} ${withoutColor.segments![0].text}`);
 
-    // Timed Action (performing phase)
+    // Timed Action (performing phase): prepended to body.
     const performingState = { ...base, actionImageryCompleted: true };
     const performingWithColor = getStageCopy("act", habitP, liveState(performingState), ["habit"]);
     const performingWithoutColor = getStageCopy("act", habitWithoutColorP, liveState(performingState), ["habit"]);
     assert.equal(performingWithColor.segments, null, "the actual timed Action never carries instruction segments");
-    assert.match(performingWithColor.body, new RegExp(color));
-    assert.ok(performingWithColor.body.startsWith(performingWithoutColor.body));
+    assert.ok(performingWithColor.body.startsWith(energyColorLine));
+    assert.ok(performingWithColor.body.endsWith(performingWithoutColor.body));
   }
 
-  // Completion
+  // Completion: prepended to body.
   {
     const withColor = getStageCopy("complete", p, liveState(), activeLayers);
     const withoutColor = getStageCopy("complete", withoutColorP, liveState(), activeLayers);
     assert.equal(withColor.segments, null);
-    assert.match(withColor.body, new RegExp(color));
-    assert.ok(withColor.body.startsWith(withoutColor.body));
+    assert.equal(withColor.body, `${energyColorLine} ${withoutColor.body}`);
   }
+});
+
+test("Energy Color is never shown at Presence stage 1 (arc_thought_awareness) -- only from stage 2 (arc_thought_combined_attention) onward", () => {
+  const p = profile({ presenceColor: "כתום" });
+  const stage1 = getStageCopy("arc_thought_awareness", p, liveState(), ["state"]);
+  const stage2 = getStageCopy("arc_thought_combined_attention", p, liveState(), ["state"]);
+  assert.ok(!stage1.body.includes("כתום"), "stage 1 must never show the Energy Color reminder");
+  assert.ok(stage2.body.includes("כתום"), "stage 2 must show it");
 });
 
 test("Presence Color: two different ArcBuild profiles with different saved colors never bleed into each other's copy", () => {
@@ -1523,4 +1566,60 @@ test("act's copy appends the identified need only when one was actually selected
   const withNeed = getStageCopy("act", p, liveState({ ...base, identifiedNeed: "רגיעה" }), ["habit"]);
   assert.match(withNeed.body, /הצורך שזיהית קודם: רגיעה/);
   assert.match(withNeed.body, /לגשת ולפתוח שיחה/, "the planned action itself is never changed by the identified need");
+});
+
+// ---------------------------------------------------------------------------
+// Unified Presence/Mantra/Trigger/Imagery spec, section 9: desired-state/
+// identity imagery is Encoding-only -- never present at Awareness/Stay/
+// Acceptance/Regulation, and never confused with the separate Action
+// Imagery mechanism (arc/successfulPerformance.ts).
+// ---------------------------------------------------------------------------
+
+test("desired imagery never appears at Stay/Acceptance/Regulation, even when fully configured -- it begins only at Encoding", () => {
+  const p = profile({
+    stateDesiredImageryType: "real",
+    stateDesiredImageryDescription: "תמונה מהחתונה שלי",
+    supportiveState: "מיקוד",
+  });
+  const s = liveState({ triggerType: "reactive_emotion", selectedTarget: "state" });
+
+  const stay = getStageCopy("stay", p, s, ["state"]);
+  assert.ok(!stay.body.includes("תמונה מהחתונה שלי"), "Stay must never show the desired-imagery text");
+
+  const accept = getStageCopy("accept", p, s, ["state"]);
+  assert.ok(!accept.body.includes("תמונה מהחתונה שלי"), "Acceptance must never show the desired-imagery text");
+
+  const regulate = getStageCopy("regulate", p, s, ["state"]);
+  assert.ok(!regulate.body.includes("תמונה מהחתונה שלי"), "Regulation must never show the desired-imagery text");
+
+  const encode = getStageCopy("encode", p, s, ["state"]);
+  assert.ok(encode.body.includes("תמונה מהחתונה שלי"), "Encoding is exactly where it's meant to appear");
+});
+
+test("desired imagery is never present at any of the three Presence stages either -- begins strictly at Encoding, not earlier", () => {
+  const p = profile({ stateDesiredImageryType: "imagined", stateDesiredImageryDescription: "אור זהוב מקיף אותי", supportiveState: "מיקוד" });
+  const s = liveState();
+  for (const stage of ["arc_thought_awareness", "arc_thought_combined_attention", "arc_thought_expand_presence"] as const) {
+    const copy = getStageCopy(stage, p, s, ["state"]);
+    assert.ok(!copy.body.includes("אור זהוב מקיף אותי"), `${stage} must never show the desired-imagery text`);
+  }
+});
+
+test("desired imagery (Encoding) and Action Imagery (arc/successfulPerformance.ts, the 'act' stage) are kept fully separate -- neither ever leaks into the other's copy", () => {
+  const p = profile({
+    beneficialAction: "לגשת ולפתוח שיחה",
+    stateDesiredImageryType: "real",
+    stateDesiredImageryDescription: "should never appear in Action Imagery",
+    supportiveState: "מיקוד",
+  });
+  const habitState = liveState({ triggerType: "reactive_urge", plannedActionConfirmed: true });
+  const actImagery = getStageCopy("act", p, habitState, ["habit"]);
+  assert.ok(
+    !actImagery.body.includes("should never appear in Action Imagery"),
+    "Action Imagery (habit layer) must never show the state layer's own desired imagery"
+  );
+
+  const stateSession = liveState({ triggerType: "reactive_emotion", selectedTarget: "state" });
+  const encode = getStageCopy("encode", p, stateSession, ["state"]);
+  assert.ok(!encode.body.includes("דמיין את עצמך מתחיל"), "Encoding must never contain Action Imagery's own instruction wording");
 });

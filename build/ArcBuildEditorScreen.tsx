@@ -70,6 +70,9 @@ const STATE_STEPS: ProfileStep[] = [
   "presenceColor",
   // Coherent-architecture task: build-global "why", asked once regardless of target.
   "value",
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 5: Stay/Acceptance Mantras, asked early as their own small standalone steps -- single build-global fields, asked once regardless of target.
+  "stayMantra",
+  "acceptanceMantra",
   "supportiveState",
   "challengeContext",
   "interferingState",
@@ -86,6 +89,9 @@ const STATE_STEPS: ProfileStep[] = [
   "regulationTool",
   "regulationBodyParts",
   "regulationMovementText",
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 5: Regulation Mantra, then Bridge Mantra (brand new) -- both placed at the end of Regulation, before the Encoding fields begin.
+  "regulationMantra",
+  "bridgeMantra",
   "stateEncodingRegulationCueAsk",
   "stateEncodingRegulationCue",
   // Coherent-architecture task (#7/#8): the Future-Oriented Mantra, distinct from Identity Mantra (stateMantra, right after it).
@@ -94,6 +100,9 @@ const STATE_STEPS: ProfileStep[] = [
   "stateBodyLanguageCue",
   "stateEncodingBodyParts",
   "stateEncodingMovementText",
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 9: optional desired-state imagery -- Encoding-only, kept separate from the body-language/mantra fields just above.
+  "stateDesiredImageryType",
+  "stateDesiredImageryDescription",
   "dwellTimes",
   "linkTriggerType",
   "linkTriggerText",
@@ -103,6 +112,9 @@ const STATE_STEPS: ProfileStep[] = [
 const IDENTITY_STEPS: ProfileStep[] = [
   "presenceColor",
   "value",
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 5: same single build-global fields as in STATE_STEPS -- asked once regardless of target.
+  "stayMantra",
+  "acceptanceMantra",
   "desiredIdentity",
   // Coherent-architecture task (#2): how the trainee wants to feel/act while expressing this identity, distinct from the identity itself.
   "identityDesiredState",
@@ -119,6 +131,9 @@ const IDENTITY_STEPS: ProfileStep[] = [
   "regulationTool",
   "regulationBodyParts",
   "regulationMovementText",
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 5: same placement as STATE_STEPS above -- end of Regulation, before Encoding fields begin.
+  "regulationMantra",
+  "bridgeMantra",
   "identityEncodingRegulationCueAsk",
   "identityEncodingRegulationCue",
   "identityFutureOrientedMantra",
@@ -126,6 +141,9 @@ const IDENTITY_STEPS: ProfileStep[] = [
   "identityBodyLanguageCue",
   "identityEncodingBodyParts",
   "identityEncodingMovementText",
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 9: optional desired-identity imagery -- Encoding-only, kept separate from the body-language/mantra fields just above.
+  "identityDesiredImageryType",
+  "identityDesiredImageryDescription",
   // ARC Goal task: the optional Successful Performance section (spec
   // section 4) -- identity-only, gated on "successfulPerformanceAsk"
   // below (see build/profileWizard.ts's shouldShowProfileStep).
@@ -145,6 +163,9 @@ const IDENTITY_STEPS: ProfileStep[] = [
 const HABIT_STEPS: ProfileStep[] = [
   "presenceColor",
   "value",
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 5: same single build-global fields as in STATE_STEPS/IDENTITY_STEPS -- asked once regardless of target.
+  "stayMantra",
+  "acceptanceMantra",
   "beneficialAction",
   "beneficialActionBodyCue",
   "preventiveActionAsk",
@@ -152,6 +173,9 @@ const HABIT_STEPS: ProfileStep[] = [
   "regulationTool",
   "regulationBodyParts",
   "regulationMovementText",
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 5: end of Regulation, before Encoding fields begin -- same placement as STATE_STEPS/IDENTITY_STEPS above.
+  "regulationMantra",
+  "bridgeMantra",
   "negativeActionEnabledAsk",
   "habit",
   "negativeActionDuration",
@@ -167,7 +191,7 @@ function stepOrderFor(target: Target): ProfileStep[] {
 }
 
 const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
-  presenceColor: "באיזה צבע מתמלאת הנוכחות שלך?",
+  presenceColor: "באיזה צבע היית רוצה לדמיין את האנרגיה שמתפשטת בגופך ומחזירה אותך לנוכחות?",
   value: "מהו הערך שעומד מאחורי הזהות וההרגל הזה? (רשות, למשל בריאות וחופש)",
   supportiveState: "מה המצב הרצוי שתרצה לחוש יותר?",
   challengeContext: "באילו מצבים המצב הרצוי הזה במיוחד רלוונטי? (הקשר האתגר)",
@@ -222,6 +246,16 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
 
   regulationTool: "מה כלי הוויסות שלך? (למשל נשימה 4-7-8)",
   dwellTimes: "זמן שהייה",
+
+  stayMantra: "משפט קצר שעוזר להישאר בעדינות עם מה שכבר מורגש, בלי להילחם בו ובלי להעצים אותו. (רשות, לדוגמה \"אני יכול להישאר לרגע עם מה שכבר נמצא כאן.\")",
+  acceptanceMantra: "משפט קצר שמאפשר לתחושה הקיימת להיות כאן כרגע, בלי צורך לשנות אותה מיד. (רשות, לדוגמה \"מותר למה שאני מרגיש להיות כאן כרגע.\")",
+  regulationMantra: "משפט קצר שמלווה את הגוף בזמן ההתייצבות, בלי לדרוש ממנו להירגע או להשתנות. (רשות, לדוגמה \"אני מאפשר לגוף להתייצב בקצב שלו.\")",
+  bridgeMantra: "משפט קצר שמגשר לקראת מה שברצונך לחזק בהמשך. (רשות)",
+
+  stateDesiredImageryDescription:
+    "תאר בקצרה את הדימוי (רשות, לדוגמה: הצלחה / חמלה / ביטחון / רוגע / אנרגטיות / משמעת)",
+  identityDesiredImageryDescription:
+    "תאר בקצרה את הדימוי (רשות, לדוגמה: הצלחה / חמלה / ביטחון / רוגע / אנרגטיות / משמעת)",
 
   linkTriggerType: "מתי או אחרי מה תרצה לזכור להתחיל את התרגיל? (רשות)",
   linkTriggerText: "תאר את הטריגר (רשות, למשל \"בשעה 10:00\" או \"אחרי שאני קם מהמיטה\")",
@@ -280,6 +314,12 @@ const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   habit: "habit",
 
   regulationTool: "regulationTool",
+  stayMantra: "stayMantra",
+  acceptanceMantra: "acceptanceMantra",
+  regulationMantra: "regulationMantra",
+  bridgeMantra: "bridgeMantra",
+  stateDesiredImageryDescription: "stateDesiredImageryDescription",
+  identityDesiredImageryDescription: "identityDesiredImageryDescription",
 
   linkTriggerText: "linkTriggerText",
   regulationBodyParts: "regulationBodyParts",
@@ -323,6 +363,12 @@ const OPTIONAL_TEXT_STEPS: ProfileStep[] = [
   "successfulPerformanceCustomQuality",
   "successfulPerformanceResult",
   "successMantra",
+  "stayMantra",
+  "acceptanceMantra",
+  "regulationMantra",
+  "bridgeMantra",
+  "stateDesiredImageryDescription",
+  "identityDesiredImageryDescription",
 ];
 
 const ASK_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
@@ -444,7 +490,7 @@ export default function ArcBuildEditorScreen() {
     // means a save attempt can never silently no-op -- an incomplete
     // draft always gets an explicit, visible reason instead.
     if (!isTargetDraftComplete(target, draft)) {
-      setSaveError("יש להשלים את כל השדות הנדרשים לפני השמירה (כולל צבע נוכחות וכלי ויסות).");
+      setSaveError("יש להשלים את כל השדות הנדרשים לפני השמירה (כולל צבע אנרגיה וכלי ויסות).");
       return;
     }
 
@@ -543,11 +589,36 @@ export default function ArcBuildEditorScreen() {
       1
     )[0];
 
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 9: the two
+  // BUILD questions ("what image reminds you of the desired state /
+  // represents the desired identity?") reference the trainee's own
+  // already-entered target name -- computed here rather than as a
+  // static STEP_TITLES entry, since it's the one dynamic title in this
+  // screen. Falls back to STEP_TITLES[step] for every other step.
+  const desiredImageryTitle =
+    step === "stateDesiredImageryType"
+      ? `איזה דימוי אמיתי או דמיוני מזכיר לך תחושה של ${draft.supportiveState.trim() || "המצב הרצוי"}?`
+      : step === "identityDesiredImageryType"
+        ? `איזה דימוי אמיתי או דמיוני מייצג עבורך את הזהות ${draft.desiredIdentity.trim() || "הרצויה"}?`
+        : null;
+
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 9: while
+  // writing the IDENTITY-side description, offer -- never auto-fill --
+  // the already-saved STATE-side description as an editable suggestion,
+  // same "editable suggestion, tap to accept or keep typing your own"
+  // precedent as bridgeBeliefHint above. Accepting it unedited (both
+  // descriptions end up textually identical) is what produces the
+  // LIVE "shared image" wording (arc/desiredImagery.ts).
+  const sharedImageryHint =
+    step === "identityDesiredImageryDescription" && draft.stateDesiredImageryDescription.trim() && !draft.identityDesiredImageryDescription.trim()
+      ? draft.stateDesiredImageryDescription.trim()
+      : null;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.eyebrow}>{build?.name}</Text>
-        <Text style={styles.title}>{STEP_TITLES[step]}</Text>
+        <Text style={styles.title}>{desiredImageryTitle ?? STEP_TITLES[step]}</Text>
 
         {textField && (
           <View>
@@ -559,6 +630,11 @@ export default function ArcBuildEditorScreen() {
               autoFocus
             />
             {bridgeBeliefHint && <Text style={styles.hint}>{`עדות שמורה שיכולה לעזור: ${bridgeBeliefHint.text}`}</Text>}
+            {sharedImageryHint && (
+              <Pressable onPress={() => setDraft({ ...draft, identityDesiredImageryDescription: sharedImageryHint })}>
+                <Text style={styles.hint}>{`הדימוי שנשמר למצב הרצוי: ${sharedImageryHint} (הקש כדי להשתמש באותו דימוי)`}</Text>
+              </Pressable>
+            )}
             <Pressable
               style={[styles.button, styles.fullWidthButton]}
               disabled={!isOptional && (draft[textField] as string).trim().length === 0}
@@ -602,6 +678,34 @@ export default function ArcBuildEditorScreen() {
                 ]
               ).map((option) => {
                 const field = step === "stateBarrierType" ? "stateBarrierType" : "identityBarrierType";
+                return (
+                  <Pressable
+                    key={option.value}
+                    style={[styles.chip, draft[field] === option.value && styles.chipSelected]}
+                    onPress={() => goNext({ ...draft, [field]: option.value })}
+                  >
+                    <Text style={styles.buttonText}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => goNext(draft)}>
+              <Text style={styles.buttonText}>דלג (רשות)</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Unified Presence/Mantra/Trigger/Imagery spec, section 9: the desired-imagery type choice -- real vs. imagined -- never auto-assigned; "דלג" leaves it null and skips the description step entirely (shouldShowProfileStep above). */}
+        {(step === "stateDesiredImageryType" || step === "identityDesiredImageryType") && (
+          <View>
+            <View style={styles.chipRow}>
+              {(
+                [
+                  { value: "real" as const, label: "דימוי אמיתי" },
+                  { value: "imagined" as const, label: "דימוי דמיוני" },
+                ]
+              ).map((option) => {
+                const field = step === "stateDesiredImageryType" ? "stateDesiredImageryType" : "identityDesiredImageryType";
                 return (
                   <Pressable
                     key={option.value}
@@ -732,7 +836,7 @@ export default function ArcBuildEditorScreen() {
 
         {step === "review" && (
           <View>
-            <Text style={styles.body}>{`צבע נוכחות: ${draft.presenceColor}`}</Text>
+            <Text style={styles.body}>{`צבע אנרגיה: ${draft.presenceColor}`}</Text>
             {draft.value.trim() && <Text style={styles.body}>{`ערך: ${draft.value}`}</Text>}
             {activeTarget === "state" && (
               <>
@@ -814,9 +918,23 @@ export default function ArcBuildEditorScreen() {
               </>
             )}
             <Text style={styles.body}>{`כלי ויסות: ${draft.regulationTool}`}</Text>
+            {draft.stayMantra.trim() && <Text style={styles.body}>{`מנטרת שהייה: ${draft.stayMantra}`}</Text>}
+            {draft.acceptanceMantra.trim() && <Text style={styles.body}>{`מנטרת קבלה: ${draft.acceptanceMantra}`}</Text>}
+            {draft.regulationMantra.trim() && <Text style={styles.body}>{`מנטרת ויסות: ${draft.regulationMantra}`}</Text>}
+            {draft.bridgeMantra.trim() && <Text style={styles.body}>{`מנטרת גשר: ${draft.bridgeMantra}`}</Text>}
+            {draft.stateDesiredImageryType && draft.stateDesiredImageryDescription.trim() && (
+              <Text style={styles.body}>
+                {`דימוי המצב הרצוי (${draft.stateDesiredImageryType === "real" ? "אמיתי" : "דמיוני"}): ${draft.stateDesiredImageryDescription}`}
+              </Text>
+            )}
+            {draft.identityDesiredImageryType && draft.identityDesiredImageryDescription.trim() && (
+              <Text style={styles.body}>
+                {`דימוי הזהות הרצויה (${draft.identityDesiredImageryType === "real" ? "אמיתי" : "דמיוני"}): ${draft.identityDesiredImageryDescription}`}
+              </Text>
+            )}
             {draft.linkTriggerText.trim() && <Text style={styles.body}>{`טריגר ל-ARC Link: ${draft.linkTriggerText}`}</Text>}
             {!isTargetDraftComplete(activeTarget, draft) && (
-              <Text style={styles.errorText}>יש להשלים את כל השדות הנדרשים לפני השמירה (כולל צבע נוכחות וכלי ויסות).</Text>
+              <Text style={styles.errorText}>יש להשלים את כל השדות הנדרשים לפני השמירה (כולל צבע אנרגיה וכלי ויסות).</Text>
             )}
             {saveError && <Text style={styles.errorText}>{saveError}</Text>}
             <Pressable

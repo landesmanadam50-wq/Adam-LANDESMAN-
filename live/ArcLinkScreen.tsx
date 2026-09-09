@@ -20,6 +20,7 @@ import type { ArcLink } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import type { ArcBuild } from "../arc/types.ts";
 import BodyImageryStep from "./BodyImageryStep.tsx";
+import { PresenceObjectGroundingScreen } from "./screens.tsx";
 
 type RouteChooserPhase = "kind" | "target" | null;
 
@@ -64,6 +65,18 @@ export default function ArcLinkScreen() {
   const [bridgingSteps, setBridgingSteps] = useState<BridgingLinkStep[]>([]);
   const [bridgingIndex, setBridgingIndex] = useState(0);
 
+  /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 10: an
+   * optional, session-only environmental-grounding sub-phase (same two
+   * questions + confirmation line as the main LIVE flow's own
+   * PresenceObjectGroundingScreen -- live/screens.tsx), shown once
+   * before whichever step imagines the final linked action
+   * ("beneficial_action" in every one of this screen's three rendering
+   * paths). Local component state only -- never added to ArcLink/
+   * ArcLinkFormState, never persisted.
+   */
+  const [groundingDone, setGroundingDone] = useState(false);
+
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -75,6 +88,7 @@ export default function ArcLinkScreen() {
         return;
       }
       setArcBuild(existing);
+      setGroundingDone(false);
 
       if (!linkId) {
         // Original entry point -- completely unchanged.
@@ -247,10 +261,21 @@ export default function ArcLinkScreen() {
     );
   }
 
-  // ---- Legacy (no linkId) path -- unchanged. ----
+  // ---- Legacy (no linkId) path -- unchanged except for the new,
+  // optional environmental-grounding sub-phase (section 3/10) shown
+  // once before the final linked-action step. ----
   if (!linkId) {
     const step = legacySteps[legacyIndex];
     if (!step) return null;
+    if (step.id === "beneficial_action" && !groundingDone) {
+      return (
+        <SafeAreaView style={styles.safeArea}>
+          <ScrollView contentContainerStyle={styles.content}>
+            <PresenceObjectGroundingScreen onComplete={() => setGroundingDone(true)} />
+          </ScrollView>
+        </SafeAreaView>
+      );
+    }
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content}>
@@ -349,6 +374,15 @@ export default function ArcLinkScreen() {
     const step = bridgingSteps[bridgingIndex];
     if (!step) return null;
     const isLastBridgingStep = bridgingIndex === bridgingSteps.length - 1;
+    if (step.id === "beneficial_action" && !groundingDone) {
+      return (
+        <SafeAreaView style={styles.safeArea}>
+          <ScrollView contentContainerStyle={styles.content}>
+            <PresenceObjectGroundingScreen onComplete={() => setGroundingDone(true)} />
+          </ScrollView>
+        </SafeAreaView>
+      );
+    }
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content}>
@@ -386,6 +420,15 @@ export default function ArcLinkScreen() {
   const step = protocolSteps[protocolIndex];
   if (!step) return null;
   const isLastProtocolStep = protocolIndex === protocolSteps.length - 1;
+  if (step.id === "beneficial_action" && !groundingDone) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <PresenceObjectGroundingScreen onComplete={() => setGroundingDone(true)} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>

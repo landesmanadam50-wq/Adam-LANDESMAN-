@@ -54,6 +54,7 @@ import {
   applyRegulationToolUsed,
   applyScaleAnswer,
   applySensationAnswer,
+  applySideObservationMode,
   applySuccessFocusExtraMinutes,
   applyWantsFutureSuccessFocus,
   applyTargetSelection,
@@ -158,22 +159,21 @@ test("5. Low presence: ARC Thought starts regardless of which trigger was chosen
   }
 });
 
-test("6. High presence + reactive_emotion: reactive route starts directly, still through Presence Stage 3", () => {
+test("6. High presence + reactive_emotion: reactive route starts directly, through the new presence_grounding stage, never any of the three Presence stages", () => {
   const p = profile();
   const activeLayers: DevelopmentLayer[] = ["state"];
   let session = applyTriggerSelection(createEmptyLiveState(), "reactive_emotion");
   session = applyScaleAnswer("presence_check", session, 9);
-  // Presence Color task: high presence no longer skips Presence Stage 3
-  // entirely -- it routes directly into it instead of past it.
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 4: high
+  // presence (7-10) skips all three Presence stages via the new,
+  // short, untimed presence_grounding stage.
   const outcome = step("presence_check", session, p, activeLayers);
-  assert.equal(outcome.stage, "arc_thought_expand_presence");
-  const afterStage3 = step("arc_thought_expand_presence", outcome.session, p, activeLayers);
-  assert.equal(afterStage3.stage, "arc_thought_presence_recheck");
-  const afterRecheck = step("arc_thought_presence_recheck", afterStage3.session, p, activeLayers);
-  assert.equal(afterRecheck.stage, "sensation_check");
+  assert.equal(outcome.stage, "presence_grounding");
+  const afterGrounding = step("presence_grounding", outcome.session, p, activeLayers);
+  assert.equal(afterGrounding.stage, "sensation_check");
 });
 
-test("7. High presence + reactive_urge: habit route starts only when habit is active, still through Presence Stage 3", () => {
+test("7. High presence + reactive_urge: habit route starts only when habit is active, still through presence_grounding", () => {
   const p = profile();
   assert.throws(() => resolveLiveRoute("reactive_urge", ["state"]));
 
@@ -181,11 +181,9 @@ test("7. High presence + reactive_urge: habit route starts only when habit is ac
   let session = applyTriggerSelection(createEmptyLiveState(), "reactive_urge");
   session = applyScaleAnswer("presence_check", session, 9);
   const outcome = step("presence_check", session, p, activeLayers);
-  assert.equal(outcome.stage, "arc_thought_expand_presence");
-  const afterStage3 = step("arc_thought_expand_presence", outcome.session, p, activeLayers);
-  assert.equal(afterStage3.stage, "arc_thought_presence_recheck");
-  const afterRecheck = step("arc_thought_presence_recheck", afterStage3.session, p, activeLayers);
-  assert.equal(afterRecheck.stage, "sensation_check");
+  assert.equal(outcome.stage, "presence_grounding");
+  const afterGrounding = step("presence_grounding", outcome.session, p, activeLayers);
+  assert.equal(afterGrounding.stage, "sensation_check");
 });
 
 // --- 8/9: proactive rating threshold ---
@@ -653,15 +651,14 @@ test("desired_state_check's own first-time entry (via afterArcThought, never thr
   const p = profile();
   const activeLayers: DevelopmentLayer[] = ["state"];
   let session = applyTriggerSelection(createEmptyLiveState(), "proactive");
-  session = applyScaleAnswer("presence_check", session, 9); // high presence, skip the full ARC Thought sequence
-  // Presence Color task: Presence Stage 3 still runs once before reaching
-  // desired_state_check -- unrelated to, and unaffected by, the Regulation merge.
+  session = applyScaleAnswer("presence_check", session, 9); // high presence, skip all three Presence stages
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 4:
+  // presence_grounding runs once before reaching desired_state_check --
+  // unrelated to, and unaffected by, the Regulation merge.
   const outcome = step("presence_check", session, p, activeLayers);
-  assert.equal(outcome.stage, "arc_thought_expand_presence");
-  const afterStage3 = step("arc_thought_expand_presence", outcome.session, p, activeLayers);
-  assert.equal(afterStage3.stage, "arc_thought_presence_recheck");
-  const afterRecheck = step("arc_thought_presence_recheck", afterStage3.session, p, activeLayers);
-  assert.equal(afterRecheck.stage, "desired_state_check", "still reached directly, exactly as before -- unaffected by the merge");
+  assert.equal(outcome.stage, "presence_grounding");
+  const afterGrounding = step("presence_grounding", outcome.session, p, activeLayers);
+  assert.equal(afterGrounding.stage, "desired_state_check", "still reached directly, exactly as before -- unaffected by the merge");
 });
 
 // --- BUG REGRESSION: reported symptom was the "הרחבה" (arc_thought_expand_presence)
@@ -691,7 +688,11 @@ test("BUG REGRESSION: the arc_thought_expand_presence (\"הרחבה\") screen re
   assert.equal(copy.title, "הרחבה");
   assert.ok(copy.segments, "must be a timed/segmented screen, not the untimed 'segments: null' shape that renders an immediate Continue");
 
-  const instructionSeconds = INSTRUCTION_TIMING.arcThoughtExpandPresence;
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 1: the new
+  // free-breathing segment now sits between the instruction and the
+  // trailing dwell (no Energy Color segment here -- `p` has no
+  // presenceColor configured).
+  const instructionSeconds = INSTRUCTION_TIMING.arcThoughtExpandPresence + INSTRUCTION_TIMING.freeBreathing;
   // Coordinated timer/dwell task: the trailing reveal segment is now this
   // layer's own configured Presence dwell (arc/dwellTimes.ts) -- the
   // default here, since `p` never customized presenceDwellSeconds.
@@ -700,10 +701,10 @@ test("BUG REGRESSION: the arc_thought_expand_presence (\"הרחבה\") screen re
   // 1/2. Rating is absent for the entire base instruction duration, and...
   assert.equal(getInstructionTimingStatus(copy.segments, 0).complete, false, "hidden at t=0");
   assert.equal(getInstructionTimingStatus(copy.segments, instructionSeconds).complete, false, "still hidden the instant the instruction itself finishes");
-  // ...remains absent through the entire additional 15s on top of it.
-  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds - 0.1).complete, false, "hidden one tick before instruction+15s");
-  // 3. Appears on this SAME screen -- same copy/segments -- exactly once instruction+15s has elapsed.
-  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds).complete, true, "revealed exactly at instruction+15s");
+  // ...remains absent through the entire additional dwell on top of it.
+  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds - 0.1).complete, false, "hidden one tick before instruction+dwell");
+  // 3. Appears on this SAME screen -- same copy/segments -- exactly once instruction+dwell has elapsed.
+  assert.equal(getInstructionTimingStatus(copy.segments, totalRevealSeconds).complete, true, "revealed exactly at instruction+dwell");
 
   // 4. Nothing can bypass it before reveal time: live/screens.tsx's
   // PresenceExperienceScreen (which is what arc_thought_expand_presence
@@ -1100,15 +1101,14 @@ test("no separate sensation_check page is visited for the accept-triggered reche
   const activeLayers: DevelopmentLayer[] = ["state"];
   // The OTHER, still-unmerged path into sensation_check -- its first-time entry -- is completely unaffected.
   let session = applyTriggerSelection(createEmptyLiveState(), "reactive_emotion");
-  session = applyScaleAnswer("presence_check", session, 9); // high presence, skip the full ARC Thought sequence
-  // Presence Color task: Presence Stage 3 still runs once before
-  // sensation_check -- unrelated to, and unaffected by, the Acceptance merge.
+  session = applyScaleAnswer("presence_check", session, 9); // high presence, skip all three Presence stages
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 4:
+  // presence_grounding still runs once before sensation_check --
+  // unrelated to, and unaffected by, the Acceptance merge.
   const outcome = step("presence_check", session, p, activeLayers);
-  assert.equal(outcome.stage, "arc_thought_expand_presence");
-  const afterStage3 = step("arc_thought_expand_presence", outcome.session, p, activeLayers);
-  assert.equal(afterStage3.stage, "arc_thought_presence_recheck");
-  const afterRecheck = step("arc_thought_presence_recheck", afterStage3.session, p, activeLayers);
-  assert.equal(afterRecheck.stage, "sensation_check", "the initial sensation_check entry is untouched -- only the accept-triggered recheck was merged");
+  assert.equal(outcome.stage, "presence_grounding");
+  const afterGrounding = step("presence_grounding", outcome.session, p, activeLayers);
+  assert.equal(afterGrounding.stage, "sensation_check", "the initial sensation_check entry is untouched -- only the accept-triggered recheck was merged");
 });
 
 // --- Visual-refinement task: the inline rating's reveal now uses a
@@ -1131,7 +1131,11 @@ test("visual refinement: at the exact moment the Presence rating becomes availab
   const copy = getStageCopy("arc_thought_expand_presence", p, session, activeLayers);
   assert.ok(copy.segments);
 
-  const instructionSeconds = INSTRUCTION_TIMING.arcThoughtExpandPresence;
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 1: the new
+  // free-breathing segment now sits between the instruction and the
+  // trailing dwell (no Energy Color segment here -- `p` has no
+  // presenceColor configured).
+  const instructionSeconds = INSTRUCTION_TIMING.arcThoughtExpandPresence + INSTRUCTION_TIMING.freeBreathing;
   // Coordinated timer/dwell task: the trailing reveal segment is now this
   // layer's own configured Presence dwell (arc/dwellTimes.ts) -- the
   // default here, since `p` never customized presenceDwellSeconds.
@@ -1142,8 +1146,8 @@ test("visual refinement: at the exact moment the Presence rating becomes availab
   const realInstructionText = atReveal.visibleSegments.filter((s) => s.text.length > 0).map((s) => s.text);
   assert.deepEqual(
     realInstructionText,
-    [copy.segments[0].text],
-    "the real instruction line is still there, unreplaced and unhidden, at the exact instant the rating becomes available"
+    [copy.segments[0].text, copy.segments[1].text],
+    "both the real instruction line and the new free-breathing line are still there, unreplaced and unhidden, at the exact instant the rating becomes available"
   );
 });
 
@@ -1415,9 +1419,60 @@ test("applyTriggerContext stores null for an empty/whitespace-only answer -- opt
   assert.equal(applyTriggerContext(session, "   ").triggerContext, null);
 });
 
+// --- Unified Presence/Mantra/Trigger/Imagery spec, section 6: the same
+// stage's second, always-optional field -- the current interfering
+// thought/interpretation/belief/imagined future, session-only, never
+// written back onto ArcBuildProfile.stateLimitingBelief/identityLimitingBelief.
+
+test("applyTriggerContext's second argument stores the trimmed interfering-thought text in currentInterferingThought only", () => {
+  const session = createEmptyLiveState();
+  const answered = applyTriggerContext(session, "ראיתי סרטון בטלפון", "  אני לא מספיק טוב.  ");
+  assert.equal(answered.currentInterferingThought, "אני לא מספיק טוב.");
+  assert.equal(answered.triggerContext, "ראיתי סרטון בטלפון", "the trigger field is untouched by the thought argument");
+});
+
+test("applyTriggerContext defaults currentInterferingThought to null when the second argument is omitted or blank -- always optional", () => {
+  const session = createEmptyLiveState();
+  assert.equal(applyTriggerContext(session, "טריגר").currentInterferingThought, null);
+  assert.equal(applyTriggerContext(session, "טריגר", "").currentInterferingThought, null);
+  assert.equal(applyTriggerContext(session, "טריגר", "   ").currentInterferingThought, null);
+});
+
+test("applyTriggerContext never writes the interfering thought (or the trigger) back onto any ArcBuildProfile field -- session-only, exactly like triggerContext itself", () => {
+  const session = createEmptyLiveState();
+  const result = applyTriggerContext(session, "טריגר", "מחשבה מפריעה");
+  assert.equal(Object.keys(result).includes("stateLimitingBelief"), false);
+  assert.equal(Object.keys(result).includes("identityLimitingBelief"), false);
+});
+
+test("applyTriggerContext also mirrors the resolved trigger text into currentTriggerDescription, so downstream copy can reference 'the current trigger' from one place", () => {
+  const session = createEmptyLiveState();
+  assert.equal(applyTriggerContext(session, "  ראיתי סרטון  ").currentTriggerDescription, "ראיתי סרטון");
+  assert.equal(applyTriggerContext(session, "").currentTriggerDescription, null, "blank answer -- no trigger description either");
+});
+
 test("applyTriggerContext never advances currentArcStage by itself -- only advanceLiveSession does, same convention as every other applyXxx adapter", () => {
   const session = createEmptyLiveState();
   const answered = applyTriggerContext(session, "מישהו אמר לי משהו שהלחיץ אותי");
+  assert.equal(answered.currentArcStage, session.currentArcStage);
+});
+
+// --- Unified Presence/Mantra/Trigger/Imagery spec, section 7:
+// applySideObservationMode -- the present-moment vs. previous-situation
+// choice observer_pause's copy branches on.
+
+test("applySideObservationMode sets sideObservationMode to exactly the chosen value, and nothing else", () => {
+  const session = createEmptyLiveState();
+  assert.equal(session.sideObservationMode, null, "sanity: unset by default");
+  const present = applySideObservationMode(session, "present");
+  assert.equal(present.sideObservationMode, "present");
+  const previous = applySideObservationMode(session, "previous");
+  assert.equal(previous.sideObservationMode, "previous");
+});
+
+test("applySideObservationMode never advances currentArcStage by itself -- stays at 'observer_pause' either way, same 'stay at this stage' pattern as applyAcceptanceWillingnessAnswer", () => {
+  const session = { ...createEmptyLiveState(), currentArcStage: "observer_pause" as const };
+  const answered = applySideObservationMode(session, "present");
   assert.equal(answered.currentArcStage, session.currentArcStage);
 });
 
@@ -1539,11 +1594,10 @@ test("existing downstream ARC progression is unchanged for an unknown-trigger se
     "trigger_context",
     "observer_pause",
     "presence_check",
-    // Presence Color task: a high presence rating now routes directly
-    // into Presence Stage 3 (arc_thought_expand_presence) and its own
-    // unchanged single-pass recheck, instead of skipping past it.
-    "arc_thought_expand_presence",
-    "arc_thought_presence_recheck",
+    // Unified Presence/Mantra/Trigger/Imagery spec, section 4: a high
+    // presence rating now routes to presence_grounding instead of any
+    // of the three Presence stages.
+    "presence_grounding",
     "sensation_check",
     "encode",
     "act",

@@ -67,6 +67,7 @@
  */
 
 import type { ArcBuildProfile, BarrierType, DwellTimes, EncodingProfile } from "../arc/types.ts";
+import type { DesiredImageryType } from "../arc/desiredImagery.ts";
 import { bodyImageryFromCustomFields } from "../arc/bodyImagery.ts";
 import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
 import type { ArcProgramSelection, KnownProgramPath } from "../program/programTypes.ts";
@@ -216,6 +217,39 @@ export type ProfileStep =
   | "successMantra"
   /** Result Imagery's own separately configured duration -- Action Imagery duration reuses the existing identityActionImageryDwellSeconds field/step (dwellTimes) unchanged. */
   | "successfulPerformanceResultDuration"
+  /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 5: four new
+   * optional mantras, each a single build-global field -- like
+   * regulationTool/presenceColor/value, NOT per-layer -- since Stay/
+   * Acceptance/Regulation aren't per-layer stages in this engine (only
+   * Encoding and the two Future-Oriented Mantras are). Conceptually
+   * distinct from each other and from every existing mantra
+   * (stateMantra/identityMantra = Identity Mantra;
+   * stateFutureOrientedMantra/identityFutureOrientedMantra = Future
+   * Mantra; successMantra = Success Mantra) -- never merged with any of
+   * them. bridgeMantra is brand new (confirmed: no prior "Bridge
+   * Mantra" field/storage key exists anywhere in this codebase) --
+   * built and placed fresh at the end of Regulation, not moved or
+   * migrated from anything.
+   */
+  | "stayMantra"
+  | "acceptanceMantra"
+  | "regulationMantra"
+  | "bridgeMantra"
+  /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 9: optional
+   * desired-state/identity imagery -- per-layer (like
+   * stateFutureOrientedMantra/identityFutureOrientedMantra), begins only
+   * at Encoding, kept separate from Energy Color/side observation/
+   * Action Imagery. Each pair is a 2-choice type step (custom-rendered,
+   * mirrors stateBarrierType/identityBarrierType's own chip pattern)
+   * followed by a short description text step, shown only once a type
+   * is chosen.
+   */
+  | "stateDesiredImageryType"
+  | "stateDesiredImageryDescription"
+  | "identityDesiredImageryType"
+  | "identityDesiredImageryDescription"
   | "review";
 
 /**
@@ -433,6 +467,17 @@ export interface ProfileDraft {
   statePracticalAlternative: string;
   identityBarrierType: BarrierType | null;
   identityPracticalAlternative: string;
+
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 5: single build-global fields, like regulationTool/value -- see the ProfileStep union's own doc above for the full four-mantra distinction. Always optional. */
+  stayMantra: string;
+  acceptanceMantra: string;
+  regulationMantra: string;
+  bridgeMantra: string;
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 9: per-layer, always optional -- null type means no imagery configured for that layer yet. */
+  stateDesiredImageryType: DesiredImageryType | null;
+  stateDesiredImageryDescription: string;
+  identityDesiredImageryType: DesiredImageryType | null;
+  identityDesiredImageryDescription: string;
 }
 
 export function createEmptyDraft(): ProfileDraft {
@@ -514,6 +559,14 @@ export function createEmptyDraft(): ProfileDraft {
     statePracticalAlternative: "",
     identityBarrierType: null,
     identityPracticalAlternative: "",
+    stayMantra: "",
+    acceptanceMantra: "",
+    regulationMantra: "",
+    bridgeMantra: "",
+    stateDesiredImageryType: null,
+    stateDesiredImageryDescription: "",
+    identityDesiredImageryType: null,
+    identityDesiredImageryDescription: "",
   };
 }
 
@@ -655,6 +708,14 @@ export function draftFromProfileAndSelection(
     statePracticalAlternative: profile.statePracticalAlternative ?? "",
     identityBarrierType: profile.identityBarrierType ?? null,
     identityPracticalAlternative: profile.identityPracticalAlternative ?? "",
+    stayMantra: profile.stayMantra ?? "",
+    acceptanceMantra: profile.acceptanceMantra ?? "",
+    regulationMantra: profile.regulationMantra ?? "",
+    bridgeMantra: profile.bridgeMantra ?? "",
+    stateDesiredImageryType: profile.stateDesiredImageryType ?? null,
+    stateDesiredImageryDescription: profile.stateDesiredImageryDescription ?? "",
+    identityDesiredImageryType: profile.identityDesiredImageryType ?? null,
+    identityDesiredImageryDescription: profile.identityDesiredImageryDescription ?? "",
   };
 }
 
@@ -706,6 +767,15 @@ export function shouldShowProfileStep(step: ProfileStep, draft: ProfileDraft): b
       return draft.stateBarrierType === "practical";
     case "identityPracticalAlternative":
       return draft.identityBarrierType === "practical";
+    // Unified Presence/Mantra/Trigger/Imagery spec, section 9: the
+    // description step only makes sense once its own layer's imagery
+    // type (real/imagined) has actually been chosen -- never shown for
+    // a type not yet chosen, mirroring statePracticalAlternative/
+    // identityPracticalAlternative's own gating pattern just above.
+    case "stateDesiredImageryDescription":
+      return draft.stateDesiredImageryType !== null;
+    case "identityDesiredImageryDescription":
+      return draft.identityDesiredImageryType !== null;
     // ARC Goal task: the Successful Performance sub-steps only show once
     // both this build actually targets identity AND the trainee opted
     // into the section at all -- "לא" (or never answered) skips every
@@ -1074,6 +1144,26 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
 
     // Coherent-architecture task: build-global, like goal/presenceColor -- never gated on needsState/needsIdentity.
     value: draft.value.trim() ? draft.value.trim() : null,
+    // Unified Presence/Mantra/Trigger/Imagery spec, section 5: same build-global shape as value/regulationTool above -- never gated on needsState/needsIdentity.
+    stayMantra: draft.stayMantra.trim() ? draft.stayMantra.trim() : null,
+    acceptanceMantra: draft.acceptanceMantra.trim() ? draft.acceptanceMantra.trim() : null,
+    regulationMantra: draft.regulationMantra.trim() ? draft.regulationMantra.trim() : null,
+    bridgeMantra: draft.bridgeMantra.trim() ? draft.bridgeMantra.trim() : null,
+    // Unified Presence/Mantra/Trigger/Imagery spec, section 9: per-layer, gated on needsState/needsIdentity exactly like stateFutureOrientedMantra/identityFutureOrientedMantra above -- a type without a description (or vice versa) is treated as unconfigured (null), never a half-saved state.
+    stateDesiredImageryType:
+      draft.needsState && draft.stateDesiredImageryType && draft.stateDesiredImageryDescription.trim() ? draft.stateDesiredImageryType : null,
+    stateDesiredImageryDescription:
+      draft.needsState && draft.stateDesiredImageryType && draft.stateDesiredImageryDescription.trim()
+        ? draft.stateDesiredImageryDescription.trim()
+        : null,
+    identityDesiredImageryType:
+      needsIdentity && draft.identityDesiredImageryType && draft.identityDesiredImageryDescription.trim()
+        ? draft.identityDesiredImageryType
+        : null,
+    identityDesiredImageryDescription:
+      needsIdentity && draft.identityDesiredImageryType && draft.identityDesiredImageryDescription.trim()
+        ? draft.identityDesiredImageryDescription.trim()
+        : null,
     // Identity-only (see ArcBuildProfile.identityDesiredState's doc) -- gated on needsIdentity exactly like desiredIdentity/identityChallengeContext above.
     identityDesiredState: needsIdentity && draft.identityDesiredState.trim() ? draft.identityDesiredState.trim() : null,
     stateSupportingAction: draft.needsState && draft.stateSupportingAction.trim() ? draft.stateSupportingAction.trim() : null,

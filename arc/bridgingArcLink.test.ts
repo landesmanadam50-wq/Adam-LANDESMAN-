@@ -269,3 +269,36 @@ test("the final reinforce step is always last, and always mentions completing th
   assert.equal(steps[steps.length - 1].id, "reinforce");
   assert.equal(steps[steps.length - 1].buttonLabel, "סיום ARC Link מגשר");
 });
+
+// ---------------------------------------------------------------------------
+// Unified Presence/Mantra/Trigger/Imagery spec, section 9/10: desired
+// identity imagery, inherited from identityProfile, appended to the
+// identity-transition step -- this module never runs Presence/Awareness/
+// Acceptance, so only the identity-layer imagery (never state/Stay/
+// Acceptance/Regulation mantras) applies here.
+// ---------------------------------------------------------------------------
+
+test("desired identity imagery is inherited from identityProfile and appended to the 'identity' step when configured", () => {
+  const identityProfile = profile({
+    desiredIdentity: "משמעת עצמית",
+    identityDesiredImageryType: "real",
+    identityDesiredImageryDescription: "תמונה מהיום שסיימתי את המרתון",
+  });
+  const steps = buildBridgingLinkSteps(profile(), identityProfile, ctx());
+  const identityStep = steps.find((s) => s.id === "identity")!;
+  assert.ok(identityStep.lines.some((line) => line.includes("תמונה מהיום שסיימתי את המרתון")));
+});
+
+test("no desired-imagery line appears at all when identityDesiredImageryType/Description are unset -- never invented", () => {
+  const steps = buildBridgingLinkSteps(profile(), profile({ desiredIdentity: "משמעת עצמית" }), ctx());
+  const identityStep = steps.find((s) => s.id === "identity")!;
+  assert.ok(!identityStep.lines.join(" ").includes("העלה בדמיונך"));
+});
+
+test("the supportive profile's OWN desired imagery is never used for the identity step -- only identityProfile's", () => {
+  const supportiveProfile = profile({ stateDesiredImageryType: "real", stateDesiredImageryDescription: "should never appear here" });
+  const identityProfile = profile({ desiredIdentity: "משמעת עצמית" });
+  const steps = buildBridgingLinkSteps(supportiveProfile, identityProfile, ctx());
+  const identityStep = steps.find((s) => s.id === "identity")!;
+  assert.ok(!identityStep.lines.join(" ").includes("should never appear here"));
+});

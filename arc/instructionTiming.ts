@@ -142,9 +142,16 @@ export const INSTRUCTION_TIMING = {
    */
   observerPerspective: 5,
   observerPause: 4,
-  observerSafetyRecognition: 4,
   /** ARC Goal task: the Result Imagery half of the extended Action Imagery sequence (arc/successfulPerformance.ts) -- same instruction-reveal pacing as actionImagery above. */
   resultImagery: 5,
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 1: the free natural-breathing line, added to every Presence sub-stage, Stay, and Acceptance. */
+  freeBreathing: 6,
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 2: the Energy Color reminder line, now always its own leading segment (never appended to an existing one). */
+  energyColor: 4,
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 5: any one of the four new mantras (Stay/Acceptance/Regulation/Bridge) -- same short reading duration for all four. */
+  mantra: 5,
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 9: the optional desired-state/identity imagery line, shown once during Encoding. */
+  desiredImagery: 5,
 } as const;
 
 export interface InstructionTimingStatus {

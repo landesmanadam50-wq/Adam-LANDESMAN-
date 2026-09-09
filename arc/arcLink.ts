@@ -36,6 +36,10 @@ import type { BodyImagery } from "./bodyImagery.ts";
 import type { ArcLinkMode, ArcLinkTriggerCategory } from "./routineLinks.ts";
 import { buildTriggerImageryContent } from "./triggerImagery.ts";
 import type { ArcBuildProfile } from "./types.ts";
+import { getFreeBreathingLine } from "./naturalBreathing.ts";
+import { getEnergyColorLine } from "./presenceColor.ts";
+import { getAcceptanceMantraLine, getBridgeMantraLine, getRegulationMantraLine, getStayMantraLine } from "./mantras.ts";
+import { getDesiredImageryLine } from "./desiredImagery.ts";
 
 export type ArcLinkTarget = "state" | "identity" | "habit";
 
@@ -121,7 +125,6 @@ export function buildArcLinkSteps(profile: ArcBuildProfile): ArcLinkStep[] {
   const actionLabel = target ? resolveActionLabel(profile, target) : safe(profile.beneficialAction);
   const desiredStateLabel = target ? resolveDesiredStateLabel(profile, target) : "";
   const interferingLabel = target ? resolveInterferingLabel(profile, target) : "";
-  const presenceColor = safe(profile.presenceColor);
   const regulationText = safe(profile.regulationTool);
   const encodingBodyLanguage = target ? resolveEncodingBodyLanguage(profile, target) : { cue: "", bodyImagery: null };
   const mantra = target ? resolveMantra(profile, target) : "";
@@ -163,10 +166,13 @@ export function buildArcLinkSteps(profile: ArcBuildProfile): ArcLinkStep[] {
     bodyImagery: null,
   });
 
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 5: Stay Mantra,
+  // appended at the end of this Awareness/Stay-equivalent step, when configured.
+  const stayMantraLine = getStayMantraLine(profile);
   steps.push({
     id: "awareness",
     title: "דמיין את המודעות",
-    lines: ["דמיין שאתה שם לב למה שכבר נמצא באותו רגע, בלי להעצים אותו ובלי להילחם בו."],
+    lines: ["דמיין שאתה שם לב למה שכבר נמצא באותו רגע, בלי להעצים אותו ובלי להילחם בו.", ...(stayMantraLine ? [stayMantraLine] : [])],
     buttonLabel: "המשך",
     bodyImagery: null,
   });
@@ -188,44 +194,48 @@ export function buildArcLinkSteps(profile: ArcBuildProfile): ArcLinkStep[] {
     });
   }
 
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 5: Acceptance
+  // Mantra, appended at the end of this Acceptance step, when configured.
+  const acceptanceMantraLine = getAcceptanceMantraLine(profile);
   steps.push({
     id: "acceptance",
     title: "דמיין את הקבלה",
-    lines: ["דמיין שאתה מוכן לקבל את מה שנמצא כרגע כמו שהוא, בלי להילחם בו."],
+    lines: ["דמיין שאתה מוכן לקבל את מה שנמצא כרגע כמו שהוא, בלי להילחם בו.", ...(acceptanceMantraLine ? [acceptanceMantraLine] : [])],
     buttonLabel: "המשך",
     bodyImagery: null,
   });
 
   // Presence: the exact same fixed instruction text normal ARC's own
-  // three Presence stages use, in their correct order, plus the
-  // dynamic Presence Color imagery (spec Section 4). Never a live
-  // Presence rating, never the routing that decides whether to run
-  // full/partial Presence in normal ARC -- ARC Link always rehearses
-  // the complete configured Presence process.
+  // three Presence stages use, in their correct order. Unified
+  // Presence/Mantra/Trigger/Imagery spec, sections 1-2: the Energy
+  // Color line now leads (prepended, via the same getEnergyColorLine
+  // used everywhere else), and the free-breathing line is appended --
+  // replaces the old, separately-worded appended color reminder.
+  const energyColorLine = getEnergyColorLine(profile.presenceColor);
   const presenceLines = [
+    ...(energyColorLine ? [energyColorLine] : []),
     "דמיין שאתה מבצע את שלבי הנוכחות שמופיעים ב-ARC הרגיל שלך.",
     getAwarenessInstruction(),
     getCombinedAttentionInstruction(),
     getExpandPresenceInstruction(),
+    getFreeBreathingLine(),
   ];
-  if (presenceColor) {
-    presenceLines.push(
-      "כעת דמיין את צבע הנוכחות שלך:",
-      presenceColor,
-      "דמיין שהצבע מתפשט בהדרגה וממלא את הגוף. אפשר לצבע להתפשט בקצב טבעי, בזמן שאתה נעשה נוכח, יציב ומחובר יותר לכאן ולעכשיו."
-    );
-  }
   steps.push({ id: "presence", title: "דמיין את הנוכחות", lines: presenceLines, buttonLabel: "דמיינתי את הנוכחות", bodyImagery: null });
 
   // "lines" for a bodyImagery-carrying step holds ONLY content beyond
   // what live/BodyImageryStep.tsx already renders from `bodyImagery`
-  // itself (the anchor line + body parts + imagery text) -- Regulation
-  // has nothing extra.
+  // itself (the anchor line + body parts + imagery text). Unified
+  // Presence/Mantra/Trigger/Imagery spec, section 5: Regulation Mantra,
+  // then the brand-new Bridge Mantra, appended at the end of this step
+  // -- structurally the same "end of Regulation, before Encoding"
+  // placement as the main engine's own "regulate" stage.
   const regulationImagery = getBodyImageryForText(regulationText, profile.regulationBodyImagery ?? null);
+  const regulationMantraLine = getRegulationMantraLine(profile);
+  const bridgeMantraLine = getBridgeMantraLine(profile);
   steps.push({
     id: "regulation",
     title: "דמיין את הוויסות",
-    lines: [],
+    lines: [regulationMantraLine, bridgeMantraLine].filter((line): line is string => line !== null),
     buttonLabel: "המשך",
     bodyImagery: { anchorLabel: regulationText, imagery: regulationImagery },
   });
@@ -246,6 +256,14 @@ export function buildArcLinkSteps(profile: ArcBuildProfile): ArcLinkStep[] {
     encodingLines.push(`דמיין שאתה מתחבר ל-${desiredStateLabel}.`);
   } else if (mantra) {
     encodingLines.push(`דמיין שאתה אומר לעצמך: “${mantra}”.`);
+  }
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 9: optional
+  // desired-state/identity imagery -- inherited straight from the
+  // linked profile (no duplicate ARC-Link-level field), appended after
+  // the existing Encoding content above.
+  if (target) {
+    const desiredImageryLine = getDesiredImageryLine(profile, target, profile.supportiveState, profile.desiredIdentity);
+    if (desiredImageryLine) encodingLines.push(desiredImageryLine);
   }
   steps.push({
     id: "encoding",
@@ -432,7 +450,6 @@ export function buildArcLinkProtocolSteps(profile: ArcBuildProfile, choice: ArcL
 
   const actionLabel = target ? resolveActionLabel(profile, target) : safe(profile.beneficialAction);
   const interferingLabel = target ? resolveInterferingLabel(profile, target) : "";
-  const presenceColor = safe(profile.presenceColor);
   const regulationText = safe(profile.regulationTool);
   const encodingBodyLanguage = target ? resolveEncodingBodyLanguage(profile, target) : { cue: "", bodyImagery: null };
   // Updated-ARC-structure task: identityLabel is the identity/state NAME
@@ -463,10 +480,14 @@ export function buildArcLinkProtocolSteps(profile: ArcBuildProfile, choice: ArcL
   }
 
   if (routeKind !== "supportive") {
+    // Unified Presence/Mantra/Trigger/Imagery spec, section 5: Stay
+    // Mantra, appended at the end of this Awareness/Stay-equivalent
+    // step, when configured.
+    const stayMantraLine = getStayMantraLine(profile);
     steps.push({
       id: "awareness",
       title: "דמיין את המודעות",
-      lines: ["דמיין שאתה שם לב למה שכבר נמצא באותו רגע, בלי להעצים אותו ובלי להילחם בו."],
+      lines: ["דמיין שאתה שם לב למה שכבר נמצא באותו רגע, בלי להעצים אותו ובלי להילחם בו.", ...(stayMantraLine ? [stayMantraLine] : [])],
       buttonLabel: "המשך",
       bodyImagery: null,
     });
@@ -490,10 +511,14 @@ export function buildArcLinkProtocolSteps(profile: ArcBuildProfile, choice: ArcL
   }
 
   if (routeKind !== "supportive") {
+    // Unified Presence/Mantra/Trigger/Imagery spec, section 5:
+    // Acceptance Mantra, appended at the end of this Acceptance step,
+    // when configured.
+    const acceptanceMantraLine = getAcceptanceMantraLine(profile);
     steps.push({
       id: "acceptance",
       title: "דמיין את הקבלה",
-      lines: ["דמיין שאתה מוכן לקבל את מה שנמצא כרגע כמו שהוא, בלי להילחם בו."],
+      lines: ["דמיין שאתה מוכן לקבל את מה שנמצא כרגע כמו שהוא, בלי להילחם בו.", ...(acceptanceMantraLine ? [acceptanceMantraLine] : [])],
       buttonLabel: "המשך",
       bodyImagery: null,
     });
@@ -501,26 +526,32 @@ export function buildArcLinkProtocolSteps(profile: ArcBuildProfile, choice: ArcL
 
   // Presence -- identical for every route kind, the exact same fixed
   // instruction text normal ARC's own three Presence stages use.
+  // Unified Presence/Mantra/Trigger/Imagery spec, sections 1-2: the
+  // Energy Color line now leads (prepended), and the free-breathing
+  // line is appended -- replaces the old, separately-worded appended
+  // color reminder.
+  const energyColorLine = getEnergyColorLine(profile.presenceColor);
   const presenceLines = [
+    ...(energyColorLine ? [energyColorLine] : []),
     "דמיין שאתה מבצע את שלבי הנוכחות שמופיעים ב-ARC הרגיל שלך.",
     getAwarenessInstruction(),
     getCombinedAttentionInstruction(),
     getExpandPresenceInstruction(),
+    getFreeBreathingLine(),
   ];
-  if (presenceColor) {
-    presenceLines.push(
-      "כעת דמיין את צבע הנוכחות שלך:",
-      presenceColor,
-      "דמיין שהצבע מתפשט בהדרגה וממלא את הגוף. אפשר לצבע להתפשט בקצב טבעי, בזמן שאתה נעשה נוכח, יציב ומחובר יותר לכאן ולעכשיו."
-    );
-  }
   steps.push({ id: "presence", title: "דמיין את הנוכחות", lines: presenceLines, buttonLabel: "דמיינתי את הנוכחות", bodyImagery: null });
 
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 5: Regulation
+  // Mantra, then the brand-new Bridge Mantra, appended at the end of
+  // this step -- same "end of Regulation, before Encoding" placement
+  // as the main engine's own "regulate" stage.
   const regulationImagery = getBodyImageryForText(regulationText, profile.regulationBodyImagery ?? null);
+  const regulationMantraLine = getRegulationMantraLine(profile);
+  const bridgeMantraLine = getBridgeMantraLine(profile);
   steps.push({
     id: "regulation",
     title: "דמיין את הוויסות",
-    lines: [],
+    lines: [regulationMantraLine, bridgeMantraLine].filter((line): line is string => line !== null),
     buttonLabel: "המשך",
     bodyImagery: { anchorLabel: regulationText, imagery: regulationImagery },
   });
@@ -549,6 +580,14 @@ export function buildArcLinkProtocolSteps(profile: ArcBuildProfile, choice: ArcL
   }
   if (futureMantra) {
     encodingLines.push(`דמיין שאתה אומר לעצמך את המנטרה העתידית: “${futureMantra}”.`);
+  }
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 9: optional
+  // desired-state/identity imagery -- inherited straight from the
+  // linked profile (no duplicate ARC-Link-level field), appended after
+  // the existing Encoding content above.
+  if (target) {
+    const desiredImageryLine = getDesiredImageryLine(profile, target, profile.supportiveState, profile.desiredIdentity);
+    if (desiredImageryLine) encodingLines.push(desiredImageryLine);
   }
   steps.push({
     id: "encoding",

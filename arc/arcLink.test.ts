@@ -115,13 +115,16 @@ test("intro/trigger/reinforce steps insert the CURRENT build's own saved trigger
   assert.match(reinforce.lines.join(" "), /בשעה 10:00/);
 });
 
-test("Presence step reuses the exact fixed Awareness/Combined-Attention/Expand-Presence instruction text normal ARC's own Presence stages use, plus the dynamic saved Presence Color", () => {
+test("Presence step reuses the exact fixed Awareness/Combined-Attention/Expand-Presence instruction text normal ARC's own Presence stages use, plus the dynamic Energy Color line (leading) and the new free-breathing line (trailing)", () => {
   const p = profile({ internalAction: "סריקת גוף", presenceColor: "סגול" });
   const presence = buildArcLinkSteps(p).find((s) => s.id === "presence")!;
   assert.match(presence.lines.join(" "), /שים לב למה שכבר נמצא עכשיו בתודעה ובגוף שלך/, "Awareness instruction text");
   assert.match(presence.lines.join(" "), /שים לב לנקודה אחת מולך/, "Combined Attention instruction text");
   assert.match(presence.lines.join(" "), /הרחב בעדינות את שדה הראייה/, "Expand Presence instruction text");
-  assert.ok(presence.lines.includes("סגול"));
+  // Unified Presence/Mantra/Trigger/Imagery spec, sections 1-2: Energy
+  // Color leads (first line), free breathing is appended (last line).
+  assert.equal(presence.lines[0], "שים לב כיצד האנרגיה בצבע סגול מתפשטת בגופך ומחזירה אותך לנוכחות.");
+  assert.equal(presence.lines[presence.lines.length - 1], "אפשר לנשימה להמשיך בחופשיות. שים לב כיצד היא מתרחשת מעצמה, בלי לנסות לשנות אותה.");
   assert.ok(!presence.lines.join(" ").includes("בסולם"), "never asks for a live Presence rating");
 });
 
@@ -482,4 +485,134 @@ test("buildArcLinkStartConfirmationStep is safe (never 'undefined'/'null') when 
   const text = `${step.title} ${step.lines.join(" ")}`;
   assert.ok(!text.includes("undefined"));
   assert.ok(!text.includes("null"));
+});
+
+// ---------------------------------------------------------------------------
+// Unified Presence/Mantra/Trigger/Imagery spec, section 10: ARC Link
+// integration -- mantras/imagery/Energy Color/breathing, all inherited live
+// from the referenced ArcBuildProfile (never a duplicate ArcLink-level
+// field), applied without rebuilding ARC Link or adding new stages.
+// ---------------------------------------------------------------------------
+
+test("buildArcLinkSteps: Energy Color leads the presence step, and the free-breathing line is appended -- both inherited from the linked profile, never a separate ARC Link field", () => {
+  const withColor = buildArcLinkSteps(profile({ internalAction: "סריקת גוף", presenceColor: "כחול" }));
+  const presence = withColor.find((s) => s.id === "presence")!;
+  assert.equal(presence.lines[0], "שים לב כיצד האנרגיה בצבע כחול מתפשטת בגופך ומחזירה אותך לנוכחות.");
+  assert.equal(presence.lines[presence.lines.length - 1], "אפשר לנשימה להמשיך בחופשיות. שים לב כיצד היא מתרחשת מעצמה, בלי לנסות לשנות אותה.");
+
+  const withoutColor = buildArcLinkSteps(profile({ internalAction: "סריקת גוף", presenceColor: null }));
+  const presenceNoColor = withoutColor.find((s) => s.id === "presence")!;
+  assert.ok(!presenceNoColor.lines[0].includes("האנרגיה"), "no Energy Color line at all when unset -- never invented");
+  assert.equal(
+    presenceNoColor.lines[presenceNoColor.lines.length - 1],
+    "אפשר לנשימה להמשיך בחופשיות. שים לב כיצד היא מתרחשת מעצמה, בלי לנסות לשנות אותה.",
+    "breathing line still appears even with no saved color"
+  );
+});
+
+test("buildArcLinkSteps: Stay/Acceptance Mantras appear at the end of their own steps when configured, and add nothing when not", () => {
+  const p = profile({ internalAction: "סריקת גוף", stayMantra: "טקסט שהייה", acceptanceMantra: "טקסט קבלה" });
+  const steps = buildArcLinkSteps(p);
+  const awareness = steps.find((s) => s.id === "awareness")!;
+  const acceptance = steps.find((s) => s.id === "acceptance")!;
+  assert.equal(awareness.lines[awareness.lines.length - 1], 'אפשר להישאר עם זה לרגע: "טקסט שהייה".');
+  assert.equal(acceptance.lines[acceptance.lines.length - 1], 'מותר לזה להיות כאן כרגע: "טקסט קבלה".');
+
+  const withoutMantras = buildArcLinkSteps(profile({ internalAction: "סריקת גוף" }));
+  const awarenessNoMantra = withoutMantras.find((s) => s.id === "awareness")!;
+  const acceptanceNoMantra = withoutMantras.find((s) => s.id === "acceptance")!;
+  assert.equal(awarenessNoMantra.lines.length, 1, "no extra line when stayMantra is unset");
+  assert.equal(acceptanceNoMantra.lines.length, 1, "no extra line when acceptanceMantra is unset");
+});
+
+test("buildArcLinkSteps: Regulation Mantra then Bridge Mantra appear at the end of the regulation step, in that order, before Encoding", () => {
+  const p = profile({ internalAction: "סריקת גוף", regulationMantra: "טקסט ויסות", bridgeMantra: "טקסט גשר" });
+  const steps = buildArcLinkSteps(p);
+  const regulation = steps.find((s) => s.id === "regulation")!;
+  assert.deepEqual(regulation.lines, ['תן לגוף להתייצב בקצב שלו: "טקסט ויסות".', 'הגשר לקראת מה שרוצים לחזק: "טקסט גשר".']);
+
+  const regulationIndex = steps.findIndex((s) => s.id === "regulation");
+  const encodingIndex = steps.findIndex((s) => s.id === "encoding");
+  assert.ok(regulationIndex < encodingIndex, "regulation (carrying both mantras) comes before encoding");
+
+  const encoding = steps.find((s) => s.id === "encoding")!;
+  assert.ok(!encoding.lines.join(" ").includes("טקסט גשר"), "Bridge Mantra never also appears in Encoding");
+});
+
+test("buildArcLinkSteps: desired imagery is inherited from the linked profile and appended inside the encoding step", () => {
+  const p = profile({
+    internalAction: "סריקת גוף",
+    supportiveState: "מיקוד",
+    stateDesiredImageryType: "real",
+    stateDesiredImageryDescription: "תמונה מהחתונה שלי",
+  });
+  const encoding = buildArcLinkSteps(p).find((s) => s.id === "encoding")!;
+  assert.ok(encoding.lines.some((line) => line.includes("תמונה מהחתונה שלי")), "the configured desired imagery appears in Encoding");
+
+  const withoutImagery = buildArcLinkSteps(profile({ internalAction: "סריקת גוף" }));
+  const encodingNoImagery = withoutImagery.find((s) => s.id === "encoding")!;
+  assert.ok(!encodingNoImagery.lines.join(" ").includes("העלה בדמיונך"), "no imagery line at all when unset -- never invented");
+});
+
+test("buildArcLinkProtocolSteps: same Energy Color/breathing/mantra/imagery inheritance holds on the newer route-choice entry point", () => {
+  const p = profile({
+    internalAction: "סריקת גוף",
+    presenceColor: "ירוק",
+    stayMantra: "טקסט שהייה",
+    acceptanceMantra: "טקסט קבלה",
+    regulationMantra: "טקסט ויסות",
+    bridgeMantra: "טקסט גשר",
+    supportiveState: "מיקוד",
+    stateDesiredImageryType: "imagined",
+    stateDesiredImageryDescription: "אור זהוב",
+  });
+  const ctx = { triggerText: "טריגר", mode: "with_archi" as const };
+  const steps = buildArcLinkProtocolSteps(p, null, ctx);
+
+  const presence = steps.find((s) => s.id === "presence")!;
+  assert.equal(presence.lines[0], "שים לב כיצד האנרגיה בצבע ירוק מתפשטת בגופך ומחזירה אותך לנוכחות.");
+  assert.equal(presence.lines[presence.lines.length - 1], "אפשר לנשימה להמשיך בחופשיות. שים לב כיצד היא מתרחשת מעצמה, בלי לנסות לשנות אותה.");
+
+  const awareness = steps.find((s) => s.id === "awareness")!;
+  assert.equal(awareness.lines[awareness.lines.length - 1], 'אפשר להישאר עם זה לרגע: "טקסט שהייה".');
+  const acceptance = steps.find((s) => s.id === "acceptance")!;
+  assert.equal(acceptance.lines[acceptance.lines.length - 1], 'מותר לזה להיות כאן כרגע: "טקסט קבלה".');
+
+  const regulation = steps.find((s) => s.id === "regulation")!;
+  assert.deepEqual(regulation.lines, ['תן לגוף להתייצב בקצב שלו: "טקסט ויסות".', 'הגשר לקראת מה שרוצים לחזק: "טקסט גשר".']);
+
+  const encoding = steps.find((s) => s.id === "encoding")!;
+  assert.ok(encoding.lines.some((line) => line.includes("אור זהוב")));
+});
+
+test("buildArcLinkProtocolSteps: on the 'supportive' route, Stay/Acceptance steps are skipped entirely -- their mantras never appear anywhere, never as an orphaned line", () => {
+  const p = profile({
+    internalAction: "סריקת גוף",
+    supportiveState: "מיקוד",
+    stayMantra: "טקסט שהייה",
+    acceptanceMantra: "טקסט קבלה",
+  });
+  const ctx = { triggerText: "טריגר", mode: "with_archi" as const };
+  const steps = buildArcLinkProtocolSteps(p, { kind: "supportive", target: "state" }, ctx);
+  assert.equal(steps.find((s) => s.id === "awareness"), undefined, "supportive route never shows Awareness");
+  assert.equal(steps.find((s) => s.id === "acceptance"), undefined, "supportive route never shows Acceptance");
+  const allLines = steps.map((s) => s.lines.join(" ")).join(" ");
+  assert.ok(!allLines.includes("טקסט שהייה"));
+  assert.ok(!allLines.includes("טקסט קבלה"));
+});
+
+test("neither buildArcLinkSteps nor buildArcLinkProtocolSteps ever renders 'undefined'/'null'/'[object Object]' for a legacy profile with none of the new fields configured", () => {
+  const legacy = profile({ internalAction: "סריקת גוף" });
+  const legacyText = allText(legacy);
+  assert.ok(!legacyText.includes("undefined"));
+  assert.ok(!legacyText.includes("null"));
+  assert.ok(!legacyText.includes("[object Object]"));
+
+  const ctx = { triggerText: "טריגר", mode: "with_archi" as const };
+  const protocolText = buildArcLinkProtocolSteps(legacy, null, ctx)
+    .map((s) => `${s.title} ${s.lines.join(" ")}`)
+    .join(" ");
+  assert.ok(!protocolText.includes("undefined"));
+  assert.ok(!protocolText.includes("null"));
+  assert.ok(!protocolText.includes("[object Object]"));
 });

@@ -111,11 +111,15 @@ test("the real awareness/combined-attention/expand-presence copy, reached via th
   const activeLayers: DevelopmentLayer[] = ["state", "identity", "habit"];
   let { stage, state } = walkToArcThoughtAwareness(p, activeLayers);
 
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 1: the free
+  // natural-breathing line is now appended to every one of these three
+  // sub-stages' body text (no Energy Color here -- profile() has
+  // presenceColor: null).
+  const breathingLine = "אפשר לנשימה להמשיך בחופשיות. שים לב כיצד היא מתרחשת מעצמה, בלי לנסות לשנות אותה.";
   const expected: Partial<Record<ArcStage, string>> = {
-    arc_thought_awareness: "שים לב למה שכבר נמצא עכשיו בתודעה ובגוף שלך.",
-    arc_thought_combined_attention:
-      "שים לב למה שכבר נמצא עכשיו בתודעה. במקביל, שים לב לנקודה אחת מולך, לצלילים מסביב ולתחושה של הגוף כולו.",
-    arc_thought_expand_presence: "הרחב בעדינות את שדה הראייה, אפשר לצלילים להישאר ברקע והעבר יותר תשומת לב לתחושות הגוף.",
+    arc_thought_awareness: `שים לב למה שכבר נמצא עכשיו בתודעה ובגוף שלך. ${breathingLine}`,
+    arc_thought_combined_attention: `שים לב למה שכבר נמצא עכשיו בתודעה. במקביל, שים לב לנקודה אחת מולך, לצלילים מסביב ולתחושה של הגוף כולו. ${breathingLine}`,
+    arc_thought_expand_presence: `הרחב בעדינות את שדה הראייה, אפשר לצלילים להישאר ברקע והעבר יותר תשומת לב לתחושות הגוף. ${breathingLine}`,
   };
 
   for (const expectedStage of ARC_THOUGHT_STAGES) {
@@ -149,6 +153,10 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "arcThoughtCompleted",
     "beneficialActionDurationMinutes",
     "currentArcStage",
+    // Unified Presence/Mantra/Trigger/Imagery spec, sections 6-7: three
+    // new session-only fields -- see arc/types.ts's ArcLiveState doc.
+    "currentInterferingThought",
+    "currentTriggerDescription",
     "desiredStateRating",
     "hasUrge",
     "identifiedNeed",
@@ -168,6 +176,7 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "selectedTarget",
     "sensationIntensity",
     "sensationLocation",
+    "sideObservationMode",
     "successFocusExtraMinutes",
     "triggerContext",
     "triggerKnown",

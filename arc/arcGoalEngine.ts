@@ -225,9 +225,22 @@ export function urgeArcToProfile(urgeArc: UrgeArc): ArcBuildProfile {
  * (arc/arcEngine.ts's own arc_thought_presence_recheck retry loop) is
  * never re-intercepted, since triggerPrefixResolved is already true by
  * then.
+ *
+ * Unified Presence/Mantra/Trigger/Imagery spec, section 4: a 7-10
+ * Presence rating now resolves presence_check into the new
+ * "presence_grounding" stage instead of arc_thought_awareness/
+ * arc_thought_expand_presence (see arc/arcEngine.ts's "presence_check"
+ * case) -- included here too, so this interception still fires exactly
+ * once on that route as well, never silently skipped just because the
+ * high-presence route no longer passes through ARC Thought.
  */
 export function needsTriggerPrefixDetour(nextOuterStage: ArcStage, goalState: ArcGoalLiveState): boolean {
-  return !goalState.triggerPrefixResolved && (nextOuterStage === "arc_thought_awareness" || nextOuterStage === "arc_thought_expand_presence");
+  return (
+    !goalState.triggerPrefixResolved &&
+    (nextOuterStage === "arc_thought_awareness" ||
+      nextOuterStage === "arc_thought_expand_presence" ||
+      nextOuterStage === "presence_grounding")
+  );
 }
 
 /** trigger_identification's own answer -- moves on to third_person_imagery. Blank custom text (spec section 2 never forces one) is recorded as the same "unspecified" placeholder every other optional free-text answer in this app falls back to. */

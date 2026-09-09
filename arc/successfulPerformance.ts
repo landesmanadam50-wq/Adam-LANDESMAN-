@@ -17,8 +17,8 @@
  *
  * Reuses the exact same primitives arc/stageCopy.ts's own "act" case
  * already uses for the original Action Imagery step (resolveDwellSecondsFor,
- * withTrailingDwellSegment, INSTRUCTION_TIMING, getPresenceColorReminder)
- * -- this is a second, parallel composition of the same building blocks
+ * withTrailingDwellSegment, INSTRUCTION_TIMING, getEnergyColorLine) --
+ * this is a second, parallel composition of the same building blocks
  * for the two NEW steps, never a duplicate timing/dwell mechanism.
  */
 
@@ -27,7 +27,7 @@ import type { ArcStageCopy } from "./stageCopy.ts";
 import type { InstructionSegment } from "./instructionTiming.ts";
 import { INSTRUCTION_TIMING } from "./instructionTiming.ts";
 import { resolveDwellSecondsFor, withTrailingDwellSegment } from "./dwellTimes.ts";
-import { getPresenceColorReminder } from "./presenceColor.ts";
+import { getEnergyColorLine } from "./presenceColor.ts";
 
 /** Suggested execution qualities (spec section 4) -- feminine adjective form, matching "אתה מבצע את הפעולה בצורה ___" grammatically. */
 export const EXECUTION_QUALITY_PRESETS = ["מדויקת", "עקבית", "יציבה", "מקצועית", "בטוחה", "רגועה"];
@@ -120,9 +120,9 @@ export function buildProcessActionImagerySegments(
   const bodyCueSentence = actionBodyCue ? ` תוך שמירה על ${actionBodyCue}.` : "";
   const clause = formatExecutionQualitiesClause(resolveExecutionQualities(profile));
   const clauseSentence = clause ? ` ${clause}` : "";
-  const reminder = getPresenceColorReminder(profile.presenceColor, "actionImagery");
-  const reminderSentence = reminder ? ` ${reminder}` : "";
-  return [{ text: `${actionLine}${instruction}${bodyCueSentence}${clauseSentence}${reminderSentence}`, durationSeconds: INSTRUCTION_TIMING.actionImagery }];
+  const energyColorLine = getEnergyColorLine(profile.presenceColor);
+  const leading = energyColorLine ? `${energyColorLine} ` : "";
+  return [{ text: `${leading}${actionLine}${instruction}${bodyCueSentence}${clauseSentence}`, durationSeconds: INSTRUCTION_TIMING.actionImagery }];
 }
 
 /**
@@ -136,9 +136,9 @@ export function buildResultImagerySegments(profile: ArcBuildProfile): Instructio
   const result = profile.identitySuccessfulPerformanceResult?.trim() ?? "";
   const instruction = "עכשיו דמיין שהפעולה מצליחה ואתה משיג את התוצאה הרצויה. איך המצב נראה? מה אתה רואה, שומע ומרגיש?";
   const resultLine = result ? ` התוצאה הרצויה: ${result}.` : "";
-  const reminder = getPresenceColorReminder(profile.presenceColor, "actionImagery");
-  const reminderSentence = reminder ? ` ${reminder}` : "";
-  return [{ text: `${instruction}${resultLine}${reminderSentence}`, durationSeconds: INSTRUCTION_TIMING.resultImagery }];
+  const energyColorLine = getEnergyColorLine(profile.presenceColor);
+  const leading = energyColorLine ? `${energyColorLine} ` : "";
+  return [{ text: `${leading}${instruction}${resultLine}`, durationSeconds: INSTRUCTION_TIMING.resultImagery }];
 }
 
 /** Process + Action Imagery's own full ArcStageCopy -- its own configured dwell (actionImageryDwellSeconds, same field the original single-step Action Imagery already used), appended via the same withTrailingDwellSegment every other dwell-gated stage uses. */

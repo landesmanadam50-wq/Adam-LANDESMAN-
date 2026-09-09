@@ -79,6 +79,7 @@ import {
   applyRegulationToolUsed,
   applyScaleAnswer,
   applySensationAnswer,
+  applySideObservationMode,
   applySuccessFocusExtraMinutes,
   applyWantsFutureSuccessFocus,
   applyTargetSelection,
@@ -87,7 +88,7 @@ import {
   hasValidAlternativeAction,
   resolveSensationLocation,
 } from "./liveEventAdapter.ts";
-import { getAvailableLiveTriggers } from "../arc/arcEngine.ts";
+import { getAvailableLiveTriggers, resolveTargetLimitingBelief } from "../arc/arcEngine.ts";
 import { DEFERRAL_OPTIONS, scheduleFutureSuccessFocus } from "../data/reminders.ts";
 import type { DeferralOption } from "../data/reminders.ts";
 import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
@@ -121,6 +122,28 @@ export default function LiveSessionScreen() {
   const [pendingCustomSensationLocation, setPendingCustomSensationLocation] = useState("");
   const [pendingSensationLocationUnclear, setPendingSensationLocationUnclear] = useState(false);
   const [pendingTriggerContext, setPendingTriggerContext] = useState("");
+  /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 6: the
+   * trigger_context stage's second, optional field -- the current
+   * interfering thought/interpretation/belief/imagined future. Prefilled
+   * (once, in commitAdvance below) from the resolved target's own
+   * BUILD-configured limiting belief, when one exists and a target is
+   * already known -- an editable suggestion the trainee may keep, edit,
+   * or clear, exactly like every other "editable suggestion, never
+   * auto-overwrite BUILD" precedent in this file. Never written back
+   * onto ArcBuildProfile.
+   */
+  const [pendingInterferingThought, setPendingInterferingThought] = useState("");
+  /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 3: the
+   * session-only environmental-object grounding sub-phase
+   * (PresenceObjectGroundingScreen) is entirely self-contained -- this
+   * screen only needs to know whether it has been completed yet for the
+   * current session, to gate arc_thought_expand_presence's rendering.
+   * Reset to false on every fresh session (useFocusEffect/restart below),
+   * exactly like every other per-session piece of local state here.
+   */
+  const [presenceObjectGroundingDone, setPresenceObjectGroundingDone] = useState(false);
   const [pendingAlternativeAction, setPendingAlternativeAction] = useState("");
   const [pendingAlternativeActionDuration, setPendingAlternativeActionDuration] = useState<number | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
@@ -241,6 +264,8 @@ export default function LiveSessionScreen() {
         setPendingCustomSensationLocation("");
         setPendingSensationLocationUnclear(false);
         setPendingTriggerContext("");
+        setPendingInterferingThought("");
+        setPresenceObjectGroundingDone(false);
         setPendingAlternativeAction("");
         setPendingAlternativeActionDuration(null);
         setGratitudeText("");
@@ -369,6 +394,17 @@ export default function LiveSessionScreen() {
     setPendingCustomSensationLocation("");
     setPendingSensationLocationUnclear(false);
     setPendingTriggerContext("");
+    // Unified Presence/Mantra/Trigger/Imagery spec, section 6: prefill
+    // the interfering-thought field from the resolved target's own
+    // BUILD-configured limiting belief (an editable suggestion, never
+    // auto-saved) whenever a target is already known by the time
+    // trigger_context is reached (the reactive routes) -- otherwise
+    // starts blank, exactly like every other fresh entry to this stage.
+    setPendingInterferingThought(
+      nextStage === "trigger_context" && nextSession.selectedTarget
+        ? (resolveTargetLimitingBelief(nextSession.selectedTarget, profile) ?? "")
+        : ""
+    );
     setPendingAlternativeAction("");
     setPendingAlternativeActionDuration(null);
     if (nextStage === "complete") {
@@ -445,6 +481,8 @@ export default function LiveSessionScreen() {
     setPendingCustomSensationLocation("");
     setPendingSensationLocationUnclear(false);
     setPendingTriggerContext("");
+    setPendingInterferingThought("");
+    setPresenceObjectGroundingDone(false);
     setPendingAlternativeAction("");
     setPendingAlternativeActionDuration(null);
     setSessionStartedAt(new Date().toISOString());
@@ -598,7 +636,14 @@ export default function LiveSessionScreen() {
           pendingSensationLocationUnclear={pendingSensationLocationUnclear}
           pendingTriggerContext={pendingTriggerContext}
           onChangeTriggerContext={setPendingTriggerContext}
-          onTriggerContextContinue={() => commitAdvance(applyTriggerContext(session, pendingTriggerContext))}
+          pendingInterferingThought={pendingInterferingThought}
+          onChangeInterferingThought={setPendingInterferingThought}
+          onTriggerContextContinue={() =>
+            commitAdvance(applyTriggerContext(session, pendingTriggerContext, pendingInterferingThought))
+          }
+          onSelectSideObservationMode={(mode) => setSession(applySideObservationMode(session, mode))}
+          presenceObjectGroundingDone={presenceObjectGroundingDone}
+          onPresenceObjectGroundingComplete={() => setPresenceObjectGroundingDone(true)}
           onSelectTrigger={(trigger) => commitAdvance(applyTriggerSelection(session, trigger))}
           onScaleAnswer={(value) => commitAdvance(applyScaleAnswer(stage, session, value))}
           onSelectSensationLocation={(location) => {
