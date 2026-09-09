@@ -1007,3 +1007,122 @@ test("buildProfileFromDraft leaves every Successful Performance field at null fo
   assert.equal(p.identitySuccessfulPerformanceResult, null);
   assert.equal(p.identitySuccessMantra, null);
 });
+
+// ---------------------------------------------------------------------------
+// Unified Presence/Mantra/Trigger/Imagery spec, section 5: Stay/Acceptance/
+// Regulation/Bridge Mantras -- single build-global fields, never gated on
+// needsState/needsIdentity, exactly like value/regulationTool.
+// ---------------------------------------------------------------------------
+
+test("buildProfileFromDraft persists all four new mantras as build-global fields, regardless of target", () => {
+  const p = buildProfileFromDraft(
+    filledStateOnlyDraft({
+      stayMantra: "אני יכול להישאר לרגע עם מה שכבר נמצא כאן.",
+      acceptanceMantra: "מותר למה שאני מרגיש להיות כאן כרגע.",
+      regulationMantra: "אני מאפשר לגוף להתייצב בקצב שלו.",
+      bridgeMantra: "אני צועד לקראת מי שאני רוצה להיות.",
+    })
+  );
+  assert.equal(p.stayMantra, "אני יכול להישאר לרגע עם מה שכבר נמצא כאן.");
+  assert.equal(p.acceptanceMantra, "מותר למה שאני מרגיש להיות כאן כרגע.");
+  assert.equal(p.regulationMantra, "אני מאפשר לגוף להתייצב בקצב שלו.");
+  assert.equal(p.bridgeMantra, "אני צועד לקראת מי שאני רוצה להיות.");
+});
+
+test("buildProfileFromDraft leaves all four new mantras null when never configured -- never an invented value", () => {
+  const p = buildProfileFromDraft(filledStateOnlyDraft());
+  assert.equal(p.stayMantra, null);
+  assert.equal(p.acceptanceMantra, null);
+  assert.equal(p.regulationMantra, null);
+  assert.equal(p.bridgeMantra, null);
+});
+
+test("the four new mantras round-trip exactly via draftFromProfileAndSelection, unaffected by which target the draft was built for", () => {
+  const draft = filledHabitOnlyDraft({ stayMantra: "טקסט שהייה", regulationMantra: "טקסט ויסות", bridgeMantra: "טקסט גשר" });
+  const profile = buildProfileFromDraft(draft);
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.equal(reloaded.stayMantra, "טקסט שהייה");
+  assert.equal(reloaded.acceptanceMantra, "");
+  assert.equal(reloaded.regulationMantra, "טקסט ויסות");
+  assert.equal(reloaded.bridgeMantra, "טקסט גשר");
+});
+
+// ---------------------------------------------------------------------------
+// Unified Presence/Mantra/Trigger/Imagery spec, section 9: desired-state/
+// identity imagery -- per-layer, gated on needsState/needsIdentity exactly
+// like stateFutureOrientedMantra/identityFutureOrientedMantra, and requires
+// BOTH a type and a non-blank description to persist (a half-answered pair
+// is treated as unconfigured).
+// ---------------------------------------------------------------------------
+
+test("buildProfileFromDraft persists desired imagery only when BOTH type and description are set, for the state layer", () => {
+  const withBoth = buildProfileFromDraft(
+    filledStateOnlyDraft({ stateDesiredImageryType: "real", stateDesiredImageryDescription: "תמונה מהחתונה שלי" })
+  );
+  assert.equal(withBoth.stateDesiredImageryType, "real");
+  assert.equal(withBoth.stateDesiredImageryDescription, "תמונה מהחתונה שלי");
+
+  const typeOnly = buildProfileFromDraft(filledStateOnlyDraft({ stateDesiredImageryType: "imagined", stateDesiredImageryDescription: "" }));
+  assert.equal(typeOnly.stateDesiredImageryType, null, "a type without a description is treated as unconfigured");
+  assert.equal(typeOnly.stateDesiredImageryDescription, null);
+
+  const descriptionOnly = buildProfileFromDraft(
+    filledStateOnlyDraft({ stateDesiredImageryType: null, stateDesiredImageryDescription: "רוגע" })
+  );
+  assert.equal(descriptionOnly.stateDesiredImageryType, null, "a description without a type is treated as unconfigured");
+  assert.equal(descriptionOnly.stateDesiredImageryDescription, null);
+});
+
+test("buildProfileFromDraft persists desired imagery only when BOTH type and description are set, for the identity layer, independently of the state layer's own imagery", () => {
+  const draft = filledTwoWeekDraft({
+    stateDesiredImageryType: "real",
+    stateDesiredImageryDescription: "הצלחה",
+    identityDesiredImageryType: "imagined",
+    identityDesiredImageryDescription: "אדם ממושמע",
+  });
+  const p = buildProfileFromDraft(draft);
+  assert.equal(p.stateDesiredImageryType, "real");
+  assert.equal(p.stateDesiredImageryDescription, "הצלחה");
+  assert.equal(p.identityDesiredImageryType, "imagined");
+  assert.equal(p.identityDesiredImageryDescription, "אדם ממושמע");
+});
+
+test("buildProfileFromDraft never persists desired imagery for the habit-only draft shape (needsState/needsIdentity both false) -- habit has no desired-imagery concept of its own", () => {
+  const habitOnly = buildProfileFromDraft(
+    filledHabitOnlyDraft({
+      stateDesiredImageryType: "real",
+      stateDesiredImageryDescription: "should not be saved",
+      identityDesiredImageryType: "imagined",
+      identityDesiredImageryDescription: "should not be saved either",
+    })
+  );
+  assert.equal(habitOnly.stateDesiredImageryType, null);
+  assert.equal(habitOnly.stateDesiredImageryDescription, null);
+  assert.equal(habitOnly.identityDesiredImageryType, null);
+  assert.equal(habitOnly.identityDesiredImageryDescription, null);
+});
+
+test("desired imagery round-trips exactly via draftFromProfileAndSelection for both layers independently", () => {
+  const draft = filledTwoWeekDraft({
+    stateDesiredImageryType: "imagined",
+    stateDesiredImageryDescription: "אור זהוב מקיף אותי",
+    identityDesiredImageryType: "real",
+    identityDesiredImageryDescription: "תמונה מהיום שסיימתי את המרתון",
+  });
+  const profile = buildProfileFromDraft(draft);
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.equal(reloaded.stateDesiredImageryType, "imagined");
+  assert.equal(reloaded.stateDesiredImageryDescription, "אור זהוב מקיף אותי");
+  assert.equal(reloaded.identityDesiredImageryType, "real");
+  assert.equal(reloaded.identityDesiredImageryDescription, "תמונה מהיום שסיימתי את המרתון");
+});
+
+test("draftFromProfileAndSelection infers desired imagery as unconfigured (null/'') for a legacy profile that never saw this section", () => {
+  const draft = filledTwoWeekDraft();
+  const legacyProfile = buildProfileFromDraft(draft);
+  const reloaded = draftFromProfileAndSelection(legacyProfile, selectionFromDraft(draft));
+  assert.equal(reloaded.stateDesiredImageryType, null);
+  assert.equal(reloaded.stateDesiredImageryDescription, "");
+  assert.equal(reloaded.identityDesiredImageryType, null);
+  assert.equal(reloaded.identityDesiredImageryDescription, "");
+});

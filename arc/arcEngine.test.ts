@@ -607,46 +607,48 @@ test("trigger_selection routes proactive straight to presence_check, unaffected 
   assert.equal(getNextArcStage("trigger_selection", s, p, ALL_LAYERS).stage, "presence_check");
 });
 
-test("high presence skips the full ARC Thought sequence but still routes into Presence Stage 3; low presence enters the full sequence", () => {
-  // Presence Color task: Presence Stage 3 (arc_thought_expand_presence)
-  // is where the saved Presence Color activates, so it must never be
-  // skipped entirely -- a high rating now routes directly into it
-  // instead of past it (see arc/arcEngine.ts's "presence_check" case).
+test("high presence (7-10) skips ALL three Presence stages via the new presence_grounding stage; low presence enters the full ARC Thought sequence", () => {
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 4: a 7-10
+  // Presence rating no longer runs any of the three Presence stages or
+  // their timers -- it routes to the new, short, untimed
+  // "presence_grounding" stage instead (see arc/arcEngine.ts's
+  // "presence_check" case), which then exits straight to the normal
+  // post-ARC-Thought route without ever visiting arc_thought_awareness/
+  // combined_attention/expand_presence.
   const high = state({ triggerType: "reactive_emotion", presenceRating: 8 });
-  assert.equal(getNextArcStage("presence_check", high, profile(), ALL_LAYERS).stage, "arc_thought_expand_presence");
+  assert.equal(getNextArcStage("presence_check", high, profile(), ALL_LAYERS).stage, "presence_grounding");
 
   const low = state({ triggerType: "reactive_emotion", presenceRating: 3 });
   assert.equal(getNextArcStage("presence_check", low, profile(), ALL_LAYERS).stage, "arc_thought_awareness");
 });
 
-test("Presence Color task: a high presence rating still completes Stage 3 exactly once, then exits to the normal post-ARC-Thought route -- never re-entering the full ARC Thought sequence, never looping", () => {
+test("Unified Presence spec: a high presence rating's presence_grounding stage exits directly to the normal post-ARC-Thought route -- never entering any of the three Presence stages, never looping", () => {
   const s = state({ triggerType: "reactive_emotion", presenceRating: 9 });
   const p = profile();
-  const toStage3 = getNextArcStage("presence_check", s, p, ALL_LAYERS);
-  assert.equal(toStage3.stage, "arc_thought_expand_presence");
+  const toGrounding = getNextArcStage("presence_check", s, p, ALL_LAYERS);
+  assert.equal(toGrounding.stage, "presence_grounding");
 
-  // Stage 3's own existing, unchanged transition -- unconditional.
-  const toRecheck = getNextArcStage("arc_thought_expand_presence", { ...s, loopIterationCount: toStage3.loopIterationCount }, p, ALL_LAYERS);
-  assert.equal(toRecheck.stage, "arc_thought_presence_recheck");
-
-  // The rating is still high (nothing reset it), so the recheck exits
-  // straight to the normal reactive_emotion route -- sensation_check --
-  // never back into arc_thought_awareness/combined_attention.
-  const afterRecheck = getNextArcStage(
-    "arc_thought_presence_recheck",
-    { ...s, loopIterationCount: toRecheck.loopIterationCount },
+  const afterGrounding = getNextArcStage(
+    "presence_grounding",
+    { ...s, loopIterationCount: toGrounding.loopIterationCount },
     p,
     ALL_LAYERS
   );
-  assert.equal(afterRecheck.stage, "sensation_check");
+  assert.equal(afterGrounding.stage, "sensation_check");
 });
 
-test("Presence Color task: a proactive trigger with high presence also still routes through Stage 3 before its own post-ARC-Thought route (desired_state_check)", () => {
+test("Unified Presence spec: a proactive trigger with high presence also routes through presence_grounding before its own post-ARC-Thought route (desired_state_check)", () => {
   const s = state({ triggerType: "proactive", presenceRating: 9 });
   const p = profile();
-  assert.equal(getNextArcStage("presence_check", s, p, ALL_LAYERS).stage, "arc_thought_expand_presence");
-  const afterRecheck = getNextArcStage("arc_thought_presence_recheck", s, p, ALL_LAYERS);
-  assert.equal(afterRecheck.stage, "desired_state_check");
+  const toGrounding = getNextArcStage("presence_check", s, p, ALL_LAYERS);
+  assert.equal(toGrounding.stage, "presence_grounding");
+  const afterGrounding = getNextArcStage(
+    "presence_grounding",
+    { ...s, loopIterationCount: toGrounding.loopIterationCount },
+    p,
+    ALL_LAYERS
+  );
+  assert.equal(afterGrounding.stage, "desired_state_check");
 });
 
 test("ARC Thought is a straight line through its first three stages", () => {
@@ -1309,13 +1311,11 @@ test("existing downstream Reactive ARC progression is unchanged: from observer_p
     "trigger_context",
     "observer_pause",
     "presence_check",
-    // Presence Color task: a high presence rating no longer skips
-    // Presence Stage 3 entirely -- it now routes directly into
-    // arc_thought_expand_presence (where the saved Presence Color
-    // activates) and its own unchanged single-pass recheck, before
+    // Unified Presence/Mantra/Trigger/Imagery spec, section 4: a high
+    // presence rating now routes to the short, untimed presence_grounding
+    // stage instead of any of the three Presence stages, before
     // continuing exactly where this sequence always continued.
-    "arc_thought_expand_presence",
-    "arc_thought_presence_recheck",
+    "presence_grounding",
     "sensation_check",
     "encode",
     "act",

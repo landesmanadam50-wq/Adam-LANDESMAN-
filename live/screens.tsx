@@ -439,16 +439,36 @@ export function TriggerSelectScreen({
  * applyTriggerContext) -- never to ArcBuildProfile.challengeContext/
  * identityChallengeContext, which stay the reusable, BUILD-configured
  * context, completely untouched by this screen.
+ *
+ * Unified Presence/Mantra/Trigger/Imagery spec, section 6: this same
+ * screen now also asks a second, optional question -- "מה הציף אותך או
+ * עורר את החוויה הנוכחית?" (spec's own broader trigger framing, may be a
+ * real event, something imagined, a future expectation, a memory, or a
+ * thought with no clear external event) is folded into the existing
+ * `value`/`onChangeText` field above (its title already covers this);
+ * `thoughtValue`/`onChangeThoughtText` is the SEPARATE current
+ * interfering thought/interpretation/limiting belief/imagined scenario
+ * field -- "איזו מחשבה, פרשנות, אמונה או תמונה עתידית מפריעה מופיעה
+ * עכשיו?". When the caller has a BUILD-configured interfering thought
+ * for the resolved layer, it prefills `thoughtValue` as an editable
+ * suggestion (keep, edit, or replace) -- this screen itself never knows
+ * or cares whether the current text came from BUILD or was typed fresh;
+ * either way, Continue never writes it back onto the BUILD field (see
+ * ArcLiveState.currentInterferingThought's own doc).
  */
 export function TriggerContextScreen({
   copy,
   value,
   onChangeText,
+  thoughtValue,
+  onChangeThoughtText,
   onContinue,
 }: {
   copy: ArcStageCopy;
   value: string;
   onChangeText: (text: string) => void;
+  thoughtValue: string;
+  onChangeThoughtText: (text: string) => void;
   onContinue: () => void;
 }) {
   return (
@@ -462,7 +482,97 @@ export function TriggerContextScreen({
         multiline
         textAlign="right"
       />
+      <Text style={styles.fieldLabel}>איזו מחשבה, פרשנות, אמונה או תמונה עתידית מפריעה מופיעה עכשיו?</Text>
+      <TextInput
+        style={styles.textInput}
+        value={thoughtValue}
+        onChangeText={onChangeThoughtText}
+        placeholder="לדוגמה: אני לא מספיק טוב / הוא בטח שופט אותי / אני עומד להיכשל / זה לא יעבוד"
+        multiline
+        textAlign="right"
+      />
       <PrimaryButton label="המשך" onPress={onContinue} />
+    </View>
+  );
+}
+
+/**
+ * Unified Presence/Mantra/Trigger/Imagery spec, section 7: the
+ * present-moment vs. previous-situation choice that decides which of
+ * "observer_pause"'s two perspective-taking lines is shown (see
+ * arc/stageCopy.ts's "observer_pause" case). Session-only
+ * (ArcLiveState.sideObservationMode) -- rendered once, before that
+ * stage's own InstructionScreen, by live/ArcLiveRenderer.tsx's
+ * "observer_pause" case while the field is still null; answering never
+ * advances the ArcStage itself (still "observer_pause" either way),
+ * exactly like the Accept willingness question's own "stay at this
+ * stage, render a conditional interstitial" pattern.
+ */
+export function SideObservationModeScreen({
+  copy,
+  onSelect,
+}: {
+  copy: ArcStageCopy;
+  onSelect: (mode: "present" | "previous") => void;
+}) {
+  return (
+    <View>
+      <Title copy={copy} />
+      <Text style={styles.body}>כיצד תרצה להתבונן בעצמך מהצד?</Text>
+      <View style={styles.buttonRow}>
+        <Pressable style={styles.button} onPress={() => onSelect("present")}>
+          <Text style={styles.buttonText}>ברגע הזה</Text>
+        </Pressable>
+        <Pressable style={styles.button} onPress={() => onSelect("previous")}>
+          <Text style={styles.buttonText}>בסיטואציה שהתרחשה</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Unified Presence/Mantra/Trigger/Imagery spec, section 3: session-only
+ * environmental object grounding, shown during Presence stage 3
+ * (arc_thought_expand_presence) before its existing exercise. Entirely
+ * self-contained local state -- name/color/phase never leave this
+ * component, never touch ArcLiveState/ArcBuildProfile, matching the
+ * spec's own "session-only -- never in BUILD, never permanently saved,
+ * never auto-reused later." onComplete fires exactly once, after both
+ * fields are filled and the confirmation line has been shown, letting
+ * the caller (live/LiveSessionScreen.tsx / live/ArcGoalSessionScreen.tsx)
+ * fall through to the existing, unmodified stage-3 exercise.
+ */
+export function PresenceObjectGroundingScreen({ onComplete }: { onComplete: () => void }) {
+  const [phase, setPhase] = useState<"entry" | "confirm">("entry");
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("");
+  const canContinue = name.trim().length > 0 && color.trim().length > 0;
+
+  if (phase === "entry") {
+    return (
+      <View>
+        <Text style={styles.title}>הארקה בסביבה</Text>
+        <Text style={styles.fieldLabel}>מהו האובייקט שעליו אתה מסתכל עכשיו?</Text>
+        <TextInput style={styles.textInput} value={name} onChangeText={setName} textAlign="right" />
+        <Text style={styles.fieldLabel}>מה צבע האובייקט?</Text>
+        <TextInput style={styles.textInput} value={color} onChangeText={setColor} textAlign="right" />
+        <Pressable
+          style={[styles.button, !canContinue && styles.buttonDisabled]}
+          disabled={!canContinue}
+          onPress={() => setPhase("confirm")}
+        >
+          <Text style={styles.buttonText}>המשך</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <Text style={styles.title}>הארקה בסביבה</Text>
+      <Text style={styles.body}>{`הבט ב־${name.trim()} בצבע ${color.trim()}, ושים לב לצורה ולפרטים שלו.`}</Text>
+      <PrimaryButton label="המשך" onPress={onComplete} />
     </View>
   );
 }
@@ -767,11 +877,14 @@ export function StayScreen({ copy, onContinue }: { copy: ArcStageCopy; onContinu
 function AcceptRatingReveal({
   acceptanceDwellSeconds,
   question,
+  acceptanceMantraLine,
   onSelectRating,
   onContinueWithoutRating,
 }: {
   acceptanceDwellSeconds: number;
   question: string | null;
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 5: the optional Acceptance Mantra ("מנטרת קבלה"), shown only once this dwell/rating step is reached -- "LIVE placement: at end of Acceptance." null when never configured, so nothing extra renders. */
+  acceptanceMantraLine: string | null;
   onSelectRating: (value: number) => void;
   onContinueWithoutRating: () => void;
 }) {
@@ -782,14 +895,18 @@ function AcceptRatingReveal({
   if (!status.complete) {
     return null;
   }
-  if (question) {
-    return (
-      <RevealedRatingPrompt question={question}>
-        <ScaleButtons onSelect={onSelectRating} />
-      </RevealedRatingPrompt>
-    );
-  }
-  return <PrimaryButton label="המשך" onPress={onContinueWithoutRating} />;
+  return (
+    <View>
+      {acceptanceMantraLine && <RevealedLine text={acceptanceMantraLine} />}
+      {question ? (
+        <RevealedRatingPrompt question={question}>
+          <ScaleButtons onSelect={onSelectRating} />
+        </RevealedRatingPrompt>
+      ) : (
+        <PrimaryButton label="המשך" onPress={onContinueWithoutRating} />
+      )}
+    </View>
+  );
 }
 
 /**
@@ -898,6 +1015,7 @@ export function AcceptScreen({
   labels,
   question,
   acceptanceDwellSeconds,
+  acceptanceMantraLine,
   willingnessLoopCount,
   willingnessCapped,
   onWillingnessAnswer,
@@ -908,6 +1026,8 @@ export function AcceptScreen({
   labels: YesNoLabels;
   question: string | null;
   acceptanceDwellSeconds: number;
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 5: forwarded straight into AcceptRatingReveal -- see that component's own doc. */
+  acceptanceMantraLine: string | null;
   willingnessLoopCount: number;
   willingnessCapped: boolean;
   onWillingnessAnswer: (yes: boolean) => void;
@@ -940,6 +1060,7 @@ export function AcceptScreen({
         <AcceptRatingReveal
           acceptanceDwellSeconds={acceptanceDwellSeconds}
           question={question}
+          acceptanceMantraLine={acceptanceMantraLine}
           onSelectRating={onSelectRating}
           onContinueWithoutRating={onContinueWithoutRating}
         />
@@ -1979,6 +2100,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     fontSize: 16,
     textAlignVertical: "top",
+  },
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "right",
+    marginBottom: 6,
   },
   validationText: {
     fontSize: 14,

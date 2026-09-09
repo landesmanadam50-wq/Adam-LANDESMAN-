@@ -76,15 +76,43 @@ export function isUnknownTriggerResponse(text: string): boolean {
  * raw text, so "לא יודע" itself is never treated as if it were a
  * literal semantic trigger to imagine.
  */
-export function applyTriggerContext(session: ArcLiveState, text: string): ArcLiveState {
+export function applyTriggerContext(session: ArcLiveState, text: string, thoughtText: string = ""): ArcLiveState {
   const trimmed = text.trim();
+  const trimmedThought = thoughtText.trim();
+  const thoughtPatch = { currentInterferingThought: trimmedThought.length > 0 ? trimmedThought : null };
   if (trimmed.length === 0) {
-    return { ...session, triggerContext: null, triggerKnown: false };
+    return { ...session, ...thoughtPatch, triggerContext: null, triggerKnown: false, currentTriggerDescription: null };
   }
   if (isUnknownTriggerResponse(trimmed)) {
-    return { ...session, triggerContext: trimmed, triggerKnown: false };
+    return { ...session, ...thoughtPatch, triggerContext: trimmed, triggerKnown: false, currentTriggerDescription: trimmed };
   }
-  return { ...session, triggerContext: trimmed, triggerKnown: true };
+  return { ...session, ...thoughtPatch, triggerContext: trimmed, triggerKnown: true, currentTriggerDescription: trimmed };
+}
+
+/**
+ * Unified Presence/Mantra/Trigger/Imagery spec, section 6: `thoughtText`
+ * above is the same stage's second, always-optional field -- the
+ * current interfering thought/interpretation/belief/imagined future
+ * (ArcLiveState.currentInterferingThought), whether typed fresh or kept
+ * from a BUILD-configured prefill (the caller decides that prefill --
+ * see live/LiveSessionScreen.tsx's commitAdvance; this function never
+ * reads ArcBuildProfile itself). currentTriggerDescription mirrors
+ * triggerContext's own resolved text so downstream copy can reference
+ * "the current trigger" from one place without re-deriving it. Neither
+ * new field is ever written back onto ArcBuildProfile.
+ */
+
+/**
+ * Unified Presence/Mantra/Trigger/Imagery spec, section 7: records the
+ * present-moment vs. previous-situation choice
+ * (ArcLiveState.sideObservationMode) that arc/stageCopy.ts's
+ * "observer_pause" case branches its copy on. Never advances the
+ * ArcStage itself (still "observer_pause" either way) -- the same "stay
+ * at this stage, render a conditional interstitial" pattern as
+ * applyAcceptanceWillingnessAnswer below.
+ */
+export function applySideObservationMode(session: ArcLiveState, mode: "present" | "previous"): ArcLiveState {
+  return { ...session, sideObservationMode: mode };
 }
 
 /** presence_check and arc_thought_presence_recheck both feed presenceRating; desired_state_check feeds desiredStateRating. Same "scale0to10" input kind, different field -- this is the one piece of stage-specific routing an adapter necessarily does. */

@@ -26,6 +26,7 @@ import {
   resolveEncodingTarget,
 } from "../arc/arcEngine.ts";
 import { resolveDwellSecondsFor } from "../arc/dwellTimes.ts";
+import { getAcceptanceMantraLine } from "../arc/mantras.ts";
 import type { EvidenceRecord } from "../arc/evidence.ts";
 import type { TimerRun } from "../data/storage.ts";
 import type { DeferralOption } from "../data/reminders.ts";
@@ -46,12 +47,14 @@ import {
   NegativeActionScreen,
   NegativeActionStartScreen,
   PresenceExperienceScreen,
+  PresenceObjectGroundingScreen,
   PresenceRatingScreen,
   PreventiveActionCheckScreen,
   ProactiveTargetScreen,
   ReactiveStateSelectScreen,
   RegulationScreen,
   SensationRatingScreen,
+  SideObservationModeScreen,
   StayScreen,
   SuccessFocusRetrospectiveScreen,
   TransitionCheckScreen,
@@ -83,7 +86,15 @@ export interface ArcLiveRendererProps {
   /** Reactive-flow-strengthening task: the trigger_context stage's own pending free-text answer, not yet committed to session.triggerContext until Continue is pressed -- same "pending local state, committed on Continue" pattern as pendingAlternativeAction. */
   pendingTriggerContext: string;
   onChangeTriggerContext: (text: string) => void;
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 6: trigger_context's second, separate, always-optional field -- the current interfering thought/interpretation/belief/imagined future. Pending until the same Continue commits it, alongside pendingTriggerContext, via applyTriggerContext's second argument. */
+  pendingInterferingThought: string;
+  onChangeInterferingThought: (text: string) => void;
   onTriggerContextContinue: () => void;
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 7: answers the present-moment vs. previous-situation choice (ArcLiveState.sideObservationMode) shown once, before observer_pause's own InstructionScreen, while that field is still null. */
+  onSelectSideObservationMode: (mode: "present" | "previous") => void;
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 3: whether the session-only environmental-object sub-phase (live/screens.tsx's PresenceObjectGroundingScreen) has already been completed for arc_thought_expand_presence -- owned as local component state one level up (never ArcLiveState), since it's session-only and never feeds getStageCopy. */
+  presenceObjectGroundingDone: boolean;
+  onPresenceObjectGroundingComplete: () => void;
   onSelectTrigger: (trigger: TriggerType) => void;
   onScaleAnswer: (value: number) => void;
   onSelectSensationLocation: (location: string) => void;
@@ -169,22 +180,41 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           copy={copy}
           value={props.pendingTriggerContext}
           onChangeText={props.onChangeTriggerContext}
+          thoughtValue={props.pendingInterferingThought}
+          onChangeThoughtText={props.onChangeInterferingThought}
           onContinue={props.onTriggerContextContinue}
         />
       );
 
     case "observer_pause":
-      // Reuses the existing InstructionScreen/TimedInstructionBody
-      // mechanism verbatim (same as arc_thought_awareness/
-      // arc_thought_combined_attention/preventive_action below) -- no
-      // new timed-reveal machinery, same Continue-available cue. key
-      // resets its own elapsed-time clock on every fresh mount, same
-      // reasoning as the three-stage group below.
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 7: the
+      // present-moment/previous-situation choice is asked once, before
+      // this stage's own InstructionScreen, while sideObservationMode is
+      // still null -- same "stay at this stage, render a conditional
+      // interstitial" pattern as accept's willingness question. Once
+      // answered, falls through to the existing InstructionScreen/
+      // TimedInstructionBody mechanism verbatim (same as
+      // arc_thought_awareness/arc_thought_combined_attention/
+      // preventive_action below) -- no new timed-reveal machinery, same
+      // Continue-available cue. key resets its own elapsed-time clock on
+      // every fresh mount, same reasoning as the three-stage group below.
+      if (session.sideObservationMode === null) {
+        return <SideObservationModeScreen copy={copy} onSelect={props.onSelectSideObservationMode} />;
+      }
       return <InstructionScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
     case "presence_check":
     case "arc_thought_presence_recheck":
       return <PresenceRatingScreen copy={copy} onSelect={props.onScaleAnswer} />;
+
+    case "presence_grounding":
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 4: the
+      // 7-10 Presence-score route's own short grounding screen -- no
+      // Presence timers/stages run here, just this one fixed, untimed
+      // line (arc/stageCopy.ts's own "presence_grounding" case). Reuses
+      // InstructionScreen the same way every other untimed/no-dwell
+      // "info" stage already does.
+      return <InstructionScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
 
     case "arc_thought_awareness":
     case "arc_thought_combined_attention":
@@ -217,6 +247,15 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       // reveal from scratch, the same way key={stage} alone already
       // does for every OTHER pair of genuinely different adjacent
       // stages above.
+      //
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 3: the
+      // session-only environmental-object sub-phase runs first, once per
+      // session -- see PresenceObjectGroundingScreen's own doc. Once
+      // complete, falls through to the existing, unmodified stage-3
+      // exercise below.
+      if (!props.presenceObjectGroundingDone) {
+        return <PresenceObjectGroundingScreen onComplete={props.onPresenceObjectGroundingComplete} />;
+      }
       return (
         <PresenceExperienceScreen
           key={`${stage}-${session.loopIterationCount}`}
@@ -319,6 +358,7 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           labels={getYesNoLabels(stage)}
           question={question}
           acceptanceDwellSeconds={acceptanceDwellSeconds}
+          acceptanceMantraLine={getAcceptanceMantraLine(profile)}
           willingnessLoopCount={session.acceptanceWillingnessLoopCount}
           willingnessCapped={isAcceptanceWillingnessLoopCapped(session.acceptanceWillingnessLoopCount)}
           onWillingnessAnswer={props.onAcceptWillingnessAnswer}

@@ -29,7 +29,7 @@ import { Stack, router, useFocusEffect, useLocalSearchParams } from "expo-router
 import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
 import { createEmptyLiveState, IDENTIFIED_NEED_UNKNOWN } from "../arc/types.ts";
 import type { UrgeArc } from "../arc/types.ts";
-import { getAvailableLiveTriggers, resolveEncodingTarget } from "../arc/arcEngine.ts";
+import { getAvailableLiveTriggers, resolveEncodingTarget, resolveTargetLimitingBelief } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
 import { buildEvidenceIndex, buildSessionEvidenceContext } from "../arc/evidence.ts";
 import type { EvidenceRecord } from "../arc/evidence.ts";
@@ -94,6 +94,7 @@ import {
   applyRegulationToolUsed,
   applyScaleAnswer,
   applySensationAnswer,
+  applySideObservationMode,
   applySuccessFocusExtraMinutes,
   applyTargetSelection,
   applyTriggerContext,
@@ -154,6 +155,10 @@ export default function ArcGoalSessionScreen() {
   const [pendingCustomSensationLocation, setPendingCustomSensationLocation] = useState("");
   const [pendingSensationLocationUnclear, setPendingSensationLocationUnclear] = useState(false);
   const [pendingTriggerContext, setPendingTriggerContext] = useState("");
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 6: same shape as live/LiveSessionScreen.tsx's own field -- only ever reached by the outer (identity) run, which alone passes through trigger_context; the inner run starts at sensation_check and never touches it. */
+  const [pendingInterferingThought, setPendingInterferingThought] = useState("");
+  /** Unified Presence/Mantra/Trigger/Imagery spec, section 3: same shape as live/LiveSessionScreen.tsx's own field -- only the outer run ever reaches arc_thought_expand_presence. */
+  const [presenceObjectGroundingDone, setPresenceObjectGroundingDone] = useState(false);
   const [pendingAlternativeAction, setPendingAlternativeAction] = useState("");
   const [pendingAlternativeActionDuration, setPendingAlternativeActionDuration] = useState<number | null>(null);
   const [gratitudeText, setGratitudeText] = useState("");
@@ -165,6 +170,7 @@ export default function ArcGoalSessionScreen() {
     setPendingCustomSensationLocation("");
     setPendingSensationLocationUnclear(false);
     setPendingTriggerContext("");
+    setPendingInterferingThought("");
     setPendingAlternativeAction("");
     setPendingAlternativeActionDuration(null);
   }
@@ -202,6 +208,7 @@ export default function ArcGoalSessionScreen() {
         setInnerStage("sensation_check");
         setGoalState(createEmptyArcGoalLiveState());
         setSessionStartedAt(new Date().toISOString());
+        setPresenceObjectGroundingDone(false);
         clearPendingFields();
         setGratitudeText("");
         setGratitudeMemoryDetailText("");
@@ -267,6 +274,12 @@ export default function ArcGoalSessionScreen() {
     setOuterSession(nextSession);
     setOuterStage(nextStage);
     clearPendingFields();
+    // Unified Presence/Mantra/Trigger/Imagery spec, section 6: same
+    // editable-suggestion prefill as live/LiveSessionScreen.tsx's own
+    // commitAdvance -- see that file's doc.
+    if (nextStage === "trigger_context" && nextSession.selectedTarget) {
+      setPendingInterferingThought(resolveTargetLimitingBelief(nextSession.selectedTarget, identityProfile) ?? "");
+    }
     if (needsTriggerPrefixDetour(nextStage, goalState)) {
       setGoalState((current) => ({ ...current, uiStage: "trigger_identification" }));
       return;
@@ -393,7 +406,13 @@ export default function ArcGoalSessionScreen() {
       pendingSensationLocationUnclear,
       pendingTriggerContext,
       onChangeTriggerContext: setPendingTriggerContext,
-      onTriggerContextContinue: () => commitAdvance(applyTriggerContext(session, pendingTriggerContext)),
+      pendingInterferingThought,
+      onChangeInterferingThought: setPendingInterferingThought,
+      onTriggerContextContinue: () =>
+        commitAdvance(applyTriggerContext(session, pendingTriggerContext, pendingInterferingThought)),
+      onSelectSideObservationMode: (mode) => setSession(applySideObservationMode(session, mode)),
+      presenceObjectGroundingDone,
+      onPresenceObjectGroundingComplete: () => setPresenceObjectGroundingDone(true),
       onSelectTrigger: (trigger) => commitAdvance(applyTriggerSelection(session, trigger)),
       onScaleAnswer: (value) => commitAdvance(applyScaleAnswer(ctx.stage, session, value)),
       onSelectSensationLocation: (location) => {

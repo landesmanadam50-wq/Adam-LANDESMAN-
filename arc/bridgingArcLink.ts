@@ -37,6 +37,7 @@ import type { BodyImagery } from "./bodyImagery.ts";
 import type { ArcLinkTriggerCategory } from "./routineLinks.ts";
 import { buildTriggerImageryContent } from "./triggerImagery.ts";
 import type { ArcBuildProfile } from "./types.ts";
+import { getDesiredImageryLine } from "./desiredImagery.ts";
 
 export type BridgingLinkStepId = "intro" | "trigger" | "cue" | "supportive_state" | "identity" | "beneficial_action" | "reinforce";
 
@@ -165,6 +166,14 @@ export function buildBridgingLinkSteps(
   if (futureMantra) {
     identityLines.push(`דמיין שאתה אומר לעצמך את המנטרה העתידית: "${futureMantra}".`);
   }
+  // Unified Presence/Mantra/Trigger/Imagery spec, section 9: optional
+  // desired-identity imagery -- inherited straight from identityProfile
+  // (no duplicate field on this bridge), appended after the existing
+  // identity-transition content above. The supportive/state side has no
+  // equivalent step here (this module never rehearses Presence/Stay/
+  // Accept -- see the module doc), so only the identity layer applies.
+  const desiredImageryLine = getDesiredImageryLine(identityProfile, "identity", null, identityLabel || null);
+  if (desiredImageryLine) identityLines.push(desiredImageryLine);
   steps.push({
     id: "identity",
     title: "דמיין את מעבר הזהות",

@@ -11,7 +11,10 @@
 
 import { IDENTIFIED_NEED_UNKNOWN } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
-import { getPresenceColorActivationLine, getPresenceColorReminder } from "./presenceColor.ts";
+import { getEnergyColorLine } from "./presenceColor.ts";
+import { getFreeBreathingLine } from "./naturalBreathing.ts";
+import { getAcceptanceMantraLine, getBridgeMantraLine, getRegulationMantraLine, getStayMantraLine } from "./mantras.ts";
+import { getDesiredImageryLine } from "./desiredImagery.ts";
 import { getFutureOrientedMantraLine } from "./futureOrientedMantra.ts";
 import {
   needsCurrentActionResolution,
@@ -167,6 +170,7 @@ const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   trigger_context: "triggerContext",
   observer_pause: "info",
   presence_check: "scale0to10",
+  presence_grounding: "info",
   arc_thought_awareness: "info",
   arc_thought_combined_attention: "info",
   arc_thought_expand_presence: "info",
@@ -253,51 +257,62 @@ export function getStageCopy(
       // answer, deliberately distinct from, and never overwriting, the
       // BUILD-configured Challenge Context (profile.challengeContext/
       // identityChallengeContext, untouched by this stage). Optional --
-      // the trainee is never forced to elaborate; see
-      // live/screens.tsx's TriggerContextScreen.
+      // the trainee is never forced to elaborate.
+      //
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 6: this
+      // same stage's screen (live/screens.tsx's TriggerContextScreen)
+      // now also collects a second, optional field -- the current
+      // interfering thought/interpretation/limiting belief/imagined
+      // scenario, session-specific
+      // (ArcLiveState.currentInterferingThought), never written back to
+      // BUILD. Nothing about this stage's placement/routing changes --
+      // still strictly before observer_pause and before ARC Thought.
       return { title: "מה קרה עכשיו?", body: "מה הפעיל אצלך עכשיו את הרגש או הדחף?", segments: null };
 
     case "observer_pause": {
-      // Reactive-flow-strengthening task (#2, #3), refined for the
-      // unknown-trigger case: when the trainee named a specific trigger
-      // (state.triggerKnown === true), the original three progressive
-      // lines -- observer perspective OF THE SITUATION, then the
-      // imagined pause, then an explicit safety/recognition line.
-      // Unknown-trigger refinement: when no specific trigger is known
-      // (triggerKnown === false -- a recognized "I don't know" answer,
-      // or the trainee left it blank), skip imagery of a situation that
-      // was never identified -- never invent or infer one (#3, #5) --
-      // and go straight to a shorter two-line sequence: observing
-      // ONESELF from the side (no situation/event referenced at all),
-      // then the same imagined pause. Coordinated timer/dwell task
-      // (Part 20-23): both variants now share the SAME trailing,
-      // per-trainee configurable Stop-Imagery dwell (stopImageryDwellSeconds,
-      // arc/dwellTimes.ts) instead of a fixed reflection constant --
-      // resolved from the CURRENT reactive session's own layer (see
-      // arc/arcEngine.ts's resolveObserverPauseLayer, shared with that
-      // file's own "observer_pause" transition case so the two never
-      // diverge) -- and the same underlying progressive-reveal/
-      // Continue-cue mechanism -- no new screen, no new timing system.
-      // The existing Preventive Action only becomes available once this
-      // dwell completes, via the SAME Continue-gating mechanism every
-      // other dwell-gated stage already uses (arc/instructionTiming.ts's
-      // getInstructionTimingStatus) -- no separate gating logic needed.
-      const knownTriggerPerspective = "דמיין לרגע את מה שקרה כאילו אתה רואה את הסיטואציה מהצד, ואת עצמך בתוכה.";
-      const unknownTriggerPerspective = "דמיין את עצמך לרגע כאילו אתה רואה את עצמך מהצד.";
-      const imaginedPause = "ראה את עצמך עוצר לכמה שניות לפני התגובה.";
-      const safetyRecognition = "אין צורך לעורר מחדש או לחזק את הרגש או הדחף — רק לראות את מה שקרה.";
+      // Unified Presence/Mantra/Trigger/Imagery spec, sections 7-8:
+      // rewritten to fork on ArcLiveState.sideObservationMode ("present"
+      // vs "previous" -- set once on a new choice screen shown before
+      // this stage's own content, see live/screens.tsx's
+      // SideObservationModeScreen) INSTEAD OF the older
+      // triggerKnown-based known/unknown fork. triggerKnown itself is
+      // untouched structurally (still set by trigger_context); it's
+      // simply no longer consulted for this stage's wording, since a
+      // trigger can now be imagined/future/thought-only (section 6), so
+      // "was a specific trigger named" is no longer the right axis for
+      // "should this be observed as present or as a past situation".
+      //
+      // The urge-only Stop visualization (section 8) is a separate,
+      // conditionally-appended THIRD segment -- shown only when
+      // state.triggerType === "reactive_urge" (the actual existing
+      // urge/non-urge discriminator; there is no separate
+      // "protocolType" field on ArcLiveState/ArcBuildProfile). Every
+      // other route (reactive_emotion, proactive) never sees a
+      // stop-visualization segment at all -- no empty step, nothing to
+      // save a response for, since it's pure instruction, not an input.
+      //
+      // Coordinated timer/dwell task (Part 20-23), preserved unchanged:
+      // the trailing, per-trainee configurable Stop-Imagery dwell
+      // (stopImageryDwellSeconds, arc/dwellTimes.ts), resolved from the
+      // CURRENT reactive session's own layer (arc/arcEngine.ts's
+      // resolveObserverPauseLayer) -- and the same underlying
+      // progressive-reveal/Continue-cue mechanism -- no new screen, no
+      // new timing system. The existing Preventive Action only becomes
+      // available once this dwell completes, via the SAME
+      // Continue-gating mechanism every other dwell-gated stage already
+      // uses.
+      const presentModePerspective = "זהה מה הציף אותך. כעת ראה את עצמך מהצד כפי שאתה ברגע הזה — שים לב לתנוחת הגוף, להבעת הפנים ולמה שכבר מתרחש בתוכך.";
+      const previousSituationPerspective = "ראה את עצמך מהצד בסיטואציה שהציפה אותך. התבונן במה שהתרחש, בתנוחת הגוף ובהבעת הפנים, בלי לנסות לשנות את החוויה.";
+      const urgeStopVisualization = "ראה את עצמך עוצר ולא מבצע כרגע את הפעולה שאליה הדחף מושך.";
 
-      const isKnownTrigger = state.triggerKnown === true;
-      const instructionSegments: InstructionSegment[] = isKnownTrigger
-        ? [
-            { text: knownTriggerPerspective, durationSeconds: INSTRUCTION_TIMING.observerPerspective },
-            { text: imaginedPause, durationSeconds: INSTRUCTION_TIMING.observerPause },
-            { text: safetyRecognition, durationSeconds: INSTRUCTION_TIMING.observerSafetyRecognition },
-          ]
-        : [
-            { text: unknownTriggerPerspective, durationSeconds: INSTRUCTION_TIMING.observerPerspective },
-            { text: imaginedPause, durationSeconds: INSTRUCTION_TIMING.observerPause },
-          ];
+      const isPreviousSituation = state.sideObservationMode === "previous";
+      const perspectiveText = isPreviousSituation ? previousSituationPerspective : presentModePerspective;
+      const instructionSegments: InstructionSegment[] = [
+        { text: perspectiveText, durationSeconds: INSTRUCTION_TIMING.observerPerspective },
+      ];
+      if (state.triggerType === "reactive_urge") {
+        instructionSegments.push({ text: urgeStopVisualization, durationSeconds: INSTRUCTION_TIMING.observerPause });
+      }
 
       const observerPauseLayer = resolveObserverPauseLayer(state.triggerType, state.selectedTarget, activeLayers, profile);
       const stopImageryDwellSeconds = resolveDwellSecondsFor("stopImageryDwellSeconds", observerPauseLayer, profile);
@@ -319,9 +334,31 @@ export function getStageCopy(
       return { title: "בדיקת נוכחות", body: preamble ? `${preamble} ${question}` : question, segments: null };
     }
 
+    // Unified Presence/Mantra/Trigger/Imagery spec, section 4: the
+    // short, untimed grounding line shown ONLY on the 7-10 route --
+    // see arc/arcEngine.ts's "presence_check" transition. No segments
+    // (no timer, no dwell) -- "do not run Presence timers ... on the
+    // 7-10 route".
+    case "presence_grounding":
+      return { title: "נוכחות", body: "שים לב לנשימה שמתרחשת מעצמה ואמור: אני כאן ועכשיו.", segments: null };
+
     case "arc_thought_awareness": {
-      const text = getAwarenessInstruction();
-      return { title: "מודעות", body: text, segments: [{ text, durationSeconds: INSTRUCTION_TIMING.arcThoughtAwareness }] };
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 1: the
+      // free natural-breathing line is added to every Presence
+      // sub-stage, appended after the existing instruction. Presence
+      // stage 1 deliberately never gets the Energy Color line (section
+      // 2) -- that starts at stage 2.
+      const instruction = getAwarenessInstruction();
+      const breathing = getFreeBreathingLine();
+      const text = `${instruction} ${breathing}`;
+      return {
+        title: "מודעות",
+        body: text,
+        segments: [
+          { text: instruction, durationSeconds: INSTRUCTION_TIMING.arcThoughtAwareness },
+          { text: breathing, durationSeconds: INSTRUCTION_TIMING.freeBreathing },
+        ],
+      };
     }
 
     case "arc_thought_combined_attention": {
@@ -330,12 +367,21 @@ export function getStageCopy(
       // pattern (see arc/instructions.ts's containsInductionPattern), not
       // present-moment awareness. getCombinedAttentionInstruction() takes
       // no state parameters for exactly this reason.
-      const text = getCombinedAttentionInstruction();
-      return {
-        title: "תשומת לב משולבת",
-        body: text,
-        segments: [{ text, durationSeconds: INSTRUCTION_TIMING.arcThoughtCombinedAttention }],
-      };
+      //
+      // Unified Presence/Mantra/Trigger/Imagery spec, sections 1-2: the
+      // Energy Color line now begins here (Presence stage 2) -- shown
+      // FIRST, before the existing instruction -- plus the free
+      // natural-breathing line, appended after it.
+      const instruction = getCombinedAttentionInstruction();
+      const breathing = getFreeBreathingLine();
+      const energyColorLine = getEnergyColorLine(profile.presenceColor);
+      const leading = energyColorLine ? `${energyColorLine} ` : "";
+      const text = `${leading}${instruction} ${breathing}`;
+      const segments: InstructionSegment[] = [];
+      if (energyColorLine) segments.push({ text: energyColorLine, durationSeconds: INSTRUCTION_TIMING.energyColor });
+      segments.push({ text: instruction, durationSeconds: INSTRUCTION_TIMING.arcThoughtCombinedAttention });
+      segments.push({ text: breathing, durationSeconds: INSTRUCTION_TIMING.freeBreathing });
+      return { title: "תשומת לב משולבת", body: text, segments };
     }
 
     case "arc_thought_expand_presence": {
@@ -346,8 +392,7 @@ export function getStageCopy(
       // PLUS a trailing dwell have both elapsed -- modeled as one
       // trailing, empty-text segment so getInstructionTimingStatus's
       // existing `complete` flag stays the single source of truth for
-      // "reveal the rating now". body stays just the spoken instruction
-      // text; the trailing segment carries no text of its own.
+      // "reveal the rating now".
       // Coordinated timer/dwell task (Part 16-19): the old flat,
       // fixed 15s placeholder here is replaced by the per-trainee
       // configurable Presence dwell (presenceDwellSeconds,
@@ -357,18 +402,26 @@ export function getStageCopy(
       // (INSTRUCTION_TIMING.arcThoughtExpandPresence, including its
       // separate, unrelated +15s instruction-pacing increase) is left
       // completely untouched, never counted as dwell time.
-      // Presence Color task: activated once, right here, at the end of
-      // Presence Stage 3's existing instruction -- appended to the SAME
-      // segment's text (never a new segment/duration of its own), so
-      // this stage's existing timing/dwell configuration is completely
-      // unchanged. A legacy ArcBuild with no saved color (or one whose
-      // trainee left the field genuinely blank pre-migration) simply
-      // never gets this sentence -- getPresenceColorActivationLine
-      // returns null, and Stage 3 reads exactly as it always did.
-      const activationLine = getPresenceColorActivationLine(profile.presenceColor);
-      const text = activationLine ? `${getExpandPresenceInstruction()} ${activationLine}` : getExpandPresenceInstruction();
+      //
+      // Unified Presence/Mantra/Trigger/Imagery spec, sections 1-3:
+      // Presence stage 3's own order is now Energy Color -> free
+      // breathing -> existing instruction -- the object-grounding
+      // sub-step (section 3) is deliberately NOT built here: it's
+      // session-only, local UI state (never ArcLiveState/ArcBuildProfile),
+      // rendered as a small sub-phase gate in live/LiveSessionScreen.tsx
+      // / live/ArcGoalSessionScreen.tsx wrapping this same stage, before
+      // this copy's own PresenceExperienceScreen renders.
+      const instruction = getExpandPresenceInstruction();
+      const breathing = getFreeBreathingLine();
+      const energyColorLine = getEnergyColorLine(profile.presenceColor);
+      const leading = energyColorLine ? `${energyColorLine} ` : "";
+      const text = `${leading}${instruction} ${breathing}`;
+      const instructionSegments: InstructionSegment[] = [];
+      if (energyColorLine) instructionSegments.push({ text: energyColorLine, durationSeconds: INSTRUCTION_TIMING.energyColor });
+      instructionSegments.push({ text: instruction, durationSeconds: INSTRUCTION_TIMING.arcThoughtExpandPresence });
+      instructionSegments.push({ text: breathing, durationSeconds: INSTRUCTION_TIMING.freeBreathing });
       const presenceDwellSeconds = resolvePresenceDwellSeconds(profile, activeLayers);
-      const segments = withTrailingDwellSegment([{ text, durationSeconds: INSTRUCTION_TIMING.arcThoughtExpandPresence }], presenceDwellSeconds);
+      const segments = withTrailingDwellSegment(instructionSegments, presenceDwellSeconds);
       return { title: "הרחבה", body: text, segments };
     }
 
@@ -463,23 +516,35 @@ export function getStageCopy(
         buildProfile: profile,
       });
       const dwellSeconds = resolveDwellSecondsFor("sensationDwellSeconds", layer, profile);
-      const instructionSegments: InstructionSegment[] = [
+      const instructionSegments: InstructionSegment[] = [];
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 2: Energy
+      // Color now leads this stage's content (prepended), instead of
+      // being appended to the last segment as before.
+      const energyColorLine = getEnergyColorLine(profile.presenceColor);
+      if (energyColorLine) instructionSegments.push({ text: energyColorLine, durationSeconds: INSTRUCTION_TIMING.energyColor });
+      instructionSegments.push(
         { text: "הישאר עם התחושה כפי שהיא עכשיו, בלי לנסות לשנות אותה.", durationSeconds: INSTRUCTION_TIMING.stayCurrentSensation },
-        { text: "שים לב גם לנשימה כפי שהיא מתרחשת מעצמה.", durationSeconds: INSTRUCTION_TIMING.stayNaturalBreath },
-      ];
-      // Presence Color task: the Awareness thread reminder, appended to
-      // the LAST existing segment's text (never a new segment/duration)
-      // once Presence Stage 3 has activated a saved color for this
-      // build. Null (legacy/no color) leaves this stage's text exactly
-      // as it always was.
-      const awarenessReminder = getPresenceColorReminder(profile.presenceColor, "awareness");
-      if (awarenessReminder) {
-        instructionSegments[instructionSegments.length - 1].text += ` ${awarenessReminder}`;
-      }
+        { text: "שים לב גם לנשימה כפי שהיא מתרחשת מעצמה.", durationSeconds: INSTRUCTION_TIMING.stayNaturalBreath }
+      );
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 1: the new
+      // free-breathing line -- distinct from, and in addition to, the
+      // existing natural-breath awareness line just above (neither
+      // replaces the other).
+      instructionSegments.push({ text: getFreeBreathingLine(), durationSeconds: INSTRUCTION_TIMING.freeBreathing });
+      const segments = withTrailingDwellSegment(instructionSegments, dwellSeconds);
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 5: Stay
+      // Mantra, appended at the very end of Stay -- after the trailing
+      // dwell -- only when configured; skipped cleanly (no entry
+      // pushed) when empty.
+      const stayMantraLine = getStayMantraLine(profile);
+      if (stayMantraLine) segments.push({ text: stayMantraLine, durationSeconds: INSTRUCTION_TIMING.mantra });
       return {
         title: "הישאר עם זה",
-        body: instructionSegments.map((segment) => segment.text).join(" "),
-        segments: withTrailingDwellSegment(instructionSegments, dwellSeconds),
+        body: segments
+          .map((segment) => segment.text)
+          .filter((text) => text.length > 0)
+          .join(" "),
+        segments,
       };
     }
 
@@ -506,14 +571,21 @@ export function getStageCopy(
     }
 
     case "accept": {
-      // Presence Color task: Acceptance thread reminder, appended to the
-      // existing question -- null (legacy/no color) leaves this
-      // unchanged.
-      const acceptanceReminder = getPresenceColorReminder(profile.presenceColor, "acceptance");
-      const body = acceptanceReminder
-        ? `האם אתה מוכן לקבל את התחושה הזו כמו שהיא, בלי להילחם בה? ${acceptanceReminder}`
-        : "האם אתה מוכן לקבל את התחושה הזו כמו שהיא, בלי להילחם בה?";
-      return { title: "קבלה", body, segments: null };
+      // Unified Presence/Mantra/Trigger/Imagery spec, sections 1-2:
+      // Energy Color now leads (prepended) instead of being appended to
+      // the question, and the new free-breathing line is appended after
+      // it -- Accept's own base question/timing has no `segments` of its
+      // own (the actual dwell-bearing segments live in
+      // live/screens.tsx's AcceptRatingReveal/AcceptanceUnwillingnessRound
+      // -- untouched here), so both new lines are folded into `body`.
+      // Acceptance Mantra (section 5) is NOT added here -- it belongs at
+      // the very end of Acceptance, once AcceptRatingReveal's own dwell
+      // completes, so it's threaded through live/screens.tsx instead
+      // (see acceptanceMantraLine prop).
+      const energyColorLine = getEnergyColorLine(profile.presenceColor);
+      const question = "האם אתה מוכן לקבל את התחושה הזו כמו שהיא, בלי להילחם בה?";
+      const parts = [energyColorLine, question, getFreeBreathingLine()].filter((part): part is string => part !== null);
+      return { title: "קבלה", body: parts.join(" "), segments: null };
     }
 
     case "reactive_transition_check":
@@ -551,16 +623,37 @@ export function getStageCopy(
       const baseRegulateText = profile.regulationTool
         ? `שים לב לתחושה שלך עכשיו. השתמש בכלי הוויסות שלך: ${profile.regulationTool}.`
         : "שים לב לתחושה שלך עכשיו.";
-      // Presence Color task: Regulation thread reminder appended to the
-      // same existing text before segment-building, so timing/dwell stay
-      // unchanged. Null (legacy/no color) leaves the text as-is.
-      const regulationReminder = getPresenceColorReminder(profile.presenceColor, "regulation");
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 2: Energy
+      // Color now leads (prepended) instead of the old appended
+      // per-section reminder.
+      const energyColorLine = getEnergyColorLine(profile.presenceColor);
+      const text = energyColorLine ? `${energyColorLine} ${baseRegulateText}` : baseRegulateText;
       // ARC-BUILD-to-LIVE connection task: the Future-Oriented Mantra
       // moved to Encoding (see arc/futureOrientedMantra.ts's own doc) --
       // no longer read here.
-      const text = regulationReminder ? `${baseRegulateText} ${regulationReminder}` : baseRegulateText;
-      const segments = withTrailingDwellSegment([{ text, durationSeconds: INSTRUCTION_TIMING.regulate }], dwellSeconds);
-      return { title: "ויסות", body: text, segments };
+      const instructionSegments: InstructionSegment[] = [];
+      if (energyColorLine) instructionSegments.push({ text: energyColorLine, durationSeconds: INSTRUCTION_TIMING.energyColor });
+      instructionSegments.push({ text: baseRegulateText, durationSeconds: INSTRUCTION_TIMING.regulate });
+      const segments = withTrailingDwellSegment(instructionSegments, dwellSeconds);
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 5:
+      // Regulation Mantra, then the brand-new Bridge Mantra -- both
+      // appended at the very end of Regulation, after the trailing
+      // dwell, in that order. Bridge Mantra deliberately belongs HERE,
+      // as part of "regulate"'s own copy, never "encode"'s -- this is
+      // the one structural guarantee it can never appear twice or drift
+      // into Encoding. Either/both skipped cleanly when unset.
+      const regulationMantraLine = getRegulationMantraLine(profile);
+      if (regulationMantraLine) segments.push({ text: regulationMantraLine, durationSeconds: INSTRUCTION_TIMING.mantra });
+      const bridgeMantraLine = getBridgeMantraLine(profile);
+      if (bridgeMantraLine) segments.push({ text: bridgeMantraLine, durationSeconds: INSTRUCTION_TIMING.mantra });
+      return {
+        title: "ויסות",
+        body: segments
+          .map((segment) => segment.text)
+          .filter((t) => t.length > 0)
+          .join(" "),
+        segments,
+      };
     }
 
     case "desired_state_check": {
@@ -623,22 +716,33 @@ export function getStageCopy(
       // resolved (see that case's doc). Each piece is its own timed
       // segment (arc/instructionTiming.ts) so this order reveals
       // progressively rather than all at once.
-      const segments: InstructionSegment[] = [
-        { text: "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה.", durationSeconds: INSTRUCTION_TIMING.encodeUpdatedSensation },
-      ];
-      // Presence Color task: Updated Sensation thread reminder, appended
-      // to this segment's own text (never a new segment) -- null
-      // (legacy/no color) leaves it unchanged.
-      const updatedSensationReminder = getPresenceColorReminder(profile.presenceColor, "updatedSensation");
-      if (updatedSensationReminder) {
-        segments[0].text += ` ${updatedSensationReminder}`;
-      }
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 2: Energy
+      // Color now leads (prepended as this stage's own first segment)
+      // instead of the old three separate appended reminders
+      // ("updatedSensation"/"identity"/"encoding").
+      const segments: InstructionSegment[] = [];
+      const energyColorLine = getEnergyColorLine(profile.presenceColor);
+      if (energyColorLine) segments.push({ text: energyColorLine, durationSeconds: INSTRUCTION_TIMING.energyColor });
+      segments.push({ text: "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה.", durationSeconds: INSTRUCTION_TIMING.encodeUpdatedSensation });
       let hasContinuityContent = false;
-      let bodyLanguageSegmentIndex: number | null = null;
 
       const regulationCue = resolveEncodingRegulationCue(layer, profile);
       if (regulationCue) {
         segments.push({ text: `המשך עם ${regulationCue}.`, durationSeconds: INSTRUCTION_TIMING.encodeShortRegulationCue });
+        hasContinuityContent = true;
+      }
+
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 9: optional
+      // desired-state/identity imagery -- inserted right here, after
+      // Updated Sensation + the Short Encoding Regulation Cue (both
+      // preserved in their existing relative order/position) and BEFORE
+      // the Body-Language Cue below, matching the spec's own unified
+      // transition order exactly. Begins only at Encoding, never
+      // earlier. Kept separate from Energy Color/side observation/
+      // Action Imagery (arc/successfulPerformance.ts, untouched).
+      const desiredImageryLine = getDesiredImageryLine(profile, layer, profile.supportiveState, profile.desiredIdentity);
+      if (desiredImageryLine) {
+        segments.push({ text: desiredImageryLine, durationSeconds: INSTRUCTION_TIMING.desiredImagery });
         hasContinuityContent = true;
       }
 
@@ -654,7 +758,6 @@ export function getStageCopy(
           durationSeconds: INSTRUCTION_TIMING.encodeBodyLanguageCue,
         });
         hasContinuityContent = true;
-        bodyLanguageSegmentIndex = segments.length - 1;
       } else if (!encoding?.mantra && encoding?.target) {
         // No explicit body-language cue and no mantra either -- fall
         // back to a generic body-language transition toward the
@@ -662,7 +765,6 @@ export function getStageCopy(
         // also being maintained.
         segments.push({ text: `עבור לשפת הגוף של ${encoding.target}.`, durationSeconds: INSTRUCTION_TIMING.encodeBodyLanguageCue });
         hasContinuityContent = true;
-        bodyLanguageSegmentIndex = segments.length - 1;
       }
 
       // Evidence-encoding task (corrected order): a real past
@@ -714,13 +816,6 @@ export function getStageCopy(
       if (encoding?.mantra) {
         segments.push({ text: `חזור לעצמך: "${encoding.mantra}".`, durationSeconds: INSTRUCTION_TIMING.encodeIdentityMantra });
         hasContinuityContent = true;
-        // Presence Color task: Identity/Mantra thread reminder, appended
-        // to this same segment's text -- only when the mantra segment
-        // actually exists. Null (legacy/no color) leaves it unchanged.
-        const identityReminder = getPresenceColorReminder(profile.presenceColor, "identity");
-        if (identityReminder) {
-          segments[segments.length - 1].text += ` ${identityReminder}`;
-        }
       }
 
       // ARC-BUILD-to-LIVE connection task: the Future Mantra -- moved
@@ -737,17 +832,6 @@ export function getStageCopy(
 
       if (!hasContinuityContent) {
         segments.push({ text: "קח רגע לקבע את התחושה החדשה.", durationSeconds: INSTRUCTION_TIMING.encodeFallback });
-      }
-
-      // Presence Color task: Encoding (body-language/embodiment) thread
-      // reminder, appended to that same segment's text once it exists --
-      // never a new segment/duration. Null (legacy/no color) leaves it
-      // unchanged.
-      if (bodyLanguageSegmentIndex !== null) {
-        const encodingReminder = getPresenceColorReminder(profile.presenceColor, "encoding");
-        if (encodingReminder) {
-          segments[bodyLanguageSegmentIndex].text += ` ${encodingReminder}`;
-        }
       }
 
       // Dwell-time task: the "Encoding / Body-Language" dwell category --
@@ -848,11 +932,10 @@ export function getStageCopy(
         // has finished revealing.
         const imagine = currentAction ? `דמיין את עצמך מתחיל ${currentAction}` : "דמיין את עצמך מתחיל בפעולה שבחרת";
         const baseImageryText = actionBodyCue ? `${imagine} תוך שמירה על ${actionBodyCue}.` : `${imagine}.`;
-        // Presence Color task: Action Imagery thread reminder, appended
-        // to the same existing text before segment-building. Null
-        // (legacy/no color) leaves it unchanged.
-        const actionImageryReminder = getPresenceColorReminder(profile.presenceColor, "actionImagery");
-        const text = actionImageryReminder ? `${baseImageryText} ${actionImageryReminder}` : baseImageryText;
+        // Unified Presence/Mantra/Trigger/Imagery spec, section 2:
+        // Energy Color now leads (prepended) instead of being appended.
+        const energyColorLine = getEnergyColorLine(profile.presenceColor);
+        const text = energyColorLine ? `${energyColorLine} ${baseImageryText}` : baseImageryText;
         const dwellSeconds = resolveDwellSecondsFor("actionImageryDwellSeconds", layer, profile);
         return {
           title: "דמיון הפעולה",
@@ -872,6 +955,11 @@ export function getStageCopy(
       // starts (Action Body Cue's whole purpose: help the trainee
       // remember and maintain the cue DURING the real behavior).
       const parts: string[] = [];
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 2: Energy
+      // Color now leads (prepended as the first part) instead of being
+      // appended at the end.
+      const energyColorLine = getEnergyColorLine(profile.presenceColor);
+      if (energyColorLine) parts.push(energyColorLine);
       parts.push(currentAction ? `עכשיו הזמן: ${currentAction}.` : "עכשיו הזמן לפעולה.");
       if (actionBodyCue) {
         parts.push(`שמור על ${actionBodyCue} בזמן הפעולה.`);
@@ -884,13 +972,6 @@ export function getStageCopy(
       const duration = resolveActionDuration(state.selectedActionDuration, profile);
       if (duration !== null) {
         parts.push(`משך הפעולה: ${duration} דקות.`);
-      }
-
-      // Presence Color task: Timed Action thread reminder, appended as
-      // one more part -- null (legacy/no color) leaves this unchanged.
-      const timedActionReminder = getPresenceColorReminder(profile.presenceColor, "timedAction");
-      if (timedActionReminder) {
-        parts.push(timedActionReminder);
       }
 
       return { title: "פעולה", body: parts.join(" "), segments: null };
@@ -935,11 +1016,11 @@ export function getStageCopy(
     }
 
     case "complete": {
-      // Presence Color task: Success Focus/Completion thread reminder,
-      // appended to the existing closing line -- null (legacy/no color)
-      // leaves it unchanged.
-      const completionReminder = getPresenceColorReminder(profile.presenceColor, "completion");
-      const body = completionReminder ? `כל הכבוד על השלמת הסשן. ${completionReminder}` : "כל הכבוד על השלמת הסשן.";
+      // Unified Presence/Mantra/Trigger/Imagery spec, section 2: Energy
+      // Color now leads (prepended) instead of being appended.
+      const energyColorLine = getEnergyColorLine(profile.presenceColor);
+      const closing = "כל הכבוד על השלמת הסשן.";
+      const body = energyColorLine ? `${energyColorLine} ${closing}` : closing;
       return { title: "סיום", body, segments: null };
     }
   }

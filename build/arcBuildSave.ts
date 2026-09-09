@@ -159,6 +159,9 @@ export function buildArcBuildProfileForSave(target: Target, draft: ProfileDraft,
           identitySuccessfulPerformanceCustomQuality: null,
           identitySuccessfulPerformanceResult: null,
           identitySuccessMantra: null,
+          // Unified Presence/Mantra/Trigger/Imagery spec, section 9: per-layer, like identityFutureOrientedMantra above -- never leaks into a state-target build.
+          identityDesiredImageryType: null,
+          identityDesiredImageryDescription: null,
         }
       : target === "identity"
         ? {
@@ -184,6 +187,9 @@ export function buildArcBuildProfileForSave(target: Target, draft: ProfileDraft,
             stateFutureOrientedMantra: null,
             stateBarrierType: null,
             statePracticalAlternative: null,
+            // Unified Presence/Mantra/Trigger/Imagery spec, section 9: per-layer, like stateFutureOrientedMantra above -- never leaks into an identity-target build.
+            stateDesiredImageryType: null,
+            stateDesiredImageryDescription: null,
           }
         : {
             ...rawProfile,
@@ -223,6 +229,11 @@ export function buildArcBuildProfileForSave(target: Target, draft: ProfileDraft,
             identitySuccessfulPerformanceCustomQuality: null,
             identitySuccessfulPerformanceResult: null,
             identitySuccessMantra: null,
+            // Unified Presence/Mantra/Trigger/Imagery spec, section 9: the habit layer has no desired-imagery concept of its own (see arc/desiredImagery.ts's own doc) -- neither field ever belongs to a habit-target build.
+            stateDesiredImageryType: null,
+            stateDesiredImageryDescription: null,
+            identityDesiredImageryType: null,
+            identityDesiredImageryDescription: null,
           };
 
   return { ...profile, programPath: existingProgramPath };

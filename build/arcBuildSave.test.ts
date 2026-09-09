@@ -188,6 +188,90 @@ test("a legacy state-target ArcBuild with no saved presenceColor (null, pre-date
 });
 
 // ---------------------------------------------------------------------------
+// Unified Presence/Mantra/Trigger/Imagery spec, section 9: desired-state/
+// identity imagery must never leak across a single-target ArcBuild's own
+// target -- buildArcBuildProfileForSave is the one place that clears every
+// field the CHOSEN target doesn't own, exactly like every other per-layer
+// field already does (stateFutureOrientedMantra/identityFutureOrientedMantra,
+// stateBridgeBelief/identityBridgeBelief, etc.).
+// ---------------------------------------------------------------------------
+
+test("buildArcBuildProfileForSave clears the OTHER layer's desired imagery for a single-target state build, even if the draft somehow carries both", () => {
+  const draft: ProfileDraft = {
+    ...draftForTarget(
+      "state",
+      draftFromProfileAndSelection(createEmptyArcBuildProfile(), { needsState: true, needsIdentity: false, needsHabit: false, needsIdentityImmediately: false, programPath: "standard_3_week" })
+    ),
+    supportiveState: "רוגע",
+    challengeContext: "בבוקר לפני העבודה",
+    interferingState: "לחץ",
+    internalAction: "סריקת גוף",
+    regulationTool: "נשימה 4-7-8",
+    presenceColor: "כחול",
+    stateDesiredImageryType: "real",
+    stateDesiredImageryDescription: "תמונה מהחתונה שלי",
+    // Never legitimately reachable through this screen's own state flow,
+    // but simulated here directly to prove buildArcBuildProfileForSave's
+    // own explicit null-out is what guarantees this, not mere UI omission.
+    identityDesiredImageryType: "imagined",
+    identityDesiredImageryDescription: "should never be saved on a state-target build",
+  };
+  assert.equal(isTargetDraftComplete("state", draft), true);
+  const saved = buildArcBuildProfileForSave("state", draft, "בוקר רגוע", "standard_3_week");
+  assert.equal(saved.stateDesiredImageryType, "real");
+  assert.equal(saved.stateDesiredImageryDescription, "תמונה מהחתונה שלי");
+  assert.equal(saved.identityDesiredImageryType, null);
+  assert.equal(saved.identityDesiredImageryDescription, null);
+});
+
+test("buildArcBuildProfileForSave clears the OTHER layer's desired imagery for a single-target identity build", () => {
+  const draft: ProfileDraft = {
+    ...draftForTarget(
+      "identity",
+      draftFromProfileAndSelection(createEmptyArcBuildProfile(), { needsState: false, needsIdentity: true, needsHabit: false, needsIdentityImmediately: false, programPath: "standard_3_week" })
+    ),
+    desiredIdentity: "משמעת עצמית",
+    identityChallengeContext: "לפני אימון",
+    identityInterferingEmotion: "עצלנות",
+    identityAction: "ללבוש בגדי ספורט",
+    regulationTool: "נשימה",
+    presenceColor: "אדום",
+    identityDesiredImageryType: "real",
+    identityDesiredImageryDescription: "תמונה מהיום שסיימתי את המרתון",
+    stateDesiredImageryType: "imagined",
+    stateDesiredImageryDescription: "should never be saved on an identity-target build",
+  };
+  assert.equal(isTargetDraftComplete("identity", draft), true);
+  const saved = buildArcBuildProfileForSave("identity", draft, "משמעת", "standard_3_week");
+  assert.equal(saved.identityDesiredImageryType, "real");
+  assert.equal(saved.identityDesiredImageryDescription, "תמונה מהיום שסיימתי את המרתון");
+  assert.equal(saved.stateDesiredImageryType, null);
+  assert.equal(saved.stateDesiredImageryDescription, null);
+});
+
+test("buildArcBuildProfileForSave clears BOTH layers' desired imagery for a habit-target build -- habit has no desired-imagery concept of its own", () => {
+  const draft: ProfileDraft = {
+    ...draftForTarget(
+      "habit",
+      draftFromProfileAndSelection(createEmptyArcBuildProfile(), { needsState: false, needsIdentity: false, needsHabit: true, needsIdentityImmediately: false, programPath: "standard_3_week" })
+    ),
+    beneficialAction: "לגשת ולפתוח שיחה",
+    regulationTool: "נשימה",
+    presenceColor: "צהוב",
+    stateDesiredImageryType: "real",
+    stateDesiredImageryDescription: "should never be saved on a habit-target build",
+    identityDesiredImageryType: "imagined",
+    identityDesiredImageryDescription: "should never be saved on a habit-target build either",
+  };
+  assert.equal(isTargetDraftComplete("habit", draft), true);
+  const saved = buildArcBuildProfileForSave("habit", draft, "הרגל חדש", "standard_3_week");
+  assert.equal(saved.stateDesiredImageryType, null);
+  assert.equal(saved.stateDesiredImageryDescription, null);
+  assert.equal(saved.identityDesiredImageryType, null);
+  assert.equal(saved.identityDesiredImageryDescription, null);
+});
+
+// ---------------------------------------------------------------------------
 // Coherent-architecture task: buildArcBuildProfileForSave must null out the
 // OTHER layer's new fields too, exactly like it already does for
 // stateEncoding/identityEncoding/etc -- a state-target build never persists

@@ -52,6 +52,20 @@ export type ArcStage =
    */
   | "observer_pause"
   | "presence_check"
+  /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 4: reached
+   * ONLY when presence_check's rating is 7-10 (shouldRunArcThought ===
+   * false) -- a single short, untimed grounding line, replacing what
+   * used to be a forced pass through arc_thought_expand_presence for
+   * this route. None of the three ARC Thought/Presence sub-stages below,
+   * their timers, or the presence-recheck loop ever run on this path;
+   * this stage's own transition goes straight to afterArcThought(),
+   * the exact same exit point the 1-5 route eventually reaches via
+   * arc_thought_presence_recheck. See arc/stageCopy.ts's
+   * "presence_grounding" case and arc/arcEngine.ts's "presence_check"
+   * transition.
+   */
+  | "presence_grounding"
   | "arc_thought_awareness"
   | "arc_thought_combined_attention"
   | "arc_thought_expand_presence"
@@ -388,6 +402,27 @@ export interface ArcBuildProfile {
   regulationBodyImagery?: BodyImagery | null;
 
   /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 5: four new,
+   * separate, optional mantras -- Stay Mantra, Acceptance Mantra,
+   * Regulation Mantra, and the brand-new Bridge Mantra (there was no
+   * pre-existing "Bridge Mantra" field anywhere in this codebase before
+   * this task; it is built from scratch and lives here, at the end of
+   * Regulation, never Encoding). All four are single, SHARED fields
+   * (like regulationTool/presenceColor above), never split per layer --
+   * Stay/Acceptance/Regulation are not per-layer stages today. See
+   * arc/mantras.ts for their line-builders and arc/stageCopy.ts's
+   * "stay"/"accept"/"regulate" cases for exact placement (Bridge Mantra
+   * specifically is shown as part of "regulate"'s own copy, immediately
+   * after Regulation Mantra, structurally before Encoding begins).
+   * Optional/nullable, defaulting to null -- a legacy build without
+   * these renders exactly as it always has, no empty screen/step.
+   */
+  stayMantra?: string | null;
+  acceptanceMantra?: string | null;
+  regulationMantra?: string | null;
+  bridgeMantra?: string | null;
+
+  /**
    * Coherent-architecture task (#1 "Add Value"): the "why" underneath
    * the whole build -- Value -> Identity -> Habit, e.g. "בריאות
    * וחופש". Build-global (like presenceColor/regulationTool), never
@@ -480,6 +515,28 @@ export interface ArcBuildProfile {
    */
   stateFutureOrientedMantra?: string | null;
   identityFutureOrientedMantra?: string | null;
+
+  /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 9: optional
+   * imagery representing the desired emotion/state or identity --
+   * per-layer, like the Future-Oriented Mantra above (Encoding is a
+   * per-layer stage, unlike Stay/Accept/Regulate). Kept conceptually
+   * separate from Energy Color (supports Presence), side observation
+   * (creates distance from the current experience), and Action Imagery
+   * (arc/successfulPerformance.ts, rehearses the beneficial action --
+   * completely untouched by this field). Begins only during Encoding
+   * (arc/stageCopy.ts's "encode" case), never earlier. "One shared
+   * image for both" has no separate flag here -- see
+   * arc/desiredImagery.ts's own doc for how BUILD's prefill + LIVE's
+   * identical-description detection realize it without one. No
+   * habit-layer equivalent (same reasoning as the Future-Oriented
+   * Mantra above). Optional/nullable; a legacy build without these
+   * skips the imagery segment cleanly, exactly as if it didn't exist.
+   */
+  stateDesiredImageryType?: "real" | "imagined" | null;
+  stateDesiredImageryDescription?: string | null;
+  identityDesiredImageryType?: "real" | "imagined" | null;
+  identityDesiredImageryDescription?: string | null;
 
   /**
    * Coherent-architecture task (#12 "Internal Versus Practical
@@ -595,6 +652,10 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     negativeActionReductionEnabled: false,
     linkSettings: null,
     regulationBodyImagery: null,
+    stayMantra: null,
+    acceptanceMantra: null,
+    regulationMantra: null,
+    bridgeMantra: null,
     value: null,
     identityDesiredState: null,
     stateSupportingAction: null,
@@ -605,6 +666,10 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     identityBridgeBelief: null,
     stateFutureOrientedMantra: null,
     identityFutureOrientedMantra: null,
+    stateDesiredImageryType: null,
+    stateDesiredImageryDescription: null,
+    identityDesiredImageryType: null,
+    identityDesiredImageryDescription: null,
     stateBarrierType: null,
     statePracticalAlternative: null,
     identityBarrierType: null,
@@ -939,6 +1004,48 @@ export interface ArcLiveState {
   triggerKnown: boolean | null;
 
   /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 6: the
+   * session-specific answer to "מה הציף אותך או עורר את החוויה
+   * הנוכחית?" -- deliberately broader than triggerContext's own "what
+   * triggered this" framing: this may be a real event, something
+   * imagined, a future expectation/scenario, a memory/internal image,
+   * or a thought that appeared with no clear external event at all.
+   * Set once on "trigger_context" (same stage, same position, strictly
+   * before "observer_pause" and before ARC Thought -- nothing about
+   * this stage's placement/routing changes), never re-asked, never
+   * written back to ArcBuildProfile. Optional (null when left blank).
+   */
+  currentTriggerDescription: string | null;
+  /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 6: the
+   * session-specific answer to "איזו מחשבה, פרשנות, אמונה או תמונה
+   * עתידית מפריעה מופיעה עכשיו?" -- an interpretation, limiting belief,
+   * imagined scenario, prediction, thought about another person, or
+   * automatic thought, never presented as an objective fact. Set once
+   * on "trigger_context" alongside currentTriggerDescription above.
+   * When a BUILD-configured interfering thought (Limiting Belief)
+   * exists for the resolved layer, the screen prefills this field with
+   * it as an editable suggestion -- keeping it unedited, editing it, or
+   * replacing it all stay purely session-specific: this field is never
+   * written back onto the BUILD value. Optional (null when left blank).
+   */
+  currentInterferingThought: string | null;
+  /**
+   * Unified Presence/Mantra/Trigger/Imagery spec, section 7: the
+   * session-only answer to "כיצד תרצה להתבונן בעצמך מהצד?" -- "present"
+   * (ברגע הזה) or "previous" (בסיטואציה שהתרחשה). Drives
+   * arc/stageCopy.ts's "observer_pause" copy INSTEAD of the older
+   * triggerKnown known/unknown fork (triggerKnown itself is untouched
+   * structurally -- still set by trigger_context -- simply no longer
+   * consulted for this stage's wording, since a trigger can now be
+   * imagined/future/thought-only, so "was a specific trigger named" is
+   * no longer the right axis for "should this be observed as present or
+   * as a past situation"). null means "not yet answered" -- see
+   * live/screens.tsx's SideObservationModeScreen.
+   */
+  sideObservationMode: "present" | "previous" | null;
+
+  /**
    * Urge-check task: the session-only answer to "האם יש כרגע דחף לבצע
    * את ההרגל המפריע?" -- set once on "urge_check" (reactive_urge only)
    * and never re-asked within the same session. null means "not yet
@@ -1116,6 +1223,9 @@ export function createEmptyLiveState(): ArcLiveState {
     selectedTarget: null,
     triggerContext: null,
     triggerKnown: null,
+    currentTriggerDescription: null,
+    currentInterferingThought: null,
+    sideObservationMode: null,
     hasUrge: null,
     identifiedNeed: null,
     presenceRating: null,
