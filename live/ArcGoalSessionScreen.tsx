@@ -42,8 +42,12 @@ import {
   loadMiniArcBuilds,
   loadSessionLog,
   loadUrgeArcs,
+  loadWeeklyActions,
   updateLastSessionLogEntryGratitude,
+  upsertWeeklyAction,
 } from "../data/storage.ts";
+import { markWeeklyActionCompletedToday } from "../arc/routineLinks.ts";
+import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
   createArcGoalInnerInitialSession,
   createArcGoalOuterInitialSession,
@@ -123,7 +127,13 @@ interface RunContext {
 }
 
 export default function ArcGoalSessionScreen() {
-  const { goalId } = useLocalSearchParams<{ goalId: string }>();
+  const { goalId, weeklyActionId: weeklyActionIdParam } = useLocalSearchParams<{ goalId: string; weeklyActionId?: string }>();
+  // Routine <-> ARC Goal linking task: present only when this session was
+  // launched from a routine's own WeeklyAction (app/routines/index.tsx's
+  // WeeklyActionsSection.handleStart) -- absent for every other entry
+  // point (the Goals list, ARC Goal select screen), which keep behaving
+  // exactly as before.
+  const weeklyActionId = typeof weeklyActionIdParam === "string" ? weeklyActionIdParam : null;
 
   const [status, setStatus] = useState<Status>("loading");
   const [goal, setGoal] = useState<ArcGoal | null>(null);
@@ -342,6 +352,34 @@ export default function ArcGoalSessionScreen() {
     setGoalState((current) => ({ ...current, uiStage: "goal_action_confirm" }));
   }
 
+  /**
+   * Routine <-> ARC Goal linking task, spec section 3 steps 5-6: "When
+   * the ARC Goal session is completed, return automatically to the
+   * routine. Mark the routine action as completed only after the
+   * connected goal action is completed." -- reached exclusively from
+   * goal_action_confirm's own "סיימתי" tap (never earlier: leaving/
+   * canceling the session at any point before this, including the whole
+   * urge/supportive bridge and the outer run itself, never marks
+   * anything complete). Reuses arc/routineLinks.ts's own
+   * markWeeklyActionCompletedToday -- the SAME completion rule
+   * WeeklyActionsSection's own no-linked-protocol plain check-off
+   * already uses, never a separate one. Every other entry point into
+   * this screen (weeklyActionId absent) keeps the original "back to
+   * Home" behavior unchanged.
+   */
+  async function handleGoalActionConfirmDone() {
+    if (weeklyActionId) {
+      const weeklyActions = await loadWeeklyActions();
+      const target = weeklyActions.find((action) => action.id === weeklyActionId);
+      if (target) {
+        await upsertWeeklyAction(markWeeklyActionCompletedToday(target, todayLocalDateString(), new Date().toISOString()));
+      }
+      router.replace("/routines");
+      return;
+    }
+    router.replace("/");
+  }
+
   function buildRendererProps(ctx: RunContext, onRestart: () => void, restartLabel?: string): Omit<ArcLiveRendererProps, "stage"> {
     const { session, profile, activeLayers, setSession, commitAdvance } = ctx;
     return {
@@ -453,12 +491,24 @@ export default function ArcGoalSessionScreen() {
   }
 
   if (status === "notFound") {
+    // Missing/deleted-goal handling: reached only if this screen was
+    // navigated to with an id that no longer resolves (the routines
+    // editor's own handleStart already refuses to navigate here for a
+    // known-missing goal -- see app/routines/index.tsx -- so this is a
+    // defensive fallback, e.g. a stale deep link). Routed back to
+    // wherever the trip came from: the routine (so the trainee can
+    // immediately fix the link via עריכה) when weeklyActionId is
+    // present, the Goals list otherwise -- exactly the original
+    // behavior for every non-routine entry point.
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
           <Text style={styles.title}>המטרה לא נמצאה</Text>
-          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.replace("/goals")}>
-            <Text style={styles.buttonText}>חזרה לרשימת המטרות</Text>
+          <Pressable
+            style={[styles.button, styles.fullWidthButton]}
+            onPress={() => router.replace(weeklyActionId ? "/routines" : "/goals")}
+          >
+            <Text style={styles.buttonText}>{weeklyActionId ? "חזרה לשגרה" : "חזרה לרשימת המטרות"}</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -694,7 +744,7 @@ export default function ArcGoalSessionScreen() {
         <View style={styles.content}>
           <Text style={styles.title}>{copy.title}</Text>
           <Text style={styles.body}>{copy.body}</Text>
-          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.replace("/")}>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleGoalActionConfirmDone}>
             <Text style={styles.buttonText}>סיימתי</Text>
           </Pressable>
         </View>
