@@ -9,6 +9,7 @@ import {
   deleteWeeklyActionFromList,
   describeArcLinkKindAndCategory,
   describeTrigger,
+  markWeeklyActionCompletedToday,
   resolveArcLinkKind,
   resolveArcLinkTriggerCategory,
   resolveCurrentTriggerLevel,
@@ -91,6 +92,55 @@ test("upsertWeeklyActionInList / deleteWeeklyActionFromList mirror the same by-i
   assert.equal(updated.find((w) => w.id === "a")!.name, "פעולה א מעודכנת");
   assert.equal(updated.find((w) => w.id === "b")!.name, "פעולה ב");
   assert.equal(deleteWeeklyActionFromList(list, "a").length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Routine <-> ARC Goal linking task: WeeklyAction.linkedProtocolType now
+// also accepts "arc_goal" (RoutineProtocolType), and
+// markWeeklyActionCompletedToday is the one shared completion rule both
+// WeeklyActionsSection's own no-linked-protocol plain check-off and a
+// routine-launched ARC Goal session (live/ArcGoalSessionScreen.tsx's
+// handleGoalActionConfirmDone) now reuse.
+// ---------------------------------------------------------------------------
+
+test("a WeeklyAction can be linked to an ARC Goal via the SAME generic linkedProtocolId/linkedProtocolType fields already used for ARC/Mini ARC -- no separate linkedGoalId field needed", () => {
+  const action = weeklyAction({ linkedProtocolType: "arc_goal", linkedProtocolId: "arcgoal-1" });
+  assert.equal(action.linkedProtocolType, "arc_goal");
+  assert.equal(action.linkedProtocolId, "arcgoal-1");
+});
+
+test("markWeeklyActionCompletedToday adds today's local date once, updating updatedAt", () => {
+  const action = weeklyAction({ completedDates: ["2026-01-01"] });
+  const result = markWeeklyActionCompletedToday(action, "2026-01-05", "2026-01-05T10:00:00.000Z");
+  assert.deepEqual(result.completedDates, ["2026-01-01", "2026-01-05"]);
+  assert.equal(result.updatedAt, "2026-01-05T10:00:00.000Z");
+});
+
+test("markWeeklyActionCompletedToday is idempotent -- calling it twice for the same local date never adds a duplicate entry", () => {
+  const action = weeklyAction({ completedDates: ["2026-01-05"] });
+  const result = markWeeklyActionCompletedToday(action, "2026-01-05", "2026-01-05T10:00:00.000Z");
+  assert.deepEqual(result.completedDates, ["2026-01-05"]);
+});
+
+test("markWeeklyActionCompletedToday never touches any other field of the action", () => {
+  const action = weeklyAction({ name: "פעילות", linkedProtocolType: "arc_goal", linkedProtocolId: "arcgoal-1" });
+  const result = markWeeklyActionCompletedToday(action, "2026-01-05", "2026-01-05T10:00:00.000Z");
+  assert.equal(result.name, "פעילות");
+  assert.equal(result.linkedProtocolType, "arc_goal");
+  assert.equal(result.linkedProtocolId, "arcgoal-1");
+  assert.equal(result.id, action.id);
+});
+
+test("markWeeklyActionCompletedToday never mutates the original action object", () => {
+  const action = weeklyAction({ completedDates: [] });
+  const snapshot = JSON.parse(JSON.stringify(action));
+  markWeeklyActionCompletedToday(action, "2026-01-05", "2026-01-05T10:00:00.000Z");
+  assert.deepEqual(action, snapshot);
+});
+
+test("a legacy WeeklyAction record (linkedProtocolType/linkedProtocolId genuinely absent) still resolves safely -- preserved, never crashing", () => {
+  const legacy = { ...weeklyAction(), linkedProtocolType: undefined, linkedProtocolId: undefined } as unknown as WeeklyAction;
+  assert.doesNotThrow(() => markWeeklyActionCompletedToday(legacy, "2026-01-05", "2026-01-05T10:00:00.000Z"));
 });
 
 test("upsertArcLinkInList / deleteArcLinkFromList mirror the same by-id-only guarantee -- an ARC Link and a Mini ARC Link never collide", () => {

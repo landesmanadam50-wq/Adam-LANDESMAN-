@@ -31,6 +31,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   deleteWeeklyAction,
   loadArcBuilds,
+  loadArcGoals,
   loadArcLinks,
   loadMiniArcBuilds,
   loadRoutineOccurrenceCompletions,
@@ -38,6 +39,7 @@ import {
   loadScheduledRoutines,
   loadWeeklyActions,
   saveScheduledRoutines,
+  upsertArcGoal,
   upsertArcLink,
   upsertRoutineTrigger,
   upsertWeeklyAction,
@@ -54,16 +56,18 @@ import {
   describeTrigger,
   generateRoutineTriggerId,
   generateWeeklyActionId,
+  markWeeklyActionCompletedToday,
   resolveArcLinkKind,
   resolveArcLinkTriggerCategory,
   resolveRoutineTrigger,
   resolveWeeklyAction,
 } from "../../arc/routineLinks.ts";
-import type { ArcLink, ArcLinkTriggerCategory, RoutineTrigger, WeeklyAction } from "../../arc/routineLinks.ts";
+import type { ArcLink, ArcLinkTriggerCategory, RoutineProtocolType, RoutineTrigger, WeeklyAction } from "../../arc/routineLinks.ts";
 import { ARC_LINK_TRIGGER_TYPE_LABELS } from "../../arc/bodyImagery.ts";
 import type { ArcLinkTriggerType } from "../../arc/bodyImagery.ts";
 import { todayLocalDateString } from "../../program/dateUtils.ts";
-import type { ArcBuild } from "../../arc/types.ts";
+import { createEmptyArcGoal, generateArcGoalId } from "../../arc/types.ts";
+import type { ArcBuild, ArcGoal } from "../../arc/types.ts";
 import type { MiniArcBuild } from "../../arc/miniArc.ts";
 import ArcLinkBuildForm from "../../build/ArcLinkBuildForm.tsx";
 
@@ -127,7 +131,7 @@ interface WeeklyActionFormState {
   durationText: string;
   triggerId: string | null;
   weeklyTargetText: string;
-  linkedProtocolType: "none" | "arc" | "mini_arc";
+  linkedProtocolType: "none" | RoutineProtocolType;
   linkedProtocolId: string | null;
   enabled: boolean;
 }
@@ -145,6 +149,11 @@ function emptyWeeklyActionForm(): WeeklyActionFormState {
     linkedProtocolId: null,
     enabled: true,
   };
+}
+
+/** Routine <-> ARC Goal linking task: "Do not save only the protocol type. Save the exact selected protocol ID." -- a chosen link type with no selected protocol id yet can never be saved, for all three protocol types alike. "none" has nothing to select, so it's always valid. */
+function hasValidProtocolSelection(form: WeeklyActionFormState): boolean {
+  return form.linkedProtocolType === "none" || form.linkedProtocolId !== null;
 }
 
 function formFromWeeklyAction(action: WeeklyAction): WeeklyActionFormState {
@@ -167,18 +176,21 @@ function WeeklyActionsSection() {
   const [triggers, setTriggers] = useState<RoutineTrigger[]>([]);
   const [arcBuilds, setArcBuilds] = useState<ArcBuild[]>([]);
   const [miniArcBuilds, setMiniArcBuilds] = useState<MiniArcBuild[]>([]);
+  const [arcGoals, setArcGoals] = useState<ArcGoal[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [form, setForm] = useState<WeeklyActionFormState | null>(null);
   const [newTriggerType, setNewTriggerType] = useState<ArcLinkTriggerType>("time");
   const [newTriggerText, setNewTriggerText] = useState("");
+  const [newGoalName, setNewGoalName] = useState("");
 
   const reload = useCallback(() => {
-    Promise.all([loadWeeklyActions(), loadRoutineTriggers(), loadArcBuilds(), loadMiniArcBuilds()]).then(
-      ([loadedActions, loadedTriggers, loadedArc, loadedMini]) => {
+    Promise.all([loadWeeklyActions(), loadRoutineTriggers(), loadArcBuilds(), loadMiniArcBuilds(), loadArcGoals()]).then(
+      ([loadedActions, loadedTriggers, loadedArc, loadedMini, loadedGoals]) => {
         setActions(loadedActions);
         setTriggers(loadedTriggers);
         setArcBuilds(loadedArc);
         setMiniArcBuilds(loadedMini);
+        setArcGoals(loadedGoals);
         setLoaded(true);
       }
     );
@@ -193,7 +205,7 @@ function WeeklyActionsSection() {
   async function handleSave() {
     if (!form) return;
     const name = form.name.trim();
-    if (!name) return;
+    if (!name || !hasValidProtocolSelection(form)) return;
     const now = new Date().toISOString();
     const times = form.timesText
       .split(",")
@@ -244,6 +256,28 @@ function WeeklyActionsSection() {
     setNewTriggerText("");
   }
 
+  /**
+   * Routine <-> ARC Goal linking task: "provide a button: 'יצירת ARC
+   * Goal חדש'. After creating it, return to the routine editor and
+   * allow it to be selected." -- mirrors handleAddTrigger's own
+   * inline-create pattern immediately above (never navigates away from
+   * this form at all, so there is nothing to "return" from): create the
+   * goal exactly like build/ArcGoalListScreen.tsx's own "+ הוסף מטרה"
+   * does (a name only -- its identity protocol/mappings are configured
+   * later, from the Goals list), add it to this section's own local
+   * arcGoals list, and select it immediately.
+   */
+  async function handleCreateArcGoalInline() {
+    const trimmed = newGoalName.trim();
+    if (!trimmed || !form) return;
+    const now = new Date().toISOString();
+    const goal = createEmptyArcGoal(generateArcGoalId(), trimmed, now);
+    await upsertArcGoal(goal);
+    setArcGoals([...arcGoals, goal]);
+    setForm({ ...form, linkedProtocolId: goal.id });
+    setNewGoalName("");
+  }
+
   async function handleStart(action: WeeklyAction) {
     if (action.linkedProtocolType === "arc" && action.linkedProtocolId) {
       router.push({ pathname: "/live/select", params: { buildId: action.linkedProtocolId } });
@@ -253,13 +287,20 @@ function WeeklyActionsSection() {
       router.push({ pathname: "/mini-arc/mode/[id]", params: { id: action.linkedProtocolId } });
       return;
     }
+    if (action.linkedProtocolType === "arc_goal" && action.linkedProtocolId) {
+      // Missing/deleted-goal handling: never navigate to a goal that no
+      // longer resolves -- the card below already shows "ה־ARC Goal
+      // המקושר כבר לא קיים" for this exact case, and עריכה still lets
+      // the trainee pick another goal or remove the link. Routine
+      // completion for this WeeklyAction is only ever marked once the
+      // ARC Goal session itself reaches its own goal action confirm
+      // (live/ArcGoalSessionScreen.tsx) -- never here on tap.
+      if (!arcGoals.some((g) => g.id === action.linkedProtocolId)) return;
+      router.push({ pathname: "/arc-goal/live/[goalId]", params: { goalId: action.linkedProtocolId, weeklyActionId: action.id } });
+      return;
+    }
     // No linked protocol -- a plain check-off for today.
-    const today = todayLocalDateString();
-    const updated: WeeklyAction = {
-      ...action,
-      completedDates: action.completedDates.includes(today) ? action.completedDates : [...action.completedDates, today],
-      updatedAt: new Date().toISOString(),
-    };
+    const updated = markWeeklyActionCompletedToday(action, todayLocalDateString(), new Date().toISOString());
     await upsertWeeklyAction(updated);
     reload();
   }
@@ -335,7 +376,7 @@ function WeeklyActionsSection() {
             </Pressable>
           </View>
 
-          <Text style={styles.fieldLabel}>קישור ל-ARC / Mini ARC (רשות)</Text>
+          <Text style={styles.fieldLabel}>קישור לפרוטוקול (רשות)</Text>
           <View style={styles.chipRow}>
             <Pressable
               style={[styles.chip, form.linkedProtocolType === "none" && styles.chipSelected]}
@@ -354,6 +395,12 @@ function WeeklyActionsSection() {
               onPress={() => setForm({ ...form, linkedProtocolType: "mini_arc", linkedProtocolId: null })}
             >
               <Text style={styles.chipText}>Mini ARC</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.chip, form.linkedProtocolType === "arc_goal" && styles.chipSelected]}
+              onPress={() => setForm({ ...form, linkedProtocolType: "arc_goal", linkedProtocolId: null })}
+            >
+              <Text style={styles.chipText}>ARC Goal</Text>
             </Pressable>
           </View>
           {form.linkedProtocolType === "arc" && (
@@ -382,12 +429,53 @@ function WeeklyActionsSection() {
               ))}
             </View>
           )}
+          {form.linkedProtocolType === "arc_goal" && (
+            <View>
+              <Text style={styles.fieldLabel}>בחר ARC Goal</Text>
+              {arcGoals.length === 0 ? (
+                <View>
+                  <Text style={styles.emptyText}>עדיין לא יצרת ARC Goal</Text>
+                  <View style={styles.inlineAddRow}>
+                    <TextInput
+                      style={styles.textInputFlex}
+                      value={newGoalName}
+                      onChangeText={setNewGoalName}
+                      placeholder="שם ה-ARC Goal החדש"
+                      textAlign="right"
+                    />
+                    <Pressable style={styles.smallAddButton} onPress={handleCreateArcGoalInline}>
+                      <Text style={styles.smallAddButtonText}>יצירת ARC Goal חדש</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                arcGoals.map((goal) => {
+                  const identityName = arcBuilds.find((b) => b.id === goal.identityProtocolId)?.profile.desiredIdentity;
+                  return (
+                    <Pressable
+                      key={goal.id}
+                      style={[styles.goalOptionRow, form.linkedProtocolId === goal.id && styles.goalOptionRowSelected]}
+                      onPress={() => setForm({ ...form, linkedProtocolId: goal.id })}
+                    >
+                      <Text style={styles.goalOptionTitle}>{goal.name}</Text>
+                      <Text style={styles.goalOptionRow2}>{`זהות: ${identityName ?? "טרם הוגדרה"}`}</Text>
+                      <Text style={styles.goalOptionRow2}>{`פעולת המטרה: ${goal.goalAction.trim() || "טרם הוגדרה"}`}</Text>
+                    </Pressable>
+                  );
+                })
+              )}
+            </View>
+          )}
 
           <View style={styles.stepButtons}>
             <Pressable style={styles.cancelButton} onPress={() => setForm(null)}>
               <Text style={styles.cancelButtonText}>ביטול</Text>
             </Pressable>
-            <Pressable style={[styles.saveButton, !form.name.trim() && styles.buttonDisabled]} disabled={!form.name.trim()} onPress={handleSave}>
+            <Pressable
+              style={[styles.saveButton, (!form.name.trim() || !hasValidProtocolSelection(form)) && styles.buttonDisabled]}
+              disabled={!form.name.trim() || !hasValidProtocolSelection(form)}
+              onPress={handleSave}
+            >
               <Text style={styles.saveButtonText}>שמור</Text>
             </Pressable>
           </View>
@@ -403,12 +491,19 @@ function WeeklyActionsSection() {
           {actions.map((action) => {
             const trigger = resolveRoutineTrigger(action.triggerId, triggers);
             const completedThisWeek = countCompletionsThisWeek(action.completedDates);
+            const linkedArcGoal = action.linkedProtocolType === "arc_goal" ? arcGoals.find((g) => g.id === action.linkedProtocolId) : undefined;
             const linkedName =
               action.linkedProtocolType === "arc"
                 ? arcBuilds.find((b) => b.id === action.linkedProtocolId)?.name
                 : action.linkedProtocolType === "mini_arc"
                   ? miniArcBuilds.find((b) => b.id === action.linkedProtocolId)?.name
-                  : null;
+                  : action.linkedProtocolType === "arc_goal"
+                    ? linkedArcGoal?.name
+                    : null;
+            // Missing/deleted-goal handling: never crash, keep the routine
+            // item, surface the required message, and still allow עריכה
+            // (below) to pick another goal or remove the link entirely.
+            const linkedArcGoalMissing = action.linkedProtocolType === "arc_goal" && action.linkedProtocolId !== null && !linkedArcGoal;
             return (
               <View key={action.id} style={styles.card}>
                 <Text style={styles.cardTitle}>{action.name}</Text>
@@ -418,6 +513,7 @@ function WeeklyActionsSection() {
                 <Text style={styles.cardRow}>{`טריגר: ${describeTrigger(trigger)}`}</Text>
                 <Text style={styles.cardRow}>{`השבוע: ${completedThisWeek} מתוך ${action.weeklyTarget} ביצועים`}</Text>
                 {linkedName && <Text style={styles.cardRow}>{`מקושר ל: ${linkedName}`}</Text>}
+                {linkedArcGoalMissing && <Text style={styles.errorText}>ה־ARC Goal המקושר כבר לא קיים</Text>}
                 <View style={styles.cardActions}>
                   <Pressable style={styles.startButton} onPress={() => handleStart(action)}>
                     <Text style={styles.startButtonText}>התחלת הפעולה</Text>
@@ -1174,6 +1270,20 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 17, fontWeight: "700", textAlign: "right", color: "#0a7ea4", marginBottom: 6 },
   cardRow: { fontSize: 14, textAlign: "right", color: "#333", marginBottom: 2 },
+  errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 4 },
+  goalOptionRow: {
+    borderWidth: 1,
+    borderColor: "#E6F4FE",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  goalOptionRowSelected: {
+    borderColor: "#0a7ea4",
+    backgroundColor: "#E6F4FE",
+  },
+  goalOptionTitle: { fontSize: 16, fontWeight: "700", textAlign: "right", color: "#0a7ea4", marginBottom: 4 },
+  goalOptionRow2: { fontSize: 13, textAlign: "right", color: "#333", marginBottom: 2 },
   cardActions: { flexDirection: "row-reverse", gap: 8, marginTop: 10, flexWrap: "wrap" },
   shortcutLink: { marginTop: 10, alignItems: "flex-end" },
   shortcutLinkText: { color: "#0a7ea4", fontSize: 13 },

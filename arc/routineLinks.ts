@@ -26,7 +26,18 @@
 import { getIsoWeekKey } from "../data/weeklyStats.ts";
 import type { ArcLinkTriggerType } from "./bodyImagery.ts";
 
-export type RoutineProtocolType = "arc" | "mini_arc";
+/**
+ * Routine <-> ARC Goal linking task: "arc_goal" extends the one existing
+ * generic protocol-reference field a WeeklyAction already carries
+ * (linkedProtocolId/linkedProtocolType below) -- deliberately NOT a
+ * separate linkedGoalId field, since the current data model's one
+ * generic reference already fits (an ArcGoal id is just another kind of
+ * value linkedProtocolId can hold). A WeeklyAction linked to "arc" or
+ * "mini_arc" is completely unaffected: this is purely an additive union
+ * member, and every existing stored WeeklyAction record keeps loading
+ * and starting exactly as it already does.
+ */
+export type RoutineProtocolType = "arc" | "mini_arc" | "arc_goal";
 export type ArcLinkMode = "with_archi" | "without_archi";
 
 /**
@@ -219,7 +230,15 @@ export interface WeeklyAction {
 export interface ArcLink {
   id: string;
   protocolId: string;
-  protocolType: RoutineProtocolType;
+  /**
+   * Routine <-> ARC Goal linking task: deliberately its own narrower
+   * literal, never the full RoutineProtocolType -- ArcLink (ARC Link /
+   * Mini ARC Link rehearsal/practice) never references an ArcGoal, and
+   * is explicitly out of scope for that task ("Do not add or modify
+   * ARC Goal Link in this task"). Only WeeklyAction.linkedProtocolType
+   * below actually uses the widened "arc_goal" member.
+   */
+  protocolType: "arc" | "mini_arc";
   weeklyActionId: string;
   triggerId: string;
   mode: ArcLinkMode;
@@ -337,6 +356,24 @@ export function describeTrigger(trigger: RoutineTrigger | null): string {
 // Weekly completion counting -- reuses data/weeklyStats.ts's own ISO-week
 // key (Monday-start weeks) rather than duplicating week-boundary math.
 // ---------------------------------------------------------------------------
+
+/**
+ * Routine <-> ARC Goal linking task: the exact "add today's local date
+ * to completedDates, once" logic app/routines/index.tsx's own
+ * WeeklyActionsSection.handleStart already used inline for a
+ * no-linked-protocol plain check-off -- extracted here so
+ * live/ArcGoalSessionScreen.tsx can reuse the SAME completion rule once
+ * a routine-launched ARC Goal session reaches its own goal action
+ * confirm, rather than re-implementing it. Idempotent: calling it twice
+ * for the same local date never adds a duplicate entry.
+ */
+export function markWeeklyActionCompletedToday(action: WeeklyAction, todayLocal: string, now: string): WeeklyAction {
+  return {
+    ...action,
+    completedDates: action.completedDates.includes(todayLocal) ? action.completedDates : [...action.completedDates, todayLocal],
+    updatedAt: now,
+  };
+}
 
 /** How many of `dates` (local "YYYY-MM-DD" strings) fall in the same ISO week as `now`. Malformed entries (fail to parse into a real date) are safely ignored, never thrown. */
 export function countCompletionsThisWeek(dates: string[], now: Date = new Date()): number {
