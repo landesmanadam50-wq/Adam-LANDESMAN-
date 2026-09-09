@@ -525,6 +525,33 @@ test("buildArcLinkSteps: Stay/Acceptance Mantras appear at the end of their own 
   assert.equal(acceptanceNoMantra.lines.length, 1, "no extra line when acceptanceMantra is unset");
 });
 
+test("buildArcLinkSteps: Balanced Alternative Interpretation leads the awareness/stay-equivalent step, before its existing content and any Stay Mantra, and adds nothing when unset", () => {
+  const p = profile({
+    internalAction: "סריקת גוף",
+    stateBalancedAlternativeInterpretation: "אני יכול להתקדם בהדרגה",
+    stayMantra: "טקסט שהייה",
+  });
+  const awareness = buildArcLinkSteps(p).find((s) => s.id === "awareness")!;
+  assert.ok(awareness.lines[0].includes("אני יכול להתקדם בהדרגה"), "the Balanced Alternative Interpretation leads the step");
+  assert.equal(awareness.lines[awareness.lines.length - 1], 'אפשר להישאר עם זה לרגע: "טקסט שהייה".', "Stay Mantra still ends the step");
+
+  const withoutIt = buildArcLinkSteps(profile({ internalAction: "סריקת גוף" }));
+  const awarenessWithoutIt = withoutIt.find((s) => s.id === "awareness")!;
+  assert.equal(awarenessWithoutIt.lines.length, 1, "no extra leading line when unset -- never invented, never an empty step");
+});
+
+test("buildArcLinkSteps: Balanced Alternative Interpretation never leaks between state/identity targets", () => {
+  const p = profile({
+    internalAction: "סריקת גוף",
+    stateBalancedAlternativeInterpretation: "הפרשנות של המצב",
+    identityAction: "לדבר בבהירות",
+    identityBalancedAlternativeInterpretation: "הפרשנות של הזהות",
+  });
+  const awareness = buildArcLinkSteps(p).find((s) => s.id === "awareness")!;
+  assert.ok(awareness.lines[0].includes("הפרשנות של המצב"), "state is the resolved target (state > identity priority)");
+  assert.ok(!awareness.lines.join(" ").includes("הפרשנות של הזהות"));
+});
+
 test("buildArcLinkSteps: Regulation Mantra then Bridge Mantra appear at the end of the regulation step, in that order, before Encoding", () => {
   const p = profile({ internalAction: "סריקת גוף", regulationMantra: "טקסט ויסות", bridgeMantra: "טקסט גשר" });
   const steps = buildArcLinkSteps(p);
@@ -558,6 +585,7 @@ test("buildArcLinkProtocolSteps: same Energy Color/breathing/mantra/imagery inhe
   const p = profile({
     internalAction: "סריקת גוף",
     presenceColor: "ירוק",
+    stateBalancedAlternativeInterpretation: "אני יכול להתקדם בהדרגה",
     stayMantra: "טקסט שהייה",
     acceptanceMantra: "טקסט קבלה",
     regulationMantra: "טקסט ויסות",
@@ -574,6 +602,7 @@ test("buildArcLinkProtocolSteps: same Energy Color/breathing/mantra/imagery inhe
   assert.equal(presence.lines[presence.lines.length - 1], "אפשר לנשימה להמשיך בחופשיות. שים לב כיצד היא מתרחשת מעצמה, בלי לנסות לשנות אותה.");
 
   const awareness = steps.find((s) => s.id === "awareness")!;
+  assert.ok(awareness.lines[0].includes("אני יכול להתקדם בהדרגה"), "the Balanced Alternative Interpretation leads the step here too");
   assert.equal(awareness.lines[awareness.lines.length - 1], 'אפשר להישאר עם זה לרגע: "טקסט שהייה".');
   const acceptance = steps.find((s) => s.id === "acceptance")!;
   assert.equal(acceptance.lines[acceptance.lines.length - 1], 'מותר לזה להיות כאן כרגע: "טקסט קבלה".');

@@ -253,6 +253,19 @@ export function applyRegulationToolUsed(session: ArcLiveState, tool: string | nu
   return { ...session, activeTools: [...session.activeTools, tool] };
 }
 
+/**
+ * Balanced Alternative Interpretation task: marks the new
+ * "balanced_alternative_interpretation" stage as shown -- applied
+ * BEFORE advanceLiveSession, same "apply a side effect, then
+ * commitAdvance" pattern as applyRegulationToolUsed above, so
+ * arc/arcEngine.ts's resolveBeforeStay sees the updated flag by the
+ * time it decides what comes next. Never reset once true -- see
+ * arc/types.ts's ArcLiveState.balancedAlternativeInterpretationSeen doc.
+ */
+export function applyBalancedAlternativeInterpretationSeen(session: ArcLiveState): ArcLiveState {
+  return { ...session, balancedAlternativeInterpretationSeen: true };
+}
+
 export function applyActionCompletion(session: ArcLiveState, completed: boolean): ArcLiveState {
   return { ...session, realActionCompleted: completed };
 }

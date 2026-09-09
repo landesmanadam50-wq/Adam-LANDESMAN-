@@ -29,7 +29,7 @@
  * (arc/ is a lower layer; build/ depends on it, never the reverse).
  */
 
-import { resolveFutureMantra, resolveIdentityLabel, resolveSupportiveStateLabel, resolveValueLabel } from "./arcLinkContent.ts";
+import { resolveBalancedAlternativeInterpretation, resolveFutureMantra, resolveIdentityLabel, resolveSupportiveStateLabel, resolveValueLabel } from "./arcLinkContent.ts";
 import { getAwarenessInstruction, getCombinedAttentionInstruction, getExpandPresenceInstruction } from "./instructions.ts";
 import { getBodyImageryForText, safeTriggerText } from "./bodyImagery.ts";
 import type { BodyImagery } from "./bodyImagery.ts";
@@ -169,10 +169,22 @@ export function buildArcLinkSteps(profile: ArcBuildProfile): ArcLinkStep[] {
   // Unified Presence/Mantra/Trigger/Imagery spec, section 5: Stay Mantra,
   // appended at the end of this Awareness/Stay-equivalent step, when configured.
   const stayMantraLine = getStayMantraLine(profile);
+  // Balanced Alternative Interpretation task: prepended as a leading line
+  // to this same Awareness/Stay-equivalent step, before its existing
+  // content -- satisfies "before Stay" without inventing a separate
+  // ArcLinkStep (ARC Link has no distinct Thought/Belief display step of
+  // its own to anchor after). Skipped cleanly when unconfigured.
+  const balancedAlternativeInterpretationText = target ? resolveBalancedAlternativeInterpretation(profile, target) : "";
   steps.push({
     id: "awareness",
     title: "דמיין את המודעות",
-    lines: ["דמיין שאתה שם לב למה שכבר נמצא באותו רגע, בלי להעצים אותו ובלי להילחם בו.", ...(stayMantraLine ? [stayMantraLine] : [])],
+    lines: [
+      ...(balancedAlternativeInterpretationText
+        ? [`דמיין ששם לב למחשבה כפי שהיא, בלי למחוק אותה, ומוסיף גם דרך אחרת ומאוזנת להבין את המצב: "${balancedAlternativeInterpretationText}"`]
+        : []),
+      "דמיין שאתה שם לב למה שכבר נמצא באותו רגע, בלי להעצים אותו ובלי להילחם בו.",
+      ...(stayMantraLine ? [stayMantraLine] : []),
+    ],
     buttonLabel: "המשך",
     bodyImagery: null,
   });
@@ -484,10 +496,20 @@ export function buildArcLinkProtocolSteps(profile: ArcBuildProfile, choice: ArcL
     // Mantra, appended at the end of this Awareness/Stay-equivalent
     // step, when configured.
     const stayMantraLine = getStayMantraLine(profile);
+    // Balanced Alternative Interpretation task: same leading-line
+    // placement as buildArcLinkSteps above -- before Stay, skipped
+    // cleanly when unconfigured, never a separate ArcLinkStep.
+    const balancedAlternativeInterpretationText = target ? resolveBalancedAlternativeInterpretation(profile, target) : "";
     steps.push({
       id: "awareness",
       title: "דמיין את המודעות",
-      lines: ["דמיין שאתה שם לב למה שכבר נמצא באותו רגע, בלי להעצים אותו ובלי להילחם בו.", ...(stayMantraLine ? [stayMantraLine] : [])],
+      lines: [
+        ...(balancedAlternativeInterpretationText
+          ? [`דמיין ששם לב למחשבה כפי שהיא, בלי למחוק אותה, ומוסיף גם דרך אחרת ומאוזנת להבין את המצב: "${balancedAlternativeInterpretationText}"`]
+          : []),
+        "דמיין שאתה שם לב למה שכבר נמצא באותו רגע, בלי להעצים אותו ובלי להילחם בו.",
+        ...(stayMantraLine ? [stayMantraLine] : []),
+      ],
       buttonLabel: "המשך",
       bodyImagery: null,
     });

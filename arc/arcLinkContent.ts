@@ -93,6 +93,19 @@ export function resolveEncodingImagery(profile: ArcBuildProfile, target: ArcLink
  * override to "" (no habit-layer EncodingProfile.mantra to fall back to
  * either -- habit has no identityEncoding/stateEncoding equivalent).
  */
+/**
+ * Balanced Alternative Interpretation task: the referenced ARC's own
+ * per-layer field (profile.stateBalancedAlternativeInterpretation /
+ * identityBalancedAlternativeInterpretation) -- no ArcLink-level copy or
+ * override, mirroring every other inherited-not-duplicated field here.
+ * "habit" has no field of its own (same as resolveFutureMantra), so it
+ * returns "".
+ */
+export function resolveBalancedAlternativeInterpretation(profile: ArcBuildProfile, target: ArcLinkContentTarget): string {
+  const field = target === "state" ? profile.stateBalancedAlternativeInterpretation : target === "identity" ? profile.identityBalancedAlternativeInterpretation : null;
+  return safe(field);
+}
+
 export function resolveFutureMantra(profile: ArcBuildProfile, target: ArcLinkContentTarget, overrideText?: string | null): string {
   const override = safe(overrideText);
   if (override) return override;

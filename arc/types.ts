@@ -87,22 +87,47 @@ export type ArcStage =
    */
   | "need_identification"
   | "sensation_check"
-  | "stay"
   /**
-   * ARC-BUILD-to-LIVE connection task: Awareness of an already-present
+   * ARC-BUILD-to-LIVE connection task, repositioned by the Balanced
+   * Alternative Interpretation task: Awareness of an already-present
    * interfering thought (the Limiting Belief mapped in BUILD --
-   * stateLimitingBelief/identityLimitingBelief), reached only from
-   * "stay" and only when the resolved target has one configured (see
-   * arc/arcEngine.ts's resolveTargetLimitingBelief and the "stay" case's
-   * own transition) -- a legacy/unconfigured build skips straight from
-   * "stay" to "accept", unchanged. Recognition-only, exactly like
-   * sensation_check/stay themselves: never an instruction to imagine,
-   * evoke, strengthen, or remain inside the thought. Always continues to
-   * "accept" once answered (any of the three choices), never re-shown
-   * again within the same session even across a later "stay" loop
-   * iteration (see ArcLiveState.interferingThoughtChoice).
+   * stateLimitingBelief/identityLimitingBelief), reached only when the
+   * resolved target has one configured (see arc/arcEngine.ts's
+   * resolveTargetLimitingBelief and its shared resolveBeforeStay
+   * helper) -- a legacy/unconfigured build skips it entirely. Now
+   * reached BEFORE "stay" (from every edge that used to transition
+   * straight into "stay" -- sensation_check's own classification and
+   * reactive_transition_check's retry loop), never from "stay" itself
+   * any more, so the cognitive sequence matches Identify Thought ->
+   * Identify Belief -> Balanced Alternative Interpretation -> Stay.
+   * Recognition-only, exactly like sensation_check/stay themselves:
+   * never an instruction to imagine, evoke, strengthen, or remain
+   * inside the thought. Once answered (any of the three choices),
+   * continues to "balanced_alternative_interpretation" when one is
+   * configured, else straight to "stay" -- and is never re-shown again
+   * within the same session even across a later loop iteration (see
+   * ArcLiveState.interferingThoughtChoice).
    */
   | "interfering_thought_check"
+  /**
+   * Balanced Alternative Interpretation task: an optional, third
+   * Awareness step -- Identify Thought -> Identify Belief -> Balanced
+   * Alternative Interpretation -> Stay. Reached only when the resolved
+   * target has one configured (ArcBuildProfile.stateBalancedAlternativeInterpretation/
+   * identityBalancedAlternativeInterpretation), immediately after
+   * "interfering_thought_check" resolves (or in its place, when no
+   * Limiting Belief is configured but an alternative interpretation
+   * is) -- see arc/arcEngine.ts's resolveBeforeStay. Never placed in
+   * Regulation or Encoding, and never replaces the Bridge Mantra (a
+   * completely separate field, shown later at the end of Regulation --
+   * see arc/mantras.ts). Recognition/offering-only: adds another
+   * perspective alongside the original thought, never an instruction to
+   * suppress, erase, reject, or forcibly replace it. Always continues
+   * straight to "stay" -- see ArcLiveState.balancedAlternativeInterpretationSeen
+   * for why it's never shown twice within the same session.
+   */
+  | "balanced_alternative_interpretation"
+  | "stay"
   | "accept"
   | "reactive_transition_check"
   | "regulate"
@@ -500,6 +525,24 @@ export interface ArcBuildProfile {
   identityBridgeBelief?: string | null;
 
   /**
+   * Balanced Alternative Interpretation task: an optional third Awareness
+   * field, immediately after the Limiting Belief -- "another credible and
+   * helpful way to understand the situation," never a replacement for the
+   * original thought and never forcibly positive. Parallel per-layer
+   * fields, like stateLimitingBelief/identityLimitingBelief just above;
+   * no habit-layer equivalent. Surfaced during Awareness, recognition/
+   * offering-only, on the new "balanced_alternative_interpretation"
+   * ArcStage -- see arc/arcEngine.ts's resolveBeforeStay and
+   * arc/stageCopy.ts's own case. Never confused with stateBridgeBelief/
+   * identityBridgeBelief (the empowering interpretation, shown later
+   * during Encoding) or with bridgeMantra (a completely separate,
+   * single shared field shown at the end of Regulation) -- this field is
+   * never merged into, and never replaces, either.
+   */
+  stateBalancedAlternativeInterpretation?: string | null;
+  identityBalancedAlternativeInterpretation?: string | null;
+
+  /**
    * Coherent-architecture task (#7/#8 "Future-Oriented Mantra"): the
    * direction of movement right now -- e.g. "אני אתחיל היום בצעד
    * קטן" -- distinct from Presence ("this is what's here now") and
@@ -664,6 +707,8 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     stateBridgeBelief: null,
     identityLimitingBelief: null,
     identityBridgeBelief: null,
+    stateBalancedAlternativeInterpretation: null,
+    identityBalancedAlternativeInterpretation: null,
     stateFutureOrientedMantra: null,
     identityFutureOrientedMantra: null,
     stateDesiredImageryType: null,
@@ -1176,6 +1221,20 @@ export interface ArcLiveState {
    */
   interferingThoughtSessionText: string | null;
 
+  /**
+   * Balanced Alternative Interpretation task: whether the new
+   * "balanced_alternative_interpretation" stage has already been shown
+   * this session -- the same "shown at most once per session" role
+   * interferingThoughtChoice plays for the Belief screen, but as a plain
+   * flag rather than a real answer, since this stage takes no input
+   * (recognition/offering-only, like presence_grounding). false until
+   * the trainee continues past it once; never reset, so a later loop
+   * iteration (the accept -> sensation_check recheck, or
+   * reactive_transition_check's own retry loop) never shows it again --
+   * see arc/arcEngine.ts's resolveBeforeStay.
+   */
+  balancedAlternativeInterpretationSeen: boolean;
+
   acceptanceNeeded: boolean | null;
   /**
    * Safety cap on the Acceptance "not ready yet" willingness loop (the
@@ -1241,6 +1300,7 @@ export function createEmptyLiveState(): ArcLiveState {
     beneficialActionDurationMinutes: null,
     interferingThoughtChoice: null,
     interferingThoughtSessionText: null,
+    balancedAlternativeInterpretationSeen: false,
     negativeActionStarted: false,
     successFocusExtraMinutes: null,
     wantsFutureSuccessFocus: null,

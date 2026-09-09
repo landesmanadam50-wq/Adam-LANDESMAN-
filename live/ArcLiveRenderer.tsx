@@ -103,6 +103,8 @@ export interface ArcLiveRendererProps {
   onSubmitSensationIntensity: (value: number) => void;
   onYesNoAnswer: (yes: boolean) => void;
   onInterferingThoughtAnswer: (choice: "present" | "absent" | "different", sessionText: string | null) => void;
+  /** Balanced Alternative Interpretation task: marks the new stage as seen (see arc/types.ts's ArcLiveState.balancedAlternativeInterpretationSeen) before advancing -- same "apply a side effect, then commitAdvance" pattern as onRegulateContinue. */
+  onBalancedAlternativeInterpretationContinue: () => void;
   onNeedIdentificationAnswer: (need: string) => void;
   onSelectTarget: (target: DevelopmentLayer) => void;
   onSelectReactiveExperience: (target: DevelopmentLayer) => void;
@@ -293,6 +295,16 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
 
     case "interfering_thought_check":
       return <InterferingThoughtCheckScreen copy={copy} onAnswer={props.onInterferingThoughtAnswer} />;
+
+    case "balanced_alternative_interpretation":
+      // Balanced Alternative Interpretation task: recognition/offering-only,
+      // no input to wait for -- reuses the same generic InstructionScreen
+      // pattern as presence_grounding/arc_thought_awareness below. key
+      // resets its own mount identity, same reasoning as every other
+      // adjacent-stage InstructionScreen reuse in this switch.
+      return (
+        <InstructionScreen key={stage} copy={copy} onContinue={props.onBalancedAlternativeInterpretationContinue} />
+      );
 
     case "accept": {
       // Timing-update task: the intensity recheck that used to live on

@@ -300,6 +300,7 @@ test("a state-target save nulls out every identity-layer coherent-architecture f
     ...baseDraft("state"),
     stateSupportingAction: "מדיטציה קצרה",
     stateLimitingBelief: "אין טעם",
+    stateBalancedAlternativeInterpretation: "אני יכול להתקדם בהדרגה",
     stateBridgeBelief: "גם קטן זה התקדמות",
     stateFutureOrientedMantra: "אני מתקדם עכשיו",
     stateBarrierType: "practical",
@@ -307,6 +308,7 @@ test("a state-target save nulls out every identity-layer coherent-architecture f
     identityDesiredState: "לא רלוונטי לזהות",
     identitySupportingAction: "לא אמור להישמר",
     identityLimitingBelief: "לא אמור להישמר",
+    identityBalancedAlternativeInterpretation: "לא אמור להישמר",
     identityBridgeBelief: "לא אמור להישמר",
     identityFutureOrientedMantra: "לא אמור להישמר",
     identityBarrierType: "internal",
@@ -314,11 +316,13 @@ test("a state-target save nulls out every identity-layer coherent-architecture f
   };
   const saved = buildArcBuildProfileForSave("state", draft, "בוקר רגוע", "custom_arc_build");
   assert.equal(saved.stateSupportingAction, "מדיטציה קצרה");
+  assert.equal(saved.stateBalancedAlternativeInterpretation, "אני יכול להתקדם בהדרגה");
   assert.equal(saved.stateBarrierType, "practical");
   assert.equal(saved.statePracticalAlternative, "גרסה מצומצמת");
   assert.equal(saved.identityDesiredState, null);
   assert.equal(saved.identitySupportingAction, null);
   assert.equal(saved.identityLimitingBelief, null);
+  assert.equal(saved.identityBalancedAlternativeInterpretation, null);
   assert.equal(saved.identityBridgeBelief, null);
   assert.equal(saved.identityFutureOrientedMantra, null);
   assert.equal(saved.identityBarrierType, null);
@@ -330,11 +334,13 @@ test("an identity-target save nulls out every state-layer coherent-architecture 
     ...baseDraft("identity"),
     identitySupportingAction: "הליכה קצרה",
     identityLimitingBelief: "אני תמיד נכשל",
+    identityBalancedAlternativeInterpretation: "אני יכול לבנות זהות חדשה בהדרגה",
     identityBridgeBelief: "אני בונה בהדרגה",
     identityFutureOrientedMantra: "אני אתחיל היום",
     identityBarrierType: "internal",
     stateSupportingAction: "לא אמור להישמר",
     stateLimitingBelief: "לא אמור להישמר",
+    stateBalancedAlternativeInterpretation: "לא אמור להישמר",
     stateBridgeBelief: "לא אמור להישמר",
     stateFutureOrientedMantra: "לא אמור להישמר",
     stateBarrierType: "practical",
@@ -342,9 +348,11 @@ test("an identity-target save nulls out every state-layer coherent-architecture 
   };
   const saved = buildArcBuildProfileForSave("identity", draft, "משמעת", "custom_arc_build");
   assert.equal(saved.identitySupportingAction, "הליכה קצרה");
+  assert.equal(saved.identityBalancedAlternativeInterpretation, "אני יכול לבנות זהות חדשה בהדרגה");
   assert.equal(saved.identityBarrierType, "internal");
   assert.equal(saved.stateSupportingAction, null);
   assert.equal(saved.stateLimitingBelief, null);
+  assert.equal(saved.stateBalancedAlternativeInterpretation, null);
   assert.equal(saved.stateBridgeBelief, null);
   assert.equal(saved.stateFutureOrientedMantra, null);
   assert.equal(saved.stateBarrierType, null);
@@ -359,6 +367,8 @@ test("a habit-target save nulls out every state- and identity-layer coherent-arc
     identitySupportingAction: "לא אמור להישמר",
     stateBarrierType: "practical",
     identityBarrierType: "internal",
+    stateBalancedAlternativeInterpretation: "לא אמור להישמר",
+    identityBalancedAlternativeInterpretation: "לא אמור להישמר",
   };
   const saved = buildArcBuildProfileForSave("habit", draft, "הרגל חדש", "custom_arc_build");
   assert.equal(saved.value, "בריאות וחופש", "Value is build-global -- never nulled by target");
@@ -366,4 +376,6 @@ test("a habit-target save nulls out every state- and identity-layer coherent-arc
   assert.equal(saved.identitySupportingAction, null);
   assert.equal(saved.stateBarrierType, null);
   assert.equal(saved.identityBarrierType, null);
+  assert.equal(saved.stateBalancedAlternativeInterpretation, null);
+  assert.equal(saved.identityBalancedAlternativeInterpretation, null);
 });

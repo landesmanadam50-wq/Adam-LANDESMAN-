@@ -24,6 +24,7 @@ import {
   resolveEncodingRegulationCue,
   resolveEncodingTarget,
   resolveObserverPauseLayer,
+  resolveTargetBalancedAlternativeInterpretation,
   resolveTargetBridgeBelief,
   resolveTargetLimitingBelief,
   resolveTargetPreventiveAction,
@@ -181,6 +182,7 @@ const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   sensation_check: "sensationCheck",
   stay: "info",
   interfering_thought_check: "interferingThoughtCheck",
+  balanced_alternative_interpretation: "info",
   accept: "yesno",
   reactive_transition_check: "yesno",
   regulate: "info",
@@ -551,8 +553,8 @@ export function getStageCopy(
     // ARC-BUILD-to-LIVE connection task: Awareness of the interfering
     // thought (Limiting Belief), recognition-only -- reached only when
     // the resolved target has one configured (see arc/arcEngine.ts's
-    // "stay" transition, which skips straight to "accept" otherwise, so
-    // this case's own body is never generic/empty in practice). Never
+    // resolveBeforeStay, consulted before "stay" itself is ever reached,
+    // so this case's own body is never generic/empty in practice). Never
     // an instruction to imagine, evoke, strengthen, or remain inside the
     // thought -- it only asks whether it's already present.
     case "interfering_thought_check": {
@@ -566,6 +568,29 @@ export function getStageCopy(
       return {
         title: "שים לב למחשבה",
         body: `האם המחשבה הבאה נמצאת כאן עכשיו? "${limitingBelief}" אין צורך לעורר את המחשבה, להסכים איתה או לשנות אותה. רק לשים לב אם היא כבר נוכחת.`,
+        segments: null,
+      };
+    }
+
+    // Balanced Alternative Interpretation task: the third Awareness
+    // step -- Identify Thought -> Identify Belief -> Balanced
+    // Alternative Interpretation -> Stay -- reached only when the
+    // resolved target has one configured (see arc/arcEngine.ts's
+    // resolveBeforeStay). Offers another way to understand the
+    // situation ALONGSIDE the original thought, never a demand to
+    // suppress, erase, reject, or forcibly replace it, and never a
+    // requirement to believe it immediately.
+    case "balanced_alternative_interpretation": {
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: state.triggerType,
+        selectedTarget: state.selectedTarget,
+        buildProfile: profile,
+      });
+      const alternative = resolveTargetBalancedAlternativeInterpretation(layer, profile) ?? "";
+      return {
+        title: "פרשנות חלופית ומאוזנת",
+        body: `שים לב למחשבה כפי שהיא. היא עדיין יכולה להיות כאן. כעת אפשר להוסיף גם דרך אחרת ומאוזנת להבין את המצב: "${alternative}"`,
         segments: null,
       };
     }

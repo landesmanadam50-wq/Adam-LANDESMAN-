@@ -831,6 +831,36 @@ test("state and identity Supporting Action / Limiting Belief / Bridge Belief / F
   assert.equal(reloaded.identitySupportingAction, "הליכה קצרה");
 });
 
+test("Balanced Alternative Interpretation task: state/identity round-trip independently, never mixed between layers or with Limiting Belief/Bridge Belief", () => {
+  const draft = filledTwoWeekDraft({
+    stateLimitingBelief: "אין טעם להתחיל",
+    identityLimitingBelief: "אני תמיד נכשל",
+    stateBalancedAlternativeInterpretation: "הקושי לא אומר שאינני מסוגל",
+    identityBalancedAlternativeInterpretation: "אני יכול לבנות זהות חדשה בהדרגה",
+    stateBridgeBelief: "גם צעד קטן הוא התקדמות",
+    identityBridgeBelief: "אני בונה התמדה בהדרגה",
+  });
+  const profile = buildProfileFromDraft(draft);
+  assert.equal(profile.stateBalancedAlternativeInterpretation, "הקושי לא אומר שאינני מסוגל");
+  assert.equal(profile.identityBalancedAlternativeInterpretation, "אני יכול לבנות זהות חדשה בהדרגה");
+  assert.notEqual(profile.stateBalancedAlternativeInterpretation, profile.stateLimitingBelief);
+  assert.notEqual(profile.stateBalancedAlternativeInterpretation, profile.stateBridgeBelief);
+
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.equal(reloaded.stateBalancedAlternativeInterpretation, "הקושי לא אומר שאינני מסוגל");
+  assert.equal(reloaded.identityBalancedAlternativeInterpretation, "אני יכול לבנות זהות חדשה בהדרגה");
+});
+
+test("Balanced Alternative Interpretation is optional: an unset value round-trips to an empty string, not null/undefined/a crash", () => {
+  const draft = filledTwoWeekDraft();
+  const profile = buildProfileFromDraft(draft);
+  assert.equal(profile.stateBalancedAlternativeInterpretation, null);
+  assert.equal(profile.identityBalancedAlternativeInterpretation, null);
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.equal(reloaded.stateBalancedAlternativeInterpretation, "");
+  assert.equal(reloaded.identityBalancedAlternativeInterpretation, "");
+});
+
 test("Barrier Type round-trips per layer, and null (never classified) is preserved rather than defaulted", () => {
   const draft = filledTwoWeekDraft({ stateBarrierType: "practical", identityBarrierType: null });
   const profile = buildProfileFromDraft(draft);
@@ -869,8 +899,10 @@ test("a legacy profile with every coherent-architecture field genuinely absent (
     "stateSupportingAction",
     "identitySupportingAction",
     "stateLimitingBelief",
+    "stateBalancedAlternativeInterpretation",
     "stateBridgeBelief",
     "identityLimitingBelief",
+    "identityBalancedAlternativeInterpretation",
     "identityBridgeBelief",
     "stateFutureOrientedMantra",
     "identityFutureOrientedMantra",
@@ -888,6 +920,8 @@ test("a legacy profile with every coherent-architecture field genuinely absent (
   assert.equal(reloaded.stateBarrierType, null);
   assert.equal(reloaded.identityBarrierType, null);
   assert.equal(reloaded.statePracticalAlternative, "");
+  assert.equal(reloaded.stateBalancedAlternativeInterpretation, "");
+  assert.equal(reloaded.identityBalancedAlternativeInterpretation, "");
 });
 
 // --- ARC Goal task: the optional Successful Performance section, gated

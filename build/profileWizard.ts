@@ -197,6 +197,16 @@ export type ProfileStep =
   | "stateBridgeBelief"
   | "identityLimitingBelief"
   | "identityBridgeBelief"
+  /**
+   * Balanced Alternative Interpretation task: a third, optional Awareness
+   * field, immediately after the Limiting Belief -- "another credible and
+   * helpful way to understand the situation," parallel per-layer, always
+   * optional. Never merged with stateBridgeBelief/identityBridgeBelief
+   * (the empowering interpretation, shown at Encoding) or with
+   * bridgeMantra (a single shared field shown at the end of Regulation).
+   */
+  | "stateBalancedAlternativeInterpretation"
+  | "identityBalancedAlternativeInterpretation"
   /** Coherent-architecture task (#7/#8): the direction of movement right now, shown between Presence and Encoding -- distinct from Identity Mantra (stateMantra/identityMantra, said during Encoding). Parallel per-layer, always optional. */
   | "stateFutureOrientedMantra"
   | "identityFutureOrientedMantra"
@@ -460,6 +470,8 @@ export interface ProfileDraft {
   stateBridgeBelief: string;
   identityLimitingBelief: string;
   identityBridgeBelief: string;
+  stateBalancedAlternativeInterpretation: string;
+  identityBalancedAlternativeInterpretation: string;
   stateFutureOrientedMantra: string;
   identityFutureOrientedMantra: string;
   /** null = not yet classified this BUILD session (matches hasPreventiveAction's own tri-state pattern). */
@@ -553,6 +565,8 @@ export function createEmptyDraft(): ProfileDraft {
     stateBridgeBelief: "",
     identityLimitingBelief: "",
     identityBridgeBelief: "",
+    stateBalancedAlternativeInterpretation: "",
+    identityBalancedAlternativeInterpretation: "",
     stateFutureOrientedMantra: "",
     identityFutureOrientedMantra: "",
     stateBarrierType: null,
@@ -702,6 +716,8 @@ export function draftFromProfileAndSelection(
     stateBridgeBelief: profile.stateBridgeBelief ?? "",
     identityLimitingBelief: profile.identityLimitingBelief ?? "",
     identityBridgeBelief: profile.identityBridgeBelief ?? "",
+    stateBalancedAlternativeInterpretation: profile.stateBalancedAlternativeInterpretation ?? "",
+    identityBalancedAlternativeInterpretation: profile.identityBalancedAlternativeInterpretation ?? "",
     stateFutureOrientedMantra: profile.stateFutureOrientedMantra ?? "",
     identityFutureOrientedMantra: profile.identityFutureOrientedMantra ?? "",
     stateBarrierType: profile.stateBarrierType ?? null,
@@ -1172,6 +1188,10 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     stateBridgeBelief: draft.needsState && draft.stateBridgeBelief.trim() ? draft.stateBridgeBelief.trim() : null,
     identityLimitingBelief: needsIdentity && draft.identityLimitingBelief.trim() ? draft.identityLimitingBelief.trim() : null,
     identityBridgeBelief: needsIdentity && draft.identityBridgeBelief.trim() ? draft.identityBridgeBelief.trim() : null,
+    stateBalancedAlternativeInterpretation:
+      draft.needsState && draft.stateBalancedAlternativeInterpretation.trim() ? draft.stateBalancedAlternativeInterpretation.trim() : null,
+    identityBalancedAlternativeInterpretation:
+      needsIdentity && draft.identityBalancedAlternativeInterpretation.trim() ? draft.identityBalancedAlternativeInterpretation.trim() : null,
     stateFutureOrientedMantra:
       draft.needsState && draft.stateFutureOrientedMantra.trim() ? draft.stateFutureOrientedMantra.trim() : null,
     identityFutureOrientedMantra:

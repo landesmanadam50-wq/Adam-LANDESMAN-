@@ -71,6 +71,7 @@ import {
   applyActionCompletion,
   applyActionImageryCompleted,
   applyAlternativeAction,
+  applyBalancedAlternativeInterpretationSeen,
   applyBeneficialActionDurationSelected,
   applyInterferingThoughtAnswer,
   applyNeedIdentificationAnswer,
@@ -671,6 +672,7 @@ export default function LiveSessionScreen() {
           }}
           onYesNoAnswer={(yes) => commitAdvance(applyYesNoAnswer(stage, session, yes))}
           onInterferingThoughtAnswer={(choice, sessionText) => commitAdvance(applyInterferingThoughtAnswer(session, choice, sessionText))}
+          onBalancedAlternativeInterpretationContinue={() => commitAdvance(applyBalancedAlternativeInterpretationSeen(session))}
           onNeedIdentificationAnswer={(need) => commitAdvance(applyNeedIdentificationAnswer(session, need))}
           onSelectTarget={(target) => setSession(applyTargetSelection(session, target))}
           onSelectReactiveExperience={(target) => commitAdvance(applyTargetSelection(session, target))}

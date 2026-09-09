@@ -643,6 +643,55 @@ export function resolveTargetBridgeBelief(layer: DevelopmentLayer, profile: ArcB
   }
 }
 
+/**
+ * Balanced Alternative Interpretation task: "another credible and
+ * helpful way to understand the situation" -- surfaced during Awareness,
+ * on the new "balanced_alternative_interpretation" stage. Never the
+ * interfering thought (resolveTargetLimitingBelief), never the
+ * empowering interpretation shown at Encoding (resolveTargetBridgeBelief),
+ * and never bridgeMantra (a single shared field shown at the end of
+ * Regulation) -- all four stay conceptually and structurally separate.
+ */
+export function resolveTargetBalancedAlternativeInterpretation(layer: DevelopmentLayer, profile: ArcBuildProfile): string | null {
+  switch (layer) {
+    case "state":
+      return profile.stateBalancedAlternativeInterpretation ?? null;
+    case "identity":
+      return profile.identityBalancedAlternativeInterpretation ?? null;
+    case "habit":
+      return null;
+  }
+}
+
+/**
+ * Balanced Alternative Interpretation task: the shared resolver for
+ * every edge that used to transition straight into "stay" --
+ * sensation_check's own classification and reactive_transition_check's
+ * retry loop (see both cases below). Identify Belief
+ * (interfering_thought_check) and Balanced Alternative Interpretation
+ * now both run BEFORE Stay, each exactly once per session, whenever
+ * configured for the resolved target -- matching the cognitive sequence
+ * Identify Thought -> Identify Belief -> Balanced Alternative
+ * Interpretation -> Stay. A legacy/unconfigured build (neither field
+ * set) resolves straight to "stay", exactly as before either field
+ * existed.
+ */
+function resolveBeforeStay(state: ArcLiveState, profile: ArcBuildProfile, activeLayers: DevelopmentLayer[]): ArcStage {
+  const { layer } = resolveEncodingTarget({
+    activeLayers,
+    triggerType: state.triggerType,
+    selectedTarget: state.selectedTarget,
+    buildProfile: profile,
+  });
+  if (state.interferingThoughtChoice === null && resolveTargetLimitingBelief(layer, profile) !== null) {
+    return "interfering_thought_check";
+  }
+  if (!state.balancedAlternativeInterpretationSeen && resolveTargetBalancedAlternativeInterpretation(layer, profile) !== null) {
+    return "balanced_alternative_interpretation";
+  }
+  return "stay";
+}
+
 // ---------------------------------------------------------------------------
 // Encoding regulation -- a lightweight per-target carry-over anchor,
 // distinct from the Full Regulation Cue used during Regulation itself
@@ -854,28 +903,41 @@ export function getNextArcStage(
 
     case "sensation_check": {
       if (state.sensationIntensity === null) return result(current, state.loopIterationCount);
-      return result(getReactiveStage(state.sensationIntensity), state.loopIterationCount);
+      const next = getReactiveStage(state.sensationIntensity);
+      // Balanced Alternative Interpretation task: whichever edge used to
+      // transition straight into "stay" now routes through Belief/
+      // Balanced Alternative Interpretation first, when configured --
+      // see resolveBeforeStay. Every other outcome (reactive_transition_check/
+      // regulate/encode) is completely unaffected.
+      return result(next === "stay" ? resolveBeforeStay(state, profile, activeLayers) : next, state.loopIterationCount);
     }
 
-    case "stay": {
-      // ARC-BUILD-to-LIVE connection task: interfering_thought_check is
-      // shown at most once per session -- once answered (any of the
-      // three choices), every later pass through "stay" (the accept ->
-      // sensation_check re-check loop can revisit it) skips straight to
-      // "accept", exactly like an unconfigured build always has.
-      if (state.interferingThoughtChoice !== null) return result("accept", state.loopIterationCount);
-      const { layer } = resolveEncodingTarget({
-        activeLayers,
-        triggerType: state.triggerType,
-        selectedTarget: state.selectedTarget,
-        buildProfile: profile,
-      });
-      return result(resolveTargetLimitingBelief(layer, profile) !== null ? "interfering_thought_check" : "accept", state.loopIterationCount);
-    }
-
-    case "interfering_thought_check":
-      if (state.interferingThoughtChoice === null) return result(current, state.loopIterationCount);
+    case "stay":
+      // Balanced Alternative Interpretation task: Belief (interfering_thought_check)
+      // and Balanced Alternative Interpretation are both resolved BEFORE
+      // "stay" is ever reached (see resolveBeforeStay, called from
+      // sensation_check/reactive_transition_check) -- by the time "stay"
+      // itself is left, both are already fully resolved, so this always
+      // continues straight to "accept".
       return result("accept", state.loopIterationCount);
+
+    case "interfering_thought_check": {
+      if (state.interferingThoughtChoice === null) return result(current, state.loopIterationCount);
+      // Once answered, resolveBeforeStay is consulted again: since
+      // interferingThoughtChoice is now non-null, it naturally skips
+      // straight to checking Balanced Alternative Interpretation next,
+      // falling through to "stay" once neither (or both, in order) is
+      // left to show.
+      return result(resolveBeforeStay(state, profile, activeLayers), state.loopIterationCount);
+    }
+
+    case "balanced_alternative_interpretation":
+      // Recognition/offering-only, exactly like presence_grounding --
+      // no input to wait for, always continues straight to "stay". The
+      // "shown once" guarantee comes from ArcLiveState.balancedAlternativeInterpretationSeen
+      // being set (by live/liveEventAdapter.ts's applyBalancedAlternativeInterpretationSeen)
+      // before this transition is even reached.
+      return result("stay", state.loopIterationCount);
 
     case "accept":
       if (loopCapped(state.loopIterationCount)) {
@@ -889,7 +951,10 @@ export function getNextArcStage(
       if (loopCapped(state.loopIterationCount)) {
         return result("regulate", state.loopIterationCount);
       }
-      return result("stay", state.loopIterationCount + 1);
+      // Balanced Alternative Interpretation task: this edge used to
+      // transition straight into "stay" too -- same resolveBeforeStay
+      // detour as sensation_check's own edge above.
+      return result(resolveBeforeStay(state, profile, activeLayers), state.loopIterationCount + 1);
 
     case "regulate":
       if (state.triggerType === "proactive") {
