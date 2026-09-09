@@ -85,6 +85,8 @@ const STATE_STEPS: ProfileStep[] = [
   // Coherent-architecture task (#5/#6 "Building the bridge"): Supporting Action, then Limiting/Bridge Belief.
   "stateSupportingAction",
   "stateLimitingBelief",
+  // Balanced Alternative Interpretation task: Identify Thought -> Identify Belief -> Balanced Alternative Interpretation -- immediately after the Limiting Belief, still inside Awareness, before Bridge Belief (which belongs to Encoding).
+  "stateBalancedAlternativeInterpretation",
   "stateBridgeBelief",
   "regulationTool",
   "regulationBodyParts",
@@ -127,6 +129,8 @@ const IDENTITY_STEPS: ProfileStep[] = [
   "identityPreventiveAction",
   "identitySupportingAction",
   "identityLimitingBelief",
+  // Balanced Alternative Interpretation task: same placement as STATE_STEPS above -- immediately after the Limiting Belief, still inside Awareness, before Bridge Belief.
+  "identityBalancedAlternativeInterpretation",
   "identityBridgeBelief",
   "regulationTool",
   "regulationBodyParts",
@@ -207,6 +211,8 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   statePracticalAlternative: "מהו פתרון מעשי, גרסה מצומצמת או פעולה חלופית שיכולים לעזור? (רשות)",
   stateSupportingAction: "יש פעולה תומכת קצרה שיוצרת תנאים טובים יותר לפעולה המרכזית? (רשות, למשל מדיטציה קצרה)",
   stateLimitingBelief: "יש מחשבה שמפריעה לך להתחיל? (רשות)",
+  stateBalancedAlternativeInterpretation:
+    "מהי דרך נוספת, מאוזנת ומועילה יותר, לפרש את המצב? הפרשנות החלופית אינה צריכה למחוק את המחשבה הקיימת או להיות חיובית בכוח. נסח דרך נוספת להבין את המצב, שתהיה אמינה, מאוזנת ומקדמת. (רשות, לדוגמה \"הקושי שאני מרגיש עכשיו לא אומר שאינני מסוגל; אני יכול להתקדם בהדרגה.\")",
   stateBridgeBelief: "מהי פרשנות מאמינה ומתקדמת יותר למחשבה הזו? (רשות)",
   stateFutureOrientedMantra: "לאיזה כיוון אתה מתקדם עכשיו? (רשות, מנטרה מכוונת עתיד)",
 
@@ -225,6 +231,8 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   identityPracticalAlternative: "מהו פתרון מעשי, גרסה מצומצמת או פעולה חלופית שיכולים לעזור? (רשות)",
   identitySupportingAction: "יש פעולה תומכת קצרה שיוצרת תנאים טובים יותר לפעולה המרכזית? (רשות, למשל מדיטציה קצרה)",
   identityLimitingBelief: "יש מחשבה שמפריעה לך להתחיל? (רשות)",
+  identityBalancedAlternativeInterpretation:
+    "מהי דרך נוספת, מאוזנת ומועילה יותר, לפרש את המצב? הפרשנות החלופית אינה צריכה למחוק את המחשבה הקיימת או להיות חיובית בכוח. נסח דרך נוספת להבין את המצב, שתהיה אמינה, מאוזנת ומקדמת. (רשות, לדוגמה \"הקושי שאני מרגיש עכשיו לא אומר שאינני מסוגל; אני יכול להתקדם בהדרגה.\")",
   identityBridgeBelief: "מהי פרשנות מאמינה ומתקדמת יותר למחשבה הזו? (רשות)",
   identityFutureOrientedMantra: "לאיזה כיוון אתה מתקדם עכשיו? (רשות, מנטרה מכוונת עתיד)",
 
@@ -281,6 +289,7 @@ const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   statePreventiveAction: "statePreventiveAction",
   stateSupportingAction: "stateSupportingAction",
   stateLimitingBelief: "stateLimitingBelief",
+  stateBalancedAlternativeInterpretation: "stateBalancedAlternativeInterpretation",
   stateBridgeBelief: "stateBridgeBelief",
   stateFutureOrientedMantra: "stateFutureOrientedMantra",
   stateEncodingRegulationCue: "stateEncodingRegulationCue",
@@ -297,6 +306,7 @@ const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   identityPreventiveAction: "identityPreventiveAction",
   identitySupportingAction: "identitySupportingAction",
   identityLimitingBelief: "identityLimitingBelief",
+  identityBalancedAlternativeInterpretation: "identityBalancedAlternativeInterpretation",
   identityBridgeBelief: "identityBridgeBelief",
   identityFutureOrientedMantra: "identityFutureOrientedMantra",
   identityEncodingRegulationCue: "identityEncodingRegulationCue",
@@ -354,8 +364,10 @@ const OPTIONAL_TEXT_STEPS: ProfileStep[] = [
   "stateSupportingAction",
   "identitySupportingAction",
   "stateLimitingBelief",
+  "stateBalancedAlternativeInterpretation",
   "stateBridgeBelief",
   "identityLimitingBelief",
+  "identityBalancedAlternativeInterpretation",
   "identityBridgeBelief",
   "stateFutureOrientedMantra",
   "identityFutureOrientedMantra",
@@ -853,6 +865,9 @@ export default function ArcBuildEditorScreen() {
                 {draft.statePreventiveAction && <Text style={styles.body}>{`פעולה מונעת: ${draft.statePreventiveAction}`}</Text>}
                 {draft.stateSupportingAction && <Text style={styles.body}>{`פעולה תומכת: ${draft.stateSupportingAction}`}</Text>}
                 {draft.stateLimitingBelief && <Text style={styles.body}>{`מחשבה מגבילה: ${draft.stateLimitingBelief}`}</Text>}
+                {draft.stateBalancedAlternativeInterpretation && (
+                  <Text style={styles.body}>{`פרשנות חלופית ומאוזנת: ${draft.stateBalancedAlternativeInterpretation}`}</Text>
+                )}
                 {draft.stateBridgeBelief && <Text style={styles.body}>{`אמונת גשר: ${draft.stateBridgeBelief}`}</Text>}
                 {draft.stateFutureOrientedMantra && (
                   <Text style={styles.body}>{`מנטרה מכוונת עתיד: ${draft.stateFutureOrientedMantra}`}</Text>
@@ -879,6 +894,9 @@ export default function ArcBuildEditorScreen() {
                 {draft.identityPreventiveAction && <Text style={styles.body}>{`פעולה מונעת: ${draft.identityPreventiveAction}`}</Text>}
                 {draft.identitySupportingAction && <Text style={styles.body}>{`פעולה תומכת: ${draft.identitySupportingAction}`}</Text>}
                 {draft.identityLimitingBelief && <Text style={styles.body}>{`מחשבה מגבילה: ${draft.identityLimitingBelief}`}</Text>}
+                {draft.identityBalancedAlternativeInterpretation && (
+                  <Text style={styles.body}>{`פרשנות חלופית ומאוזנת: ${draft.identityBalancedAlternativeInterpretation}`}</Text>
+                )}
                 {draft.identityBridgeBelief && <Text style={styles.body}>{`אמונת גשר: ${draft.identityBridgeBelief}`}</Text>}
                 {draft.identityFutureOrientedMantra && (
                   <Text style={styles.body}>{`מנטרה מכוונת עתיד: ${draft.identityFutureOrientedMantra}`}</Text>

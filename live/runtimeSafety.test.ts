@@ -151,6 +151,9 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "actionReached",
     "activeTools",
     "arcThoughtCompleted",
+    // Balanced Alternative Interpretation task: one new session-only flag --
+    // see arc/types.ts's ArcLiveState doc.
+    "balancedAlternativeInterpretationSeen",
     "beneficialActionDurationMinutes",
     "currentArcStage",
     // Unified Presence/Mantra/Trigger/Imagery spec, sections 6-7: three

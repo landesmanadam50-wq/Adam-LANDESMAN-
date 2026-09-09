@@ -18,6 +18,7 @@ import {
   resolveLiveRoute,
   afterHabitPreventiveStage,
   resolveObserverPauseLayer,
+  resolveTargetBalancedAlternativeInterpretation,
   resolveTargetBridgeBelief,
   resolveTargetLimitingBelief,
   resolveTargetPreventiveAction,
@@ -813,6 +814,113 @@ test("resolveTargetLimitingBelief/resolveTargetBridgeBelief return null (never t
 });
 
 // ---------------------------------------------------------------------------
+// Balanced Alternative Interpretation task: resolveTargetBalancedAlternativeInterpretation
+// -- must never leak into/be confused with Limiting Belief or Bridge Belief.
+// ---------------------------------------------------------------------------
+
+test("resolveTargetBalancedAlternativeInterpretation never leaks into Limiting Belief or Bridge Belief or between state/identity, and habit always resolves to null", () => {
+  const p = profile({
+    stateLimitingBelief: "מחשבת מצב מפריעה",
+    stateBridgeBelief: "פרשנות מצב מקדמת",
+    stateBalancedAlternativeInterpretation: "פרשנות חלופית מאוזנת למצב",
+    identityLimitingBelief: "מחשבת זהות מפריעה",
+    identityBridgeBelief: "פרשנות זהות מקדמת",
+    identityBalancedAlternativeInterpretation: "פרשנות חלופית מאוזנת לזהות",
+  });
+  assert.equal(resolveTargetBalancedAlternativeInterpretation("state", p), "פרשנות חלופית מאוזנת למצב");
+  assert.equal(resolveTargetBalancedAlternativeInterpretation("identity", p), "פרשנות חלופית מאוזנת לזהות");
+  assert.equal(resolveTargetBalancedAlternativeInterpretation("habit", p), null);
+  assert.notEqual(resolveTargetBalancedAlternativeInterpretation("state", p), resolveTargetLimitingBelief("state", p));
+  assert.notEqual(resolveTargetBalancedAlternativeInterpretation("state", p), resolveTargetBridgeBelief("state", p));
+});
+
+test("resolveTargetBalancedAlternativeInterpretation returns null (never throws) for a legacy build with the field unconfigured", () => {
+  const p = profile();
+  assert.equal(resolveTargetBalancedAlternativeInterpretation("state", p), null);
+  assert.equal(resolveTargetBalancedAlternativeInterpretation("identity", p), null);
+});
+
+// ---------------------------------------------------------------------------
+// Balanced Alternative Interpretation task: resolveBeforeStay's three-way
+// branching (interfering_thought_check -> balanced_alternative_interpretation
+// -> stay), and the new "balanced_alternative_interpretation" stage's own
+// transition -- reached via sensation_check, reactive_transition_check's
+// loop-back, and interfering_thought_check's own exit (all share the same
+// resolveBeforeStay gate).
+// ---------------------------------------------------------------------------
+
+test("sensation_check routes to balanced_alternative_interpretation (skipping interfering_thought_check) when Belief is already answered and Balanced Alternative Interpretation is configured", () => {
+  const p = profile({ stateLimitingBelief: "אתה חייב להתרכז", stateBalancedAlternativeInterpretation: "אפשר גם דרך אחרת" });
+  const outcome = getNextArcStage(
+    "sensation_check",
+    state({ triggerType: "reactive_emotion", interferingThoughtChoice: "present", sensationIntensity: 9 }),
+    p,
+    ALL_LAYERS
+  );
+  assert.equal(outcome.stage, "balanced_alternative_interpretation");
+});
+
+test("sensation_check routes straight to balanced_alternative_interpretation when only Balanced Alternative Interpretation is configured (no Limiting Belief)", () => {
+  const p = profile({ stateBalancedAlternativeInterpretation: "אפשר גם דרך אחרת" });
+  const outcome = getNextArcStage("sensation_check", state({ triggerType: "reactive_emotion", sensationIntensity: 9 }), p, ALL_LAYERS);
+  assert.equal(outcome.stage, "balanced_alternative_interpretation");
+});
+
+test("interfering_thought_check, once answered, routes to balanced_alternative_interpretation instead of stay when it is configured", () => {
+  const p = profile({ stateLimitingBelief: "אתה חייב להתרכז", stateBalancedAlternativeInterpretation: "אפשר גם דרך אחרת" });
+  const outcome = getNextArcStage("interfering_thought_check", state({ interferingThoughtChoice: "present" }), p, ALL_LAYERS);
+  assert.equal(outcome.stage, "balanced_alternative_interpretation");
+});
+
+test("balanced_alternative_interpretation always continues straight to stay", () => {
+  const p = profile({ stateBalancedAlternativeInterpretation: "אפשר גם דרך אחרת" });
+  const outcome = getNextArcStage("balanced_alternative_interpretation", state(), p, ALL_LAYERS);
+  assert.equal(outcome.stage, "stay");
+});
+
+test("once shown, a later 'sensation_check' visit skips balanced_alternative_interpretation entirely -- shown at most once per session", () => {
+  const p = profile({ stateBalancedAlternativeInterpretation: "אפשר גם דרך אחרת" });
+  const outcome = getNextArcStage(
+    "sensation_check",
+    state({ triggerType: "reactive_emotion", balancedAlternativeInterpretationSeen: true, sensationIntensity: 9 }),
+    p,
+    ALL_LAYERS
+  );
+  assert.equal(outcome.stage, "stay");
+});
+
+test("full order end-to-end: sensation_check -> interfering_thought_check -> balanced_alternative_interpretation -> stay -> accept, when both are configured", () => {
+  const p = profile({ stateLimitingBelief: "אתה חייב להתרכז", stateBalancedAlternativeInterpretation: "אפשר גם דרך אחרת" });
+  let s = state({ triggerType: "reactive_emotion", sensationIntensity: 9 });
+
+  let outcome = getNextArcStage("sensation_check", s, p, ALL_LAYERS);
+  assert.equal(outcome.stage, "interfering_thought_check", "Belief must come first");
+
+  s = { ...s, interferingThoughtChoice: "present" };
+  outcome = getNextArcStage("interfering_thought_check", s, p, ALL_LAYERS);
+  assert.equal(outcome.stage, "balanced_alternative_interpretation", "Balanced Alternative Interpretation must come second, before Stay");
+
+  s = { ...s, balancedAlternativeInterpretationSeen: true };
+  outcome = getNextArcStage("balanced_alternative_interpretation", s, p, ALL_LAYERS);
+  assert.equal(outcome.stage, "stay", "Stay must come after Balanced Alternative Interpretation");
+
+  outcome = getNextArcStage("stay", s, p, ALL_LAYERS);
+  assert.equal(outcome.stage, "accept", "Acceptance must follow Stay unchanged");
+});
+
+test("reactive_transition_check's loop-back edge is also gated through resolveBeforeStay (not a bare 'stay')", () => {
+  const p = profile({ stateBalancedAlternativeInterpretation: "אפשר גם דרך אחרת" });
+  const outcome = getNextArcStage(
+    "reactive_transition_check",
+    state({ triggerType: "reactive_emotion", regulationReady: false, loopIterationCount: 0 }),
+    p,
+    ALL_LAYERS
+  );
+  assert.equal(outcome.stage, "balanced_alternative_interpretation");
+  assert.equal(outcome.loopIterationCount, 1);
+});
+
+// ---------------------------------------------------------------------------
 // Encoding regulation -- a lightweight per-target Short Encoding
 // Regulation Cue, distinct from the Full Regulation Cue used during
 // Regulation itself
@@ -875,33 +983,56 @@ test("stay continues straight to accept when the resolved target has no Limiting
 // ARC-BUILD-to-LIVE connection task: interfering_thought_check
 // ---------------------------------------------------------------------------
 
-test("stay routes to interfering_thought_check when the resolved target's own Limiting Belief is configured", () => {
+// Balanced Alternative Interpretation task: Belief now runs BEFORE Stay
+// (the user's explicit "move Belief before Stay, matches spec literally"
+// decision) -- reached via the new shared resolveBeforeStay gate, called
+// from every edge that used to transition straight into "stay"
+// (sensation_check's own classification, reactive_transition_check's
+// loop-back, and interfering_thought_check's own exit). "stay" itself no
+// longer performs this routing -- see the unconditional "stay always
+// continues straight to accept" test below.
+
+test("sensation_check routes to interfering_thought_check (via resolveBeforeStay) instead of stay when the resolved target's own Limiting Belief is configured", () => {
   const p = profile({ stateLimitingBelief: "אתה חייב להתרכז" });
-  const outcome = getNextArcStage("stay", state({ triggerType: "reactive_emotion" }), p, ALL_LAYERS);
+  const outcome = getNextArcStage("sensation_check", state({ triggerType: "reactive_emotion", sensationIntensity: 9 }), p, ALL_LAYERS);
   assert.equal(outcome.stage, "interfering_thought_check");
 });
 
-test("stay routes to interfering_thought_check using the IDENTITY layer's own Limiting Belief when identity is the resolved target", () => {
+test("sensation_check routes to interfering_thought_check using the IDENTITY layer's own Limiting Belief when identity is the resolved target", () => {
   const p = profile({ identityAction: "לדבר בבהירות", identityLimitingBelief: "אני לא מספיק טוב" });
-  const outcome = getNextArcStage("stay", state({ triggerType: "reactive_emotion", selectedTarget: "identity" }), p, ALL_LAYERS);
+  const outcome = getNextArcStage(
+    "sensation_check",
+    state({ triggerType: "reactive_emotion", selectedTarget: "identity", sensationIntensity: 9 }),
+    p,
+    ALL_LAYERS
+  );
   assert.equal(outcome.stage, "interfering_thought_check");
 });
 
-test("interfering_thought_check stays put until answered, then always continues to accept", () => {
+test("interfering_thought_check stays put until answered, then always continues to stay (no Balanced Alternative Interpretation configured)", () => {
   const p = profile({ stateLimitingBelief: "אתה חייב להתרכז" });
   const unanswered = getNextArcStage("interfering_thought_check", state(), p, ALL_LAYERS);
   assert.equal(unanswered.stage, "interfering_thought_check");
 
   for (const choice of ["present", "absent", "different"] as const) {
     const answered = getNextArcStage("interfering_thought_check", state({ interferingThoughtChoice: choice }), p, ALL_LAYERS);
-    assert.equal(answered.stage, "accept", `choice=${choice} must continue to accept`);
+    assert.equal(answered.stage, "stay", `choice=${choice} must continue to stay`);
   }
 });
 
-test("once answered, a later 'stay' visit (the accept -> sensation_check re-check loop) skips interfering_thought_check entirely -- asked at most once per session", () => {
+test("once answered, a later 'sensation_check' visit (the accept -> sensation_check re-check loop) skips interfering_thought_check entirely -- asked at most once per session", () => {
   const p = profile({ stateLimitingBelief: "אתה חייב להתרכז" });
-  const outcome = getNextArcStage("stay", state({ triggerType: "reactive_emotion", interferingThoughtChoice: "present" }), p, ALL_LAYERS);
-  assert.equal(outcome.stage, "accept");
+  const outcome = getNextArcStage(
+    "sensation_check",
+    state({ triggerType: "reactive_emotion", interferingThoughtChoice: "present", sensationIntensity: 9 }),
+    p,
+    ALL_LAYERS
+  );
+  assert.equal(outcome.stage, "stay");
+});
+
+test("stay always continues straight to accept -- Belief/Balanced-Alt routing now happens before stay is entered, never inside it", () => {
+  assert.equal(getNextArcStage("stay", state(), profile({ stateLimitingBelief: "אתה חייב להתרכז" }), ALL_LAYERS).stage, "accept");
 });
 
 test("accept loops back to sensation_check (an intensity re-check), incrementing loopIterationCount", () => {

@@ -43,6 +43,7 @@ import { createInitialProgress } from "../program/progress.ts";
 import {
   advanceLiveSession,
   applyAcceptanceWillingnessAnswer,
+  applyBalancedAlternativeInterpretationSeen,
   applyInterferingThoughtAnswer,
   applyNeedIdentificationAnswer,
   applyActionCompletion,
@@ -889,6 +890,18 @@ test("applyInterferingThoughtAnswer never touches the BUILD-configured Limiting 
   // impossible for it to write back onto stateLimitingBelief/identityLimitingBelief.
   assert.equal(Object.keys(result).includes("stateLimitingBelief"), false);
   assert.equal(result.interferingThoughtSessionText, "מחשבה של הרגע");
+});
+
+// ---------------------------------------------------------------------------
+// Balanced Alternative Interpretation task: applyBalancedAlternativeInterpretationSeen
+// ---------------------------------------------------------------------------
+
+test("applyBalancedAlternativeInterpretationSeen sets the flag and touches nothing else", () => {
+  const session = createEmptyLiveState();
+  assert.equal(session.balancedAlternativeInterpretationSeen, false);
+  const result = applyBalancedAlternativeInterpretationSeen(session);
+  assert.equal(result.balancedAlternativeInterpretationSeen, true);
+  assert.deepEqual({ ...result, balancedAlternativeInterpretationSeen: false }, session);
 });
 
 // --- Urge Check + Need Identification (route-selection task): session-only

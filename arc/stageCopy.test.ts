@@ -61,7 +61,7 @@ function liveState(overrides: Partial<ArcLiveState> = {}): ArcLiveState {
 const ALL_STAGES: ArcStage[] = [
   "urge_check", "trigger_selection", "trigger_context", "observer_pause", "presence_check", "arc_thought_awareness", "arc_thought_combined_attention",
   "arc_thought_expand_presence", "arc_thought_presence_recheck", "preventive_action_check", "preventive_action", "need_identification",
-  "sensation_check", "stay", "interfering_thought_check", "accept", "reactive_transition_check", "regulate", "desired_state_check",
+  "sensation_check", "stay", "interfering_thought_check", "balanced_alternative_interpretation", "accept", "reactive_transition_check", "regulate", "desired_state_check",
   "encode", "act", "success_focus", "complete",
 ];
 
@@ -648,6 +648,38 @@ test("interfering_thought_check never shows the OTHER layer's Limiting Belief --
   const copy = getStageCopy("interfering_thought_check", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
   assert.match(copy.body, /מחשבת המצב שלי/);
   assert.ok(!copy.body.includes("מחשבת הזהות שלי"));
+});
+
+// Balanced Alternative Interpretation task: balanced_alternative_interpretation's
+// own copy -- shown after Thought and Belief, before Stay. Never
+// instructs the trainee to suppress/erase/reject the original thought;
+// offers the saved alternative alongside it.
+
+test("balanced_alternative_interpretation shows the resolved layer's own saved text prominently, with the exact non-suppressive wording", () => {
+  const p = profile({ internalAction: "סריקת גוף", stateBalancedAlternativeInterpretation: "אני יכול להתקדם בהדרגה" });
+  const copy = getStageCopy("balanced_alternative_interpretation", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.equal(copy.title, "פרשנות חלופית ומאוזנת");
+  assert.match(copy.body, /אני יכול להתקדם בהדרגה/);
+  assert.match(copy.body, /שים לב למחשבה כפי שהיא\. היא עדיין יכולה להיות כאן/);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("balanced_alternative_interpretation never shows the OTHER layer's saved text -- only the resolved target's own", () => {
+  const p = profile({
+    internalAction: "סריקת גוף",
+    stateBalancedAlternativeInterpretation: "הפרשנות של המצב שלי",
+    identityBalancedAlternativeInterpretation: "הפרשנות של הזהות שלי",
+  });
+  const copy = getStageCopy("balanced_alternative_interpretation", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /הפרשנות של המצב שלי/);
+  assert.ok(!copy.body.includes("הפרשנות של הזהות שלי"));
+});
+
+test("balanced_alternative_interpretation is never reached when the field is unconfigured -- the engine skips it cleanly via resolveBeforeStay", () => {
+  const p = profile({ internalAction: "סריקת גוף" });
+  const s = liveState({ triggerType: "reactive_emotion", sensationIntensity: 9 });
+  const outcome = getNextArcStage("sensation_check", s, p, ["state"]);
+  assert.notEqual(outcome.stage, "balanced_alternative_interpretation");
 });
 
 test("desired_state_check (Proactive) names the resolved target -- Desired State, Identity, or Desired Habit -- consuming the mapped data", () => {
