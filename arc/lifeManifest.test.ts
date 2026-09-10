@@ -6,6 +6,8 @@ import {
   allRequiredTargetsComplete,
   completeSubGoal,
   computeSubGoalProgress,
+  createEmptyAchievedStateMantra,
+  createEmptyEmbodiedIdentityCue,
   createEmptyLifeManifest,
   createEmptyMajorGoal,
   createEmptySubGoal,
@@ -26,8 +28,10 @@ import {
   isMajorGoalQuestionnaireComplete,
   reorderSubGoals,
   resolveActiveSubGoal,
+  resolveAchievedStateMantraForSubGoal,
   resolveDeadlineReminderFireAt,
   resolveEffectiveTargetArcGoalId,
+  resolveEmbodiedIdentityCueForSubGoal,
   resolveNextDeadlineReminder,
   resolveNextSubGoal,
   upsertLifeManifestInList,
@@ -588,4 +592,66 @@ test("resolveDeadlineReminderFireAt falls back to a few seconds from now when 09
   const fireAt = resolveDeadlineReminderFireAt("2024-06-03", now);
   assert.ok(fireAt.getTime() > now.getTime());
   assert.ok(fireAt.getTime() - now.getTime() < 60000, "the fallback fires almost immediately, not hours later");
+});
+
+// ---------------------------------------------------------------------------
+// Visualization task: shared-vs-own embodied cue / achieved-state mantra resolution
+// ---------------------------------------------------------------------------
+
+test("resolveEmbodiedIdentityCueForSubGoal returns the Major Goal's shared cue when useSharedEmbodiedCue is true", () => {
+  const mg = majorGoal({ embodiedIdentityCue: { ...createEmptyEmbodiedIdentityCue(), posture: "זקוף" } });
+  const sg = subGoal({ useSharedEmbodiedCue: true, ownEmbodiedIdentityCue: { ...createEmptyEmbodiedIdentityCue(), posture: "שפוף" } });
+  assert.equal(resolveEmbodiedIdentityCueForSubGoal(mg, sg).posture, "זקוף");
+});
+
+test("resolveEmbodiedIdentityCueForSubGoal returns the Sub-goal's own cue when useSharedEmbodiedCue is false and an own cue is set", () => {
+  const mg = majorGoal({ embodiedIdentityCue: { ...createEmptyEmbodiedIdentityCue(), posture: "זקוף" } });
+  const sg = subGoal({ useSharedEmbodiedCue: false, ownEmbodiedIdentityCue: { ...createEmptyEmbodiedIdentityCue(), posture: "שפוף" } });
+  assert.equal(resolveEmbodiedIdentityCueForSubGoal(mg, sg).posture, "שפוף");
+});
+
+test("resolveEmbodiedIdentityCueForSubGoal falls back to the shared cue when useSharedEmbodiedCue is false but no own cue is set yet", () => {
+  const mg = majorGoal({ embodiedIdentityCue: { ...createEmptyEmbodiedIdentityCue(), posture: "זקוף" } });
+  const sg = subGoal({ useSharedEmbodiedCue: false, ownEmbodiedIdentityCue: null });
+  assert.equal(resolveEmbodiedIdentityCueForSubGoal(mg, sg).posture, "זקוף");
+});
+
+test("resolveEmbodiedIdentityCueForSubGoal never mutates the Major Goal's shared cue when a Sub-goal has its own", () => {
+  const sharedCue = { ...createEmptyEmbodiedIdentityCue(), posture: "זקוף" };
+  const mg = majorGoal({ embodiedIdentityCue: sharedCue });
+  const sg = subGoal({ useSharedEmbodiedCue: false, ownEmbodiedIdentityCue: { ...createEmptyEmbodiedIdentityCue(), posture: "שפוף" } });
+  resolveEmbodiedIdentityCueForSubGoal(mg, sg);
+  assert.equal(mg.embodiedIdentityCue.posture, "זקוף");
+});
+
+test("resolveAchievedStateMantraForSubGoal returns the Major Goal's shared mantra when useSharedAchievedStateMantra is true", () => {
+  const mg = majorGoal({ achievedStateMantra: { text: "אני שם", tense: "present", enabled: true } });
+  const sg = subGoal({ useSharedAchievedStateMantra: true, ownAchievedStateMantra: { text: "הגעתי", tense: "past", enabled: true } });
+  assert.equal(resolveAchievedStateMantraForSubGoal(mg, sg).text, "אני שם");
+});
+
+test("resolveAchievedStateMantraForSubGoal returns the Sub-goal's own mantra when useSharedAchievedStateMantra is false and an own mantra is set", () => {
+  const mg = majorGoal({ achievedStateMantra: { text: "אני שם", tense: "present", enabled: true } });
+  const sg = subGoal({ useSharedAchievedStateMantra: false, ownAchievedStateMantra: { text: "הגעתי", tense: "past", enabled: true } });
+  assert.equal(resolveAchievedStateMantraForSubGoal(mg, sg).text, "הגעתי");
+});
+
+test("resolveAchievedStateMantraForSubGoal falls back to the shared mantra when useSharedAchievedStateMantra is false but no own mantra is set yet", () => {
+  const mg = majorGoal({ achievedStateMantra: { text: "אני שם", tense: "present", enabled: true } });
+  const sg = subGoal({ useSharedAchievedStateMantra: false, ownAchievedStateMantra: null });
+  assert.equal(resolveAchievedStateMantraForSubGoal(mg, sg).text, "אני שם");
+});
+
+test("createEmptyMajorGoal defaults embodiedIdentityCue/achievedStateMantra to empty/disabled", () => {
+  const mg = createEmptyMajorGoal("id1", "כושר", NOW);
+  assert.deepEqual(mg.embodiedIdentityCue, createEmptyEmbodiedIdentityCue());
+  assert.equal(mg.achievedStateMantra.enabled, false);
+});
+
+test("createEmptySubGoal defaults to using the shared cue/mantra with no own override", () => {
+  const sg = createEmptySubGoal("sg1", "תת מטרה", NOW);
+  assert.equal(sg.useSharedEmbodiedCue, true);
+  assert.equal(sg.ownEmbodiedIdentityCue, null);
+  assert.equal(sg.useSharedAchievedStateMantra, true);
+  assert.equal(sg.ownAchievedStateMantra, null);
 });

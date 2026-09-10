@@ -22,6 +22,8 @@ import {
   allRequiredTargetsComplete,
   completeSubGoal,
   computeSubGoalProgress,
+  createEmptyAchievedStateMantra,
+  createEmptyEmbodiedIdentityCue,
   createEmptyTarget,
   findSubGoalOwner,
   generateLifeManifestJournalEntryId,
@@ -30,7 +32,18 @@ import {
   resolveNextSubGoal,
   upsertMajorGoalInLifeManifest,
 } from "../arc/lifeManifest.ts";
-import type { LifeManifest, LifeManifestEntityStatus, SubGoal, SubGoalCompletionMode, SubGoalOwner, Target, TargetStatus } from "../arc/lifeManifest.ts";
+import type {
+  AchievedStateMantra,
+  AchievedStateMantraTense,
+  EmbodiedIdentityCue,
+  LifeManifest,
+  LifeManifestEntityStatus,
+  SubGoal,
+  SubGoalCompletionMode,
+  SubGoalOwner,
+  Target,
+  TargetStatus,
+} from "../arc/lifeManifest.ts";
 import { createEmptyArcGoal, generateArcGoalId } from "../arc/types.ts";
 import type { ArcGoal } from "../arc/types.ts";
 
@@ -50,6 +63,11 @@ const TARGET_STATUS_LABELS: Record<TargetStatus, string> = {
   archived: "הועבר לארכיון",
 };
 const TARGET_STATUSES: TargetStatus[] = ["draft", "active", "completed", "overdue", "paused", "archived"];
+
+const TENSE_LABELS: Record<AchievedStateMantraTense, string> = {
+  present: "הווה (זהות קיימת)",
+  past: "עבר (אבן דרך שהושגה)",
+};
 
 /**
  * Sub-goal↔ARC Goal connection task: ONE Sub-goal's own management
@@ -115,6 +133,20 @@ export default function LifeManifestSubGoalScreen() {
     setManifests((current) => current.map((m) => (m.id === updatedManifest.id ? updatedManifest : m)));
     upsertLifeManifest(updatedManifest).catch(() => setSaveError("אירעה שגיאה בשמירה. נסה שוב."));
     return updatedSubGoal;
+  }
+
+  /** Visualization task: toggles/patches this Sub-goal's OWN embodied-identity cue, never touching the Major Goal's shared one. */
+  function patchOwnEmbodiedCue(patch: Partial<EmbodiedIdentityCue>) {
+    if (!owner) return;
+    const base = owner.subGoal.ownEmbodiedIdentityCue ?? createEmptyEmbodiedIdentityCue();
+    persistSubGoalPatch({ ownEmbodiedIdentityCue: { ...base, ...patch } });
+  }
+
+  /** Visualization task: toggles/patches this Sub-goal's OWN achieved-state mantra, never touching the Major Goal's shared one. */
+  function patchOwnAchievedStateMantra(patch: Partial<AchievedStateMantra>) {
+    if (!owner) return;
+    const base = owner.subGoal.ownAchievedStateMantra ?? createEmptyAchievedStateMantra();
+    persistSubGoalPatch({ ownAchievedStateMantra: { ...base, ...patch } });
   }
 
   async function reconcileReminderAfterDateChange(updatedSubGoal: SubGoal) {
@@ -429,6 +461,117 @@ export default function LifeManifestSubGoalScreen() {
             )}
           </>
         )}
+
+        {/* --- Visualization (shortened run) --- */}
+        <Text style={styles.sectionTitle}>דמיון מודרך (גרסה מקוצרת)</Text>
+        <View style={styles.switchRow}>
+          <Switch
+            value={subGoal.useSharedEmbodiedCue}
+            onValueChange={(value) => {
+              persistSubGoalPatch({ useSharedEmbodiedCue: value });
+            }}
+          />
+          <Text style={styles.fieldLabel}>השתמש בשפת הגוף המשותפת של המטרה הגדולה</Text>
+        </View>
+        {!subGoal.useSharedEmbodiedCue && (
+          <View style={styles.card}>
+            <Text style={styles.hint}>שפת גוף משלה לתת־המטרה הזאת. כל השדות רשות.</Text>
+            <TextInput
+              style={styles.textInput}
+              value={subGoal.ownEmbodiedIdentityCue?.posture ?? ""}
+              onChangeText={(text) => patchOwnEmbodiedCue({ posture: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="תנוחה"
+            />
+            <TextInput
+              style={styles.textInput}
+              value={subGoal.ownEmbodiedIdentityCue?.facialExpression ?? ""}
+              onChangeText={(text) => patchOwnEmbodiedCue({ facialExpression: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="הבעת פנים"
+            />
+            <TextInput
+              style={styles.textInput}
+              value={subGoal.ownEmbodiedIdentityCue?.movementQuality ?? ""}
+              onChangeText={(text) => patchOwnEmbodiedCue({ movementQuality: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="איכות תנועה"
+            />
+            <TextInput
+              style={styles.textInput}
+              value={subGoal.ownEmbodiedIdentityCue?.breathingStyle ?? ""}
+              onChangeText={(text) => patchOwnEmbodiedCue({ breathingStyle: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="סגנון נשימה"
+            />
+            <TextInput
+              style={styles.textInput}
+              value={subGoal.ownEmbodiedIdentityCue?.physicalAnchor ?? ""}
+              onChangeText={(text) => patchOwnEmbodiedCue({ physicalAnchor: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="עוגן פיזי (רשות)"
+            />
+            <TextInput
+              style={styles.textInput}
+              value={subGoal.ownEmbodiedIdentityCue?.regulationAnchor ?? ""}
+              onChangeText={(text) => patchOwnEmbodiedCue({ regulationAnchor: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="עוגן ויסות (רשות)"
+            />
+          </View>
+        )}
+
+        <View style={styles.switchRow}>
+          <Switch
+            value={subGoal.useSharedAchievedStateMantra}
+            onValueChange={(value) => {
+              persistSubGoalPatch({ useSharedAchievedStateMantra: value });
+            }}
+          />
+          <Text style={styles.fieldLabel}>השתמש במשפט מצב מושג המשותף של המטרה הגדולה</Text>
+        </View>
+        {!subGoal.useSharedAchievedStateMantra && (
+          <View style={styles.card}>
+            <View style={styles.switchRow}>
+              <Switch
+                value={subGoal.ownAchievedStateMantra?.enabled ?? false}
+                onValueChange={(value) => patchOwnAchievedStateMantra({ enabled: value })}
+              />
+              <Text style={styles.fieldLabel}>הפעל משפט מצב מושג לתת־המטרה הזאת</Text>
+            </View>
+            {subGoal.ownAchievedStateMantra?.enabled && (
+              <>
+                <TextInput
+                  style={styles.textInput}
+                  value={subGoal.ownAchievedStateMantra?.text ?? ""}
+                  onChangeText={(text) => patchOwnAchievedStateMantra({ text: text.trim().length > 0 ? text : null })}
+                  textAlign="right"
+                  placeholder='לדוגמה: "השלמתי את תת־המטרה הזאת."'
+                />
+                <View style={[styles.chipColumn, styles.chipRow]}>
+                  {(["present", "past"] as AchievedStateMantraTense[]).map((tense) => (
+                    <Pressable
+                      key={tense}
+                      style={[styles.chip, subGoal.ownAchievedStateMantra?.tense === tense && styles.chipSelected]}
+                      onPress={() => patchOwnAchievedStateMantra({ tense })}
+                    >
+                      <Text style={styles.buttonText}>{TENSE_LABELS[tense]}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+          </View>
+        )}
+
+        <Pressable
+          style={[styles.button, styles.fullWidthButton]}
+          onPress={() =>
+            router.push({ pathname: "/life-manifest/visualize/[majorGoalId]", params: { majorGoalId: majorGoal.id, subGoalId: subGoal.id } })
+          }
+        >
+          <Text style={styles.buttonText}>להתחיל דמיון (גרסה מקוצרת)</Text>
+        </Pressable>
 
         {/* --- Journal --- */}
         <Text style={styles.sectionTitle}>יומן</Text>

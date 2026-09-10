@@ -117,12 +117,58 @@ export interface Target {
 }
 
 /**
+ * Visualization task (spec section 2, "Successful body language"): the
+ * embodied identity cue connected to an (already-)achieved goal --
+ * posture/facial expression/movement quality/breathing style, plus two
+ * optional anchors. Every field optional/editable -- "all fields must be
+ * optional and editable." Never confused with arc/bodyImagery.ts's own
+ * BodyImagery (a different, regulation-cue-to-imagery-text resolver used
+ * by regular ARC/ARC Link's Encoding stage) -- this is Life Manifest's
+ * own, separate concept.
+ */
+export interface EmbodiedIdentityCue {
+  posture: string | null;
+  facialExpression: string | null;
+  movementQuality: string | null;
+  breathingStyle: string | null;
+  physicalAnchor: string | null;
+  regulationAnchor: string | null;
+}
+
+export function createEmptyEmbodiedIdentityCue(): EmbodiedIdentityCue {
+  return { posture: null, facialExpression: null, movementQuality: null, breathingStyle: null, physicalAnchor: null, regulationAnchor: null };
+}
+
+/**
+ * Visualization task (spec section 4): "the desired goal is experienced
+ * in imagery as an already achieved reality" -- structurally distinct
+ * from every other mantra in this app (Identity Mantra, Success Mantra,
+ * Future-Oriented Mantra, and the four mantras in arc/mantras.ts) --
+ * never merged into or confused with any of them. `enabled` lets the
+ * trainee disable/skip it without losing the typed text -- "disable or
+ * skip it."
+ */
+export type AchievedStateMantraTense = "present" | "past";
+export interface AchievedStateMantra {
+  text: string | null;
+  tense: AchievedStateMantraTense;
+  enabled: boolean;
+}
+
+export function createEmptyAchievedStateMantra(): AchievedStateMantra {
+  return { text: null, tense: "present", enabled: false };
+}
+
+/**
  * A meaningful stage required to reach the Major Goal. Visualization
- * fields (embodied-identity-cue override, Achieved-State Mantra) are
- * added in Phase 2 -- kept out of Phase 1's shape entirely rather than
- * pre-declared-but-unused, since a Sub-goal's own visualization choice
- * ("use the Major Goal's shared cue, or configure separately") needs the
- * Major Goal's own Phase-2 fields to exist first.
+ * fields (embodied-identity-cue override, Achieved-State Mantra) --
+ * spec section 8: "each Sub-goal may optionally... use the Major Goal's
+ * embodied identity cue, or configure separate body language, anchors
+ * and mantra." useSharedEmbodiedCue/useSharedAchievedStateMantra default
+ * true (inherit); the own* fields are only ever read when their own
+ * flag is false, and switching the shared flag never touches them --
+ * "handle references safely... never silently overwrite a separately
+ * configured Sub-goal."
  */
 export interface SubGoal {
   id: string;
@@ -143,6 +189,13 @@ export interface SubGoal {
   /** Reminder task: the currently-scheduled deadline notification's id + the ISO instant it was scheduled for, mirroring ScheduledRoutine.nextOccurrenceNotificationId/nextOccurrenceScheduledFor -- reconciled (cancel-then-reschedule), never left to duplicate. Both null when reminders are off or there's no deadline to remind about. */
   deadlineNotificationId: string | null;
   deadlineNotificationScheduledFor: string | null;
+  /** Visualization task: true (default) inherits the Major Goal's own embodiedIdentityCue; false means ownEmbodiedIdentityCue below is this Sub-goal's own, independent configuration. */
+  useSharedEmbodiedCue: boolean;
+  /** Only ever read/written when useSharedEmbodiedCue is false. Null while shared. */
+  ownEmbodiedIdentityCue: EmbodiedIdentityCue | null;
+  /** Same "shared unless overridden" shape as useSharedEmbodiedCue above, for the Achieved-State Mantra specifically -- kept as its own independent flag since a Sub-goal might want its own mantra while still sharing the Major Goal's body language, or vice versa. */
+  useSharedAchievedStateMantra: boolean;
+  ownAchievedStateMantra: AchievedStateMantra | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -179,6 +232,10 @@ export interface MajorGoal {
   status: LifeManifestEntityStatus;
   /** Array order IS sub-goal order (no separate order field to keep in sync) -- see reorderSubGoals. Multiple sub-goals allowed, editable/deletable/reorderable per spec section 2. */
   subGoals: SubGoal[];
+  /** Visualization task, spec section 2 ("Successful body language") -- the embodied identity cue for the ACHIEVED Major Goal. Every Sub-goal that hasn't opted out of sharing (useSharedEmbodiedCue) resolves to this same object. */
+  embodiedIdentityCue: EmbodiedIdentityCue;
+  /** Visualization task, spec section 4. Disabled (enabled: false) by default -- "the user must be able to... disable it." */
+  achievedStateMantra: AchievedStateMantra;
   createdAt: string;
   updatedAt: string;
 }
@@ -235,6 +292,10 @@ export function createEmptySubGoal(id: string, title: string, now: string): SubG
     remindersEnabled: false,
     deadlineNotificationId: null,
     deadlineNotificationScheduledFor: null,
+    useSharedEmbodiedCue: true,
+    ownEmbodiedIdentityCue: null,
+    useSharedAchievedStateMantra: true,
+    ownAchievedStateMantra: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -255,6 +316,8 @@ export function createEmptyMajorGoal(id: string, title: string, now: string): Ma
     realWorldSign: null,
     status: "draft",
     subGoals: [],
+    embodiedIdentityCue: createEmptyEmbodiedIdentityCue(),
+    achievedStateMantra: createEmptyAchievedStateMantra(),
     createdAt: now,
     updatedAt: now,
   };
@@ -475,6 +538,23 @@ export function computeSubGoalProgress(targets: Target[]): number {
   if (required.length === 0) return 0;
   const total = required.reduce((sum, target) => sum + Math.max(0, Math.min(100, target.currentProgress)), 0);
   return Math.round(total / required.length);
+}
+
+// ---------------------------------------------------------------------------
+// Visualization task: shared-unless-overridden resolvers for a Sub-goal's
+// embodied identity cue / Achieved-State Mantra -- "each Sub-goal may
+// optionally... use the Major Goal's embodied identity cue, or configure
+// separate body language, anchors and mantra" (spec section 8).
+// ---------------------------------------------------------------------------
+
+export function resolveEmbodiedIdentityCueForSubGoal(majorGoal: MajorGoal, subGoal: SubGoal): EmbodiedIdentityCue {
+  if (!subGoal.useSharedEmbodiedCue && subGoal.ownEmbodiedIdentityCue) return subGoal.ownEmbodiedIdentityCue;
+  return majorGoal.embodiedIdentityCue;
+}
+
+export function resolveAchievedStateMantraForSubGoal(majorGoal: MajorGoal, subGoal: SubGoal): AchievedStateMantra {
+  if (!subGoal.useSharedAchievedStateMantra && subGoal.ownAchievedStateMantra) return subGoal.ownAchievedStateMantra;
+  return majorGoal.achievedStateMantra;
 }
 
 // ---------------------------------------------------------------------------
