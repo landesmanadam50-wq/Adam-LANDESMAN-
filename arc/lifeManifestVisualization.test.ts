@@ -159,3 +159,33 @@ test("the first_person_imagery 'דמיין' sentence does not trip containsInduc
   const copy = getVisualizationStageCopy("first_person_imagery", majorGoal(), null);
   assert.equal(containsInductionPattern(copy.body), false);
 });
+
+// ---------------------------------------------------------------------------
+// Bug-fix task: getVisualizationStageCopy must never throw on a MajorGoal
+// missing embodiedIdentityCue/achievedStateMantra entirely (a legacy
+// record predating this task, simulated here the same way
+// arc/arcGoals.test.ts simulates a legacy ArcGoal for normalizeArcGoal).
+// In production these are backfilled by data/storage.ts's
+// loadLifeManifests before this function ever sees them -- this is the
+// belt-and-suspenders check that the pure function itself is also safe.
+// ---------------------------------------------------------------------------
+
+test("getVisualizationStageCopy never throws when embodiedIdentityCue is completely missing on the Major Goal", () => {
+  const legacyGoal = { ...majorGoal(), embodiedIdentityCue: undefined } as unknown as MajorGoal;
+  assert.doesNotThrow(() => getVisualizationStageCopy("body_language_config", legacyGoal, null));
+  assert.doesNotThrow(() => getVisualizationStageCopy("first_person_imagery", legacyGoal, null));
+});
+
+test("getVisualizationStageCopy never throws when achievedStateMantra is completely missing on the Major Goal", () => {
+  const legacyGoal = { ...majorGoal(), achievedStateMantra: undefined } as unknown as MajorGoal;
+  const copy = getVisualizationStageCopy("achieved_state_mantra", legacyGoal, null);
+  assert.match(copy.buttonLabel, /דלג/, "falls back to the same 'nothing configured' skip state as an empty-but-present mantra");
+});
+
+test("getVisualizationStageCopy never throws for the shortened Sub-goal run when the Major Goal's shared cue/mantra are both missing", () => {
+  const legacyGoal = { ...majorGoal(), embodiedIdentityCue: undefined, achievedStateMantra: undefined } as unknown as MajorGoal;
+  const sg = subGoal({ title: "תת מטרה", useSharedEmbodiedCue: true, useSharedAchievedStateMantra: true });
+  assert.doesNotThrow(() => getVisualizationStageCopy("observer_perspective", legacyGoal, sg));
+  assert.doesNotThrow(() => getVisualizationStageCopy("body_language_config", legacyGoal, sg));
+  assert.doesNotThrow(() => getVisualizationStageCopy("achieved_state_mantra", legacyGoal, sg));
+});

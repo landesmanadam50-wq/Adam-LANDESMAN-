@@ -19,7 +19,14 @@ import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { deleteArcGoalFromList, normalizeArcGoal, upsertArcGoalInList } from "../arc/arcGoals.ts";
 import { deleteUrgeArcFromList, upsertUrgeArcInList } from "../arc/urgeArcs.ts";
-import { deleteLifeManifestFromList, deleteTargetFromList, upsertLifeManifestInList, upsertTargetInList } from "../arc/lifeManifest.ts";
+import {
+  deleteLifeManifestFromList,
+  deleteTargetFromList,
+  normalizeLifeManifest,
+  normalizeTarget,
+  upsertLifeManifestInList,
+  upsertTargetInList,
+} from "../arc/lifeManifest.ts";
 import type { LifeManifest, Target } from "../arc/lifeManifest.ts";
 import {
   deleteArcLinkFromList,
@@ -312,17 +319,24 @@ export async function deleteUrgeArc(id: string): Promise<void> {
 }
 
 /**
- * Life Manifest task: no defensive per-field normalization step like
- * loadArcGoals' normalizeArcGoal -- every field on LifeManifest/MajorGoal/
- * SubGoal has been optional/nullable from this feature's very first
- * shape, so there is no legacy pre-optional-field shape to backfill.
+ * Bug-fix task: every parsed manifest is run through normalizeLifeManifest
+ * (arc/lifeManifest.ts), mirroring loadArcGoals' own normalizeArcGoal.
+ * This WAS true-and-safe to skip when this feature first shipped (every
+ * field really was optional/nullable from day one), but Part A/B later
+ * added several required fields to MajorGoal/SubGoal (embodiedIdentityCue,
+ * achievedStateMantra, connectedArcGoalId, completionMode, etc.) -- a
+ * manifest saved before those existed is missing them entirely, and code
+ * that reads them unconditionally (e.g. the visualization screen) used
+ * to crash on such a record with no error boundary to catch it. Backfill
+ * here once so every other reader in this app can keep assuming a fully-
+ * populated record.
  */
 export async function loadLifeManifests(): Promise<LifeManifest[]> {
   const raw = await AsyncStorage.getItem(LIFE_MANIFESTS_KEY);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as LifeManifest[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(normalizeLifeManifest) : [];
   } catch (error) {
     console.warn("[storage] Stored Life Manifests are not valid JSON -- returning an empty list rather than crashing.", error);
     return [];
@@ -363,7 +377,7 @@ export async function loadLifeManifestTargets(): Promise<Target[]> {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as Target[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(normalizeTarget) : [];
   } catch (error) {
     console.warn("[storage] Stored Life Manifest Targets are not valid JSON -- returning an empty list rather than crashing.", error);
     return [];
