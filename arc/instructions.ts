@@ -76,10 +76,22 @@ export const INDUCTION_PATTERN_DENYLIST: RegExp[] = [
   // same prefix's imagined-Stop line -- "imagine that you recognize
   // the moment the feeling or urge begins and stop before the
   // automatic reaction" -- recognition of the already-familiar Stop
-  // moment, never an instruction to evoke or intensify anything. Any
-  // other "imagine" usage -- e.g. imagining a feeling/craving/
-  // distraction directly -- still trips this pattern.
-  /דמיין(?! את עצמך מתחיל| לרגע את מה שקרה| את עצמך לרגע| את עצמך מבצע| שהפעולה מצליחה| את המצב מהצד| שאתה מזהה את הרגע)/,
+  // moment, never an instruction to evoke or intensify anything;
+  // and (8)-(9), the Life Manifest visualization task's own two new
+  // sentences: (8) the Observer Perspective opening ("imagine your
+  // Major Goal has ALREADY been achieved. See yourself from the
+  // front...") -- imagining a desired FUTURE outcome, and observing an
+  // identity from the outside, never an interfering state -- including
+  // its shortened Sub-goal variant ("imagine your Sub-goal '<title>' has
+  // ALREADY been achieved..."), same already-achieved future framing,
+  // whitelisted by its fixed "שתת־המטרה" prefix since the Sub-goal's own
+  // title is interpolated dynamically after it; (9) the First-Person
+  // Imagery transition ("now step into the character and imagine you're
+  // experiencing the moment through your own eyes") -- entering the SAME
+  // already-achieved, desired scene from (8), never a difficult/
+  // interfering one. Any other "imagine" usage -- e.g. imagining a
+  // feeling/craving/distraction directly -- still trips this pattern.
+  /דמיין(?! את עצמך מתחיל| לרגע את מה שקרה| את עצמך לרגע| את עצמך מבצע| שהפעולה מצליחה| את המצב מהצד| שאתה מזהה את הרגע| שהמטרה הגדולה שלך כבר הושגה| שתת־המטרה| שאתה חווה את הרגע דרך העיניים שלך)/,
   /תחזק את/,
   // "hold/keep X in awareness/mind/the head" -- covers "בתודעה"/"בראש"
   // in addition to "במודעות".

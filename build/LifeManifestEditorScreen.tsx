@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getLifeManifest, upsertLifeManifest } from "../data/storage.ts";
+import { getLifeManifest, loadArcGoals, loadLifeManifestTargets, upsertLifeManifest } from "../data/storage.ts";
 import {
   createEmptyMajorGoal,
   createEmptySubGoal,
@@ -13,10 +13,12 @@ import {
   generateSubGoalId,
   isMajorGoalQuestionnaireComplete,
   reorderSubGoals,
+  resolveActiveSubGoal,
   upsertMajorGoalInLifeManifest,
   upsertSubGoalInMajorGoal,
 } from "../arc/lifeManifest.ts";
-import type { LifeManifest, LifeManifestEntityStatus, MajorGoal, SubGoal } from "../arc/lifeManifest.ts";
+import type { AchievedStateMantraTense, EmbodiedIdentityCue, LifeManifest, LifeManifestEntityStatus, MajorGoal, SubGoal, Target } from "../arc/lifeManifest.ts";
+import type { ArcGoal } from "../arc/types.ts";
 
 /**
  * Life Manifest task: ONE screen editing ONE LifeManifest -- an overview
@@ -102,6 +104,8 @@ const STATUS_LABELS: Record<LifeManifestEntityStatus, string> = {
 };
 const STATUSES: LifeManifestEntityStatus[] = ["draft", "active", "completed", "paused", "archived"];
 
+const TENSE_LABELS: Record<AchievedStateMantraTense, string> = { present: "הווה (זהות קיימת)", past: "עבר (אבן דרך שהושגה)" };
+
 export default function LifeManifestEditorScreen() {
   const { id, majorGoalId: initialMajorGoalId } = useLocalSearchParams<{ id: string; majorGoalId?: string }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "editing">("loading");
@@ -112,17 +116,21 @@ export default function LifeManifestEditorScreen() {
   const [newMajorGoalTitle, setNewMajorGoalTitle] = useState("");
   const [confirmDeleteMajorGoalId, setConfirmDeleteMajorGoalId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [arcGoals, setArcGoals] = useState<ArcGoal[]>([]);
+  const [targets, setTargets] = useState<Target[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     if (!id) return;
-    getLifeManifest(id).then((existing) => {
+    Promise.all([getLifeManifest(id), loadArcGoals(), loadLifeManifestTargets()]).then(([existing, allArcGoals, allTargets]) => {
       if (cancelled) return;
       if (!existing) {
         setStatus("notFound");
         return;
       }
       setManifest(existing);
+      setArcGoals(allArcGoals);
+      setTargets(allTargets);
       setStatus("editing");
     });
     return () => {
@@ -143,6 +151,14 @@ export default function LifeManifestEditorScreen() {
     if (!current) return;
     const updatedGoal: MajorGoal = { ...current, ...patch, updatedAt: new Date().toISOString() };
     persistManifest(upsertMajorGoalInLifeManifest(manifest, updatedGoal));
+  }
+
+  /** Visualization task: patches ONE field on the Major Goal's own embodiedIdentityCue -- all fields optional/editable. */
+  function patchEmbodiedCue(goalId: string, patch: Partial<EmbodiedIdentityCue>) {
+    if (!manifest) return;
+    const current = manifest.majorGoals.find((g) => g.id === goalId);
+    if (!current) return;
+    patchMajorGoal(goalId, { embodiedIdentityCue: { ...current.embodiedIdentityCue, ...patch } });
   }
 
   async function handleCreateMajorGoal() {
@@ -241,27 +257,30 @@ export default function LifeManifestEditorScreen() {
           {manifest.majorGoals.length === 0 && <Text style={styles.hint}>עדיין אין כאן מטרה גדולה. אפשר להוסיף אחת למטה.</Text>}
 
           {manifest.majorGoals.map((goal) => (
-            <View key={goal.id} style={styles.goalRow}>
-              <Pressable
-                style={styles.goalButton}
-                onPress={() => {
-                  setSelectedMajorGoalId(goal.id);
-                  setStep("title");
-                }}
-              >
-                <View style={styles.goalTitleRow}>
-                  {!isMajorGoalQuestionnaireComplete(goal) && (
-                    <View style={styles.draftBadge}>
-                      <Text style={styles.draftBadgeText}>טיוטה</Text>
-                    </View>
-                  )}
-                  <Text style={styles.goalButtonText}>{goal.title || "מטרה ללא כותרת"}</Text>
-                </View>
-                <Text style={styles.subText}>{`${goal.subGoals.length} תתי־מטרות`}</Text>
-              </Pressable>
-              <Pressable style={styles.actionButton} onPress={() => setConfirmDeleteMajorGoalId(goal.id)}>
-                <Text style={[styles.actionButtonText, styles.deleteText]}>מחק</Text>
-              </Pressable>
+            <View key={goal.id} style={styles.goalRowColumn}>
+              <View style={styles.goalRow}>
+                <Pressable
+                  style={styles.goalButton}
+                  onPress={() => {
+                    setSelectedMajorGoalId(goal.id);
+                    setStep("title");
+                  }}
+                >
+                  <View style={styles.goalTitleRow}>
+                    {!isMajorGoalQuestionnaireComplete(goal) && (
+                      <View style={styles.draftBadge}>
+                        <Text style={styles.draftBadgeText}>טיוטה</Text>
+                      </View>
+                    )}
+                    <Text style={styles.goalButtonText}>{goal.title || "מטרה ללא כותרת"}</Text>
+                  </View>
+                  <Text style={styles.subText}>{`${goal.subGoals.length} תתי־מטרות`}</Text>
+                </Pressable>
+                <Pressable style={styles.actionButton} onPress={() => setConfirmDeleteMajorGoalId(goal.id)}>
+                  <Text style={[styles.actionButtonText, styles.deleteText]}>מחק</Text>
+                </Pressable>
+              </View>
+              <ActiveSubGoalDashboard goal={goal} arcGoals={arcGoals} targets={targets} />
             </View>
           ))}
 
@@ -381,7 +400,7 @@ export default function LifeManifestEditorScreen() {
             {selectedGoal.subGoals.length === 0 && <Text style={styles.hint}>עדיין אין תתי־מטרות. אפשר להוסיף אחת למטה.</Text>}
             {selectedGoal.subGoals.map((subGoal, index) => (
               <View key={subGoal.id} style={styles.mappingCard}>
-                <Text style={styles.mappingLabel}>{`תת־מטרה ${index + 1}`}</Text>
+                <Text style={styles.mappingLabel}>{`תת־מטרה ${index + 1} · ${subGoal.status}`}</Text>
                 <Text style={styles.fieldLabel}>כותרת</Text>
                 <TextInput
                   style={styles.textInput}
@@ -416,6 +435,12 @@ export default function LifeManifestEditorScreen() {
                     <Text style={[styles.actionButtonText, styles.deleteText]}>מחק תת־מטרה</Text>
                   </Pressable>
                 </View>
+                <Pressable
+                  style={styles.actionButton}
+                  onPress={() => router.push({ pathname: "/life-manifest/sub-goal/[subGoalId]", params: { subGoalId: subGoal.id } })}
+                >
+                  <Text style={styles.actionButtonText}>ניהול תת־המטרה (ARC Goal, יעדים, תאריכים)</Text>
+                </Pressable>
               </View>
             ))}
             <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => addSubGoal(selectedGoal.id)}>
@@ -457,6 +482,97 @@ export default function LifeManifestEditorScreen() {
               <Text style={styles.hint}>המטרה עדיין מוצגת כטיוטה עד שכל השאלות ותת־מטרה אחת לפחות ימולאו. אפשר לחזור ולהשלים בכל שלב.</Text>
             )}
 
+            <Text style={styles.sectionTitle}>שפת גוף מנצחת (רשות)</Text>
+            <Text style={styles.hint}>שפת הגוף שתאמץ בדמיון המודרך כשהמטרה הגדולה כבר הושגה. כל השדות רשות.</Text>
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.embodiedIdentityCue.posture ?? ""}
+              onChangeText={(text) => patchEmbodiedCue(selectedGoal.id, { posture: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="תנוחה"
+            />
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.embodiedIdentityCue.facialExpression ?? ""}
+              onChangeText={(text) => patchEmbodiedCue(selectedGoal.id, { facialExpression: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="הבעת פנים"
+            />
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.embodiedIdentityCue.movementQuality ?? ""}
+              onChangeText={(text) => patchEmbodiedCue(selectedGoal.id, { movementQuality: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="איכות תנועה"
+            />
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.embodiedIdentityCue.breathingStyle ?? ""}
+              onChangeText={(text) => patchEmbodiedCue(selectedGoal.id, { breathingStyle: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="סגנון נשימה"
+            />
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.embodiedIdentityCue.physicalAnchor ?? ""}
+              onChangeText={(text) => patchEmbodiedCue(selectedGoal.id, { physicalAnchor: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="עוגן פיזי (רשות)"
+            />
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.embodiedIdentityCue.regulationAnchor ?? ""}
+              onChangeText={(text) => patchEmbodiedCue(selectedGoal.id, { regulationAnchor: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              placeholder="עוגן ויסות (רשות)"
+            />
+
+            <Text style={styles.sectionTitle}>משפט מצב מושג (רשות)</Text>
+            <View style={styles.switchRow}>
+              <Switch
+                value={selectedGoal.achievedStateMantra.enabled}
+                onValueChange={(value) =>
+                  patchMajorGoal(selectedGoal.id, { achievedStateMantra: { ...selectedGoal.achievedStateMantra, enabled: value } })
+                }
+              />
+              <Text style={styles.fieldLabel}>הפעל משפט מצב מושג</Text>
+            </View>
+            {selectedGoal.achievedStateMantra.enabled && (
+              <>
+                <TextInput
+                  style={styles.textInput}
+                  value={selectedGoal.achievedStateMantra.text ?? ""}
+                  onChangeText={(text) =>
+                    patchMajorGoal(selectedGoal.id, {
+                      achievedStateMantra: { ...selectedGoal.achievedStateMantra, text: text.trim().length > 0 ? text : null },
+                    })
+                  }
+                  textAlign="right"
+                  placeholder='לדוגמה: "אני מוזיקאי עם מאה אלף עוקבים."'
+                />
+                <View style={[styles.chipColumn, styles.chipRow]}>
+                  {(["present", "past"] as AchievedStateMantraTense[]).map((tense) => (
+                    <Pressable
+                      key={tense}
+                      style={[styles.chip, selectedGoal.achievedStateMantra.tense === tense && styles.chipSelected]}
+                      onPress={() =>
+                        patchMajorGoal(selectedGoal.id, { achievedStateMantra: { ...selectedGoal.achievedStateMantra, tense } })
+                      }
+                    >
+                      <Text style={styles.buttonText}>{TENSE_LABELS[tense]}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+
+            <Pressable
+              style={[styles.button, styles.fullWidthButton]}
+              onPress={() => router.push({ pathname: "/life-manifest/visualize/[majorGoalId]", params: { majorGoalId: selectedGoal.id } })}
+            >
+              <Text style={styles.buttonText}>להתחיל דמיון מודרך</Text>
+            </Pressable>
+
             <Pressable
               style={[styles.button, styles.fullWidthButton]}
               onPress={() => {
@@ -475,6 +591,51 @@ export default function LifeManifestEditorScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * Sub-goal↔ARC Goal connection task, spec section 8: "Inside the Life
+ * Manifest, show: current active Sub-goal; its linked ARC Goal;
+ * current Targets; upcoming deadlines... Provide a prominent button:
+ * 'להמשיך ל-ARC Goal של תת־המטרה הפעילה'." Shown per Major Goal on the
+ * overview screen -- a sibling of its own Pressable card (never nested
+ * inside one, so its own button doesn't fight the card's own tap
+ * target).
+ */
+function ActiveSubGoalDashboard(props: { goal: MajorGoal; arcGoals: ArcGoal[]; targets: Target[] }) {
+  const { goal, arcGoals, targets } = props;
+  const active = resolveActiveSubGoal(goal);
+  if (!active) return null;
+
+  const linkedArcGoal = active.connectedArcGoalId ? arcGoals.find((g) => g.id === active.connectedArcGoalId) ?? null : null;
+  const subGoalTargets = targets.filter((t) => t.subGoalId === active.id);
+  const upcoming = [
+    ...(active.deadline ? [`תת־המטרה: ${active.deadline}`] : []),
+    ...subGoalTargets.filter((t) => t.targetDate).map((t) => `${t.title}: ${t.targetDate}`),
+  ];
+
+  return (
+    <View style={styles.dashboardCard}>
+      <Text style={styles.dashboardText}>{`תת־המטרה הפעילה: ${active.title || "ללא כותרת"}`}</Text>
+      <Text style={styles.dashboardText}>{`יעדים: ${subGoalTargets.length}`}</Text>
+      {upcoming.length > 0 && <Text style={styles.dashboardText}>{`מועדים קרובים: ${upcoming.join(" · ")}`}</Text>}
+      {linkedArcGoal ? (
+        <Pressable
+          style={styles.actionButton}
+          onPress={() => router.push({ pathname: "/goals/[id]", params: { id: linkedArcGoal.id } })}
+        >
+          <Text style={styles.actionButtonText}>להמשיך ל־ARC Goal של תת־המטרה הפעילה</Text>
+        </Pressable>
+      ) : (
+        <Pressable
+          style={styles.actionButton}
+          onPress={() => router.push({ pathname: "/life-manifest/sub-goal/[subGoalId]", params: { subGoalId: active.id } })}
+        >
+          <Text style={styles.actionButtonText}>לקשר ARC Goal לתת־המטרה הפעילה</Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -497,7 +658,9 @@ const styles = StyleSheet.create({
   fullWidthButton: { marginTop: 16 },
   buttonDisabled: { opacity: 0.4 },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-  textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16 },
+  textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16, marginTop: 8 },
+  sectionTitle: { fontSize: 17, fontWeight: "700", textAlign: "right", marginTop: 20, marginBottom: 4 },
+  switchRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginTop: 8 },
   chipColumn: { gap: 8, marginTop: 8 },
   chipRow: { flexDirection: "row", flexWrap: "wrap" },
   chip: { backgroundColor: "#E6F4FE", paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, alignItems: "center" },
@@ -508,11 +671,11 @@ const styles = StyleSheet.create({
   mappingLabel: { fontSize: 15, fontWeight: "700", textAlign: "right", marginBottom: 4 },
   reorderRow: { flexDirection: "row-reverse", gap: 12, marginTop: 12, justifyContent: "flex-end" },
   deleteText: { color: "#c0392b", fontSize: 14 },
+  goalRowColumn: { marginBottom: 12 },
   goalRow: {
     flexDirection: "row-reverse",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: "#E6F4FE",
     borderRadius: 10,
@@ -524,6 +687,8 @@ const styles = StyleSheet.create({
   subText: { fontSize: 13, textAlign: "right", color: "#666", marginTop: 4 },
   draftBadge: { backgroundColor: "#E6F4FE", borderRadius: 6, paddingVertical: 2, paddingHorizontal: 8 },
   draftBadgeText: { fontSize: 12, color: "#0a7ea4", fontWeight: "600" },
+  dashboardCard: { backgroundColor: "#f7fbfd", borderRadius: 8, padding: 10, marginTop: 8 },
+  dashboardText: { fontSize: 13, textAlign: "right", color: "#333", marginBottom: 4 },
   actionButton: { paddingVertical: 6, paddingHorizontal: 10 },
   actionButtonText: { color: "#0a7ea4", fontSize: 14 },
   modalOverlay: {

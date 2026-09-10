@@ -880,6 +880,21 @@ export interface ArcGoal {
   interferingMappings: ArcGoalInterferingMapping[];
   /** ARC Goal task (Urge route): parallel to interferingMappings above, one row per mapped urge. Defaults to [] for every ArcGoal saved before this field existed -- see arc/arcGoals.ts's normalizeArcGoal. */
   urgeMappings: ArcGoalUrgeMapping[];
+  /**
+   * Sub-goal↔ARC Goal connection task: an optional back-REFERENCE to the
+   * Life Manifest Sub-goal (arc/lifeManifest.ts's SubGoal.id) this ArcGoal
+   * was created for or has been linked to, when any -- null for every
+   * ArcGoal created outside Life Manifest (the overwhelming majority) and
+   * for every ArcGoal saved before this field existed (see
+   * arc/arcGoals.ts's normalizeArcGoal). Never the other direction: the
+   * Sub-goal's own connectedArcGoalId is the source of truth for "which
+   * ArcGoal is this Sub-goal linked to" -- this field only lets the ArcGoal
+   * screen show its owning context and a way back, and is kept in sync by
+   * the same UI action that sets/clears the Sub-goal's own link (see
+   * build/LifeManifestSubGoalScreen.tsx). Deleting an ArcGoal, or
+   * unlinking it from its Sub-goal, never deletes the other side.
+   */
+  lifeManifestSubGoalId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
