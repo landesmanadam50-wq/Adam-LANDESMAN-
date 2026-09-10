@@ -120,6 +120,19 @@ export default function Home() {
           </Pressable>
         </Link>
 
+        {/* Life Manifest task: an independent top-level area (spec section
+            17, "Add 'Life Manifest' as a separate top-level area. Do not
+            replace ARC Live"), available regardless of whether the
+            trainee has any full ARC Build yet -- same reasoning as Mini
+            ARC/ARC Goals/Urge ARC above. References existing ArcBuild/
+            ArcGoal/MiniArc/UrgeArc/ArcLink protocols by id; never
+            duplicates or restructures them. */}
+        <Link href="/life-manifest" asChild>
+          <Pressable style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>מניפסט החיים שלי</Text>
+          </Pressable>
+        </Link>
+
         {hasArcBuilds === false && (
           <Link href="/build" asChild>
             <Pressable style={styles.button}>
