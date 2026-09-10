@@ -79,6 +79,10 @@ export function duplicateArcGoal(goal: ArcGoal, newId: string, now: string): Arc
 export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
   return {
     ...goal,
+    // Sub-goal↔ARC Goal connection task: every ArcGoal saved before this
+    // field existed (the overwhelming majority) backfills to null --
+    // "not linked to any Life Manifest Sub-goal," never invented.
+    lifeManifestSubGoalId: goal.lifeManifestSubGoalId ?? null,
     interferingMappings: (goal.interferingMappings ?? []).map((mapping) => ({
       ...mapping,
       miniArcId: mapping.miniArcId ?? null,

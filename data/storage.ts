@@ -33,6 +33,7 @@ import type { ArcLink, RoutineTrigger, WeeklyAction } from "../arc/routineLinks.
 import type { ArcProgramSelection } from "../program/programTypes.ts";
 import { PROGRAM_DEFINITIONS } from "../program/config.ts";
 import type { SessionLogEntry } from "./sessionLog.ts";
+import type { LifeManifestJournalEntry } from "./lifeManifestJournal.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
 const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
@@ -50,6 +51,8 @@ const ARC_URGE_ARCS_KEY = "archi.urgeArcs.v1";
 const LIFE_MANIFESTS_KEY = "archi.lifeManifests.v1";
 /** Life Manifest task: a separate flat store for Targets (referenced by subGoalId, never nested inside LifeManifest) -- see arc/lifeManifest.ts's own module doc for why. Not yet created by any screen in this phase of the feature; wired now so its storage/id shape never needs a breaking change later. */
 const LIFE_MANIFEST_TARGETS_KEY = "archi.lifeManifestTargets.v1";
+/** Sub-goal↔ARC Goal connection task: the Life Manifest journal -- append-only, mirrors SESSION_LOG_KEY's own shape/guarantees exactly (see data/lifeManifestJournal.ts's module doc). Never read/written by any other Life Manifest key, ARC/ArcGoal/MiniArc/UrgeArc/ArcLink/routine code. */
+const LIFE_MANIFEST_JOURNAL_KEY = "archi.lifeManifestJournal.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -390,6 +393,32 @@ export async function deleteLifeManifestTarget(id: string): Promise<void> {
 }
 
 /**
+ * Sub-goal↔ARC Goal connection task: the Life Manifest journal --
+ * append-only, exact mirror of loadSessionLog/appendSessionLogEntry
+ * (data/sessionLog.ts's own CRUD, defined below in this file). No
+ * update/delete function exists on purpose -- a journal entry, once
+ * appended, is permanent history (see data/lifeManifestJournal.ts's own
+ * module doc).
+ */
+export async function loadLifeManifestJournal(): Promise<LifeManifestJournalEntry[]> {
+  const raw = await AsyncStorage.getItem(LIFE_MANIFEST_JOURNAL_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as LifeManifestJournalEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored Life Manifest journal is not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function appendLifeManifestJournalEntry(entry: LifeManifestJournalEntry): Promise<void> {
+  const existing = await loadLifeManifestJournal();
+  existing.push(entry);
+  await AsyncStorage.setItem(LIFE_MANIFEST_JOURNAL_KEY, JSON.stringify(existing));
+}
+
+/**
  * The real source of truth for what a trainee needs (state/identity/
  * habit, and whether identity was wanted immediately) -- BUILD reads
  * this back instead of inferring from ArcBuildProfile.identityActionNeeded,
@@ -606,7 +635,16 @@ export async function clearTimerRun(timerType: TimerType): Promise<void> {
  * fires and is handled, or the trainee replaces/cancels it) -- never
  * left dangling to fire a redundant signal later.
  */
-export type ReminderKind = "focusSuccess" | "arc" | "routine";
+/**
+ * Sub-goal↔ARC Goal connection task: "lifeManifestSubGoal"/"lifeManifestTarget"
+ * are used only via scheduleReminderNotification directly (data/notifications.ts),
+ * never via PendingReminder below -- PendingReminder is stored one-per-kind,
+ * which doesn't fit "many Sub-goals/Targets, each with its own reminder."
+ * SubGoal.deadlineNotificationId/Target's own equivalent (arc/lifeManifest.ts)
+ * play PendingReminder's role instead, one pair per entity -- see
+ * data/lifeManifestReminders.ts.
+ */
+export type ReminderKind = "focusSuccess" | "arc" | "routine" | "lifeManifestSubGoal" | "lifeManifestTarget";
 
 export interface PendingReminder {
   kind: ReminderKind;

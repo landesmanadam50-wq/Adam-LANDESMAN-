@@ -85,6 +85,7 @@ export default function RootLayout() {
         <Stack.Screen name="arc-goal/live/[goalId]" options={{ title: "ARC Goal LIVE" }} />
         <Stack.Screen name="life-manifest/index" options={{ title: "מניפסט החיים שלי" }} />
         <Stack.Screen name="life-manifest/[id]" options={{ title: "עריכת מניפסט חיים" }} />
+        <Stack.Screen name="life-manifest/sub-goal/[subGoalId]" options={{ title: "ניהול תת־מטרה" }} />
       </Stack>
       <StatusBar style="auto" />
     </SafeAreaProvider>

@@ -3,11 +3,13 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcGoal, loadArcBuilds, loadMiniArcBuilds, loadUrgeArcs, upsertArcGoal } from "../data/storage.ts";
+import { getArcGoal, loadArcBuilds, loadLifeManifestTargets, loadLifeManifests, loadMiniArcBuilds, loadUrgeArcs, upsertArcGoal } from "../data/storage.ts";
 import { inferTarget } from "./arcBuildSave.ts";
 import { generateArcGoalMappingId, generateArcGoalUrgeMappingId } from "../arc/types.ts";
 import type { ArcBuild, ArcGoal, ArcGoalInterferingMapping, ArcGoalUrgeMapping, ExecutionMode, UrgeArc } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
+import { findSubGoalOwner } from "../arc/lifeManifest.ts";
+import type { SubGoalOwner } from "../arc/lifeManifest.ts";
 
 const EXECUTION_MODE_LABELS: Record<ExecutionMode, string> = {
   full: "ARC מלא",
@@ -74,6 +76,9 @@ export default function ArcGoalEditorScreen() {
   const [urgeArcs, setUrgeArcs] = useState<UrgeArc[]>([]);
   const [miniArcBuilds, setMiniArcBuilds] = useState<MiniArcBuild[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** Sub-goal↔ARC Goal connection task: set only when this ArcGoal was created for/linked to a Life Manifest Sub-goal (goal.lifeManifestSubGoalId) -- drives the context banner + "חזרה לתת־המטרה במניפסט" button below. Never affects this screen's own ArcGoal-editing logic otherwise. */
+  const [subGoalContext, setSubGoalContext] = useState<SubGoalOwner | null>(null);
+  const [subGoalTargetCount, setSubGoalTargetCount] = useState(0);
 
   const reloadArcBuilds = useCallback(() => {
     loadArcBuilds().then(setArcBuilds);
@@ -98,6 +103,18 @@ export default function ArcGoalEditorScreen() {
       setUrgeArcs(urgeArcList);
       setMiniArcBuilds(miniArcList);
       setStatus("editing");
+
+      // Sub-goal↔ARC Goal connection task: load the owning Life Manifest
+      // context only when this ArcGoal actually has a back-reference --
+      // never for the overwhelming majority of ArcGoals with none.
+      if (existing.lifeManifestSubGoalId) {
+        Promise.all([loadLifeManifests(), loadLifeManifestTargets()]).then(([manifests, targets]) => {
+          if (cancelled) return;
+          const owner = findSubGoalOwner(manifests, existing.lifeManifestSubGoalId!);
+          setSubGoalContext(owner);
+          if (owner) setSubGoalTargetCount(targets.filter((t) => t.subGoalId === owner.subGoal.id).length);
+        });
+      }
     });
     return () => {
       cancelled = true;
@@ -216,6 +233,21 @@ export default function ArcGoalEditorScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.eyebrow}>{goal.name}</Text>
         <Text style={styles.title}>{STEP_TITLES[step]}</Text>
+
+        {subGoalContext && (
+          <View style={styles.subGoalBanner}>
+            <Text style={styles.subGoalBannerText}>{`מניפסט חיים: ${subGoalContext.manifest.majorGoals[0]?.title || ""}`}</Text>
+            <Text style={styles.subGoalBannerText}>{`מטרה גדולה: ${subGoalContext.majorGoal.title}`}</Text>
+            <Text style={styles.subGoalBannerText}>{`תת־מטרה: ${subGoalContext.subGoal.title} (מספר ${subGoalContext.order})`}</Text>
+            <Text style={styles.subGoalBannerText}>{`יעדים מחוברים: ${subGoalTargetCount}`}</Text>
+            <Pressable
+              style={styles.actionButton}
+              onPress={() => router.push({ pathname: "/life-manifest/sub-goal/[subGoalId]", params: { subGoalId: subGoalContext.subGoal.id } })}
+            >
+              <Text style={styles.actionButtonText}>חזרה לתת־המטרה במניפסט</Text>
+            </Pressable>
+          </View>
+        )}
 
         {step === "name" && (
           <View>
@@ -582,6 +614,10 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, textAlign: "right", color: "#666", marginBottom: 8 },
   fieldLabel: { fontSize: 13, textAlign: "right", color: "#666", marginTop: 8 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 8 },
+  subGoalBanner: { backgroundColor: "#f7fbfd", borderRadius: 8, padding: 10, marginBottom: 16 },
+  subGoalBannerText: { fontSize: 13, textAlign: "right", color: "#333", marginBottom: 4 },
+  actionButton: { paddingVertical: 8, paddingHorizontal: 10, marginTop: 4 },
+  actionButtonText: { color: "#0a7ea4", fontSize: 14 },
   button: {
     backgroundColor: "#0a7ea4",
     paddingVertical: 12,
