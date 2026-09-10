@@ -43,10 +43,16 @@ export default function LifeManifestVisualizationScreen() {
   const [showGratitudeScopePicker, setShowGratitudeScopePicker] = useState(false);
 
   useEffect(() => {
-    if (!majorGoalId) return;
+    if (!majorGoalId) {
+      // Bug-fix task: a missing/undefined route param used to leave
+      // `status` stuck at "loading" forever -- route straight to the
+      // recovery state instead of hanging on a blank screen.
+      setStatus("notFound");
+      return;
+    }
     let cancelled = false;
-    Promise.all([loadLifeManifests(), loadLifeManifestTargets(), loadArcGoals(), loadArcLinks()]).then(
-      ([manifests, allTargets, allArcGoals, allArcLinks]) => {
+    Promise.all([loadLifeManifests(), loadLifeManifestTargets(), loadArcGoals(), loadArcLinks()])
+      .then(([manifests, allTargets, allArcGoals, allArcLinks]) => {
         if (cancelled) return;
         const owner = findMajorGoalOwner(manifests, majorGoalId);
         if (!owner) {
@@ -61,8 +67,12 @@ export default function LifeManifestVisualizationScreen() {
         setArcGoals(allArcGoals);
         setArcLinks(allArcLinks);
         setStatus("ready");
-      }
-    );
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn("[LifeManifestVisualizationScreen] Failed to load -- showing the recovery state instead of hanging.", error);
+        setStatus("notFound");
+      });
     return () => {
       cancelled = true;
     };
@@ -102,7 +112,7 @@ export default function LifeManifestVisualizationScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
-          <Text style={styles.title}>המטרה לא נמצאה</Text>
+          <Text style={styles.title}>לא ניתן לטעון את המניפסט.</Text>
           <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.replace("/life-manifest")}>
             <Text style={styles.buttonText}>חזרה לרשימת המניפסטים</Text>
           </Pressable>

@@ -355,6 +355,92 @@ export function createEmptyTarget(id: string, subGoalId: string, title: string, 
 }
 
 // ---------------------------------------------------------------------------
+// Bug-fix task: backward-compatibility normalizers -- mirrors
+// arc/arcGoals.ts's own normalizeArcGoal exactly. The Part A/B additions
+// (Sub-goal <-> ARC Goal connection, progression, Targets/journal/
+// reminders, and the visualization task's embodiedIdentityCue/
+// achievedStateMantra) added several REQUIRED (non-optional) fields to
+// MajorGoal/SubGoal/Target after this feature had already shipped and
+// been used (Phase 1). Any LifeManifest saved before those fields
+// existed is missing them entirely on load (`undefined`, not `null`) --
+// unlike every ORIGINAL Phase 1 field, which really was optional/
+// nullable from day one (see loadLifeManifests' now-corrected doc
+// comment in data/storage.ts). Code that reads e.g.
+// `majorGoal.embodiedIdentityCue.posture` without going through these
+// normalizers throws on a legacy record (`Cannot read properties of
+// undefined`), and with no error boundary that crash used to take down
+// the whole screen -- the exact reported "blank dark-gray screen" bug.
+// Applied once, at load time (data/storage.ts's loadLifeManifests/
+// loadLifeManifestTargets), so every OTHER function in this module can
+// keep assuming a fully-populated record, exactly like normalizeArcGoal.
+// ---------------------------------------------------------------------------
+
+export function normalizeTarget(target: Target): Target {
+  return {
+    ...target,
+    description: target.description ?? null,
+    successMeasurement: target.successMeasurement ?? null,
+    quantity: target.quantity ?? null,
+    unit: target.unit ?? null,
+    startDate: target.startDate ?? null,
+    targetDate: target.targetDate ?? null,
+    currentProgress: target.currentProgress ?? 0,
+    status: target.status ?? "draft",
+    completedAt: target.completedAt ?? null,
+    connectedIdentityProtocolId: target.connectedIdentityProtocolId ?? null,
+    connectedArcGoalId: target.connectedArcGoalId ?? null,
+    arcGoalLinkMode: target.arcGoalLinkMode ?? "inherited",
+    connectedSupportiveProtocolIds: target.connectedSupportiveProtocolIds ?? [],
+    connectedArcLinkIds: target.connectedArcLinkIds ?? [],
+    remindersEnabled: target.remindersEnabled ?? false,
+    deadlineNotificationId: target.deadlineNotificationId ?? null,
+    deadlineNotificationScheduledFor: target.deadlineNotificationScheduledFor ?? null,
+  };
+}
+
+export function normalizeSubGoal(subGoal: SubGoal): SubGoal {
+  return {
+    ...subGoal,
+    description: subGoal.description ?? null,
+    status: subGoal.status ?? "draft",
+    connectedArcGoalId: subGoal.connectedArcGoalId ?? null,
+    startDate: subGoal.startDate ?? null,
+    deadline: subGoal.deadline ?? null,
+    completedAt: subGoal.completedAt ?? null,
+    completionMode: subGoal.completionMode ?? "manual",
+    remindersEnabled: subGoal.remindersEnabled ?? false,
+    deadlineNotificationId: subGoal.deadlineNotificationId ?? null,
+    deadlineNotificationScheduledFor: subGoal.deadlineNotificationScheduledFor ?? null,
+    useSharedEmbodiedCue: subGoal.useSharedEmbodiedCue ?? true,
+    ownEmbodiedIdentityCue: subGoal.ownEmbodiedIdentityCue ?? null,
+    useSharedAchievedStateMantra: subGoal.useSharedAchievedStateMantra ?? true,
+    ownAchievedStateMantra: subGoal.ownAchievedStateMantra ?? null,
+  };
+}
+
+export function normalizeMajorGoal(goal: MajorGoal): MajorGoal {
+  return {
+    ...goal,
+    why: goal.why ?? null,
+    value: goal.value ?? null,
+    futureIdentity: goal.futureIdentity ?? null,
+    futureLifeDescription: goal.futureLifeDescription ?? null,
+    capabilitiesNeeded: goal.capabilitiesNeeded ?? null,
+    obstacles: goal.obstacles ?? null,
+    supportiveInternalStates: goal.supportiveInternalStates ?? null,
+    realWorldSign: goal.realWorldSign ?? null,
+    status: goal.status ?? "draft",
+    subGoals: (goal.subGoals ?? []).map(normalizeSubGoal),
+    embodiedIdentityCue: goal.embodiedIdentityCue ?? createEmptyEmbodiedIdentityCue(),
+    achievedStateMantra: goal.achievedStateMantra ?? createEmptyAchievedStateMantra(),
+  };
+}
+
+export function normalizeLifeManifest(manifest: LifeManifest): LifeManifest {
+  return { ...manifest, majorGoals: (manifest.majorGoals ?? []).map(normalizeMajorGoal) };
+}
+
+// ---------------------------------------------------------------------------
 // Top-level list helpers (LifeManifest[]) -- mirrors
 // arc/arcGoals.ts's upsertArcGoalInList/deleteArcGoalFromList exactly.
 // ---------------------------------------------------------------------------

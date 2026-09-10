@@ -30,7 +30,12 @@
  */
 
 import { getAchievedStateMantraLine } from "./achievedStateMantra.ts";
-import { resolveAchievedStateMantraForSubGoal, resolveEmbodiedIdentityCueForSubGoal } from "./lifeManifest.ts";
+import {
+  createEmptyAchievedStateMantra,
+  createEmptyEmbodiedIdentityCue,
+  resolveAchievedStateMantraForSubGoal,
+  resolveEmbodiedIdentityCueForSubGoal,
+} from "./lifeManifest.ts";
 import type { EmbodiedIdentityCue, MajorGoal, SubGoal } from "./lifeManifest.ts";
 
 export type LifeManifestVisualizationStage =
@@ -133,8 +138,13 @@ export function getVisualizationStageCopy(
   subGoal: SubGoal | null
 ): LifeManifestVisualizationStageCopy {
   const targetName = subGoal ? subGoal.title || "תת־המטרה" : majorGoal.title || "המטרה הגדולה";
-  const cue = subGoal ? resolveEmbodiedIdentityCueForSubGoal(majorGoal, subGoal) : majorGoal.embodiedIdentityCue;
-  const mantra = subGoal ? resolveAchievedStateMantraForSubGoal(majorGoal, subGoal) : majorGoal.achievedStateMantra;
+  // Bug-fix task: belt-and-suspenders null safety. data/storage.ts's
+  // loadLifeManifests now normalizes every record so these are never
+  // actually undefined in practice -- but this function is pure and
+  // callable directly (e.g. from a test, or a future caller that builds
+  // a MajorGoal by hand), so never assume that normalization already ran.
+  const cue = (subGoal ? resolveEmbodiedIdentityCueForSubGoal(majorGoal, subGoal) : majorGoal.embodiedIdentityCue) ?? createEmptyEmbodiedIdentityCue();
+  const mantra = (subGoal ? resolveAchievedStateMantraForSubGoal(majorGoal, subGoal) : majorGoal.achievedStateMantra) ?? createEmptyAchievedStateMantra();
 
   switch (stage) {
     case "observer_perspective":

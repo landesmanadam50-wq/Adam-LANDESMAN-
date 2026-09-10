@@ -32,6 +32,10 @@ import {
   resolveDeadlineReminderFireAt,
   resolveEffectiveTargetArcGoalId,
   resolveEmbodiedIdentityCueForSubGoal,
+  normalizeLifeManifest,
+  normalizeMajorGoal,
+  normalizeSubGoal,
+  normalizeTarget,
   resolveNextDeadlineReminder,
   resolveNextSubGoal,
   upsertLifeManifestInList,
@@ -654,4 +658,83 @@ test("createEmptySubGoal defaults to using the shared cue/mantra with no own ove
   assert.equal(sg.ownEmbodiedIdentityCue, null);
   assert.equal(sg.useSharedAchievedStateMantra, true);
   assert.equal(sg.ownAchievedStateMantra, null);
+});
+
+// ---------------------------------------------------------------------------
+// Bug-fix task: normalizeMajorGoal/normalizeSubGoal/normalizeTarget/
+// normalizeLifeManifest -- backfilling fields a legacy (Phase 1 / Part A)
+// record loaded from storage never had, exactly mirroring
+// arc/arcGoals.ts's own normalizeArcGoal.
+// ---------------------------------------------------------------------------
+
+test("normalizeMajorGoal backfills a completely missing embodiedIdentityCue to an empty one -- a Major Goal saved before the visualization task existed loads without error", () => {
+  const legacyGoal = { ...majorGoal(), embodiedIdentityCue: undefined } as unknown as MajorGoal;
+  const normalized = normalizeMajorGoal(legacyGoal);
+  assert.deepEqual(normalized.embodiedIdentityCue, createEmptyEmbodiedIdentityCue());
+});
+
+test("normalizeMajorGoal backfills a completely missing achievedStateMantra to a disabled/empty one", () => {
+  const legacyGoal = { ...majorGoal(), achievedStateMantra: undefined } as unknown as MajorGoal;
+  const normalized = normalizeMajorGoal(legacyGoal);
+  assert.deepEqual(normalized.achievedStateMantra, createEmptyAchievedStateMantra());
+});
+
+test("normalizeMajorGoal backfills a completely missing subGoals array to []", () => {
+  const legacyGoal = { ...majorGoal(), subGoals: undefined } as unknown as MajorGoal;
+  const normalized = normalizeMajorGoal(legacyGoal);
+  assert.deepEqual(normalized.subGoals, []);
+});
+
+test("normalizeMajorGoal normalizes every nested Sub-goal too, not just its own direct fields", () => {
+  const legacySubGoal = { id: "sg1", title: "תת מטרה", status: "active", createdAt: NOW, updatedAt: NOW } as unknown as SubGoal;
+  const legacyGoal = majorGoal({ subGoals: [legacySubGoal] });
+  const normalized = normalizeMajorGoal(legacyGoal);
+  assert.equal(normalized.subGoals[0].useSharedEmbodiedCue, true);
+  assert.equal(normalized.subGoals[0].completionMode, "manual");
+});
+
+test("normalizeMajorGoal never overwrites an already-configured embodiedIdentityCue/achievedStateMantra with the default", () => {
+  const configuredCue = { ...createEmptyEmbodiedIdentityCue(), posture: "זקוף" };
+  const configuredMantra = { text: "אני שם", tense: "present" as const, enabled: true };
+  const g = majorGoal({ embodiedIdentityCue: configuredCue, achievedStateMantra: configuredMantra });
+  const normalized = normalizeMajorGoal(g);
+  assert.equal(normalized.embodiedIdentityCue.posture, "זקוף");
+  assert.equal(normalized.achievedStateMantra.text, "אני שם");
+});
+
+test("normalizeSubGoal backfills every field the Sub-goal <-> ARC Goal connection task and the visualization task added, to their documented safe defaults", () => {
+  const legacySubGoal = { id: "sg1", title: "תת מטרה", status: "active", createdAt: NOW, updatedAt: NOW } as unknown as SubGoal;
+  const normalized = normalizeSubGoal(legacySubGoal);
+  assert.equal(normalized.connectedArcGoalId, null);
+  assert.equal(normalized.completionMode, "manual");
+  assert.equal(normalized.remindersEnabled, false);
+  assert.equal(normalized.useSharedEmbodiedCue, true);
+  assert.equal(normalized.ownEmbodiedIdentityCue, null);
+  assert.equal(normalized.useSharedAchievedStateMantra, true);
+  assert.equal(normalized.ownAchievedStateMantra, null);
+  // Its own pre-existing fields are completely untouched.
+  assert.equal(normalized.id, "sg1");
+  assert.equal(normalized.title, "תת מטרה");
+  assert.equal(normalized.status, "active");
+});
+
+test("normalizeTarget backfills every field the Sub-goal <-> ARC Goal connection task added, to their documented safe defaults", () => {
+  const legacyTarget = { id: "t1", subGoalId: "sg1", title: "יעד", createdAt: NOW, updatedAt: NOW } as unknown as Target;
+  const normalized = normalizeTarget(legacyTarget);
+  assert.equal(normalized.arcGoalLinkMode, "inherited");
+  assert.equal(normalized.remindersEnabled, false);
+  assert.equal(normalized.status, "draft");
+  assert.equal(normalized.currentProgress, 0);
+  assert.deepEqual(normalized.connectedSupportiveProtocolIds, []);
+  assert.deepEqual(normalized.connectedArcLinkIds, []);
+});
+
+test("normalizeLifeManifest normalizes every Major Goal on the manifest, and backfills a completely missing majorGoals array to []", () => {
+  const legacyManifest = { id: "lm1", majorGoals: undefined, createdAt: NOW, updatedAt: NOW } as unknown as LifeManifest;
+  assert.deepEqual(normalizeLifeManifest(legacyManifest).majorGoals, []);
+
+  const legacyGoal = { ...majorGoal(), embodiedIdentityCue: undefined } as unknown as MajorGoal;
+  const m = manifest({ majorGoals: [legacyGoal] });
+  const normalized = normalizeLifeManifest(m);
+  assert.deepEqual(normalized.majorGoals[0].embodiedIdentityCue, createEmptyEmbodiedIdentityCue());
 });

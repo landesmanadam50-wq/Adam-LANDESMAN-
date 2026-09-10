@@ -121,18 +121,32 @@ export default function LifeManifestEditorScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!id) return;
-    Promise.all([getLifeManifest(id), loadArcGoals(), loadLifeManifestTargets()]).then(([existing, allArcGoals, allTargets]) => {
-      if (cancelled) return;
-      if (!existing) {
+    if (!id) {
+      // Bug-fix task: a missing/undefined route param used to leave
+      // `status` stuck at "loading" forever (the early return skipped
+      // the only place that ever set it) -- a blank screen bug just as
+      // real as an unhandled exception. Route straight to the recovery
+      // state instead.
+      setStatus("notFound");
+      return;
+    }
+    Promise.all([getLifeManifest(id), loadArcGoals(), loadLifeManifestTargets()])
+      .then(([existing, allArcGoals, allTargets]) => {
+        if (cancelled) return;
+        if (!existing) {
+          setStatus("notFound");
+          return;
+        }
+        setManifest(existing);
+        setArcGoals(allArcGoals);
+        setTargets(allTargets);
+        setStatus("editing");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn("[LifeManifestEditorScreen] Failed to load -- showing the recovery state instead of hanging.", error);
         setStatus("notFound");
-        return;
-      }
-      setManifest(existing);
-      setArcGoals(allArcGoals);
-      setTargets(allTargets);
-      setStatus("editing");
-    });
+      });
     return () => {
       cancelled = true;
     };
@@ -233,7 +247,7 @@ export default function LifeManifestEditorScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
-          <Text style={styles.title}>המניפסט לא נמצא</Text>
+          <Text style={styles.title}>לא ניתן לטעון את המניפסט.</Text>
           <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.replace("/life-manifest")}>
             <Text style={styles.buttonText}>חזרה לרשימה</Text>
           </Pressable>
@@ -280,7 +294,27 @@ export default function LifeManifestEditorScreen() {
                   <Text style={[styles.actionButtonText, styles.deleteText]}>מחק</Text>
                 </Pressable>
               </View>
+
+              {/* Bug-fix task, requirements 3-5: the Major Goal's Sub-goals
+                  and a visible visualization entry point, right on the
+                  details screen reached by a single tap on the manifest
+                  card -- never buried behind the full questionnaire wizard. */}
+              {goal.subGoals.length > 0 && (
+                <View style={styles.subGoalListCard}>
+                  {goal.subGoals.map((subGoal, index) => (
+                    <Text key={subGoal.id} style={styles.subGoalListItem}>{`${index + 1}. ${subGoal.title || "תת־מטרה ללא כותרת"}`}</Text>
+                  ))}
+                </View>
+              )}
+
               <ActiveSubGoalDashboard goal={goal} arcGoals={arcGoals} targets={targets} />
+
+              <Pressable
+                style={[styles.button, styles.fullWidthButton]}
+                onPress={() => router.push({ pathname: "/life-manifest/visualize/[majorGoalId]", params: { majorGoalId: goal.id } })}
+              >
+                <Text style={styles.buttonText}>להתחיל את דמיון המניפסט</Text>
+              </Pressable>
             </View>
           ))}
 
@@ -687,6 +721,8 @@ const styles = StyleSheet.create({
   subText: { fontSize: 13, textAlign: "right", color: "#666", marginTop: 4 },
   draftBadge: { backgroundColor: "#E6F4FE", borderRadius: 6, paddingVertical: 2, paddingHorizontal: 8 },
   draftBadgeText: { fontSize: 12, color: "#0a7ea4", fontWeight: "600" },
+  subGoalListCard: { backgroundColor: "#f7fbfd", borderRadius: 8, padding: 10, marginTop: 8 },
+  subGoalListItem: { fontSize: 13, textAlign: "right", color: "#333", marginBottom: 2 },
   dashboardCard: { backgroundColor: "#f7fbfd", borderRadius: 8, padding: 10, marginTop: 8 },
   dashboardText: { fontSize: 13, textAlign: "right", color: "#333", marginBottom: 4 },
   actionButton: { paddingVertical: 6, paddingHorizontal: 10 },

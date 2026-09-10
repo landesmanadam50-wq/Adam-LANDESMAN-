@@ -96,23 +96,34 @@ export default function LifeManifestSubGoalScreen() {
   const [pendingCompletionConfirm, setPendingCompletionConfirm] = useState(false);
 
   const reload = useCallback(async () => {
-    if (!subGoalId) return;
-    const [allManifests, allArcGoals, allTargets, allJournal] = await Promise.all([
-      loadLifeManifests(),
-      loadArcGoals(),
-      loadLifeManifestTargets(),
-      loadLifeManifestJournal(),
-    ]);
-    const owner = findSubGoalOwner(allManifests, subGoalId);
-    if (!owner) {
+    if (!subGoalId) {
+      // Bug-fix task: a missing/undefined route param used to leave
+      // `status` stuck at "loading" forever -- route straight to the
+      // recovery state instead of hanging on a blank screen.
       setStatus("notFound");
       return;
     }
-    setManifests(allManifests);
-    setArcGoals(allArcGoals);
-    setTargets(allTargets.filter((target) => target.subGoalId === subGoalId));
-    setJournal(allJournal.filter((entry) => entry.subGoalId === subGoalId));
-    setStatus("editing");
+    try {
+      const [allManifests, allArcGoals, allTargets, allJournal] = await Promise.all([
+        loadLifeManifests(),
+        loadArcGoals(),
+        loadLifeManifestTargets(),
+        loadLifeManifestJournal(),
+      ]);
+      const owner = findSubGoalOwner(allManifests, subGoalId);
+      if (!owner) {
+        setStatus("notFound");
+        return;
+      }
+      setManifests(allManifests);
+      setArcGoals(allArcGoals);
+      setTargets(allTargets.filter((target) => target.subGoalId === subGoalId));
+      setJournal(allJournal.filter((entry) => entry.subGoalId === subGoalId));
+      setStatus("editing");
+    } catch (error) {
+      console.warn("[LifeManifestSubGoalScreen] Failed to load -- showing the recovery state instead of hanging.", error);
+      setStatus("notFound");
+    }
   }, [subGoalId]);
 
   useEffect(() => {
