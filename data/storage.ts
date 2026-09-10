@@ -19,6 +19,8 @@ import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { deleteArcGoalFromList, normalizeArcGoal, upsertArcGoalInList } from "../arc/arcGoals.ts";
 import { deleteUrgeArcFromList, upsertUrgeArcInList } from "../arc/urgeArcs.ts";
+import { deleteLifeManifestFromList, deleteTargetFromList, upsertLifeManifestInList, upsertTargetInList } from "../arc/lifeManifest.ts";
+import type { LifeManifest, Target } from "../arc/lifeManifest.ts";
 import {
   deleteArcLinkFromList,
   deleteRoutineTriggerFromList,
@@ -44,6 +46,10 @@ const MINI_ARC_BUILDS_KEY = "archi.miniArcBuilds.v1";
 const ARC_GOALS_KEY = "archi.arcGoals.v1";
 /** Urge route task: a brand-new, independent collection storing full UrgeArc records -- never read/written by regular ARC, Mini ARC, or ARC Goal's own key. No legacy migration: there is no prior data format for UrgeArc, so an absent key simply means "no Urge ARCs yet". ArcGoal.urgeMappings only ever stores a UrgeArc's id, never its content -- deleting/editing a UrgeArc never touches ARC_GOALS_KEY, and vice versa. */
 const ARC_URGE_ARCS_KEY = "archi.urgeArcs.v1";
+/** Life Manifest task: a brand-new, independent top-level collection -- Major Goals and Sub-goals nest inside each LifeManifest record; Targets (below) are a separate flat store. Never read/written by ARC/ArcGoal/MiniArc/UrgeArc/ArcLink/routine code -- REFERENCES those by plain id only (see arc/lifeManifest.ts's own module doc). No legacy migration: there is no prior data format, so an absent key simply means "no Life Manifests yet". */
+const LIFE_MANIFESTS_KEY = "archi.lifeManifests.v1";
+/** Life Manifest task: a separate flat store for Targets (referenced by subGoalId, never nested inside LifeManifest) -- see arc/lifeManifest.ts's own module doc for why. Not yet created by any screen in this phase of the feature; wired now so its storage/id shape never needs a breaking change later. */
+const LIFE_MANIFEST_TARGETS_KEY = "archi.lifeManifestTargets.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -300,6 +306,87 @@ export async function upsertUrgeArc(urgeArc: UrgeArc): Promise<void> {
 export async function deleteUrgeArc(id: string): Promise<void> {
   const urgeArcs = await loadUrgeArcs();
   await saveUrgeArcs(deleteUrgeArcFromList(urgeArcs, id));
+}
+
+/**
+ * Life Manifest task: no defensive per-field normalization step like
+ * loadArcGoals' normalizeArcGoal -- every field on LifeManifest/MajorGoal/
+ * SubGoal has been optional/nullable from this feature's very first
+ * shape, so there is no legacy pre-optional-field shape to backfill.
+ */
+export async function loadLifeManifests(): Promise<LifeManifest[]> {
+  const raw = await AsyncStorage.getItem(LIFE_MANIFESTS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as LifeManifest[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored Life Manifests are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveArcGoals/saveUrgeArcs' own style. */
+export async function saveLifeManifests(manifests: LifeManifest[]): Promise<void> {
+  await AsyncStorage.setItem(LIFE_MANIFESTS_KEY, JSON.stringify(manifests));
+}
+
+export async function getLifeManifest(id: string): Promise<LifeManifest | null> {
+  const manifests = await loadLifeManifests();
+  return manifests.find((manifest) => manifest.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/lifeManifest.ts's upsertLifeManifestInList. Updates the one matching manifest in place (including any nested Major Goal/Sub-goal changes the caller has already applied), never touching any other manifest's own fields, or appends it as new. */
+export async function upsertLifeManifest(manifest: LifeManifest): Promise<void> {
+  const manifests = await loadLifeManifests();
+  await saveLifeManifests(upsertLifeManifestInList(manifests, manifest));
+}
+
+/** Removes exactly the one matching Life Manifest (by id) -- see arc/lifeManifest.ts's deleteLifeManifestFromList. Every other Life Manifest is left completely untouched; a no-op if the id doesn't match any manifest. Never cascades into LIFE_MANIFEST_TARGETS_KEY or any referenced ArcBuild/ArcGoal/MiniArcBuild/UrgeArc/ArcLink. */
+export async function deleteLifeManifest(id: string): Promise<void> {
+  const manifests = await loadLifeManifests();
+  await saveLifeManifests(deleteLifeManifestFromList(manifests, id));
+}
+
+/**
+ * Life Manifest task: Targets live in their own flat store, separate
+ * from LIFE_MANIFESTS_KEY -- see arc/lifeManifest.ts's own module doc.
+ * Not yet written by any screen in this phase; wired now so later
+ * phases (journal entries, Scheduled Actions) attach to a stable id
+ * surface from day one.
+ */
+export async function loadLifeManifestTargets(): Promise<Target[]> {
+  const raw = await AsyncStorage.getItem(LIFE_MANIFEST_TARGETS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Target[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored Life Manifest Targets are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching every other saveX above. */
+export async function saveLifeManifestTargets(targets: Target[]): Promise<void> {
+  await AsyncStorage.setItem(LIFE_MANIFEST_TARGETS_KEY, JSON.stringify(targets));
+}
+
+export async function getLifeManifestTarget(id: string): Promise<Target | null> {
+  const targets = await loadLifeManifestTargets();
+  return targets.find((target) => target.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/lifeManifest.ts's upsertTargetInList. */
+export async function upsertLifeManifestTarget(target: Target): Promise<void> {
+  const targets = await loadLifeManifestTargets();
+  await saveLifeManifestTargets(upsertTargetInList(targets, target));
+}
+
+/** Removes exactly the one matching Target (by id) -- see arc/lifeManifest.ts's deleteTargetFromList. A no-op if the id doesn't match any Target. */
+export async function deleteLifeManifestTarget(id: string): Promise<void> {
+  const targets = await loadLifeManifestTargets();
+  await saveLifeManifestTargets(deleteTargetFromList(targets, id));
 }
 
 /**
