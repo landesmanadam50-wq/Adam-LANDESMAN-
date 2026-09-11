@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
 import { getArcGoal, loadArcBuilds, loadLifeManifestTargets, loadLifeManifests, loadMiniArcBuilds, loadUrgeArcs, upsertArcGoal } from "../data/storage.ts";
 import { inferTarget } from "./arcBuildSave.ts";
 import { generateArcGoalMappingId, generateArcGoalUrgeMappingId } from "../arc/types.ts";
-import type { ArcBuild, ArcGoal, ArcGoalInterferingMapping, ArcGoalUrgeMapping, ExecutionMode, UrgeArc } from "../arc/types.ts";
+import type { ArcBuild, ArcGoal, ArcGoalFourWeekProgram, ArcGoalInterferingMapping, ArcGoalUrgeMapping, ExecutionMode, FourWeekProgramWeekNumber, UrgeArc } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { findSubGoalOwner } from "../arc/lifeManifest.ts";
 import type { SubGoalOwner } from "../arc/lifeManifest.ts";
 import CollapsibleSection from "./CollapsibleSection.tsx";
+import { todayLocalDateString } from "../program/dateUtils.ts";
+import { createFourWeekProgram, FOUR_WEEK_META, FOUR_WEEK_PROGRAM_WEEK_NUMBERS, resolveNextWeekOpeningDate, resolveWeek, setWeekEndDate, setWeekStartDate } from "../arc/fourWeekProgram.ts";
 
 const EXECUTION_MODE_LABELS: Record<ExecutionMode, string> = {
   full: "ARC מלא",
@@ -35,12 +37,18 @@ const EXECUTION_MODES: ExecutionMode[] = ["full", "mini", "choose"];
  * navigation, optional/advanced sections (the urge/interfering mapping
  * lists) collapsed by default, the goal's own core fields and identity
  * protocol choice expanded by default since they're the primary content.
- * Reach Your Goal BUILD task: this screen intentionally still only
- * covers what's real today (a single ArcGoal's own fields and mapping
- * lists) -- the four-week program itself is a later phase; this
- * section-based layout is deliberately left with room for a future
- * "תוכנית 4 שבועות" section to be added there without another rewrite,
- * but no such section (and no placeholder field for it) is added now.
+ * Four-Week Program task (spec section 1): adds the "תוכנית ארבעת
+ * השבועות" section here -- inside this SAME single-page BUILD, still no
+ * multi-screen wizard, collapsed by default (opt-in, advanced). It never
+ * asks the trainee to re-enter identity content already captured on the
+ * referenced identity ArcBuild -- Value/Desired identity/Desired
+ * identity state/Identity Mantra/Future Mantra/Body-language cue/Small
+ * identity action are all read live off that ArcBuild's own profile
+ * (see identityProtocolBuild below) and shown as a read-only summary
+ * with a link to edit them at their own real source; "Target habit" is
+ * this goal's own existing goalAction field, also read-only here. Only
+ * each week's own schedule/frequency/reminder/notes fields are actually
+ * edited on this section.
  */
 
 export default function ArcGoalEditorScreen() {
@@ -54,6 +62,8 @@ export default function ArcGoalEditorScreen() {
   /** Sub-goal↔ARC Goal connection task: set only when this ArcGoal was created for/linked to a Life Manifest Sub-goal (goal.lifeManifestSubGoalId) -- drives the context banner + "חזרה לתת־המטרה במניפסט" button below. Never affects this screen's own ArcGoal-editing logic otherwise. */
   const [subGoalContext, setSubGoalContext] = useState<SubGoalOwner | null>(null);
   const [subGoalTargetCount, setSubGoalTargetCount] = useState(0);
+  /** Four-Week Program task: the Week 1 start-date draft, only used before the program is enabled (the "enable" action reads this once to build the whole schedule) -- defaults to today, matching every other date-entry default elsewhere in this app. */
+  const [week1StartDraft, setWeek1StartDraft] = useState(todayLocalDateString());
 
   const reloadArcBuilds = useCallback(() => {
     loadArcBuilds().then(setArcBuilds);
@@ -98,9 +108,19 @@ export default function ArcGoalEditorScreen() {
 
   const identityBuilds = arcBuilds.filter((build) => inferTarget(build.profile) === "identity");
   const stateBuilds = arcBuilds.filter((build) => inferTarget(build.profile) === "state");
+  /** Four-Week Program task: the ArcBuild goal.identityProtocolId already references -- read here only to DISPLAY its already-configured identity content (never duplicated/re-entered) in the "תוכנית ארבעת השבועות" section below. */
+  const identityProtocolBuild = goal ? (arcBuilds.find((build) => build.id === goal.identityProtocolId) ?? null) : null;
 
   function patchGoal(patch: Partial<ArcGoal>) {
     setGoal((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  /** Four-Week Program task: every edit inside that section goes through this one updater, mirroring patchGoal's own shape -- always reads the CURRENT program off the latest goal state, never a stale closed-over copy. */
+  function patchFourWeekProgram(updater: (program: ArcGoalFourWeekProgram) => ArcGoalFourWeekProgram) {
+    setGoal((current) => {
+      if (!current || !current.fourWeekProgram) return current;
+      return { ...current, fourWeekProgram: updater(current.fourWeekProgram) };
+    });
   }
 
   function addMapping() {
@@ -267,6 +287,40 @@ export default function ArcGoalEditorScreen() {
             <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={reloadArcBuilds}>
               <Text style={styles.secondaryButtonText}>רענן רשימה</Text>
             </Pressable>
+          </View>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="תוכנית ארבעת השבועות">
+          <View style={styles.sectionBody}>
+            {!goal.fourWeekProgram?.enabled ? (
+              <View>
+                <Text style={styles.hint}>
+                  תוכנית זו מלווה אותך ארבעה שבועות: חיזוק הזהות עם ARCHI, מעבר ל-Mini ARC, תרגול קצר בזמן אמת, וביצוע עצמאי --
+                  ורק אחריה תת־המטרה הראשונה הופכת לשלב הפעיל.
+                </Text>
+                {!goal.identityProtocolId && (
+                  <Text style={styles.hint}>יש לבחור פרוטוקול זהות מחובר למעלה לפני הפעלת התוכנית.</Text>
+                )}
+                <Text style={styles.fieldLabel}>תאריך התחלה מתוכנן לשבוע 1 (YYYY-MM-DD)</Text>
+                <TextInput style={styles.textInput} value={week1StartDraft} onChangeText={setWeek1StartDraft} textAlign="right" placeholder="2025-01-06" />
+                <Pressable
+                  style={[styles.button, styles.fullWidthButton, !goal.identityProtocolId && styles.buttonDisabled]}
+                  disabled={!goal.identityProtocolId}
+                  onPress={() => patchGoal({ fourWeekProgram: createFourWeekProgram(week1StartDraft) })}
+                >
+                  <Text style={styles.buttonText}>הפעל תוכנית ארבעת השבועות</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <FourWeekProgramBuildSection
+                program={goal.fourWeekProgram}
+                identityProtocolBuild={identityProtocolBuild}
+                goalAction={goal.goalAction}
+                miniArcBuilds={miniArcBuilds}
+                onPatch={patchFourWeekProgram}
+                onReloadMiniArcs={reloadUrgeArcsAndMiniArcs}
+              />
+            )}
           </View>
         </CollapsibleSection>
 
@@ -492,6 +546,167 @@ export default function ArcGoalEditorScreen() {
   );
 }
 
+/**
+ * Four-Week Program task: the enabled program's own BUILD content --
+ * the reused-info read-only summary, Mini ARC link/create controls, and
+ * the four per-week nested sections. A local component (not inlined
+ * into the main render) purely to keep ArcGoalEditorScreen's own render
+ * function from growing much larger -- reads/writes only through the
+ * `onPatch` callback its caller already owns (patchFourWeekProgram),
+ * exactly like every other section's own update functions.
+ */
+function FourWeekProgramBuildSection(props: {
+  program: ArcGoalFourWeekProgram;
+  identityProtocolBuild: ArcBuild | null;
+  goalAction: string;
+  miniArcBuilds: MiniArcBuild[];
+  onPatch: (updater: (program: ArcGoalFourWeekProgram) => ArcGoalFourWeekProgram) => void;
+  onReloadMiniArcs: () => void;
+}) {
+  const { program, identityProtocolBuild, goalAction, miniArcBuilds, onPatch, onReloadMiniArcs } = props;
+  const identityProfile = identityProtocolBuild?.profile;
+
+  return (
+    <View>
+      <Text style={styles.fourWeekSubTitle}>מידע קיים מפרוטוקול הזהות (לעריכה -- יש לפתוח את הפרוטוקול עצמו)</Text>
+      {!identityProtocolBuild && <Text style={styles.hint}>לא נבחר פרוטוקול זהות -- חלק מהמידע למטה לא יוצג.</Text>}
+      <View style={styles.card}>
+        <Text style={styles.body}>{`ערך: ${identityProfile?.value ?? "--"}`}</Text>
+        <Text style={styles.body}>{`זהות רצויה: ${identityProfile?.desiredIdentity ?? "--"}`}</Text>
+        <Text style={styles.body}>{`מצב הזהות הרצוי: ${identityProfile?.identityDesiredState ?? "--"}`}</Text>
+        <Text style={styles.body}>{`הרגל יעד (פעולת המטרה): ${goalAction || "--"}`}</Text>
+        <Text style={styles.body}>{`מנטרת זהות: ${identityProfile?.identityEncoding?.mantra ?? "--"}`}</Text>
+        <Text style={styles.body}>{`מנטרה מכוונת עתיד: ${identityProfile?.identityFutureOrientedMantra ?? "--"}`}</Text>
+        <Text style={styles.body}>{`עוגן שפת גוף: ${identityProfile?.identityEncoding?.bodyLanguageCue ?? "--"}`}</Text>
+        <Text style={styles.body}>{`פעולה קטנה מבוססת זהות: ${identityProfile?.identityAction ?? "--"}`}</Text>
+        {identityProtocolBuild && (
+          <Pressable style={styles.actionButton} onPress={() => router.push({ pathname: "/build/[id]", params: { id: identityProtocolBuild.id } })}>
+            <Text style={styles.actionButtonText}>לעריכת פרוטוקול הזהות</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <Text style={styles.fourWeekSubTitle}>Mini ARC מקושר (לשבועות 2-3)</Text>
+      <View style={styles.chipColumn}>
+        <Pressable
+          style={[styles.chip, program.linkedMiniArcId === null && styles.chipSelected]}
+          onPress={() => onPatch((p) => ({ ...p, linkedMiniArcId: null }))}
+        >
+          <Text style={styles.chipText}>ללא</Text>
+        </Pressable>
+        {miniArcBuilds.map((miniArc) => (
+          <Pressable
+            key={miniArc.id}
+            style={[styles.chip, program.linkedMiniArcId === miniArc.id && styles.chipSelected]}
+            onPress={() => onPatch((p) => ({ ...p, linkedMiniArcId: miniArc.id }))}
+          >
+            <Text style={styles.chipText}>{miniArc.name}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.push("/mini-arc")}>
+        <Text style={styles.buttonText}>+ צור Mini ARC חדש</Text>
+      </Pressable>
+      <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={onReloadMiniArcs}>
+        <Text style={styles.secondaryButtonText}>רענן רשימה</Text>
+      </Pressable>
+
+      {FOUR_WEEK_PROGRAM_WEEK_NUMBERS.map((weekNumber) => (
+        <FourWeekWeekEditor key={weekNumber} program={program} weekNumber={weekNumber} onPatch={onPatch} />
+      ))}
+    </View>
+  );
+}
+
+function FourWeekWeekEditor(props: {
+  program: ArcGoalFourWeekProgram;
+  weekNumber: FourWeekProgramWeekNumber;
+  onPatch: (updater: (program: ArcGoalFourWeekProgram) => ArcGoalFourWeekProgram) => void;
+}) {
+  const { program, weekNumber, onPatch } = props;
+  const week = resolveWeek(program, weekNumber);
+  const meta = FOUR_WEEK_META[weekNumber];
+  const nextOpeningDate = resolveNextWeekOpeningDate(program, weekNumber);
+
+  function patchWeekField<K extends "practiceFrequency" | "recommendedPractice" | "completionRequirement" | "notes">(field: K, value: string) {
+    onPatch((p) => {
+      const weeks = [...p.weeks] as ArcGoalFourWeekProgram["weeks"];
+      weeks[weekNumber - 1] = { ...weeks[weekNumber - 1], [field]: value.trim().length > 0 ? value : null };
+      return { ...p, weeks };
+    });
+  }
+
+  const STATUS_LABELS = { not_started: "טרם התחיל", active: "פעיל", completed: "הושלם" } as const;
+
+  return (
+    <CollapsibleSection title={`${meta.title}${week.weekNumber === program.currentWeek ? " (שבוע נוכחי)" : ""}`} defaultExpanded={week.weekNumber === program.currentWeek}>
+      <View style={styles.sectionBody}>
+        <Text style={styles.hint}>{meta.purpose}</Text>
+        <Text style={styles.fieldLabel}>{`סטטוס: ${STATUS_LABELS[week.status]}`}</Text>
+
+        <Text style={styles.fieldLabel}>תאריך התחלה מתוכנן (YYYY-MM-DD)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={week.plannedStartDate ?? ""}
+          onChangeText={(text) => onPatch((p) => setWeekStartDate(p, weekNumber, text))}
+          textAlign="right"
+        />
+        <Text style={styles.fieldLabel}>תאריך סיום מתוכנן (YYYY-MM-DD)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={week.plannedEndDate ?? ""}
+          onChangeText={(text) => onPatch((p) => setWeekEndDate(p, weekNumber, text))}
+          textAlign="right"
+        />
+        <Text style={styles.body}>{`תאריך התחלה מתוכנן: ${week.plannedStartDate ?? "--"}`}</Text>
+        <Text style={styles.body}>{`תאריך סיום מתוכנן: ${week.plannedEndDate ?? "--"}`}</Text>
+        {weekNumber < 4 ? (
+          <Text style={styles.body}>{`השבוע הבא מתוכנן להיפתח בתאריך: ${nextOpeningDate ?? "--"}`}</Text>
+        ) : (
+          <Text style={styles.body}>{`תוכנית ארבעת השבועות מתוכננת להסתיים בתאריך: ${week.plannedEndDate ?? "--"}`}</Text>
+        )}
+
+        <Text style={styles.fieldLabel}>תדירות תרגול</Text>
+        <TextInput style={styles.textInput} value={week.practiceFrequency ?? ""} onChangeText={(text) => patchWeekField("practiceFrequency", text)} textAlign="right" />
+
+        <Text style={styles.fieldLabel}>תרגול מומלץ</Text>
+        <TextInput
+          style={styles.textInput}
+          value={week.recommendedPractice ?? ""}
+          onChangeText={(text) => patchWeekField("recommendedPractice", text)}
+          textAlign="right"
+          multiline
+        />
+
+        <View style={styles.switchRow}>
+          <Switch
+            value={week.remindersEnabled}
+            onValueChange={(value) =>
+              onPatch((p) => {
+                const weeks = [...p.weeks] as ArcGoalFourWeekProgram["weeks"];
+                weeks[weekNumber - 1] = { ...weeks[weekNumber - 1], remindersEnabled: value };
+                return { ...p, weeks };
+              })
+            }
+          />
+          <Text style={styles.fieldLabel}>תזכורות לשבוע זה (רשות)</Text>
+        </View>
+
+        <Text style={styles.fieldLabel}>דרישת השלמה (רשות, לתצוגה בלבד)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={week.completionRequirement ?? ""}
+          onChangeText={(text) => patchWeekField("completionRequirement", text)}
+          textAlign="right"
+        />
+
+        <Text style={styles.fieldLabel}>הערות (רשות)</Text>
+        <TextInput style={styles.textInput} value={week.notes ?? ""} onChangeText={(text) => patchWeekField("notes", text)} textAlign="right" multiline />
+      </View>
+    </CollapsibleSection>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
   content: { flexGrow: 1, padding: 24 },
@@ -501,6 +716,7 @@ const styles = StyleSheet.create({
   question: { fontSize: 15, fontWeight: "600", textAlign: "right", marginTop: 12, marginBottom: 8 },
   hint: { fontSize: 13, textAlign: "right", color: "#666", marginBottom: 8 },
   fieldLabel: { fontSize: 13, textAlign: "right", color: "#666", marginTop: 8 },
+  body: { fontSize: 15, textAlign: "right", marginBottom: 6 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 8 },
   subGoalBanner: { backgroundColor: "#f7fbfd", borderRadius: 8, padding: 10, marginBottom: 16 },
   subGoalBannerText: { fontSize: 13, textAlign: "right", color: "#333", marginBottom: 4 },
@@ -528,4 +744,7 @@ const styles = StyleSheet.create({
   mappingLabel: { fontSize: 15, fontWeight: "700", textAlign: "right", marginBottom: 4 },
   removeButton: { marginTop: 12, alignItems: "center" },
   deleteText: { color: "#c0392b", fontSize: 14 },
+  switchRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginTop: 8 },
+  card: { borderWidth: 1, borderColor: "#E6F4FE", borderRadius: 10, padding: 12, marginBottom: 12 },
+  fourWeekSubTitle: { fontSize: 15, fontWeight: "700", textAlign: "right", marginTop: 16, marginBottom: 8 },
 });

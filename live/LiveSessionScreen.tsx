@@ -45,7 +45,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
-import type { ArcBuild, ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "../arc/types.ts";
+import type { ArcBuild, ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
 import { deriveActiveLayersForArcBuild, getFirstArcStage, resolveEncodingTarget } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
@@ -61,7 +61,10 @@ import {
   clearTimerRun,
   loadScheduledRoutines,
   appendRoutineOccurrenceCompletion,
+  getArcGoal,
+  upsertArcGoal,
 } from "../data/storage.ts";
+import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
 import type { ScheduledRoutine, TimerRun } from "../data/storage.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
@@ -98,9 +101,26 @@ import { ActionScreen, SuccessFocusScreen } from "./screens.tsx";
 const ROUTINE_SUCCESS_FOCUS_MINUTES = [0, 5, 10, 15, 20];
 
 export default function LiveSessionScreen() {
-  const { routineId: routineIdParam, buildId: buildIdParam } = useLocalSearchParams<{ routineId?: string; buildId?: string }>();
+  const {
+    routineId: routineIdParam,
+    buildId: buildIdParam,
+    fourWeekGoalId: fourWeekGoalIdParam,
+    fourWeekWeek: fourWeekWeekParam,
+  } = useLocalSearchParams<{ routineId?: string; buildId?: string; fourWeekGoalId?: string; fourWeekWeek?: string }>();
   const routineId = typeof routineIdParam === "string" ? routineIdParam : null;
   const buildId = typeof buildIdParam === "string" ? buildIdParam : null;
+  /**
+   * Four-Week Program task (spec section 10, "Optional support and
+   * return context"): set only by live/ArcGoalFourWeekDashboardScreen.tsx's
+   * own "התחל תרגול"/"אני צריך עזרה מ-ARCHI" for Week 1/2/4 -- means
+   * this Full ARC run was launched FROM that dashboard. Mirrors the
+   * existing `routine` override below (restartLabel/onRestart) instead
+   * of touching finalizeSession/the resumed-run branches, so every
+   * other completion path (a routine-launched session, a plain LIVE
+   * session with no params at all) is completely unaffected.
+   */
+  const fourWeekGoalId = typeof fourWeekGoalIdParam === "string" ? fourWeekGoalIdParam : null;
+  const fourWeekWeek = typeof fourWeekWeekParam === "string" ? fourWeekWeekParam : null;
   /**
    * ARC Builds task: LIVE now selects and runs any saved ArcBuild --
    * resolved from the buildId route param when present, auto-picked
@@ -492,6 +512,37 @@ export default function LiveSessionScreen() {
     setProgressEvidenceText("");
   };
 
+  /**
+   * Four-Week Program task (spec section 10): the fourWeekGoalId-aware
+   * replacement for restart() -- saves the same gratitude/reflection
+   * fields onto the just-finished session log entry (identical to
+   * restart()'s own first step), logs a practice record onto the
+   * launching week, clears the return context, then navigates back to
+   * that week's own LIVE dashboard instead of resetting this screen for
+   * a brand-new session in place.
+   */
+  const returnToFourWeekProgram = () => {
+    const trimmedGratitude = gratitudeText.trim();
+    const trimmedMemoryDetail = gratitudeMemoryDetailText.trim();
+    const trimmedProgressEvidence = progressEvidenceText.trim();
+    updateLastSessionLogEntryGratitude(
+      trimmedGratitude.length > 0 ? trimmedGratitude : null,
+      trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
+      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null
+    ).finally(async () => {
+      if (fourWeekGoalId) {
+        const goal = await getArcGoal(fourWeekGoalId);
+        if (goal?.fourWeekProgram) {
+          const now = new Date().toISOString();
+          const week = (Number(fourWeekWeek) || goal.fourWeekProgram.currentWeek) as FourWeekProgramWeekNumber;
+          const updatedProgram = clearReturnContext(addPracticeRecord(goal.fourWeekProgram, week, "full_arc", "ARC מלא", now));
+          await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
+        }
+        router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });
+      }
+    });
+  };
+
   // ARC Builds task: several ArcBuilds exist and none was resolved (no
   // buildId route param matched one) -- ask which one to run before
   // starting anything. Picking one updates the route's own buildId
@@ -779,8 +830,8 @@ export default function LiveSessionScreen() {
           onChangeGratitudeMemoryDetailText={setGratitudeMemoryDetailText}
           progressEvidenceText={progressEvidenceText}
           onChangeProgressEvidenceText={setProgressEvidenceText}
-          restartLabel={routine ? "המשך להתמקדות בהצלחה" : undefined}
-          onRestart={restart}
+          restartLabel={routine ? "המשך להתמקדות בהצלחה" : fourWeekGoalId ? "לחזור לתוכנית ארבעת השבועות" : undefined}
+          onRestart={fourWeekGoalId && !routine ? returnToFourWeekProgram : restart}
         />
       </ScrollView>
     </SafeAreaView>

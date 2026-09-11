@@ -84,6 +84,7 @@ export default function RootLayout() {
         <Stack.Screen name="urge-arcs/[id]" options={{ title: "עריכת Urge ARC" }} />
         <Stack.Screen name="goals/index" options={{ title: "מטרות ARC Goal" }} />
         <Stack.Screen name="goals/[id]" options={{ title: "עריכת מטרה" }} />
+        <Stack.Screen name="goals/live/[goalId]" options={{ title: "תוכנית ארבעת השבועות" }} />
         <Stack.Screen name="arc-goal/select" options={{ title: "מה תרצה לתרגל?" }} />
         <Stack.Screen name="arc-goal/live/[goalId]" options={{ title: "ARC Goal LIVE" }} />
         <Stack.Screen name="life-manifest/index" options={{ title: "מניפסט החיים שלי" }} />

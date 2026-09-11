@@ -3,7 +3,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcBuild, getArcLink, loadRoutineTriggers, upsertArcLink } from "../data/storage.ts";
+import { getArcBuild, getArcGoal, getArcLink, loadRoutineTriggers, upsertArcGoal, upsertArcLink } from "../data/storage.ts";
+import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
 import {
   buildArcLinkIntroSteps,
   buildArcLinkProtocolSteps,
@@ -18,7 +19,7 @@ import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
 import { describeTrigger, resolveArcLinkKind, resolveArcLinkTriggerCategory, resolveRoutineTrigger } from "../arc/routineLinks.ts";
 import type { ArcLink } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
-import type { ArcBuild } from "../arc/types.ts";
+import type { ArcBuild, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import BodyImageryStep from "./BodyImageryStep.tsx";
 import { PresenceObjectGroundingScreen } from "./screens.tsx";
 
@@ -37,9 +38,26 @@ type RouteChooserPhase = "kind" | "target" | null;
  * choice, and records a practice completion on the ArcLink itself once
  * finished -- never the linked ArcBuild's own beneficial-action
  * completion, which stays untouched here.
+ *
+ * Four-Week Program task correction (spec section 10 + "ARCHI ARC Link
+ * is its own distinct guided linking practice, never interchangeable
+ * with Full ARC"): the optional fourWeekGoalId/fourWeekWeek params --
+ * set only by live/ArcGoalFourWeekDashboardScreen.tsx's own "תרגול
+ * ARCHI ARC Link" (Week 1) -- always arrive on the LEGACY (no linkId)
+ * path, since that's the one always-"with_archi", no-route-choice mode
+ * this screen already has, matching Week 1's own "ARCHI ARC Link"
+ * exactly. On finishing, this records a kind:"arc_link" practice
+ * (never "full_arc" -- tracked completely separately) and returns to
+ * the dashboard instead of router.back(). Absent, both legacy
+ * completion points below are completely unchanged.
  */
 export default function ArcLinkScreen() {
-  const { id, linkId } = useLocalSearchParams<{ id: string; linkId?: string }>();
+  const {
+    id,
+    linkId,
+    fourWeekGoalId,
+    fourWeekWeek,
+  } = useLocalSearchParams<{ id: string; linkId?: string; fourWeekGoalId?: string; fourWeekWeek?: string }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "noTrigger" | "ready">("loading");
   const [arcBuild, setArcBuild] = useState<ArcBuild | null>(null);
   const [arcLink, setArcLink] = useState<ArcLink | null>(null);
@@ -226,6 +244,28 @@ export default function ArcLinkScreen() {
     router.back();
   }
 
+  /**
+   * Four-Week Program task correction: the legacy (no linkId) path's own
+   * completion -- when launched with fourWeekGoalId (Week 1's "תרגול
+   * ARCHI ARC Link"), logs a kind:"arc_link" practice onto that week and
+   * returns to the dashboard; otherwise router.back(), completely
+   * unchanged from before this correction.
+   */
+  async function finishLegacy() {
+    if (typeof fourWeekGoalId === "string" && id) {
+      const goal = await getArcGoal(fourWeekGoalId);
+      if (goal?.fourWeekProgram) {
+        const now = new Date().toISOString();
+        const week = (Number(fourWeekWeek) || goal.fourWeekProgram.currentWeek) as FourWeekProgramWeekNumber;
+        const updatedProgram = clearReturnContext(addPracticeRecord(goal.fourWeekProgram, week, "arc_link", "ARCHI ARC Link", now));
+        await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
+      }
+      router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });
+      return;
+    }
+    router.back();
+  }
+
   if (status === "loading") {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -286,7 +326,7 @@ export default function ArcLinkScreen() {
               bodyImagery={step.bodyImagery.imagery}
               extraLines={step.lines}
               buttonLabel={step.buttonLabel}
-              onContinue={() => (legacyIndex === legacySteps.length - 1 ? router.back() : setLegacyIndex(legacyIndex + 1))}
+              onContinue={() => (legacyIndex === legacySteps.length - 1 ? finishLegacy() : setLegacyIndex(legacyIndex + 1))}
             />
           ) : (
             <View>
@@ -298,7 +338,7 @@ export default function ArcLinkScreen() {
               ))}
               <Pressable
                 style={[styles.button, styles.fullWidthButton]}
-                onPress={() => (legacyIndex === legacySteps.length - 1 ? router.back() : setLegacyIndex(legacyIndex + 1))}
+                onPress={() => (legacyIndex === legacySteps.length - 1 ? finishLegacy() : setLegacyIndex(legacyIndex + 1))}
               >
                 <Text style={styles.buttonText}>{step.buttonLabel}</Text>
               </Pressable>

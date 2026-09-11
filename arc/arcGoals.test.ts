@@ -201,3 +201,28 @@ test("normalizeArcGoal leaves every other ArcGoal field completely untouched", (
   assert.equal(normalized.desiredResult, "מרתון");
   assert.equal(normalized.id, g.id);
 });
+
+// --- Four-Week Program task: a legacy ArcGoal (saved before this field existed) still opens normally.
+
+test("normalizeArcGoal backfills a completely missing fourWeekProgram to null -- a legacy ArcGoal still opens exactly as before", () => {
+  const legacyGoal = { ...goal(), fourWeekProgram: undefined } as unknown as ArcGoal;
+  const normalized = normalizeArcGoal(legacyGoal);
+  assert.equal(normalized.fourWeekProgram, null);
+});
+
+test("createEmptyArcGoal itself starts with fourWeekProgram null -- never silently enabled for a brand-new goal", () => {
+  assert.equal(createEmptyArcGoal("g1", "מטרה", "2025-01-01T00:00:00.000Z").fourWeekProgram, null);
+});
+
+test("normalizeArcGoal never touches an already-configured fourWeekProgram", () => {
+  const g = goal({ fourWeekProgram: { enabled: true, currentWeek: 2 } as never });
+  const normalized = normalizeArcGoal(g);
+  assert.equal((normalized.fourWeekProgram as { enabled: boolean }).enabled, true);
+  assert.equal((normalized.fourWeekProgram as { currentWeek: number }).currentWeek, 2);
+});
+
+test("duplicateArcGoal never carries over another goal's four-week program -- a duplicate starts fresh", () => {
+  const g = goal({ fourWeekProgram: { enabled: true, currentWeek: 3 } as never });
+  const copy = duplicateArcGoal(g, "g2", "2025-02-01T00:00:00.000Z");
+  assert.equal(copy.fourWeekProgram, null);
+});

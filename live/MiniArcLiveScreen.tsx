@@ -3,9 +3,11 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getMiniArcBuild } from "../data/storage.ts";
+import { getArcGoal, getMiniArcBuild, upsertArcGoal } from "../data/storage.ts";
 import { getMiniArcPersistentColorLine, getMiniArcStageCopy, getNextMiniArcStage } from "../arc/miniArc.ts";
 import type { MiniArcBuild, MiniArcStage } from "../arc/miniArc.ts";
+import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
+import type { FourWeekProgramWeekNumber } from "../arc/types.ts";
 
 /**
  * live/MiniArcLiveScreen.tsx (route: /mini-arc/live/[id])
@@ -22,9 +24,20 @@ import type { MiniArcBuild, MiniArcStage } from "../arc/miniArc.ts";
  * never persisted anywhere (kept only in this component's own state,
  * per the spec: "Keep it only in the current session") and is never
  * sent during BUILD.
+ *
+ * Four-Week Program task (spec section 10, "Optional support and
+ * return context"): the optional fourWeekGoalId/fourWeekWeek route
+ * params -- set only by live/ArcGoalFourWeekDashboardScreen.tsx's own
+ * "התחל תרגול" for Week 2/3 -- mean this run was launched FROM that
+ * dashboard. On reaching "complete", this logs a practice record onto
+ * that same week (instead of a silent no-op) and returns there instead
+ * of the default /mini-arc list, exactly mirroring the existing
+ * routineId-aware pattern already used by live/LiveSessionScreen.tsx.
+ * Absent (every other Mini ARC run, including one launched from
+ * anywhere else) leaves this screen's behavior completely unchanged.
  */
 export default function MiniArcLiveScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, fourWeekGoalId, fourWeekWeek } = useLocalSearchParams<{ id: string; fourWeekGoalId?: string; fourWeekWeek?: string }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "ready">("loading");
   const [build, setBuild] = useState<MiniArcBuild | null>(null);
   const [stage, setStage] = useState<MiniArcStage>("pause");
@@ -49,6 +62,21 @@ export default function MiniArcLiveScreen() {
 
   function advance() {
     setStage((current) => getNextMiniArcStage(current));
+  }
+
+  async function finishAndReturn() {
+    if (typeof fourWeekGoalId === "string" && build) {
+      const goal = await getArcGoal(fourWeekGoalId);
+      if (goal?.fourWeekProgram) {
+        const now = new Date().toISOString();
+        const week = (Number(fourWeekWeek) || goal.fourWeekProgram.currentWeek) as FourWeekProgramWeekNumber;
+        const updatedProgram = clearReturnContext(addPracticeRecord(goal.fourWeekProgram, week, "mini_arc", `Mini ARC -- ${build.name}`, now));
+        await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
+      }
+      router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });
+      return;
+    }
+    router.replace("/mini-arc");
   }
 
   if (status === "loading") {
@@ -98,7 +126,7 @@ export default function MiniArcLiveScreen() {
 
         <Pressable
           style={[styles.button, styles.fullWidthButton]}
-          onPress={() => (stage === "complete" ? router.replace("/mini-arc") : advance())}
+          onPress={() => (stage === "complete" ? finishAndReturn() : advance())}
         >
           <Text style={styles.buttonText}>{copy.buttonLabel}</Text>
         </Pressable>

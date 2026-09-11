@@ -52,6 +52,11 @@ export function duplicateArcGoal(goal: ArcGoal, newId: string, now: string): Arc
       ...mapping,
       id: generateArcGoalUrgeMappingId(),
     })),
+    // Four-Week Program task: a duplicate is a brand-new goal, never a
+    // continuation -- it never inherits another goal's actual progress,
+    // dates, or practice history. The trainee enables/configures its
+    // own program from scratch, same as any newly-created ArcGoal.
+    fourWeekProgram: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -97,5 +102,10 @@ export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
       identityProtocolId: mapping.identityProtocolId ?? null,
       goalAction: mapping.goalAction ?? null,
     })),
+    // Four-Week Program task: every ArcGoal saved before this field
+    // existed backfills to null -- "no four-week program configured,"
+    // never silently invented/enabled. See ArcGoal.fourWeekProgram's
+    // own doc.
+    fourWeekProgram: goal.fourWeekProgram ?? null,
   };
 }

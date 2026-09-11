@@ -12,9 +12,19 @@ import type { ArcGoal } from "../arc/types.ts";
  * ARC Goal task: the goal picker reached from Live's "ARC Goal" entry
  * (spec section 6) -- mirrors build/LiveModeSelectScreen.tsx's own
  * "auto-pick when exactly one, else show a picker" pattern. Once a goal
- * is resolved, pushes straight to /arc-goal/live/[goalId]
- * (live/ArcGoalSessionScreen.tsx), which loads that goal's own
- * referenced protocols and runs the real session.
+ * is resolved, pushes to /arc-goal/live/[goalId] (live/ArcGoalSessionScreen.tsx),
+ * which loads that goal's own referenced protocols and runs the real
+ * session -- UNCHANGED for any goal without an enabled Four-Week
+ * Program.
+ *
+ * Four-Week Program task ("Core order": Life Manifest -> ARC Goal ->
+ * four-week program -> sub-goals in a later phase): a goal WITH an
+ * enabled fourWeekProgram routes to /goals/live/[goalId]
+ * (live/ArcGoalFourWeekDashboardScreen.tsx) instead -- the program's own
+ * hub, from which the trainee reaches the same /arc-goal/live/[goalId]
+ * (and Full ARC/Mini ARC/ARC Link) screens for the actual guided
+ * practice. Every goal saved before this field existed has
+ * fourWeekProgram null and is completely unaffected.
  */
 export default function ArcGoalSelectScreen() {
   const [goals, setGoals] = useState<ArcGoal[] | null>(null);
@@ -64,7 +74,11 @@ export default function ArcGoalSelectScreen() {
           <Pressable
             key={goal.id}
             style={[styles.button, styles.fullWidthButton]}
-            onPress={() => router.push({ pathname: "/arc-goal/live/[goalId]", params: { goalId: goal.id } })}
+            onPress={() =>
+              goal.fourWeekProgram?.enabled
+                ? router.push({ pathname: "/goals/live/[goalId]", params: { goalId: goal.id } })
+                : router.push({ pathname: "/arc-goal/live/[goalId]", params: { goalId: goal.id } })
+            }
           >
             <Text style={styles.buttonText}>{goal.name}</Text>
           </Pressable>
