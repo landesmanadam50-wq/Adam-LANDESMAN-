@@ -61,6 +61,7 @@ import {
   getTriggerIdentificationCopy,
   getUrgeActionConfirmCopy,
   getUrgeNeedIdentificationCopy,
+  getUrgeStopActionCopy,
   GOAL_INTERFERING_STATE_SELECT_TITLE,
   needsReassessmentDetour,
   needsTriggerPrefixDetour,
@@ -72,6 +73,7 @@ import {
   resolveAfterThirdPersonImagery,
   resolveAfterTriggerIdentification,
   resolveAfterUrgeNeedIdentification,
+  resolveAfterUrgeStopAction,
   resolveExecutionMode,
   resolveSelectedMapping,
   resolveSelectedUrgeMapping,
@@ -80,6 +82,7 @@ import {
   shouldInterceptInnerAtAct,
   URGE_NEED_IDENTIFICATION_PRESETS,
   URGE_SELECT_TITLE,
+  URGE_STOP_ACTION_DONE_LABEL,
   urgeArcToProfile,
 } from "../arc/arcGoalEngine.ts";
 import type { ArcGoalLiveState, ArcGoalUiStage } from "../arc/arcGoalEngine.ts";
@@ -626,7 +629,7 @@ export default function ArcGoalSessionScreen() {
           <ReassessmentScreen
             showUrgeOption={goal.urgeMappings.length > 0}
             showSupportiveOption={goal.interferingMappings.length > 0}
-            onSelect={(choice) => applyGoalHop(resolveAfterReassessment(choice, goal, goalState))}
+            onSelect={(choice) => applyGoalHop(resolveAfterReassessment(choice, goal, goalState, urgeArcsById))}
           />
         </ScrollView>
       </SafeAreaView>
@@ -646,13 +649,34 @@ export default function ArcGoalSessionScreen() {
               <Pressable
                 key={mapping.id}
                 style={[styles.button, styles.fullWidthButton]}
-                onPress={() => setGoalState((current) => selectUrgeMapping(current, mapping.id))}
+                onPress={() => setGoalState((current) => selectUrgeMapping(current, mapping.id, goal, urgeArcsById))}
               >
                 <Text style={styles.buttonText}>{urgeArc.name}</Text>
               </Pressable>
             );
           })}
         </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "urge_stop_action") {
+    const mapping = resolveSelectedUrgeMapping(goal, goalState);
+    const urgeArc = mapping ? urgeArcsById[mapping.urgeArcId] : undefined;
+    const copy = urgeArc ? getUrgeStopActionCopy(urgeArc) : { title: "פעולת עצירה", body: "", segments: null };
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <View style={styles.content}>
+          <Text style={styles.title}>{copy.title}</Text>
+          <Text style={styles.body}>{copy.body}</Text>
+          <Pressable
+            style={[styles.button, styles.fullWidthButton]}
+            onPress={() => setGoalState((current) => resolveAfterUrgeStopAction(current))}
+          >
+            <Text style={styles.buttonText}>{URGE_STOP_ACTION_DONE_LABEL}</Text>
+          </Pressable>
+        </View>
       </SafeAreaView>
     );
   }

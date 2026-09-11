@@ -136,12 +136,14 @@ export default function UrgeArcEditorScreen() {
           placeholder="לדוגמה: רגיעה, הפוגה"
         />
 
-        <Text style={styles.question}>רמז עצירה מותאם אישית (רשות -- אם ריק, ייעשה שימוש ברמז העצירה הכללי)</Text>
+        <Text style={styles.question}>פעולת עצירה (רשות)</Text>
+        <Text style={styles.helperText}>פעולה קצרה שעוזרת לעצור את המשך הפעולה האוטומטית וליצור מרווח לבחירה.</Text>
         <TextInput
           style={styles.textInput}
           value={draft.stopCue}
           onChangeText={(value) => setDraft({ ...draft, stopCue: value })}
           textAlign="right"
+          placeholder="לדוגמה: להניח את הטלפון / להרחיק את היד / לעצור לרגע במקום / לצאת מהאפליקציה"
           multiline
         />
 
@@ -152,6 +154,28 @@ export default function UrgeArcEditorScreen() {
           onChangeText={(value) => setDraft({ ...draft, regulationAnchor: value })}
           textAlign="right"
           placeholder="לדוגמה: הרגש את כפות הרגליים על הקרקע."
+          multiline
+        />
+
+        <Text style={styles.sectionHeader}>קידוד (Encoding)</Text>
+
+        <Text style={styles.question}>רמז שפת גוף לקידוד (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.bodyLanguageCue}
+          onChangeText={(value) => setDraft({ ...draft, bodyLanguageCue: value })}
+          textAlign="right"
+          placeholder="לדוגמה: כתפיים רפויות, מבט קדימה"
+          multiline
+        />
+
+        <Text style={styles.question}>מנטרה קצרה לקידוד (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.encodingMantra}
+          onChangeText={(value) => setDraft({ ...draft, encodingMantra: value })}
+          textAlign="right"
+          placeholder="לדוגמה: אני בוחר"
           multiline
         />
 
@@ -194,6 +218,8 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1, padding: 24 },
   title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 16 },
   question: { fontSize: 16, fontWeight: "600", textAlign: "right", marginTop: 20, marginBottom: 8 },
+  helperText: { fontSize: 13, textAlign: "right", color: "#666", marginTop: -4, marginBottom: 8 },
+  sectionHeader: { fontSize: 15, fontWeight: "700", textAlign: "right", marginTop: 24, color: "#0a7ea4" },
   textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 16 },
   button: {

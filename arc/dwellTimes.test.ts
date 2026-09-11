@@ -43,6 +43,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     beneficialAction: null,
     beneficialActionBodyCue: null,
     preventiveAction: null,
+    habitEncoding: null,
     regulationTool: null,
     actionDuration: null,
     successFocusDuration: null,

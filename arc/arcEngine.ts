@@ -318,7 +318,15 @@ export function resolveEncodingTarget(input: {
       case "habit":
         return {
           layer: "habit" as const,
-          encoding: null,
+          // ARC Urge Stop Action/Encoding task: was hardcoded null -- now
+          // reads the same optional per-layer Encoding config
+          // identity/state already have (ArcBuildProfile.habitEncoding),
+          // written today only by arc/arcGoalEngine.ts's urgeArcToProfile
+          // for a UrgeArc-adapted session. null (the default for every
+          // habit-layer profile, before and after this change) falls
+          // back to this stage's own existing generic body-language line
+          // (see arc/stageCopy.ts's "encode" case), exactly as before.
+          encoding: input.buildProfile.habitEncoding,
           actionLabel: input.buildProfile.beneficialAction,
           actionBodyCue: input.buildProfile.beneficialActionBodyCue,
         };

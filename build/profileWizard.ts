@@ -1139,6 +1139,12 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     beneficialAction: draft.beneficialAction.trim(),
     beneficialActionBodyCue: draft.beneficialActionBodyCue.trim() ? draft.beneficialActionBodyCue.trim() : null,
     preventiveAction: draft.hasPreventiveAction ? draft.preventiveActionDescription.trim() : null,
+    // ARC Urge Stop Action/Encoding task: no regular BUILD step sets this
+    // yet -- the only current writer is arc/arcGoalEngine.ts's
+    // urgeArcToProfile, for a UrgeArc-adapted transient session. A
+    // regular ArcBuild's own habit layer keeps behaving exactly as
+    // before this field existed.
+    habitEncoding: null,
 
     regulationTool: draft.regulationTool.trim(),
     actionDuration: null,
