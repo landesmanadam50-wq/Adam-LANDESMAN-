@@ -10,6 +10,7 @@ import type { ArcBuild, ArcGoal, ArcGoalInterferingMapping, ArcGoalUrgeMapping, 
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { findSubGoalOwner } from "../arc/lifeManifest.ts";
 import type { SubGoalOwner } from "../arc/lifeManifest.ts";
+import CollapsibleSection from "./CollapsibleSection.tsx";
 
 const EXECUTION_MODE_LABELS: Record<ExecutionMode, string> = {
   full: "ARC מלא",
@@ -27,51 +28,25 @@ const EXECUTION_MODES: ExecutionMode[] = ["full", "mini", "choose"];
  * mappings, all converging on the SAME identity protocol. Every
  * reference here is stored as a plain id string -- never a copy of the
  * referenced ArcBuild's own content (see arc/types.ts's ArcGoal doc).
- * Mirrors build/ArcBuildEditorScreen.tsx's step-wizard shape, scoped to
- * ArcGoal's own much smaller field set -- no shared step machinery is
- * reused since there is no branching-by-target here.
+ *
+ * Single-page BUILD task (spec section 3): rebuilt as one scrollable
+ * page with expandable/collapsible sections (build/CollapsibleSection.tsx)
+ * instead of the earlier step-by-step wizard -- no required "המשך"/"הבא"
+ * navigation, optional/advanced sections (the urge/interfering mapping
+ * lists) collapsed by default, the goal's own core fields and identity
+ * protocol choice expanded by default since they're the primary content.
+ * Reach Your Goal BUILD task: this screen intentionally still only
+ * covers what's real today (a single ArcGoal's own fields and mapping
+ * lists) -- the four-week program itself is a later phase; this
+ * section-based layout is deliberately left with room for a future
+ * "תוכנית 4 שבועות" section to be added there without another rewrite,
+ * but no such section (and no placeholder field for it) is added now.
  */
-
-type Step =
-  | "name"
-  | "description"
-  | "value"
-  | "goalAction"
-  | "desiredResult"
-  | "identityProtocol"
-  | "urgeMappings"
-  | "interferingMappings"
-  | "review";
-
-const STEP_ORDER: Step[] = [
-  "name",
-  "description",
-  "value",
-  "goalAction",
-  "desiredResult",
-  "identityProtocol",
-  "urgeMappings",
-  "interferingMappings",
-  "review",
-];
-
-const STEP_TITLES: Record<Step, string> = {
-  name: "שם המטרה",
-  description: "תיאור המטרה (רשות)",
-  value: "מהו הערך שעומד מאחורי המטרה הזאת? (רשות)",
-  goalAction: "מהי הפעולה הקשורה למטרה?",
-  desiredResult: "מהי התוצאה הרצויה?",
-  identityProtocol: "פרוטוקול הזהות המחובר למטרה",
-  urgeMappings: "דחפים שעלולים להפריע (מסלול הדחף)",
-  interferingMappings: "מצבים פנימיים שעלולים להפריע",
-  review: "סיכום",
-};
 
 export default function ArcGoalEditorScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "editing">("loading");
   const [goal, setGoal] = useState<ArcGoal | null>(null);
-  const [step, setStep] = useState<Step>("name");
   const [arcBuilds, setArcBuilds] = useState<ArcBuild[]>([]);
   const [urgeArcs, setUrgeArcs] = useState<UrgeArc[]>([]);
   const [miniArcBuilds, setMiniArcBuilds] = useState<MiniArcBuild[]>([]);
@@ -126,17 +101,6 @@ export default function ArcGoalEditorScreen() {
 
   function patchGoal(patch: Partial<ArcGoal>) {
     setGoal((current) => (current ? { ...current, ...patch } : current));
-  }
-
-  function goNext() {
-    const currentIndex = STEP_ORDER.indexOf(step);
-    setStep(STEP_ORDER[Math.min(currentIndex + 1, STEP_ORDER.length - 1)]);
-  }
-
-  function goBack() {
-    const currentIndex = STEP_ORDER.indexOf(step);
-    if (currentIndex === 0) return;
-    setStep(STEP_ORDER[currentIndex - 1]);
   }
 
   function addMapping() {
@@ -228,11 +192,13 @@ export default function ArcGoalEditorScreen() {
     );
   }
 
+  const complete = isComplete(goal);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.eyebrow}>{goal.name}</Text>
-        <Text style={styles.title}>{STEP_TITLES[step]}</Text>
+        <Text style={styles.eyebrow}>{goal.name || "מטרה חדשה"}</Text>
+        <Text style={styles.title}>עריכת מטרה</Text>
 
         {subGoalContext && (
           <View style={styles.subGoalBanner}>
@@ -249,21 +215,12 @@ export default function ArcGoalEditorScreen() {
           </View>
         )}
 
-        {step === "name" && (
-          <View>
-            <TextInput style={styles.textInput} value={goal.name} onChangeText={(text) => patchGoal({ name: text })} textAlign="right" autoFocus />
-            <Pressable
-              style={[styles.button, styles.fullWidthButton, goal.name.trim().length === 0 && styles.buttonDisabled]}
-              disabled={goal.name.trim().length === 0}
-              onPress={goNext}
-            >
-              <Text style={styles.buttonText}>המשך</Text>
-            </Pressable>
-          </View>
-        )}
+        <CollapsibleSection title="פרטי המטרה" defaultExpanded>
+          <View style={styles.sectionBody}>
+            <Text style={styles.question}>שם המטרה</Text>
+            <TextInput style={styles.textInput} value={goal.name} onChangeText={(text) => patchGoal({ name: text })} textAlign="right" />
 
-        {step === "description" && (
-          <View>
+            <Text style={styles.question}>תיאור המטרה (רשות)</Text>
             <TextInput
               style={styles.textInput}
               value={goal.description ?? ""}
@@ -271,61 +228,25 @@ export default function ArcGoalEditorScreen() {
               textAlign="right"
               multiline
             />
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={goNext}>
-              <Text style={styles.buttonText}>המשך</Text>
-            </Pressable>
-          </View>
-        )}
 
-        {step === "value" && (
-          <View>
+            <Text style={styles.question}>מהו הערך שעומד מאחורי המטרה הזאת? (רשות)</Text>
             <TextInput style={styles.textInput} value={goal.value ?? ""} onChangeText={(text) => patchGoal({ value: text })} textAlign="right" />
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={goNext}>
-              <Text style={styles.buttonText}>המשך</Text>
-            </Pressable>
-          </View>
-        )}
 
-        {step === "goalAction" && (
-          <View>
-            <TextInput
-              style={styles.textInput}
-              value={goal.goalAction}
-              onChangeText={(text) => patchGoal({ goalAction: text })}
-              textAlign="right"
-              autoFocus
-            />
-            <Pressable
-              style={[styles.button, styles.fullWidthButton, goal.goalAction.trim().length === 0 && styles.buttonDisabled]}
-              disabled={goal.goalAction.trim().length === 0}
-              onPress={goNext}
-            >
-              <Text style={styles.buttonText}>המשך</Text>
-            </Pressable>
-          </View>
-        )}
+            <Text style={styles.question}>מהי הפעולה הקשורה למטרה?</Text>
+            <TextInput style={styles.textInput} value={goal.goalAction} onChangeText={(text) => patchGoal({ goalAction: text })} textAlign="right" />
 
-        {step === "desiredResult" && (
-          <View>
+            <Text style={styles.question}>מהי התוצאה הרצויה?</Text>
             <TextInput
               style={styles.textInput}
               value={goal.desiredResult}
               onChangeText={(text) => patchGoal({ desiredResult: text })}
               textAlign="right"
-              autoFocus
             />
-            <Pressable
-              style={[styles.button, styles.fullWidthButton, goal.desiredResult.trim().length === 0 && styles.buttonDisabled]}
-              disabled={goal.desiredResult.trim().length === 0}
-              onPress={goNext}
-            >
-              <Text style={styles.buttonText}>המשך</Text>
-            </Pressable>
           </View>
-        )}
+        </CollapsibleSection>
 
-        {step === "identityProtocol" && (
-          <View>
+        <CollapsibleSection title="פרוטוקול זהות מחובר" defaultExpanded>
+          <View style={styles.sectionBody}>
             {identityBuilds.length === 0 && (
               <Text style={styles.hint}>עדיין אין לך פרוטוקול זהות. אפשר ליצור אחד ב-BUILD ולחזור לכאן.</Text>
             )}
@@ -336,31 +257,21 @@ export default function ArcGoalEditorScreen() {
                   style={[styles.chip, goal.identityProtocolId === build.id && styles.chipSelected]}
                   onPress={() => patchGoal({ identityProtocolId: build.id })}
                 >
-                  <Text style={styles.buttonText}>{build.name}</Text>
+                  <Text style={styles.chipText}>{build.name}</Text>
                 </Pressable>
               ))}
             </View>
-            <Pressable
-              style={[styles.button, styles.fullWidthButton]}
-              onPress={() => router.push("/build")}
-            >
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.push("/build")}>
               <Text style={styles.buttonText}>צור פרוטוקול זהות חדש</Text>
             </Pressable>
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={reloadArcBuilds}>
-              <Text style={styles.buttonText}>רענן רשימה</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.button, styles.fullWidthButton, goal.identityProtocolId === null && styles.buttonDisabled]}
-              disabled={goal.identityProtocolId === null}
-              onPress={goNext}
-            >
-              <Text style={styles.buttonText}>המשך</Text>
+            <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={reloadArcBuilds}>
+              <Text style={styles.secondaryButtonText}>רענן רשימה</Text>
             </Pressable>
           </View>
-        )}
+        </CollapsibleSection>
 
-        {step === "urgeMappings" && (
-          <View>
+        <CollapsibleSection title={`דחפים שעלולים להפריע (מסלול הדחף)${goal.urgeMappings.length > 0 ? ` (${goal.urgeMappings.length})` : ""}`}>
+          <View style={styles.sectionBody}>
             <Text style={styles.hint}>
               דוגמה: דחף ← Urge ARC ← Mini ARC/ARC מלא ← פעולה מיטיבה חלופית ← פרוטוקול הזהות ← פעולת המטרה. אפשר לחבר כמה דחפים
               לאותו פרוטוקול זהות.
@@ -379,7 +290,7 @@ export default function ArcGoalEditorScreen() {
                       style={[styles.chip, mapping.urgeArcId === urgeArc.id && styles.chipSelected]}
                       onPress={() => updateUrgeMapping(mapping.id, { urgeArcId: urgeArc.id })}
                     >
-                      <Text style={styles.buttonText}>{urgeArc.name}</Text>
+                      <Text style={styles.chipText}>{urgeArc.name}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -396,7 +307,7 @@ export default function ArcGoalEditorScreen() {
                     style={[styles.chip, mapping.miniArcId === null && styles.chipSelected]}
                     onPress={() => updateUrgeMapping(mapping.id, { miniArcId: null })}
                   >
-                    <Text style={styles.buttonText}>ללא</Text>
+                    <Text style={styles.chipText}>ללא</Text>
                   </Pressable>
                   {miniArcBuilds.map((miniArc) => (
                     <Pressable
@@ -404,7 +315,7 @@ export default function ArcGoalEditorScreen() {
                       style={[styles.chip, mapping.miniArcId === miniArc.id && styles.chipSelected]}
                       onPress={() => updateUrgeMapping(mapping.id, { miniArcId: miniArc.id })}
                     >
-                      <Text style={styles.buttonText}>{miniArc.name}</Text>
+                      <Text style={styles.chipText}>{miniArc.name}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -416,7 +327,7 @@ export default function ArcGoalEditorScreen() {
                       style={[styles.chip, (mapping.executionMode ?? "full") === mode && styles.chipSelected]}
                       onPress={() => updateUrgeMapping(mapping.id, { executionMode: mode })}
                     >
-                      <Text style={styles.buttonText}>{EXECUTION_MODE_LABELS[mode]}</Text>
+                      <Text style={styles.chipText}>{EXECUTION_MODE_LABELS[mode]}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -426,7 +337,7 @@ export default function ArcGoalEditorScreen() {
                     style={[styles.chip, mapping.identityProtocolId === null && styles.chipSelected]}
                     onPress={() => updateUrgeMapping(mapping.id, { identityProtocolId: null })}
                   >
-                    <Text style={styles.buttonText}>ברירת מחדל של המטרה</Text>
+                    <Text style={styles.chipText}>ברירת מחדל של המטרה</Text>
                   </Pressable>
                   {identityBuilds.map((build) => (
                     <Pressable
@@ -434,7 +345,7 @@ export default function ArcGoalEditorScreen() {
                       style={[styles.chip, mapping.identityProtocolId === build.id && styles.chipSelected]}
                       onPress={() => updateUrgeMapping(mapping.id, { identityProtocolId: build.id })}
                     >
-                      <Text style={styles.buttonText}>{build.name}</Text>
+                      <Text style={styles.chipText}>{build.name}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -453,17 +364,16 @@ export default function ArcGoalEditorScreen() {
             <Pressable style={[styles.button, styles.fullWidthButton]} onPress={addUrgeMapping}>
               <Text style={styles.buttonText}>+ הוסף דחף</Text>
             </Pressable>
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={reloadUrgeArcsAndMiniArcs}>
-              <Text style={styles.buttonText}>רענן רשימה</Text>
-            </Pressable>
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={goNext}>
-              <Text style={styles.buttonText}>המשך</Text>
+            <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={reloadUrgeArcsAndMiniArcs}>
+              <Text style={styles.secondaryButtonText}>רענן רשימה</Text>
             </Pressable>
           </View>
-        )}
+        </CollapsibleSection>
 
-        {step === "interferingMappings" && (
-          <View>
+        <CollapsibleSection
+          title={`מצבים פנימיים שעלולים להפריע${goal.interferingMappings.length > 0 ? ` (${goal.interferingMappings.length})` : ""}`}
+        >
+          <View style={styles.sectionBody}>
             <Text style={styles.hint}>
               דוגמה: עייפות ← פרוטוקול אנרגיה ← Mini ARC/ARC מלא ← פעולה תומכת קצרה ← פרוטוקול הזהות ← פעולת המטרה.
             </Text>
@@ -486,7 +396,7 @@ export default function ArcGoalEditorScreen() {
                       style={[styles.chip, mapping.supportiveProtocolId === build.id && styles.chipSelected]}
                       onPress={() => updateMapping(mapping.id, { supportiveProtocolId: build.id })}
                     >
-                      <Text style={styles.buttonText}>{build.name}</Text>
+                      <Text style={styles.chipText}>{build.name}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -503,7 +413,7 @@ export default function ArcGoalEditorScreen() {
                     style={[styles.chip, (mapping.miniArcId ?? null) === null && styles.chipSelected]}
                     onPress={() => updateMapping(mapping.id, { miniArcId: null })}
                   >
-                    <Text style={styles.buttonText}>ללא</Text>
+                    <Text style={styles.chipText}>ללא</Text>
                   </Pressable>
                   {miniArcBuilds.map((miniArc) => (
                     <Pressable
@@ -511,7 +421,7 @@ export default function ArcGoalEditorScreen() {
                       style={[styles.chip, mapping.miniArcId === miniArc.id && styles.chipSelected]}
                       onPress={() => updateMapping(mapping.id, { miniArcId: miniArc.id })}
                     >
-                      <Text style={styles.buttonText}>{miniArc.name}</Text>
+                      <Text style={styles.chipText}>{miniArc.name}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -523,7 +433,7 @@ export default function ArcGoalEditorScreen() {
                       style={[styles.chip, (mapping.executionMode ?? "full") === mode && styles.chipSelected]}
                       onPress={() => updateMapping(mapping.id, { executionMode: mode })}
                     >
-                      <Text style={styles.buttonText}>{EXECUTION_MODE_LABELS[mode]}</Text>
+                      <Text style={styles.chipText}>{EXECUTION_MODE_LABELS[mode]}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -533,7 +443,7 @@ export default function ArcGoalEditorScreen() {
                     style={[styles.chip, (mapping.identityProtocolId ?? null) === null && styles.chipSelected]}
                     onPress={() => updateMapping(mapping.id, { identityProtocolId: null })}
                   >
-                    <Text style={styles.buttonText}>ברירת מחדל של המטרה</Text>
+                    <Text style={styles.chipText}>ברירת מחדל של המטרה</Text>
                   </Pressable>
                   {identityBuilds.map((build) => (
                     <Pressable
@@ -541,7 +451,7 @@ export default function ArcGoalEditorScreen() {
                       style={[styles.chip, mapping.identityProtocolId === build.id && styles.chipSelected]}
                       onPress={() => updateMapping(mapping.id, { identityProtocolId: build.id })}
                     >
-                      <Text style={styles.buttonText}>{build.name}</Text>
+                      <Text style={styles.chipText}>{build.name}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -561,45 +471,22 @@ export default function ArcGoalEditorScreen() {
               <Text style={styles.buttonText}>+ הוסף מיפוי</Text>
             </Pressable>
             <Pressable
-              style={[styles.button, styles.fullWidthButton]}
+              style={[styles.button, styles.secondaryButton, styles.fullWidthButton]}
               onPress={() => {
                 reloadArcBuilds();
                 reloadUrgeArcsAndMiniArcs();
               }}
             >
-              <Text style={styles.buttonText}>רענן רשימה</Text>
-            </Pressable>
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={goNext}>
-              <Text style={styles.buttonText}>המשך</Text>
+              <Text style={styles.secondaryButtonText}>רענן רשימה</Text>
             </Pressable>
           </View>
-        )}
+        </CollapsibleSection>
 
-        {step === "review" && (
-          <View>
-            <Text style={styles.body}>{`שם: ${goal.name}`}</Text>
-            {goal.description && <Text style={styles.body}>{`תיאור: ${goal.description}`}</Text>}
-            {goal.value && <Text style={styles.body}>{`ערך: ${goal.value}`}</Text>}
-            <Text style={styles.body}>{`פעולה קשורה למטרה: ${goal.goalAction}`}</Text>
-            <Text style={styles.body}>{`תוצאה רצויה: ${goal.desiredResult}`}</Text>
-            <Text style={styles.body}>
-              {`פרוטוקול זהות: ${identityBuilds.find((b) => b.id === goal.identityProtocolId)?.name ?? "לא נבחר"}`}
-            </Text>
-            <Text style={styles.body}>{`מספר דחפים (מסלול הדחף): ${goal.urgeMappings.length}`}</Text>
-            <Text style={styles.body}>{`מספר מיפויים (מצבים פנימיים): ${goal.interferingMappings.length}`}</Text>
-            {!isComplete(goal) && <Text style={styles.errorText}>יש להשלים שם, פעולה קשורה למטרה ותוצאה רצויה לפני השמירה.</Text>}
-            {saveError && <Text style={styles.errorText}>{saveError}</Text>}
-            <Pressable style={[styles.button, styles.fullWidthButton, !isComplete(goal) && styles.buttonDisabled]} disabled={!isComplete(goal)} onPress={handleSave}>
-              <Text style={styles.buttonText}>שמור</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {step !== "name" && (
-          <Pressable style={styles.backButton} onPress={goBack}>
-            <Text style={styles.backButtonText}>חזור</Text>
-          </Pressable>
-        )}
+        {!complete && <Text style={styles.errorText}>יש להשלים שם, פעולה קשורה למטרה ותוצאה רצויה לפני השמירה.</Text>}
+        {saveError && <Text style={styles.errorText}>{saveError}</Text>}
+        <Pressable style={[styles.button, styles.fullWidthButton, !complete && styles.buttonDisabled]} disabled={!complete} onPress={handleSave}>
+          <Text style={styles.buttonText}>שמור</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -609,8 +496,9 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
   content: { flexGrow: 1, padding: 24 },
   eyebrow: { fontSize: 13, textAlign: "right", color: "#0a7ea4", marginBottom: 4 },
-  title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 16 },
-  body: { fontSize: 16, textAlign: "right", marginBottom: 8 },
+  title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 8 },
+  sectionBody: { padding: 14, gap: 4 },
+  question: { fontSize: 15, fontWeight: "600", textAlign: "right", marginTop: 12, marginBottom: 8 },
   hint: { fontSize: 13, textAlign: "right", color: "#666", marginBottom: 8 },
   fieldLabel: { fontSize: 13, textAlign: "right", color: "#666", marginTop: 8 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 8 },
@@ -625,16 +513,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
   },
-  fullWidthButton: { marginTop: 16 },
+  secondaryButton: { backgroundColor: "#3d8fa8" },
+  fullWidthButton: { marginTop: 12 },
   buttonDisabled: { opacity: 0.4 },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+  secondaryButtonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
   textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16 },
   chipColumn: { gap: 8, marginTop: 8 },
   chipRow: { flexDirection: "row", flexWrap: "wrap" },
   chip: { backgroundColor: "#E6F4FE", paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, alignItems: "center" },
   chipSelected: { backgroundColor: "#0a7ea4" },
-  backButton: { marginTop: 24, alignItems: "center" },
-  backButtonText: { color: "#0a7ea4", fontSize: 15 },
+  chipText: { color: "#0a7ea4", fontSize: 14 },
   mappingCard: { borderWidth: 1, borderColor: "#E6F4FE", borderRadius: 10, padding: 12, marginBottom: 16 },
   mappingLabel: { fontSize: 15, fontWeight: "700", textAlign: "right", marginBottom: 4 },
   removeButton: { marginTop: 12, alignItems: "center" },

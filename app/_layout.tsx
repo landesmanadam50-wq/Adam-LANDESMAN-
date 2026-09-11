@@ -64,6 +64,7 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerTitleAlign: "center" }}>
         <Stack.Screen name="index" options={{ title: "ARCHI" }} />
         <Stack.Screen name="self-development/index" options={{ title: "התפתחות אישית" }} />
+        <Stack.Screen name="self-development/build" options={{ title: "בניית תוכנית חדשה" }} />
         <Stack.Screen name="reach-your-goal/index" options={{ title: "השגת מטרה" }} />
         <Stack.Screen name="build/index" options={{ title: "ARC Builds" }} />
         <Stack.Screen name="build/[id]" options={{ title: "עריכת ARC Build" }} />
