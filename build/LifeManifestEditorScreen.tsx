@@ -19,81 +19,46 @@ import {
 } from "../arc/lifeManifest.ts";
 import type { AchievedStateMantraTense, EmbodiedIdentityCue, LifeManifest, LifeManifestEntityStatus, MajorGoal, SubGoal, Target } from "../arc/lifeManifest.ts";
 import type { ArcGoal } from "../arc/types.ts";
+import CollapsibleSection from "./CollapsibleSection.tsx";
+import { LifeManifestSubGoalPanel } from "./LifeManifestSubGoalPanel.tsx";
 
 /**
  * Life Manifest task: ONE screen editing ONE LifeManifest -- an overview
  * of its Major Goals (create/open/delete), and, once one is selected,
  * the 9-question Hebrew questionnaire (spec section 2) plus its
- * repeatable, editable/reorderable Sub-goal list. Mirrors
- * build/ArcGoalEditorScreen.tsx's step-wizard shape, with one deliberate
- * difference: every step persists immediately (upsertLifeManifest on
- * every patch, not only at a final "save" step) -- "save progress after
- * every section... do not require completion of the entire
- * questionnaire in one session" (spec section 2) means there is no
- * separate save step at all; the trainee can navigate away at any point
- * and resume exactly where they left off (list screen's "טיוטה" badge,
- * isLifeManifestDraft/isMajorGoalQuestionnaireComplete).
+ * repeatable, editable/reorderable Sub-goal list.
  *
- * Visualization (embodied identity cue, Achieved-State Mantra, the
- * guided imagery flow), gratitude, Targets, Scheduled Actions, and ARC
- * Link integration are later phases of this feature (see the approved
- * plan) -- deliberately not present on this screen yet.
+ * Single-page Life Manifest BUILD task: the Major Goal questionnaire was
+ * still a step-by-step wizard ("המשך"/"חזור" between each of its 9
+ * questions), and managing a Sub-goal's ARC Goal link/dates/Targets
+ * meant leaving for build/LifeManifestSubGoalScreen.tsx's own separate
+ * route -- "still divided across separate screens" even after the
+ * Phase 3 BUILD screens were unified. Both are fixed here the same way
+ * Phase 3 fixed ArcBuild/ArcGoal/Mini ARC: one scrollable page per Major
+ * Goal, CollapsibleSection groups (build/CollapsibleSection.tsx) instead
+ * of step gating, optional/advanced sections collapsed by default, and
+ * every Sub-goal's own full management panel
+ * (build/LifeManifestSubGoalPanel.tsx, embedded=true) nested right
+ * inside its own card -- no more hopping to a separate screen to link an
+ * ARC Goal or add a Target while building. The dedicated
+ * /life-manifest/sub-goal/[subGoalId] route is untouched, still needed
+ * for a notification/journal/dashboard entry point (see that panel's
+ * own doc).
+ *
+ * Every field still persists immediately on every change
+ * (persistManifest, called from patchMajorGoal on every keystroke) --
+ * "save progress after every section... do not require completion of
+ * the entire questionnaire in one session" (spec section 2) is
+ * preserved exactly as before; the one persistent "שמור וחזרה" button
+ * at the bottom is an explicit, reassuring close-out action on top of
+ * that guarantee, never a replacement for it -- there is no "unsaved
+ * draft" state a trainee could lose by not pressing it.
+ *
+ * Visualization (the guided imagery flow itself, at
+ * /life-manifest/visualize/[majorGoalId]) is a separate LIVE experience,
+ * deliberately untouched by this task -- only its entry points stay on
+ * this page, exactly as before.
  */
-
-type MajorGoalStep =
-  | "title"
-  | "why"
-  | "value"
-  | "futureIdentity"
-  | "futureLifeDescription"
-  | "subGoals"
-  | "capabilitiesNeeded"
-  | "obstacles"
-  | "supportiveInternalStates"
-  | "realWorldSign"
-  | "review";
-
-const STEP_ORDER: MajorGoalStep[] = [
-  "title",
-  "why",
-  "value",
-  "futureIdentity",
-  "futureLifeDescription",
-  "subGoals",
-  "capabilitiesNeeded",
-  "obstacles",
-  "supportiveInternalStates",
-  "realWorldSign",
-  "review",
-];
-
-const STEP_TITLES: Record<MajorGoalStep, string> = {
-  title: "מהי המטרה הגדולה שהיית רוצה להגשים?",
-  why: "למה המטרה הזאת חשובה לך?",
-  value: "איזה ערך היא מבטאת?",
-  futureIdentity: "מי תהיה כשתגשים אותה?",
-  futureLifeDescription: "איך החיים שלך ייראו כשהמטרה תושג?",
-  subGoals: "אילו תתי־מטרות יובילו אליה?",
-  capabilitiesNeeded: "אילו יכולות או איכויות יהיה עליך לפתח?",
-  obstacles: "מה עלול להפריע בדרך?",
-  supportiveInternalStates: "אילו מצבים פנימיים יתמכו בך?",
-  realWorldSign: "מה יהיה הסימן הממשי לכך שהמטרה הושגה?",
-  review: "סיכום",
-};
-
-/** Optional free-text questions -- only "title" is required, matching isMajorGoalQuestionnaireComplete/createEmptyMajorGoal. */
-const OPTIONAL_TEXT_STEPS: MajorGoalStep[] = ["why", "value", "futureIdentity", "futureLifeDescription", "capabilitiesNeeded", "obstacles", "supportiveInternalStates", "realWorldSign"];
-
-const TEXT_STEP_FIELDS: Partial<Record<MajorGoalStep, keyof MajorGoal>> = {
-  why: "why",
-  value: "value",
-  futureIdentity: "futureIdentity",
-  futureLifeDescription: "futureLifeDescription",
-  capabilitiesNeeded: "capabilitiesNeeded",
-  obstacles: "obstacles",
-  supportiveInternalStates: "supportiveInternalStates",
-  realWorldSign: "realWorldSign",
-};
 
 const STATUS_LABELS: Record<LifeManifestEntityStatus, string> = {
   draft: "טיוטה",
@@ -111,7 +76,6 @@ export default function LifeManifestEditorScreen() {
   const [status, setStatus] = useState<"loading" | "notFound" | "editing">("loading");
   const [manifest, setManifest] = useState<LifeManifest | null>(null);
   const [selectedMajorGoalId, setSelectedMajorGoalId] = useState<string | null>(initialMajorGoalId ?? null);
-  const [step, setStep] = useState<MajorGoalStep>("why");
   const [creatingMajorGoal, setCreatingMajorGoal] = useState(false);
   const [newMajorGoalTitle, setNewMajorGoalTitle] = useState("");
   const [confirmDeleteMajorGoalId, setConfirmDeleteMajorGoalId] = useState<string | null>(null);
@@ -184,7 +148,6 @@ export default function LifeManifestEditorScreen() {
     setCreatingMajorGoal(false);
     setNewMajorGoalTitle("");
     setSelectedMajorGoalId(goal.id);
-    setStep("why");
   }
 
   function handleDeleteMajorGoal(goalId: string) {
@@ -224,15 +187,11 @@ export default function LifeManifestEditorScreen() {
     patchMajorGoal(goalId, { subGoals: reorderSubGoals(current, subGoalId, direction).subGoals });
   }
 
-  function goNext() {
-    const currentIndex = STEP_ORDER.indexOf(step);
-    setStep(STEP_ORDER[Math.min(currentIndex + 1, STEP_ORDER.length - 1)]);
-  }
-
-  function goBackStep() {
-    const currentIndex = STEP_ORDER.indexOf(step);
-    if (currentIndex === 0) return;
-    setStep(STEP_ORDER[currentIndex - 1]);
+  /** New requirement: one persistent primary Save button -- every field already auto-persists on change, so this simply forces a final persist of whatever is currently on screen and closes back out to the Major Goals overview. Never the only thing standing between a trainee's edits and storage. */
+  function handleSaveAndClose() {
+    if (!manifest || !selectedGoal) return;
+    persistManifest(manifest);
+    setSelectedMajorGoalId(null);
   }
 
   if (status === "loading") {
@@ -273,13 +232,7 @@ export default function LifeManifestEditorScreen() {
           {manifest.majorGoals.map((goal) => (
             <View key={goal.id} style={styles.goalRowColumn}>
               <View style={styles.goalRow}>
-                <Pressable
-                  style={styles.goalButton}
-                  onPress={() => {
-                    setSelectedMajorGoalId(goal.id);
-                    setStep("title");
-                  }}
-                >
+                <Pressable style={styles.goalButton} onPress={() => setSelectedMajorGoalId(goal.id)}>
                   <View style={styles.goalTitleRow}>
                     {!isMajorGoalQuestionnaireComplete(goal) && (
                       <View style={styles.draftBadge}>
@@ -380,56 +333,69 @@ export default function LifeManifestEditorScreen() {
   }
 
   // -------------------------------------------------------------------
-  // Questionnaire for the selected Major Goal.
+  // Single-page questionnaire + Sub-goal management for the selected
+  // Major Goal -- one scrollable page, CollapsibleSection groups, no
+  // "המשך"/"הבא" navigation between them.
   // -------------------------------------------------------------------
-  const textField = TEXT_STEP_FIELDS[step];
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.eyebrow}>{selectedGoal.title || "מטרה ללא כותרת"}</Text>
-        <Text style={styles.title}>{STEP_TITLES[step]}</Text>
+        <Text style={styles.title}>עריכת מטרה גדולה</Text>
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}
 
-        {step === "title" && (
-          <View>
+        <CollapsibleSection title="פרטי הבסיס" defaultExpanded>
+          <View style={styles.sectionBody}>
+            <Text style={styles.question}>מהי המטרה הגדולה שהיית רוצה להגשים?</Text>
             <TextInput
               style={styles.textInput}
               value={selectedGoal.title}
               onChangeText={(text) => patchMajorGoal(selectedGoal.id, { title: text })}
               textAlign="right"
               multiline
-              autoFocus
             />
-            <Pressable
-              style={[styles.button, styles.fullWidthButton, selectedGoal.title.trim().length === 0 && styles.buttonDisabled]}
-              disabled={selectedGoal.title.trim().length === 0}
-              onPress={goNext}
-            >
-              <Text style={styles.buttonText}>המשך</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {textField && OPTIONAL_TEXT_STEPS.includes(step) && (
-          <View>
+            <Text style={styles.question}>למה המטרה הזאת חשובה לך? (רשות)</Text>
             <TextInput
               style={styles.textInput}
-              value={(selectedGoal[textField] as string | null) ?? ""}
-              onChangeText={(text) => patchMajorGoal(selectedGoal.id, { [textField]: text.trim().length > 0 ? text : null } as Partial<MajorGoal>)}
+              value={selectedGoal.why ?? ""}
+              onChangeText={(text) => patchMajorGoal(selectedGoal.id, { why: text.trim().length > 0 ? text : null })}
               textAlign="right"
               multiline
-              autoFocus
             />
-            <Text style={styles.hint}>שאלה זו רשות -- אפשר להמשיך ולחזור אליה מאוחר יותר.</Text>
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={goNext}>
-              <Text style={styles.buttonText}>המשך</Text>
-            </Pressable>
+            <Text style={styles.question}>איזה ערך היא מבטאת? (רשות)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.value ?? ""}
+              onChangeText={(text) => patchMajorGoal(selectedGoal.id, { value: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              multiline
+            />
           </View>
-        )}
+        </CollapsibleSection>
 
-        {step === "subGoals" && (
-          <View>
+        <CollapsibleSection title="זהות עתידית">
+          <View style={styles.sectionBody}>
+            <Text style={styles.question}>מי תהיה כשתגשים אותה? (רשות)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.futureIdentity ?? ""}
+              onChangeText={(text) => patchMajorGoal(selectedGoal.id, { futureIdentity: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              multiline
+            />
+            <Text style={styles.question}>איך החיים שלך ייראו כשהמטרה תושג? (רשות)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.futureLifeDescription ?? ""}
+              onChangeText={(text) => patchMajorGoal(selectedGoal.id, { futureLifeDescription: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              multiline
+            />
+          </View>
+        </CollapsibleSection>
+
+        <CollapsibleSection title={`תתי־מטרות (${selectedGoal.subGoals.length})`} defaultExpanded>
+          <View style={styles.sectionBody}>
             <Text style={styles.hint}>אפשר להוסיף כמה תתי־מטרות שרוצים, לערוך את הטקסט שלהן, ולשנות את הסדר בחצים.</Text>
             {selectedGoal.subGoals.length === 0 && <Text style={styles.hint}>עדיין אין תתי־מטרות. אפשר להוסיף אחת למטה.</Text>}
             {selectedGoal.subGoals.map((subGoal, index) => (
@@ -469,37 +435,65 @@ export default function LifeManifestEditorScreen() {
                     <Text style={[styles.actionButtonText, styles.deleteText]}>מחק תת־מטרה</Text>
                   </Pressable>
                 </View>
-                <Pressable
-                  style={styles.actionButton}
-                  onPress={() => router.push({ pathname: "/life-manifest/sub-goal/[subGoalId]", params: { subGoalId: subGoal.id } })}
-                >
-                  <Text style={styles.actionButtonText}>ניהול תת־המטרה (ARC Goal, יעדים, תאריכים)</Text>
-                </Pressable>
+
+                {/* Single-page Life Manifest BUILD task: the Sub-goal's own
+                    full management panel (ARC Goal linking, dates, Targets,
+                    completion, its own visualization overrides, journal) --
+                    nested here, collapsed by default (advanced/ongoing
+                    management, not a core questionnaire field), so it never
+                    requires leaving this page. */}
+                <CollapsibleSection title="ניהול תת־המטרה (ARC Goal, יעדים, תאריכים)">
+                  <View style={styles.sectionBody}>
+                    <LifeManifestSubGoalPanel subGoalId={subGoal.id} embedded />
+                  </View>
+                </CollapsibleSection>
               </View>
             ))}
             <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => addSubGoal(selectedGoal.id)}>
               <Text style={styles.buttonText}>+ הוסף תת־מטרה</Text>
             </Pressable>
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={goNext}>
-              <Text style={styles.buttonText}>המשך</Text>
-            </Pressable>
           </View>
-        )}
+        </CollapsibleSection>
 
-        {step === "review" && (
-          <View>
-            <Text style={styles.body}>{`כותרת: ${selectedGoal.title}`}</Text>
-            {selectedGoal.why && <Text style={styles.body}>{`למה זה חשוב: ${selectedGoal.why}`}</Text>}
-            {selectedGoal.value && <Text style={styles.body}>{`ערך: ${selectedGoal.value}`}</Text>}
-            {selectedGoal.futureIdentity && <Text style={styles.body}>{`מי תהיה: ${selectedGoal.futureIdentity}`}</Text>}
-            {selectedGoal.futureLifeDescription && <Text style={styles.body}>{`איך יראו החיים: ${selectedGoal.futureLifeDescription}`}</Text>}
-            <Text style={styles.body}>{`תתי־מטרות: ${selectedGoal.subGoals.length}`}</Text>
-            {selectedGoal.capabilitiesNeeded && <Text style={styles.body}>{`יכולות נדרשות: ${selectedGoal.capabilitiesNeeded}`}</Text>}
-            {selectedGoal.obstacles && <Text style={styles.body}>{`מה עלול להפריע: ${selectedGoal.obstacles}`}</Text>}
-            {selectedGoal.supportiveInternalStates && <Text style={styles.body}>{`מצבים פנימיים תומכים: ${selectedGoal.supportiveInternalStates}`}</Text>}
-            {selectedGoal.realWorldSign && <Text style={styles.body}>{`הסימן הממשי: ${selectedGoal.realWorldSign}`}</Text>}
+        <CollapsibleSection title="יכולות ומכשולים">
+          <View style={styles.sectionBody}>
+            <Text style={styles.question}>אילו יכולות או איכויות יהיה עליך לפתח? (רשות)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.capabilitiesNeeded ?? ""}
+              onChangeText={(text) => patchMajorGoal(selectedGoal.id, { capabilitiesNeeded: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              multiline
+            />
+            <Text style={styles.question}>מה עלול להפריע בדרך? (רשות)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.obstacles ?? ""}
+              onChangeText={(text) => patchMajorGoal(selectedGoal.id, { obstacles: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              multiline
+            />
+            <Text style={styles.question}>אילו מצבים פנימיים יתמכו בך? (רשות)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.supportiveInternalStates ?? ""}
+              onChangeText={(text) => patchMajorGoal(selectedGoal.id, { supportiveInternalStates: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              multiline
+            />
+            <Text style={styles.question}>מה יהיה הסימן הממשי לכך שהמטרה הושגה? (רשות)</Text>
+            <TextInput
+              style={styles.textInput}
+              value={selectedGoal.realWorldSign ?? ""}
+              onChangeText={(text) => patchMajorGoal(selectedGoal.id, { realWorldSign: text.trim().length > 0 ? text : null })}
+              textAlign="right"
+              multiline
+            />
+          </View>
+        </CollapsibleSection>
 
-            <Text style={styles.fieldLabel}>סטטוס</Text>
+        <CollapsibleSection title="סטטוס" defaultExpanded>
+          <View style={styles.sectionBody}>
             <View style={[styles.chipColumn, styles.chipRow]}>
               {STATUSES.map((s) => (
                 <Pressable
@@ -507,16 +501,18 @@ export default function LifeManifestEditorScreen() {
                   style={[styles.chip, selectedGoal.status === s && styles.chipSelected]}
                   onPress={() => patchMajorGoal(selectedGoal.id, { status: s })}
                 >
-                  <Text style={styles.buttonText}>{STATUS_LABELS[s]}</Text>
+                  <Text style={styles.chipText}>{STATUS_LABELS[s]}</Text>
                 </Pressable>
               ))}
             </View>
-
             {!isMajorGoalQuestionnaireComplete(selectedGoal) && (
               <Text style={styles.hint}>המטרה עדיין מוצגת כטיוטה עד שכל השאלות ותת־מטרה אחת לפחות ימולאו. אפשר לחזור ולהשלים בכל שלב.</Text>
             )}
+          </View>
+        </CollapsibleSection>
 
-            <Text style={styles.sectionTitle}>שפת גוף מנצחת (רשות)</Text>
+        <CollapsibleSection title="שפת גוף מנצחת">
+          <View style={styles.sectionBody}>
             <Text style={styles.hint}>שפת הגוף שתאמץ בדמיון המודרך כשהמטרה הגדולה כבר הושגה. כל השדות רשות.</Text>
             <TextInput
               style={styles.textInput}
@@ -560,8 +556,11 @@ export default function LifeManifestEditorScreen() {
               textAlign="right"
               placeholder="עוגן ויסות (רשות)"
             />
+          </View>
+        </CollapsibleSection>
 
-            <Text style={styles.sectionTitle}>משפט מצב מושג (רשות)</Text>
+        <CollapsibleSection title="משפט מצב מושג">
+          <View style={styles.sectionBody}>
             <View style={styles.switchRow}>
               <Switch
                 value={selectedGoal.achievedStateMantra.enabled}
@@ -593,36 +592,25 @@ export default function LifeManifestEditorScreen() {
                         patchMajorGoal(selectedGoal.id, { achievedStateMantra: { ...selectedGoal.achievedStateMantra, tense } })
                       }
                     >
-                      <Text style={styles.buttonText}>{TENSE_LABELS[tense]}</Text>
+                      <Text style={styles.chipText}>{TENSE_LABELS[tense]}</Text>
                     </Pressable>
                   ))}
                 </View>
               </>
             )}
-
-            <Pressable
-              style={[styles.button, styles.fullWidthButton]}
-              onPress={() => router.push({ pathname: "/life-manifest/visualize/[majorGoalId]", params: { majorGoalId: selectedGoal.id } })}
-            >
-              <Text style={styles.buttonText}>להתחיל דמיון מודרך</Text>
-            </Pressable>
-
-            <Pressable
-              style={[styles.button, styles.fullWidthButton]}
-              onPress={() => {
-                setSelectedMajorGoalId(null);
-              }}
-            >
-              <Text style={styles.buttonText}>חזרה למטרות הגדולות</Text>
-            </Pressable>
           </View>
-        )}
+        </CollapsibleSection>
 
-        {step !== "title" && (
-          <Pressable style={styles.backButton} onPress={goBackStep}>
-            <Text style={styles.backButtonText}>חזור</Text>
-          </Pressable>
-        )}
+        <Pressable
+          style={[styles.button, styles.fullWidthButton]}
+          onPress={() => router.push({ pathname: "/life-manifest/visualize/[majorGoalId]", params: { majorGoalId: selectedGoal.id } })}
+        >
+          <Text style={styles.buttonText}>להתחיל דמיון מודרך</Text>
+        </Pressable>
+
+        <Pressable style={[styles.button, styles.primarySaveButton, styles.fullWidthButton]} onPress={handleSaveAndClose}>
+          <Text style={styles.buttonText}>שמור וחזרה למטרות הגדולות</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -677,11 +665,13 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
   content: { flexGrow: 1, padding: 24 },
   eyebrow: { fontSize: 13, textAlign: "right", color: "#0a7ea4", marginBottom: 4 },
-  title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 16 },
+  title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 8 },
   body: { fontSize: 16, textAlign: "right", marginBottom: 8 },
   hint: { fontSize: 13, textAlign: "right", color: "#666", marginBottom: 8, marginTop: 8 },
   fieldLabel: { fontSize: 13, textAlign: "right", color: "#666", marginTop: 8 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginBottom: 12 },
+  sectionBody: { padding: 14, gap: 4 },
+  question: { fontSize: 15, fontWeight: "600", textAlign: "right", marginTop: 12, marginBottom: 8 },
   button: {
     backgroundColor: "#0a7ea4",
     paddingVertical: 12,
@@ -689,6 +679,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
   },
+  primarySaveButton: { backgroundColor: "#1a6b4a" },
   fullWidthButton: { marginTop: 16 },
   buttonDisabled: { opacity: 0.4 },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
@@ -699,6 +690,7 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", flexWrap: "wrap" },
   chip: { backgroundColor: "#E6F4FE", paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, alignItems: "center" },
   chipSelected: { backgroundColor: "#0a7ea4" },
+  chipText: { color: "#0a7ea4", fontSize: 14 },
   backButton: { marginTop: 24, alignItems: "center" },
   backButtonText: { color: "#0a7ea4", fontSize: 15 },
   mappingCard: { borderWidth: 1, borderColor: "#E6F4FE", borderRadius: 10, padding: 12, marginBottom: 16 },
