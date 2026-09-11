@@ -65,6 +65,26 @@
  * own ArcGoalLiveState), calling the existing advanceLiveSession for
  * every normal ArcStage hop on whichever run is currently active, and
  * this file's pure helpers for every new meta-stage transition.
+ *
+ * State-clarification decision gate (bug-fix task): the session's very
+ * first screen, BEFORE the trigger-identification prefix and before the
+ * outer run is ever RENDERED (its own presence_check hop already runs
+ * silently in the background the moment the session mounts, exactly as
+ * before -- see live/ArcGoalSessionScreen.tsx's own kick-start useEffect
+ * -- but stays unrendered until goalState.uiStage reaches "outer").
+ * "כן" enters the existing trigger-identification prefix exactly as
+ * before (uiStage "trigger_identification"), which -- once resolved --
+ * flips uiStage back to "outer" and renders the outer run's already-
+ * advanced first stage, presence_check. "לא" skips the prefix by
+ * pre-resolving it (triggerPrefixResolved: true) AND pre-resolving the
+ * later reassessment detour (reassessmentResolved: true) in the SAME
+ * step, so interception point 2 below never fires either -- the outer
+ * run goes straight from Presence rating through its unmodified rating-
+ * based ARC-Thought routing into "desired_state_check" (the identity-
+ * and-habit protocol's own first stage) with no emotion/urge detour at
+ * all, regardless of whether this goal has any urge/interfering
+ * mappings configured. Either answer still renders presence_check as
+ * the outer run's first visible stage -- see resolveAfterStateClarificationDecision.
  */
 
 import type {
@@ -84,6 +104,7 @@ import { INSTRUCTION_TIMING } from "./instructionTiming.ts";
 import { resolveDwellSecondsFor, withTrailingDwellSegment } from "./dwellTimes.ts";
 
 export type ArcGoalUiStage =
+  | "state_clarification_decision"
   | "outer"
   | "trigger_identification"
   | "third_person_imagery"
@@ -134,7 +155,7 @@ export interface ArcGoalLiveState {
 
 export function createEmptyArcGoalLiveState(): ArcGoalLiveState {
   return {
-    uiStage: "outer",
+    uiStage: "state_clarification_decision",
     triggerPrefixResolved: false,
     triggerDescription: null,
     identifiedNeed: null,
@@ -443,6 +464,31 @@ export function getGoalActionConfirmCopy(goal: ArcGoal): { title: string; body: 
 // from the very start of an ArcGoal session, regardless of which route
 // is later chosen) is the one profile this dwell resolves from.
 // ---------------------------------------------------------------------------
+
+/** The state-clarification decision gate's own title -- always the session's first screen (see this file's own module doc). */
+export const STATE_CLARIFICATION_DECISION_TITLE = "האם יש כרגע רגש או דחף שצריך לעבוד עליו?";
+
+export function getStateClarificationDecisionCopy(): ArcStageCopy {
+  return { title: STATE_CLARIFICATION_DECISION_TITLE, body: "", segments: null };
+}
+
+/**
+ * The decision gate's own answer. "כן" enters the existing
+ * trigger-identification prefix unchanged. "לא" skips it AND the later
+ * emotion/urge support route in the same step, by pre-resolving both
+ * detours (needsTriggerPrefixDetour/needsReassessmentDetour both read
+ * these same two flags) -- and resets every other field to
+ * createEmptyArcGoalLiveState()'s own safe defaults so no
+ * trigger/need/mapping data could ever leak from a previous decision
+ * into the identity route ("reset all temporary state-clarification and
+ * emotion/urge session data when 'לא' is selected").
+ */
+export function resolveAfterStateClarificationDecision(hasEmotionOrUrge: boolean, goalState: ArcGoalLiveState): ArcGoalLiveState {
+  if (hasEmotionOrUrge) {
+    return { ...goalState, uiStage: "trigger_identification" };
+  }
+  return { ...createEmptyArcGoalLiveState(), uiStage: "outer", triggerPrefixResolved: true, reassessmentResolved: true };
+}
 
 export function getTriggerIdentificationCopy(): ArcStageCopy {
   return { title: "מה הפעיל אצלך את הרגש או את הדחף?", body: "", segments: null };

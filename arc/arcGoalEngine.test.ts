@@ -8,6 +8,7 @@ import {
   createEmptyArcGoalLiveState,
   findUrgeArcForNeed,
   getGoalActionConfirmCopy,
+  getStateClarificationDecisionCopy,
   getSupportiveActionConfirmCopy,
   getThirdPersonImageryCopy,
   getTriggerIdentificationCopy,
@@ -19,6 +20,7 @@ import {
   resolveAfterEmbeddedMiniArcStage,
   resolveAfterExecutionModeChoice,
   resolveAfterReassessment,
+  resolveAfterStateClarificationDecision,
   resolveAfterThirdPersonImagery,
   resolveAfterTriggerIdentification,
   resolveAfterUrgeNeedIdentification,
@@ -29,6 +31,7 @@ import {
   selectSupportiveMapping,
   selectUrgeMapping,
   shouldInterceptInnerAtAct,
+  STATE_CLARIFICATION_DECISION_TITLE,
   TRIGGER_DESCRIPTION_UNSPECIFIED,
   urgeArcToProfile,
 } from "./arcGoalEngine.ts";
@@ -153,6 +156,54 @@ test("the real engine resolves a reactive_urge/habit session driven by urgeArcTo
     stage = hop.stage;
   }
   assert.equal(stage, "act");
+});
+
+// --- Bug-fix task: state-clarification decision gate
+
+test("createEmptyArcGoalLiveState now starts at the state-clarification decision gate -- the session's very first screen", () => {
+  assert.equal(createEmptyArcGoalLiveState().uiStage, "state_clarification_decision");
+});
+
+test("getStateClarificationDecisionCopy returns the exact required Hebrew title", () => {
+  assert.equal(getStateClarificationDecisionCopy().title, "האם יש כרגע רגש או דחף שצריך לעבוד עליו?");
+  assert.equal(getStateClarificationDecisionCopy().title, STATE_CLARIFICATION_DECISION_TITLE);
+});
+
+test("resolveAfterStateClarificationDecision('כן') continues to the existing state-clarification (trigger-identification) screen, leaving reassessment untouched", () => {
+  const result = resolveAfterStateClarificationDecision(true, createEmptyArcGoalLiveState());
+  assert.equal(result.uiStage, "trigger_identification");
+  assert.equal(result.triggerPrefixResolved, false, "not resolved yet -- the prefix is only just starting");
+  assert.equal(result.reassessmentResolved, false, "the existing emotion/urge support route must still run normally later");
+});
+
+test("resolveAfterStateClarificationDecision('לא') skips straight to the outer run, pre-resolving both the trigger prefix AND the reassessment detour", () => {
+  const result = resolveAfterStateClarificationDecision(false, createEmptyArcGoalLiveState());
+  assert.equal(result.uiStage, "outer");
+  assert.equal(result.triggerPrefixResolved, true, "the state-clarification screen must never appear later this session");
+  assert.equal(result.reassessmentResolved, true, "the emotion/urge support route must never appear later this session");
+});
+
+test("resolveAfterStateClarificationDecision('לא') resets every temporary state-clarification/emotion-urge field, so stale data cannot leak into the identity route", () => {
+  const dirty: ArcGoalLiveState = {
+    uiStage: "state_clarification_decision",
+    triggerPrefixResolved: false,
+    triggerDescription: "מצב ישן",
+    identifiedNeed: "רגיעה",
+    reassessmentResolved: false,
+    reassessmentChoice: "urge",
+    selectedMappingId: "m-old",
+    selectedUrgeMappingId: "um-old",
+    executionMode: "mini",
+    miniArcStage: "encoding",
+  };
+  const result = resolveAfterStateClarificationDecision(false, dirty);
+  assert.equal(result.triggerDescription, null);
+  assert.equal(result.identifiedNeed, null);
+  assert.equal(result.reassessmentChoice, null);
+  assert.equal(result.selectedMappingId, null);
+  assert.equal(result.selectedUrgeMappingId, null);
+  assert.equal(result.executionMode, null);
+  assert.equal(result.miniArcStage, null);
 });
 
 // --- needsTriggerPrefixDetour
@@ -734,4 +785,113 @@ test("full walk: a mapping configured for 'mini' whose Mini ARC was deleted (min
   const result = runFullWalk({ g, identity, reassessmentChoice: "urge", urgeProfile });
   assert.equal(result.uiStage, "goal_action_confirm");
   assert.equal(result.goalState.reassessmentResolved, true);
+});
+
+// ---------------------------------------------------------------------------
+// Bug-fix task: full-walk integration tests for the state-clarification
+// decision gate, driving the REAL engine (advanceLiveSession) exactly
+// like the full-walk tests above, but starting from the session's actual
+// first screen (the decision gate) instead of assuming it's already
+// resolved. Confirms Presence rating is required and appears in BOTH
+// routes, the state-clarification screen appears ONLY for "כן", and the
+// existing emotion/urge support route (reassessment) fires ONLY for
+// "כן" -- never for "לא", even when the goal has mappings configured.
+// ---------------------------------------------------------------------------
+
+test("full walk from the decision gate ('כן'): Presence rating is required, the state-clarification screen runs, and the existing emotion/urge support route still fires afterward", () => {
+  const identity = identityProfile();
+  const g = goal({ urgeMappings: [urgeMapping()], interferingMappings: [mapping()] });
+
+  // The outer run's own presence_check hop already runs silently in the
+  // background the moment the session mounts (live/ArcGoalSessionScreen.tsx's
+  // own kick-start effect), completely independent of the decision gate.
+  let outerSession = createArcGoalOuterInitialSession();
+  let outerStage: ArcStage = "trigger_selection";
+  {
+    const hop = advanceLiveSession(outerStage, outerSession, identity, ["identity"]);
+    outerSession = hop.session;
+    outerStage = hop.stage;
+  }
+  assert.equal(outerStage, "presence_check");
+
+  let goalState = createEmptyArcGoalLiveState();
+  assert.equal(goalState.uiStage, "state_clarification_decision", "the decision gate is the session's very first RENDERED screen -- before Presence rating is ever shown");
+
+  goalState = resolveAfterStateClarificationDecision(true, goalState);
+  assert.equal(goalState.uiStage, "trigger_identification", "'כן' continues to the existing state-clarification screen");
+
+  goalState = resolveAfterTriggerIdentification(goalState, "מצב לדוגמה");
+  assert.equal(goalState.uiStage, "third_person_imagery");
+
+  goalState = resolveAfterThirdPersonImagery(g, goalState);
+  assert.equal(goalState.uiStage, "urge_need_identification", "this goal has urge mappings, so Urge Need Identification still runs once, unchanged");
+
+  goalState = resolveAfterUrgeNeedIdentification(goalState, "רגיעה");
+  assert.equal(goalState.uiStage, "outer", "the state-clarification prefix resolves and hands back to the outer run");
+  assert.equal(goalState.triggerPrefixResolved, true);
+
+  // Presence rating is what renders next -- the outer run's own stage
+  // was never touched by any of the state-clarification steps above.
+  assert.equal(outerStage, "presence_check", "Presence rating is required in this route and appears right after the state-clarification screen");
+
+  outerSession = { ...outerSession, presenceRating: 8 };
+  let uiStage: "outer" | "reassessment" = "outer";
+  let iterations = 0;
+  while (uiStage === "outer" && iterations < 20) {
+    iterations++;
+    const hop = advanceLiveSession(outerStage, outerSession, identity, ["identity"]);
+    outerSession = hop.session;
+    outerStage = hop.stage;
+    assert.equal(needsTriggerPrefixDetour(outerStage, goalState), false, "the trigger prefix must never re-intercept once triggerPrefixResolved is true");
+    if (outerStage === "desired_state_check" && needsReassessmentDetour(g, goalState)) {
+      uiStage = "reassessment";
+    }
+  }
+  assert.equal(outerStage, "desired_state_check", "the existing Presence-rating-based ARC Thought routing runs unmodified before the identity-and-habit protocol's own first stage");
+  assert.equal(uiStage, "reassessment", "the existing emotion/urge support route still fires after Presence + ARC Thought, since this goal has mappings configured");
+});
+
+test("full walk from the decision gate ('לא'): Presence rating is required and its existing rating-based routing runs, but the state-clarification screen and the emotion/urge support route are both skipped", () => {
+  const identity = identityProfile();
+  const g = goal({ urgeMappings: [urgeMapping()], interferingMappings: [mapping()] });
+
+  let outerSession = createArcGoalOuterInitialSession();
+  let outerStage: ArcStage = "trigger_selection";
+  {
+    const hop = advanceLiveSession(outerStage, outerSession, identity, ["identity"]);
+    outerSession = hop.session;
+    outerStage = hop.stage;
+  }
+  assert.equal(outerStage, "presence_check");
+
+  let goalState = createEmptyArcGoalLiveState();
+  assert.equal(goalState.uiStage, "state_clarification_decision");
+
+  goalState = resolveAfterStateClarificationDecision(false, goalState);
+  assert.equal(goalState.uiStage, "outer", "'לא' skips the state-clarification screen entirely -- it never appears");
+  assert.equal(goalState.triggerPrefixResolved, true);
+  assert.equal(goalState.reassessmentResolved, true);
+
+  // Presence rating still renders next, unconditionally, in this route too.
+  assert.equal(outerStage, "presence_check", "Presence rating is required in this route too, immediately after the decision (with no state-clarification screen in between)");
+
+  outerSession = { ...outerSession, presenceRating: 8 };
+  let sawReassessment = false;
+  let iterations = 0;
+  while (outerStage !== "desired_state_check" && iterations < 20) {
+    iterations++;
+    const hop = advanceLiveSession(outerStage, outerSession, identity, ["identity"]);
+    outerSession = hop.session;
+    outerStage = hop.stage;
+    assert.equal(needsTriggerPrefixDetour(outerStage, goalState), false, "the state-clarification screen must never appear on this route, at any point");
+    if (outerStage === "desired_state_check" && needsReassessmentDetour(g, goalState)) {
+      sawReassessment = true;
+    }
+  }
+  assert.equal(outerStage, "desired_state_check", "the existing Presence-rating-based ARC Thought routing still runs unmodified, leading straight into the identity-and-habit protocol's own first stage");
+  assert.equal(
+    sawReassessment,
+    false,
+    "the emotion/urge support route must never fire on this route, even though this goal has urge/interfering mappings configured"
+  );
 });

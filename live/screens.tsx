@@ -1189,10 +1189,33 @@ const TRIGGER_IDENTIFICATION_CATEGORIES = [
 ];
 
 /**
- * ARC Goal Urge/Supportive-state route task (spec section 2): the very
- * first stage of the new trigger-identification prefix, reached right
- * after Presence and before Third-Person Imagery -- "מה הפעיל אצלך את
- * הרגש או את הדחף?". A category chip answers immediately with that
+ * Bug-fix task: the session's very first screen -- "האם יש כרגע רגש או
+ * דחף שצריך לעבוד עליו?" (see arc/arcGoalEngine.ts's own module doc for
+ * the full routing this gates). "כן" continues into
+ * TriggerIdentificationScreen below; "לא" skips it entirely. Presence
+ * rating always follows next either way -- this screen never itself
+ * decides anything about Presence.
+ */
+export function StateClarificationDecisionScreen({ copy, onAnswer }: { copy: ArcStageCopy; onAnswer: (hasEmotionOrUrge: boolean) => void }) {
+  return (
+    <View>
+      <Title copy={copy} />
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onAnswer(true)}>
+        <Text style={styles.buttonText}>כן</Text>
+      </Pressable>
+      <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => onAnswer(false)}>
+        <Text style={styles.buttonText}>לא</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * ARC Goal Urge/Supportive-state route task (spec section 2): the first
+ * stage of the trigger-identification prefix -- "מה הפעיל אצלך את הרגש
+ * או את הדחף?", reached only when StateClarificationDecisionScreen above
+ * was answered "כן" (bug-fix task), and always before Presence rating
+ * now, never after. A category chip answers immediately with that
  * category's own label (recognition only, exactly matching
  * ReactiveStateSelectScreen's "recognition-only" precedent above); "אחר"
  * reveals a short free-text description instead, mirroring

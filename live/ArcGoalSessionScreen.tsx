@@ -55,6 +55,7 @@ import {
   createEmptyArcGoalLiveState,
   findUrgeArcForNeed,
   getGoalActionConfirmCopy,
+  getStateClarificationDecisionCopy,
   getSupportiveActionConfirmCopy,
   getThirdPersonImageryCopy,
   getTriggerIdentificationCopy,
@@ -67,6 +68,7 @@ import {
   resolveAfterEmbeddedMiniArcStage,
   resolveAfterExecutionModeChoice,
   resolveAfterReassessment,
+  resolveAfterStateClarificationDecision,
   resolveAfterThirdPersonImagery,
   resolveAfterTriggerIdentification,
   resolveAfterUrgeNeedIdentification,
@@ -114,6 +116,7 @@ import {
   InstructionScreen,
   NeedIdentificationScreen,
   ReassessmentScreen,
+  StateClarificationDecisionScreen,
   TriggerIdentificationScreen,
 } from "./screens.tsx";
 
@@ -548,6 +551,20 @@ export default function ArcGoalSessionScreen() {
             <Text style={styles.buttonText}>לחיבור פרוטוקול זהות</Text>
           </Pressable>
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "state_clarification_decision") {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <StateClarificationDecisionScreen
+            copy={getStateClarificationDecisionCopy()}
+            onAnswer={(hasEmotionOrUrge) => setGoalState((current) => resolveAfterStateClarificationDecision(hasEmotionOrUrge, current))}
+          />
+        </ScrollView>
       </SafeAreaView>
     );
   }
