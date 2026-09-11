@@ -535,7 +535,7 @@ export default function LiveSessionScreen() {
         if (goal?.fourWeekProgram) {
           const now = new Date().toISOString();
           const week = (Number(fourWeekWeek) || goal.fourWeekProgram.currentWeek) as FourWeekProgramWeekNumber;
-          const updatedProgram = clearReturnContext(addPracticeRecord(goal.fourWeekProgram, week, "practice", "ARC מלא", now));
+          const updatedProgram = clearReturnContext(addPracticeRecord(goal.fourWeekProgram, week, "full_arc", "ARC מלא", now));
           await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
         }
         router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });

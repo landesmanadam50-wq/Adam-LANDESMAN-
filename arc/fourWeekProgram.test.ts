@@ -150,7 +150,7 @@ test("extendCurrentWeek records the extension (never losing the original planned
 
 test("extending a week preserves its own already-logged practice records and reflection", () => {
   let program = createFourWeekProgram("2025-01-06");
-  program = addPracticeRecord(program, 1, "practice", "ARC מלא", "2025-01-07T09:00:00.000Z");
+  program = addPracticeRecord(program, 1, "full_arc", "ARC מלא", "2025-01-07T09:00:00.000Z");
   program = saveWeekReflection(
     program,
     1,
@@ -233,12 +233,52 @@ test("setReturnContext/clearReturnContext save and clear the week + action a sup
 
 test("addPracticeRecord appends a labeled record with its own kind and timestamp, never overwriting earlier ones", () => {
   let program = createFourWeekProgram("2025-01-06");
-  program = addPracticeRecord(program, 1, "practice", "ARC מלא", "2025-01-07T09:00:00.000Z");
+  program = addPracticeRecord(program, 1, "full_arc", "ARC מלא", "2025-01-07T09:00:00.000Z");
   program = addPracticeRecord(program, 1, "archi_support", "אני צריך עזרה מ-ARCHI", "2025-01-08T09:00:00.000Z");
   const week1 = resolveWeek(program, 1);
   assert.equal(week1.practiceRecords.length, 2);
-  assert.equal(week1.practiceRecords[0].kind, "practice");
+  assert.equal(week1.practiceRecords[0].kind, "full_arc");
   assert.equal(week1.practiceRecords[1].kind, "archi_support");
+});
+
+// --- Four-Week Program task correction: ARC Link/Mini ARC Link are their
+// own distinct guided linking practices, never interchangeable with
+// Full ARC/Mini ARC -- each must be trackable as its own separate kind.
+
+test("Week 1's ARCHI ARC Link and Full ARC completions are tracked as distinct kinds, never merged", () => {
+  let program = createFourWeekProgram("2025-01-06");
+  program = addPracticeRecord(program, 1, "arc_link", "ARCHI ARC Link", "2025-01-07T09:00:00.000Z");
+  program = addPracticeRecord(program, 1, "full_arc", "ARC מלא", "2025-01-07T10:00:00.000Z");
+  const week1 = resolveWeek(program, 1);
+  const arcLinkRecords = week1.practiceRecords.filter((r) => r.kind === "arc_link");
+  const fullArcRecords = week1.practiceRecords.filter((r) => r.kind === "full_arc");
+  assert.equal(arcLinkRecords.length, 1);
+  assert.equal(fullArcRecords.length, 1);
+  assert.notEqual(arcLinkRecords[0].id, fullArcRecords[0].id);
+});
+
+test("Week 2's Mini ARC Link and Mini ARC completions are tracked as distinct kinds, never merged", () => {
+  let program = createFourWeekProgram("2025-01-06");
+  program = confirmWeekCompleteAndAdvance(program, "2025-01-12T18:00:00.000Z"); // -> week 2
+  program = addPracticeRecord(program, 2, "mini_arc_link", "Mini ARC Link עם ARCHI", "2025-01-14T09:00:00.000Z");
+  program = addPracticeRecord(program, 2, "mini_arc", "Mini ARC", "2025-01-14T09:05:00.000Z");
+  program = addPracticeRecord(program, 2, "mini_arc", "Mini ARC", "2025-01-15T09:00:00.000Z");
+  const week2 = resolveWeek(program, 2);
+  const linkRecords = week2.practiceRecords.filter((r) => r.kind === "mini_arc_link");
+  const miniArcRecords = week2.practiceRecords.filter((r) => r.kind === "mini_arc");
+  assert.equal(linkRecords.length, 1, "exactly one Mini ARC Link practice logged");
+  assert.equal(miniArcRecords.length, 2, "two independent Mini ARC completions logged");
+});
+
+test("Week 3's inline Identity Recall is its own kind, distinct from Mini ARC Link/Mini ARC/action", () => {
+  let program = createFourWeekProgram("2025-01-06");
+  program = confirmWeekCompleteAndAdvance(program, "2025-01-12T18:00:00.000Z");
+  program = confirmWeekCompleteAndAdvance(program, "2025-01-19T18:00:00.000Z"); // -> week 3
+  program = addPracticeRecord(program, 3, "identity_recall", "היזכרות בזהות", "2025-01-20T09:00:00.000Z");
+  program = addPracticeRecord(program, 3, "mini_arc_link", "Mini ARC Link", "2025-01-20T09:05:00.000Z");
+  program = addPracticeRecord(program, 3, "action", "ביצוע ההרגל", "2025-01-20T09:10:00.000Z");
+  const kinds = resolveWeek(program, 3).practiceRecords.map((r) => r.kind);
+  assert.deepEqual(kinds, ["identity_recall", "mini_arc_link", "action"]);
 });
 
 // --- Progress (informational only) ---
@@ -252,7 +292,7 @@ test("computeWeekProgress reads 0 for an untouched week and 100 once completed, 
 
 test("computeWeekProgress increases with logged practice records and an answered reflection, capped sensibly", () => {
   let program = createFourWeekProgram("2025-01-06");
-  program = addPracticeRecord(program, 1, "practice", "תרגול", "2025-01-07T09:00:00.000Z");
+  program = addPracticeRecord(program, 1, "full_arc", "תרגול", "2025-01-07T09:00:00.000Z");
   const afterOneRecord = computeWeekProgress(resolveWeek(program, 1));
   assert.ok(afterOneRecord > 0 && afterOneRecord < 100);
   program = saveWeekReflection(program, 1, { whatHelped: null, whatWasHard: null, identityEvidence: null, readyToReduceSupport: null }, "2025-01-11T09:00:00.000Z");

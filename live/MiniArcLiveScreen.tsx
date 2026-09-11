@@ -70,7 +70,7 @@ export default function MiniArcLiveScreen() {
       if (goal?.fourWeekProgram) {
         const now = new Date().toISOString();
         const week = (Number(fourWeekWeek) || goal.fourWeekProgram.currentWeek) as FourWeekProgramWeekNumber;
-        const updatedProgram = clearReturnContext(addPracticeRecord(goal.fourWeekProgram, week, "practice", `Mini ARC -- ${build.name}`, now));
+        const updatedProgram = clearReturnContext(addPracticeRecord(goal.fourWeekProgram, week, "mini_arc", `Mini ARC -- ${build.name}`, now));
         await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
       }
       router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });

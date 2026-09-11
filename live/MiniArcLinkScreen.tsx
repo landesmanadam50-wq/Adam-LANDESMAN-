@@ -3,13 +3,15 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcLink, getMiniArcBuild, loadRoutineTriggers, upsertArcLink } from "../data/storage.ts";
+import { getArcGoal, getArcLink, getMiniArcBuild, loadRoutineTriggers, upsertArcGoal, upsertArcLink } from "../data/storage.ts";
 import { buildMiniArcLinkStartConfirmationStep, buildMiniArcLinkSteps } from "../arc/miniArcLink.ts";
 import type { MiniArcLinkStep } from "../arc/miniArcLink.ts";
 import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
 import { describeTrigger, resolveRoutineTrigger } from "../arc/routineLinks.ts";
 import type { ArcLink } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
+import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
+import type { FourWeekProgramWeekNumber } from "../arc/types.ts";
 import BodyImageryStep from "./BodyImageryStep.tsx";
 
 /**
@@ -21,9 +23,23 @@ import BodyImageryStep from "./BodyImageryStep.tsx";
  * RoutineTrigger and records a practice completion on the ArcLink
  * itself once finished. Mini ARC has no route choice (no state/identity
  * distinction) -- unlike ARC Link, there's no chooser phase here.
+ *
+ * Four-Week Program task correction ("Mini ARC Link is its own distinct
+ * guided linking practice, never interchangeable with Mini ARC itself"):
+ * the optional fourWeekGoalId/fourWeekWeek params -- set only by
+ * live/ArcGoalFourWeekDashboardScreen.tsx's own "תרגול Mini ARC Link עם
+ * ARCHI" (Week 2) and "Mini ARC Link" (Week 3) -- make completePractice
+ * log a kind:"mini_arc_link" practice (never "mini_arc" -- tracked
+ * completely separately) and return to the dashboard instead of
+ * router.back(). Absent, completePractice is completely unchanged.
  */
 export default function MiniArcLinkScreen() {
-  const { id, linkId } = useLocalSearchParams<{ id: string; linkId?: string }>();
+  const { id, linkId, fourWeekGoalId, fourWeekWeek } = useLocalSearchParams<{
+    id: string;
+    linkId?: string;
+    fourWeekGoalId?: string;
+    fourWeekWeek?: string;
+  }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "noTrigger" | "ready">("loading");
   const [steps, setSteps] = useState<MiniArcLinkStep[]>([]);
   const [index, setIndex] = useState(0);
@@ -93,6 +109,17 @@ export default function MiniArcLinkScreen() {
         updatedAt: new Date().toISOString(),
       };
       await upsertArcLink(updated);
+    }
+    if (typeof fourWeekGoalId === "string") {
+      const goal = await getArcGoal(fourWeekGoalId);
+      if (goal?.fourWeekProgram) {
+        const now = new Date().toISOString();
+        const week = (Number(fourWeekWeek) || goal.fourWeekProgram.currentWeek) as FourWeekProgramWeekNumber;
+        const updatedProgram = clearReturnContext(addPracticeRecord(goal.fourWeekProgram, week, "mini_arc_link", "Mini ARC Link", now));
+        await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
+      }
+      router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });
+      return;
     }
     router.back();
   }
