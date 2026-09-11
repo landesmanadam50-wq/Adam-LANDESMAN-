@@ -68,6 +68,8 @@ export interface UrgeArcDraft {
   stopCue: string;
   regulationAnchor: string;
   acceptanceContent: string;
+  bodyLanguageCue: string;
+  encodingMantra: string;
   beneficialAlternativeAction: string;
 }
 
@@ -80,6 +82,8 @@ export function createEmptyUrgeArcDraft(): UrgeArcDraft {
     stopCue: "",
     regulationAnchor: "",
     acceptanceContent: "",
+    bodyLanguageCue: "",
+    encodingMantra: "",
     beneficialAlternativeAction: "",
   };
 }
@@ -93,6 +97,8 @@ export function draftFromUrgeArc(urgeArc: UrgeArc): UrgeArcDraft {
     stopCue: safeText(urgeArc.stopCue),
     regulationAnchor: safeText(urgeArc.regulationAnchor),
     acceptanceContent: safeText(urgeArc.acceptanceContent),
+    bodyLanguageCue: safeText(urgeArc.bodyLanguageCue),
+    encodingMantra: safeText(urgeArc.encodingMantra),
     beneficialAlternativeAction: safeText(urgeArc.beneficialAlternativeAction),
   };
 }
@@ -114,6 +120,8 @@ export function buildUrgeArcFromDraft(draft: UrgeArcDraft, id: string, createdAt
   }
   const stopCue = draft.stopCue.trim();
   const acceptanceContent = draft.acceptanceContent.trim();
+  const bodyLanguageCue = draft.bodyLanguageCue.trim();
+  const encodingMantra = draft.encodingMantra.trim();
   return {
     id,
     name: draft.name.trim(),
@@ -125,6 +133,26 @@ export function buildUrgeArcFromDraft(draft: UrgeArcDraft, id: string, createdAt
     stopCue: stopCue.length > 0 ? stopCue : null,
     regulationAnchor: draft.regulationAnchor.trim(),
     acceptanceContent: acceptanceContent.length > 0 ? acceptanceContent : null,
+    bodyLanguageCue: bodyLanguageCue.length > 0 ? bodyLanguageCue : null,
+    encodingMantra: encodingMantra.length > 0 ? encodingMantra : null,
     beneficialAlternativeAction: draft.beneficialAlternativeAction.trim(),
+  };
+}
+
+/**
+ * ARC Urge Stop Action/Encoding task: backfills every UrgeArc saved
+ * before this task's new optional fields existed -- mirrors
+ * arc/arcGoals.ts's own normalizeArcGoal exactly (safe defaults, never
+ * invented content, never overwrites an already-configured field).
+ * Applied once, at load time (data/storage.ts's loadUrgeArcs), so every
+ * other reader in this app can keep assuming a fully-populated record.
+ */
+export function normalizeUrgeArc(urgeArc: UrgeArc): UrgeArc {
+  return {
+    ...urgeArc,
+    stopCue: urgeArc.stopCue ?? null,
+    acceptanceContent: urgeArc.acceptanceContent ?? null,
+    bodyLanguageCue: urgeArc.bodyLanguageCue ?? null,
+    encodingMantra: urgeArc.encodingMantra ?? null,
   };
 }

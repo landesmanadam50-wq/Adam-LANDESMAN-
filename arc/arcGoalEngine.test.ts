@@ -14,6 +14,7 @@ import {
   getTriggerIdentificationCopy,
   getUrgeActionConfirmCopy,
   getUrgeNeedIdentificationCopy,
+  getUrgeStopActionCopy,
   needsReassessmentDetour,
   needsTriggerPrefixDetour,
   resolveAfterBridgeConfirmed,
@@ -24,6 +25,7 @@ import {
   resolveAfterThirdPersonImagery,
   resolveAfterTriggerIdentification,
   resolveAfterUrgeNeedIdentification,
+  resolveAfterUrgeStopAction,
   resolveBridgeEntryUiStage,
   resolveExecutionMode,
   resolveSelectedMapping,
@@ -33,6 +35,8 @@ import {
   shouldInterceptInnerAtAct,
   STATE_CLARIFICATION_DECISION_TITLE,
   TRIGGER_DESCRIPTION_UNSPECIFIED,
+  URGE_STOP_ACTION_DONE_LABEL,
+  URGE_STOP_ACTION_TITLE,
   urgeArcToProfile,
 } from "./arcGoalEngine.ts";
 import type { ArcGoalLiveState, ArcGoalUiStage } from "./arcGoalEngine.ts";
@@ -286,7 +290,7 @@ test("needsReassessmentDetour is false for a goal with neither urge nor interfer
 
 test("resolveAfterReassessment 'direct' resumes the outer run immediately -- never assumes the original emotion/urge is still present", () => {
   const g = goal({ urgeMappings: [urgeMapping()], interferingMappings: [mapping()] });
-  const result = resolveAfterReassessment("direct", g, createEmptyArcGoalLiveState());
+  const result = resolveAfterReassessment("direct", g, createEmptyArcGoalLiveState(), {});
   assert.equal(result.uiStage, "outer");
   assert.equal(result.goalState.reassessmentResolved, true);
   assert.equal(result.goalState.reassessmentChoice, "direct");
@@ -297,7 +301,7 @@ test("resolveAfterReassessment 'direct' resumes the outer run immediately -- nev
 test("resolveAfterReassessment 'urge' with exactly one urge mapping auto-selects it and skips straight to inner", () => {
   const only = urgeMapping({ id: "only-urge" });
   const g = goal({ urgeMappings: [only] });
-  const result = resolveAfterReassessment("urge", g, createEmptyArcGoalLiveState());
+  const result = resolveAfterReassessment("urge", g, createEmptyArcGoalLiveState(), {});
   assert.equal(result.uiStage, "inner");
   assert.equal(result.goalState.selectedUrgeMappingId, "only-urge");
   assert.equal(result.goalState.reassessmentChoice, "urge");
@@ -305,7 +309,7 @@ test("resolveAfterReassessment 'urge' with exactly one urge mapping auto-selects
 
 test("resolveAfterReassessment 'urge' with 2+ urge mappings shows urge_select instead of auto-selecting", () => {
   const g = goal({ urgeMappings: [urgeMapping({ id: "a" }), urgeMapping({ id: "b" })] });
-  const result = resolveAfterReassessment("urge", g, createEmptyArcGoalLiveState());
+  const result = resolveAfterReassessment("urge", g, createEmptyArcGoalLiveState(), {});
   assert.equal(result.uiStage, "urge_select");
   assert.equal(result.goalState.selectedUrgeMappingId, null);
 });
@@ -313,7 +317,7 @@ test("resolveAfterReassessment 'urge' with 2+ urge mappings shows urge_select in
 test("resolveAfterReassessment 'supportive' with exactly one interfering mapping auto-selects it and skips straight to inner", () => {
   const only = mapping({ id: "only-supportive" });
   const g = goal({ interferingMappings: [only] });
-  const result = resolveAfterReassessment("supportive", g, createEmptyArcGoalLiveState());
+  const result = resolveAfterReassessment("supportive", g, createEmptyArcGoalLiveState(), {});
   assert.equal(result.uiStage, "inner");
   assert.equal(result.goalState.selectedMappingId, "only-supportive");
   assert.equal(result.goalState.reassessmentChoice, "supportive");
@@ -321,16 +325,31 @@ test("resolveAfterReassessment 'supportive' with exactly one interfering mapping
 
 test("resolveAfterReassessment 'supportive' with 2+ interfering mappings shows supportive_state_select instead of auto-selecting", () => {
   const g = goal({ interferingMappings: [mapping({ id: "a" }), mapping({ id: "b" })] });
-  const result = resolveAfterReassessment("supportive", g, createEmptyArcGoalLiveState());
+  const result = resolveAfterReassessment("supportive", g, createEmptyArcGoalLiveState(), {});
   assert.equal(result.uiStage, "supportive_state_select");
   assert.equal(result.goalState.selectedMappingId, null);
 });
 
 // --- selectUrgeMapping / selectSupportiveMapping / resolveSelectedUrgeMapping / resolveSelectedMapping
 
-test("selectUrgeMapping records the chosen id and moves straight to inner", () => {
-  const result = selectUrgeMapping(createEmptyArcGoalLiveState(), "um-2");
+test("selectUrgeMapping records the chosen id and moves straight to inner when the selected urge has no Stop Action configured", () => {
+  const g = goal({ urgeMappings: [urgeMapping({ id: "um-2" })] });
+  const result = selectUrgeMapping(createEmptyArcGoalLiveState(), "um-2", g, {});
   assert.equal(result.selectedUrgeMappingId, "um-2");
+  assert.equal(result.uiStage, "inner");
+});
+
+test("selectUrgeMapping routes to urge_stop_action when the selected urge has a Stop Action configured", () => {
+  const g = goal({ urgeMappings: [urgeMapping({ id: "um-2", urgeArcId: "urge-2" })] });
+  const urgeArcsById = { "urge-2": urgeArc({ id: "urge-2", stopCue: "להניח את הטלפון" }) };
+  const result = selectUrgeMapping(createEmptyArcGoalLiveState(), "um-2", g, urgeArcsById);
+  assert.equal(result.selectedUrgeMappingId, "um-2");
+  assert.equal(result.uiStage, "urge_stop_action");
+});
+
+test("selectUrgeMapping falls back to inner when the mapped id doesn't resolve to any urge mapping on the goal", () => {
+  const g = goal({ urgeMappings: [] });
+  const result = selectUrgeMapping(createEmptyArcGoalLiveState(), "missing", g, {});
   assert.equal(result.uiStage, "inner");
 });
 
@@ -616,7 +635,7 @@ function runFullWalk(options: {
 
     if (uiStage === "reassessment") {
       sawReassessment = true;
-      const hop = resolveAfterReassessment(reassessmentChoice, g, goalState);
+      const hop = resolveAfterReassessment(reassessmentChoice, g, goalState, {});
       uiStage = hop.uiStage;
       goalState = hop.goalState;
       if (uiStage === "inner") {
@@ -628,7 +647,7 @@ function runFullWalk(options: {
 
     if (uiStage === "urge_select") {
       const only = g.urgeMappings[0];
-      goalState = selectUrgeMapping(goalState, only.id);
+      goalState = selectUrgeMapping(goalState, only.id, g, {});
       uiStage = goalState.uiStage;
       innerSession = createArcGoalUrgeInnerInitialSession();
       innerStage = "sensation_check";
@@ -894,4 +913,86 @@ test("full walk from the decision gate ('לא'): Presence rating is required and
     false,
     "the emotion/urge support route must never fire on this route, even though this goal has urge/interfering mappings configured"
   );
+});
+
+// ---------------------------------------------------------------------------
+// ARC Urge Stop Action/Encoding task
+// ---------------------------------------------------------------------------
+
+test("getUrgeStopActionCopy shows the urge's own configured Stop Action plus the existing free-breathing safety line", () => {
+  const u = urgeArc({ stopCue: "להניח את הטלפון" });
+  const copy = getUrgeStopActionCopy(u);
+  assert.equal(copy.title, URGE_STOP_ACTION_TITLE);
+  assert.match(copy.body, /להניח את הטלפון/);
+  assert.match(copy.body, /נשימה/, "the existing natural-breathing safety line is preserved");
+});
+
+test("getUrgeStopActionCopy never asks the trainee to evoke, intensify, or hold the urge", () => {
+  const u = urgeArc({ stopCue: "לצאת מהאפליקציה" });
+  const copy = getUrgeStopActionCopy(u);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("resolveAfterUrgeStopAction moves straight into the inner run's own first stage", () => {
+  const result = resolveAfterUrgeStopAction(createEmptyArcGoalLiveState());
+  assert.equal(result.uiStage, "inner");
+});
+
+test("resolveAfterReassessment (urge, single mapping) routes to urge_stop_action when the resolved UrgeArc has a configured Stop Action", () => {
+  const u = urgeArc({ id: "urge-1", stopCue: "להניח את הטלפון" });
+  const g = goal({ urgeMappings: [urgeMapping({ id: "only-urge", urgeArcId: "urge-1" })] });
+  const result = resolveAfterReassessment("urge", g, createEmptyArcGoalLiveState(), { "urge-1": u });
+  assert.equal(result.uiStage, "urge_stop_action");
+  assert.equal(result.goalState.selectedUrgeMappingId, "only-urge");
+});
+
+test("resolveAfterReassessment (urge, single mapping) goes straight to inner when the resolved UrgeArc has no Stop Action configured -- safe continuation for legacy programs", () => {
+  const u = urgeArc({ id: "urge-1", stopCue: null });
+  const g = goal({ urgeMappings: [urgeMapping({ id: "only-urge", urgeArcId: "urge-1" })] });
+  const result = resolveAfterReassessment("urge", g, createEmptyArcGoalLiveState(), { "urge-1": u });
+  assert.equal(result.uiStage, "inner");
+});
+
+test("resolveAfterReassessment (urge, single mapping) goes straight to inner when the referenced UrgeArc no longer resolves -- handles a deleted reference safely", () => {
+  const g = goal({ urgeMappings: [urgeMapping({ id: "only-urge", urgeArcId: "deleted-urge" })] });
+  const result = resolveAfterReassessment("urge", g, createEmptyArcGoalLiveState(), {});
+  assert.equal(result.uiStage, "inner");
+});
+
+test("selectUrgeMapping routes to urge_stop_action when the picked urge has a configured Stop Action", () => {
+  const u = urgeArc({ id: "urge-2", stopCue: "לעצור לרגע במקום" });
+  const g = goal({ urgeMappings: [urgeMapping({ id: "um-a" }), urgeMapping({ id: "um-b", urgeArcId: "urge-2" })] });
+  const result = selectUrgeMapping(createEmptyArcGoalLiveState(), "um-b", g, { "urge-2": u });
+  assert.equal(result.uiStage, "urge_stop_action");
+  assert.equal(result.selectedUrgeMappingId, "um-b");
+});
+
+test("selectUrgeMapping goes straight to inner when the picked urge has no Stop Action configured", () => {
+  const u = urgeArc({ id: "urge-2", stopCue: null });
+  const g = goal({ urgeMappings: [urgeMapping({ id: "um-b", urgeArcId: "urge-2" })] });
+  const result = selectUrgeMapping(createEmptyArcGoalLiveState(), "um-b", g, { "urge-2": u });
+  assert.equal(result.uiStage, "inner");
+});
+
+test("urgeArcToProfile builds habitEncoding from the urge's own bodyLanguageCue/encodingMantra when either is configured", () => {
+  const u = urgeArc({ bodyLanguageCue: "כתפיים רפויות", encodingMantra: "אני בוחר", beneficialAlternativeAction: "לשתות מים" });
+  const profile = urgeArcToProfile(u);
+  assert.notEqual(profile.habitEncoding, null);
+  assert.equal(profile.habitEncoding?.bodyLanguageCue, "כתפיים רפויות");
+  assert.equal(profile.habitEncoding?.mantra, "אני בוחר");
+  assert.equal(profile.habitEncoding?.target, "לשתות מים");
+});
+
+test("urgeArcToProfile leaves habitEncoding null when the urge configured neither bodyLanguageCue nor encodingMantra -- the habit layer's Encoding stage falls back to its existing generic line, unchanged", () => {
+  const u = urgeArc({ bodyLanguageCue: null, encodingMantra: null });
+  const profile = urgeArcToProfile(u);
+  assert.equal(profile.habitEncoding, null);
+});
+
+test("urgeArcToProfile builds habitEncoding when only ONE of bodyLanguageCue/encodingMantra is configured, leaving the other field null", () => {
+  const u = urgeArc({ bodyLanguageCue: "מבט קדימה", encodingMantra: null });
+  const profile = urgeArcToProfile(u);
+  assert.notEqual(profile.habitEncoding, null);
+  assert.equal(profile.habitEncoding?.bodyLanguageCue, "מבט קדימה");
+  assert.equal(profile.habitEncoding?.mantra, null);
 });

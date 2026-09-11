@@ -138,6 +138,8 @@ test("buildUrgeArcFromDraft splits comma-separated mappedTriggers/underlyingNeed
     stopCue: "",
     regulationAnchor: "עוגן",
     acceptanceContent: "",
+    bodyLanguageCue: "",
+    encodingMantra: "",
     beneficialAlternativeAction: "פעולה מיטיבה",
   };
   const built = buildUrgeArcFromDraft(draft, "u1", "2024-01-01T00:00:00.000Z", "2024-01-01T00:00:00.000Z");
@@ -154,6 +156,8 @@ test("buildUrgeArcFromDraft converts blank optional fields (stopCue/acceptanceCo
     stopCue: "   ",
     regulationAnchor: "עוגן",
     acceptanceContent: "",
+    bodyLanguageCue: "",
+    encodingMantra: "",
     beneficialAlternativeAction: "פעולה מיטיבה",
   };
   const built = buildUrgeArcFromDraft(draft, "u1", "2024-01-01T00:00:00.000Z", "2024-01-01T00:00:00.000Z");

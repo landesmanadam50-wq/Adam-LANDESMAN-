@@ -18,7 +18,7 @@ import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.t
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { deleteArcGoalFromList, normalizeArcGoal, upsertArcGoalInList } from "../arc/arcGoals.ts";
-import { deleteUrgeArcFromList, upsertUrgeArcInList } from "../arc/urgeArcs.ts";
+import { deleteUrgeArcFromList, normalizeUrgeArc, upsertUrgeArcInList } from "../arc/urgeArcs.ts";
 import {
   deleteLifeManifestFromList,
   deleteTargetFromList,
@@ -289,7 +289,7 @@ export async function loadUrgeArcs(): Promise<UrgeArc[]> {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as UrgeArc[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(normalizeUrgeArc) : [];
   } catch (error) {
     console.warn("[storage] Stored Urge ARCs are not valid JSON -- returning an empty list rather than crashing.", error);
     return [];

@@ -102,6 +102,7 @@ import type { ArcStageCopy } from "./stageCopy.ts";
 import type { InstructionSegment } from "./instructionTiming.ts";
 import { INSTRUCTION_TIMING } from "./instructionTiming.ts";
 import { resolveDwellSecondsFor, withTrailingDwellSegment } from "./dwellTimes.ts";
+import { getFreeBreathingLine } from "./naturalBreathing.ts";
 
 export type ArcGoalUiStage =
   | "state_clarification_decision"
@@ -112,6 +113,7 @@ export type ArcGoalUiStage =
   | "reassessment"
   | "urge_select"
   | "supportive_state_select"
+  | "urge_stop_action"
   | "execution_mode_choice"
   | "inner"
   | "mini_arc_embedded"
@@ -228,14 +230,34 @@ export function createArcGoalUrgeInnerInitialSession(): ArcLiveState {
  * leaving them null can never leak stray BUILD data into this session.
  * Deliberately never persisted anywhere -- this profile exists only for
  * the duration of one urge inner run.
+ *
+ * ARC Urge Stop Action/Encoding task: also builds habitEncoding from
+ * this urge's own optional bodyLanguageCue/encodingMantra -- null
+ * (omitted from the resulting EncodingProfile) when the trainee never
+ * configured either, so the habit layer's Encoding stage falls back to
+ * its existing generic line exactly as before this task. `target` uses
+ * the urge's own beneficial alternative action as its short label (the
+ * same text this session already leads toward), mirroring how
+ * identity/state's own EncodingProfile.target names what's being
+ * encoded.
  */
 export function urgeArcToProfile(urgeArc: UrgeArc): ArcBuildProfile {
+  const hasHabitEncoding = urgeArc.bodyLanguageCue !== null || urgeArc.encodingMantra !== null;
   return {
     ...createEmptyArcBuildProfile(),
     habit: urgeArc.interferingAction,
     beneficialAction: urgeArc.beneficialAlternativeAction,
     regulationTool: urgeArc.regulationAnchor,
     preventiveAction: null,
+    habitEncoding: hasHabitEncoding
+      ? {
+          target: urgeArc.beneficialAlternativeAction,
+          bodySensationCue: null,
+          breathCue: null,
+          bodyLanguageCue: urgeArc.bodyLanguageCue,
+          mantra: urgeArc.encodingMantra,
+        }
+      : null,
   };
 }
 
@@ -303,27 +325,45 @@ export function needsReassessmentDetour(goal: ArcGoal, goalState: ArcGoalLiveSta
 }
 
 /**
+ * ARC Urge Stop Action/Encoding task: routes into the new explicit Stop
+ * Action screen when the selected urge mapping's own referenced UrgeArc
+ * has a configured stopCue, else straight to "inner" ("Awareness of
+ * what is already present," sensation_check) -- "remain optional for
+ * legacy programs" and "allow safe continuation when no Stop Action
+ * exists." Shared by both places an urge mapping gets selected
+ * (resolveAfterReassessment's auto-select branch and selectUrgeMapping).
+ */
+function resolveUrgeEntryUiStage(mapping: ArcGoalUrgeMapping, urgeArcsById: Record<string, UrgeArc>): ArcGoalUiStage {
+  const urgeArc = urgeArcsById[mapping.urgeArcId];
+  return urgeArc?.stopCue && urgeArc.stopCue.trim().length > 0 ? "urge_stop_action" : "inner";
+}
+
+/**
  * reassessment's own 3-way answer (spec section 7). "direct" resumes
  * the outer run immediately, with no urge/supportive work at all --
  * never assumes the original emotion/urge is still present, exactly
  * matching spec's own "did not assume" requirement. "urge"/"supportive"
  * with exactly one configured mapping auto-selects it (mirrors
  * arc/arcEngine.ts's needsReactiveStateSelection precedent: no picker
- * shown for a single option) and goes straight to "inner" -- the
- * mapping's OWN execution mode (full/mini/choose) is resolved later,
- * only once the inner run reaches its own "act" (see
- * shouldInterceptInnerAtAct/resolveExecutionMode below), never here.
+ * shown for a single option) and goes straight to "inner" (or, for the
+ * urge route, first to "urge_stop_action" when this urge has one
+ * configured -- see resolveUrgeEntryUiStage) -- the mapping's OWN
+ * execution mode (full/mini/choose) is resolved later, only once the
+ * inner run reaches its own "act" (see shouldInterceptInnerAtAct/
+ * resolveExecutionMode below), never here.
  */
 export function resolveAfterReassessment(
   choice: ReassessmentChoice,
   goal: ArcGoal,
-  goalState: ArcGoalLiveState
+  goalState: ArcGoalLiveState,
+  urgeArcsById: Record<string, UrgeArc>
 ): { uiStage: ArcGoalUiStage; goalState: ArcGoalLiveState } {
   const resolved: ArcGoalLiveState = { ...goalState, reassessmentChoice: choice, reassessmentResolved: true };
   if (choice === "direct") return { uiStage: "outer", goalState: resolved };
   if (choice === "urge") {
     if (goal.urgeMappings.length === 1) {
-      return { uiStage: "inner", goalState: { ...resolved, selectedUrgeMappingId: goal.urgeMappings[0].id } };
+      const mapping = goal.urgeMappings[0];
+      return { uiStage: resolveUrgeEntryUiStage(mapping, urgeArcsById), goalState: { ...resolved, selectedUrgeMappingId: mapping.id } };
     }
     return { uiStage: "urge_select", goalState: resolved };
   }
@@ -333,9 +373,21 @@ export function resolveAfterReassessment(
   return { uiStage: "supportive_state_select", goalState: resolved };
 }
 
-/** urge_select's own answer. */
-export function selectUrgeMapping(goalState: ArcGoalLiveState, urgeMappingId: string): ArcGoalLiveState {
-  return { ...goalState, selectedUrgeMappingId: urgeMappingId, uiStage: "inner" };
+/** urge_select's own answer -- see resolveUrgeEntryUiStage's own doc for the Stop Action routing. */
+export function selectUrgeMapping(
+  goalState: ArcGoalLiveState,
+  urgeMappingId: string,
+  goal: ArcGoal,
+  urgeArcsById: Record<string, UrgeArc>
+): ArcGoalLiveState {
+  const mapping = goal.urgeMappings.find((candidate) => candidate.id === urgeMappingId);
+  const uiStage = mapping ? resolveUrgeEntryUiStage(mapping, urgeArcsById) : "inner";
+  return { ...goalState, selectedUrgeMappingId: urgeMappingId, uiStage };
+}
+
+/** urge_stop_action's own "ביצעתי את פעולת העצירה" -- moves into the inner run's own first stage (sensation_check, "Awareness of what is already present"), unchanged. */
+export function resolveAfterUrgeStopAction(goalState: ArcGoalLiveState): ArcGoalLiveState {
+  return { ...goalState, uiStage: "inner" };
 }
 
 /** supportive_state_select's own answer. */
@@ -444,6 +496,34 @@ export function getSupportiveActionConfirmCopy(mapping: ArcGoalInterferingMappin
 /** The urge-action confirm's own copy -- the referenced UrgeArc's own beneficial alternative action (spec section 9), the bridge into the Identity ARC. */
 export function getUrgeActionConfirmCopy(urgeArc: UrgeArc): { title: string; body: string } {
   return { title: "פעולה מיטיבה חלופית", body: urgeArc.beneficialAlternativeAction };
+}
+
+export const URGE_STOP_ACTION_TITLE = "פעולת עצירה";
+export const URGE_STOP_ACTION_DONE_LABEL = "ביצעתי את פעולת העצירה";
+
+/**
+ * ARC Urge Stop Action/Encoding task: the new dedicated Stop Action
+ * screen's own copy -- shows this urge's own configured Stop Action
+ * (UrgeArc.stopCue, an existing field reused here for the first time;
+ * see this file's own module doc and UrgeArc's own field doc). Never
+ * asks the trainee to evoke, intensify, or hold the urge -- the body is
+ * purely the short physical action already decided in BUILD, plus the
+ * existing free-natural-breathing safety line (getFreeBreathingLine),
+ * the same one every other recognition-only ARC screen already carries.
+ * Only ever rendered when this urge actually has a stopCue configured
+ * (resolveUrgeEntryUiStage never routes here otherwise).
+ */
+export function getUrgeStopActionCopy(urgeArc: UrgeArc): ArcStageCopy {
+  const stopLine = urgeArc.stopCue ?? "";
+  const segments: InstructionSegment[] = [
+    { text: stopLine, durationSeconds: INSTRUCTION_TIMING.observerPause },
+    { text: getFreeBreathingLine(), durationSeconds: 0 },
+  ].filter((segment) => segment.text.length > 0);
+  return {
+    title: URGE_STOP_ACTION_TITLE,
+    body: segments.map((segment) => segment.text).join(" "),
+    segments,
+  };
 }
 
 /** The final goal-action confirm's own copy -- the goal's OWN action/result (Identity protocol -> Goal-related action -> Desired result), distinct from the identity protocol's own identityAction. */

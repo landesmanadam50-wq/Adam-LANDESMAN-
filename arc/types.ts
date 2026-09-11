@@ -335,7 +335,7 @@ export interface ArcBuildProfile {
   identityInterferingEmotion: string | null;
   /** The identity layer's own Preventive Action, parallel to statePreventiveAction -- never mixed with it or with habit's preventiveAction. */
   identityPreventiveAction: string | null;
-  /** The identity layer's own lightweight Encoding regulation anchor, parallel to stateEncodingRegulationCue -- never mixed with it. The habit layer has no equivalent of its own: a habit-targeted Encoding session always uses regulationTool directly, unchanged. */
+  /** The identity layer's own lightweight Encoding regulation anchor, parallel to stateEncodingRegulationCue -- never mixed with it. The habit layer still has no regulation-cue equivalent of its own (a habit-targeted Encoding session always uses regulationTool directly, unchanged) -- only its optional body-language-cue/mantra Encoding content is configurable, via habitEncoding below. */
   identityEncodingRegulationCue: string | null;
   identityEncoding: EncodingProfile | null;
   identityAction: string | null;
@@ -350,6 +350,21 @@ export interface ArcBuildProfile {
   beneficialActionBodyCue: string | null;
   /** The habit layer's own Preventive Action, resolved for a session targeting "habit" (reactive_urge). Parallel to statePreventiveAction/identityPreventiveAction -- see arc/arcEngine.ts's resolveTargetPreventiveAction. */
   preventiveAction: string | null;
+  /**
+   * ARC Urge Stop Action/Encoding task: the habit layer's own Encoding
+   * content, parallel to stateEncoding/identityEncoding -- null by
+   * default for every ArcBuildProfile saved before this field existed
+   * (no regular BUILD screen sets this directly yet). The one real
+   * writer today is arc/arcGoalEngine.ts's urgeArcToProfile, which
+   * builds it from a UrgeArc's own optional bodyLanguageCue/
+   * encodingMantra fields when the trainee configured either -- see
+   * that function's own doc. Reuses the EXACT same EncodingProfile
+   * shape identity/state already use (never a second, parallel Encoding
+   * concept); arc/arcEngine.ts's resolveEncodingTarget reads this for
+   * its "habit" case exactly like it already reads identityEncoding/
+   * stateEncoding for theirs.
+   */
+  habitEncoding: EncodingProfile | null;
 
   /**
    * The Full Regulation Cue -- the main regulation tool/process used
@@ -688,6 +703,7 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     beneficialAction: null,
     beneficialActionBodyCue: null,
     preventiveAction: null,
+    habitEncoding: null,
     regulationTool: null,
     actionDuration: null,
     successFocusDuration: null,
@@ -828,10 +844,45 @@ export interface UrgeArc {
   interferingAction: string;
   mappedTriggers: string[];
   underlyingNeeds: string[];
-  /** Optional custom Stop cue override -- null means the shared, goal-level third-person-imagery/Stop prefix (arc/arcGoalEngine.ts) is used as-is, with no urge-specific variation. */
+  /**
+   * ARC Urge Stop Action/Encoding task: this urge's own optional Stop
+   * Action ("פעולת עצירה") -- a short, concrete action that safely
+   * interrupts the automatic behavior and creates a moment of choice
+   * (e.g. "להניח את הטלפון"), never an instruction to evoke, intensify,
+   * or hold the urge itself. When set, shown on its own dedicated LIVE
+   * screen right after this urge is selected/identified and before
+   * Awareness (sensation_check) -- see arc/arcGoalEngine.ts's
+   * getUrgeStopActionCopy/resolveUrgeEntryUiStage. null (the default,
+   * and every UrgeArc saved before this became a dedicated screen) means
+   * no Stop Action screen is shown for this urge at all -- the shared,
+   * goal-level third-person-imagery/Stop prefix (which always runs once
+   * per session regardless) is the only Stop moment, exactly as before
+   * this task. Optional for legacy programs by construction.
+   */
   stopCue: string | null;
   regulationAnchor: string;
   acceptanceContent: string | null;
+  /**
+   * ARC Urge Stop Action/Encoding task: this urge's own optional
+   * Encoding body-language cue -- reuses the exact same concept as
+   * identity/state's own EncodingProfile.bodyLanguageCue (never a
+   * second, parallel Encoding system), surfaced through
+   * arc/arcGoalEngine.ts's urgeArcToProfile onto ArcBuildProfile
+   * .habitEncoding. null (the default) means the habit layer's Encoding
+   * stage falls back to its existing generic body-language line,
+   * unchanged.
+   */
+  bodyLanguageCue: string | null;
+  /**
+   * ARC Urge Stop Action/Encoding task: this urge's own optional short
+   * Encoding mantra -- reuses EncodingProfile.mantra, the SAME field
+   * identity/state Encoding already reads; deliberately never merged
+   * with Identity Mantra (identityEncoding.mantra) or any other mantra
+   * type in this app -- each stays its own independent, optional field.
+   * null (the default) means no mantra line is added during this urge's
+   * Encoding stage.
+   */
+  encodingMantra: string | null;
   /** The bridge action shown once this urge's own Full protocol run reaches (but does not itself perform) "act" -- see urge_action_confirm, arc/arcGoalEngine.ts. */
   beneficialAlternativeAction: string;
 }
@@ -949,6 +1000,8 @@ export function createEmptyUrgeArc(id: string, name: string, now: string): UrgeA
     stopCue: null,
     regulationAnchor: "",
     acceptanceContent: null,
+    bodyLanguageCue: null,
+    encodingMantra: null,
     beneficialAlternativeAction: "",
   };
 }
