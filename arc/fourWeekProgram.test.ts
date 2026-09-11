@@ -257,17 +257,53 @@ test("Week 1's ARCHI ARC Link and Full ARC completions are tracked as distinct k
   assert.notEqual(arcLinkRecords[0].id, fullArcRecords[0].id);
 });
 
-test("Week 2's Mini ARC Link and Mini ARC completions are tracked as distinct kinds, never merged", () => {
+test("Week 2's Mini ARCHI Link and Mini ARC completions are tracked as distinct kinds, never merged", () => {
   let program = createFourWeekProgram("2025-01-06");
   program = confirmWeekCompleteAndAdvance(program, "2025-01-12T18:00:00.000Z"); // -> week 2
-  program = addPracticeRecord(program, 2, "mini_arc_link", "Mini ARC Link עם ARCHI", "2025-01-14T09:00:00.000Z");
+  program = addPracticeRecord(program, 2, "mini_archi_link", "Mini ARCHI Link", "2025-01-14T09:00:00.000Z");
   program = addPracticeRecord(program, 2, "mini_arc", "Mini ARC", "2025-01-14T09:05:00.000Z");
   program = addPracticeRecord(program, 2, "mini_arc", "Mini ARC", "2025-01-15T09:00:00.000Z");
   const week2 = resolveWeek(program, 2);
-  const linkRecords = week2.practiceRecords.filter((r) => r.kind === "mini_arc_link");
+  const linkRecords = week2.practiceRecords.filter((r) => r.kind === "mini_archi_link");
   const miniArcRecords = week2.practiceRecords.filter((r) => r.kind === "mini_arc");
-  assert.equal(linkRecords.length, 1, "exactly one Mini ARC Link practice logged");
+  assert.equal(linkRecords.length, 1, "exactly one Mini ARCHI Link practice logged");
   assert.equal(miniArcRecords.length, 2, "two independent Mini ARC completions logged");
+});
+
+test("Mini ARCHI Link (Week 2) and Mini ARC Link (Week 3) are distinct kinds, never merged, despite routing through the same screen", () => {
+  let program = createFourWeekProgram("2025-01-06");
+  program = confirmWeekCompleteAndAdvance(program, "2025-01-12T18:00:00.000Z"); // -> week 2
+  program = addPracticeRecord(program, 2, "mini_archi_link", "Mini ARCHI Link", "2025-01-14T09:00:00.000Z");
+  program = confirmWeekCompleteAndAdvance(program, "2025-01-19T18:00:00.000Z"); // -> week 3
+  program = addPracticeRecord(program, 3, "mini_arc_link", "Mini ARC Link", "2025-01-21T09:00:00.000Z");
+
+  const week2Kinds = resolveWeek(program, 2).practiceRecords.map((r) => r.kind);
+  const week3Kinds = resolveWeek(program, 3).practiceRecords.map((r) => r.kind);
+  assert.deepEqual(week2Kinds, ["mini_archi_link"]);
+  assert.deepEqual(week3Kinds, ["mini_arc_link"]);
+  assert.notEqual(week2Kinds[0], week3Kinds[0], "Mini ARCHI Link and Mini ARC Link must never collapse into the same kind");
+});
+
+test("all three linking practices (ARCHI ARC Link, Mini ARCHI Link, Mini ARC Link) plus Full ARC/Mini ARC stay distinct and independently countable", () => {
+  let program = createFourWeekProgram("2025-01-06");
+  program = addPracticeRecord(program, 1, "arc_link", "ARCHI ARC Link", "2025-01-07T09:00:00.000Z");
+  program = addPracticeRecord(program, 1, "full_arc", "ARC מלא", "2025-01-07T10:00:00.000Z");
+  program = confirmWeekCompleteAndAdvance(program, "2025-01-12T18:00:00.000Z"); // -> week 2
+  program = addPracticeRecord(program, 2, "mini_archi_link", "Mini ARCHI Link", "2025-01-14T09:00:00.000Z");
+  program = addPracticeRecord(program, 2, "mini_arc", "Mini ARC", "2025-01-14T09:05:00.000Z");
+  program = confirmWeekCompleteAndAdvance(program, "2025-01-19T18:00:00.000Z"); // -> week 3
+  program = addPracticeRecord(program, 3, "mini_arc_link", "Mini ARC Link", "2025-01-21T09:00:00.000Z");
+  program = addPracticeRecord(program, 3, "mini_arc", "Mini ARC", "2025-01-21T09:05:00.000Z");
+
+  const allKinds = program.weeks.flatMap((week) => week.practiceRecords.map((r) => r.kind));
+  const uniqueKinds = new Set(allKinds);
+  assert.equal(allKinds.length, 6);
+  assert.equal(uniqueKinds.size, 5, "five distinct kinds across the six logged practices (mini_arc repeats in weeks 2 and 3)");
+  assert.ok(uniqueKinds.has("arc_link"));
+  assert.ok(uniqueKinds.has("mini_archi_link"));
+  assert.ok(uniqueKinds.has("mini_arc_link"));
+  assert.ok(uniqueKinds.has("full_arc"));
+  assert.ok(uniqueKinds.has("mini_arc"));
 });
 
 test("Week 3's inline Identity Recall is its own kind, distinct from Mini ARC Link/Mini ARC/action", () => {

@@ -11,7 +11,7 @@ import { describeTrigger, resolveRoutineTrigger } from "../arc/routineLinks.ts";
 import type { ArcLink } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
-import type { FourWeekProgramWeekNumber } from "../arc/types.ts";
+import type { ArcGoalWeekPracticeRecord, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import BodyImageryStep from "./BodyImageryStep.tsx";
 
 /**
@@ -24,21 +24,28 @@ import BodyImageryStep from "./BodyImageryStep.tsx";
  * itself once finished. Mini ARC has no route choice (no state/identity
  * distinction) -- unlike ARC Link, there's no chooser phase here.
  *
- * Four-Week Program task correction ("Mini ARC Link is its own distinct
- * guided linking practice, never interchangeable with Mini ARC itself"):
- * the optional fourWeekGoalId/fourWeekWeek params -- set only by
- * live/ArcGoalFourWeekDashboardScreen.tsx's own "תרגול Mini ARC Link עם
- * ARCHI" (Week 2) and "Mini ARC Link" (Week 3) -- make completePractice
- * log a kind:"mini_arc_link" practice (never "mini_arc" -- tracked
- * completely separately) and return to the dashboard instead of
- * router.back(). Absent, completePractice is completely unchanged.
+ * Four-Week Program task correction: THIS SAME SCREEN backs TWO
+ * distinct linking practices that must never be tracked as one --
+ * Week 2's "Mini ARCHI Link" (links the trigger to starting the linked
+ * Mini ARC in ARCHI) and Week 3's "Mini ARC Link" (the shorter, learned
+ * link toward the real-world action, Mini ARC used only when needed).
+ * The optional fourWeekGoalId/fourWeekWeek/fourWeekKind params -- set
+ * only by live/ArcGoalFourWeekDashboardScreen.tsx's own "תרגול Mini
+ * ARCHI Link" (Week 2, fourWeekKind="mini_archi_link") and "Mini ARC
+ * Link" (Week 3, fourWeekKind="mini_arc_link") -- tell completePractice
+ * exactly which one this run was, so it logs the CORRECT kind and
+ * returns to the dashboard instead of router.back(). Absent
+ * fourWeekKind defaults to this screen's own original "mini_arc_link"
+ * semantic. Absent fourWeekGoalId entirely, completePractice is
+ * completely unchanged.
  */
 export default function MiniArcLinkScreen() {
-  const { id, linkId, fourWeekGoalId, fourWeekWeek } = useLocalSearchParams<{
+  const { id, linkId, fourWeekGoalId, fourWeekWeek, fourWeekKind } = useLocalSearchParams<{
     id: string;
     linkId?: string;
     fourWeekGoalId?: string;
     fourWeekWeek?: string;
+    fourWeekKind?: string;
   }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "noTrigger" | "ready">("loading");
   const [steps, setSteps] = useState<MiniArcLinkStep[]>([]);
@@ -115,7 +122,10 @@ export default function MiniArcLinkScreen() {
       if (goal?.fourWeekProgram) {
         const now = new Date().toISOString();
         const week = (Number(fourWeekWeek) || goal.fourWeekProgram.currentWeek) as FourWeekProgramWeekNumber;
-        const updatedProgram = clearReturnContext(addPracticeRecord(goal.fourWeekProgram, week, "mini_arc_link", "Mini ARC Link", now));
+        const kind: ArcGoalWeekPracticeRecord["kind"] =
+          fourWeekKind === "mini_archi_link" ? "mini_archi_link" : "mini_arc_link";
+        const label = kind === "mini_archi_link" ? "Mini ARCHI Link" : "Mini ARC Link";
+        const updatedProgram = clearReturnContext(addPracticeRecord(goal.fourWeekProgram, week, kind, label, now));
         await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
       }
       router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });

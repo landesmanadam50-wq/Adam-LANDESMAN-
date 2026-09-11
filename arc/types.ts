@@ -931,20 +931,25 @@ export interface ArcGoalWeekDateExtension {
 }
 
 /**
- * Four-Week Program task correction: ARC Link/Mini ARC Link are their
- * OWN distinct guided linking practices, never interchangeable with the
- * Full ARC/Mini ARC session they lead into -- "kind" now names exactly
- * which of the five real practice types was actually run (plus the
- * generic real-world action confirmation and an ARCHI-support-used
- * flag), so "Track ARCHI ARC Link practices and Full ARC completions
- * separately" / "Track Mini ARC Link practices and Mini ARC completions
- * separately" is a real, queryable distinction on the record itself,
- * never just a difference in `label` text. "identity_recall" is Week
- * 3's own inline recall (never a full ARC Link or Full ARC session).
+ * Four-Week Program task correction: three separate, never-merged
+ * linking practices, plus the Full ARC/Mini ARC sessions they each lead
+ * into --
+ *   - "arc_link" (Week 1's "ARCHI ARC Link"): links the trigger to
+ *     starting the linked Full ARC in ARCHI.
+ *   - "mini_archi_link" (Week 2's "Mini ARCHI Link"): links the trigger
+ *     to starting the linked Mini ARC in ARCHI.
+ *   - "mini_arc_link" (Week 3's "Mini ARC Link"): the shorter, learned
+ *     link toward the real-world action itself, with Mini ARC used only
+ *     when needed -- a DIFFERENT practice from mini_archi_link above,
+ *     never the same kind despite both routing through
+ *     live/MiniArcLinkScreen.tsx (see that screen's own doc).
+ * "full_arc"/"mini_arc" are the guided sessions themselves, tracked
+ * separately from whichever Link practice led into them. "identity_recall"
+ * is Week 3's own inline recall (never a Link or Full ARC session).
  */
 export interface ArcGoalWeekPracticeRecord {
   id: string;
-  kind: "full_arc" | "arc_link" | "mini_arc" | "mini_arc_link" | "identity_recall" | "action" | "archi_support";
+  kind: "full_arc" | "arc_link" | "mini_arc" | "mini_archi_link" | "mini_arc_link" | "identity_recall" | "action" | "archi_support";
   label: string;
   occurredAt: string;
 }

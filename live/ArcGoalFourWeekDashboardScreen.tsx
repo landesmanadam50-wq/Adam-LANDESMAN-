@@ -39,30 +39,37 @@ import { todayLocalDateString } from "../program/dateUtils.ts";
  *
  * "Only show actions relevant to the current week" (spec section 7):
  * Week 1 offers ARCHI ARC Link, Full ARC, and a direct action
- * confirmation; Week 2 offers Mini ARC Link with ARCHI guidance, Mini
- * ARC, a direct action confirmation, and an "אני צריך עזרה נוספת"
- * Full-ARC fallback (plus, until one is linked, Mini ARC create/
- * select); Week 3 offers Mini ARC Link, an inline Identity Recall, an
- * optional Mini ARC, and a direct action-complete confirmation; Week 4
- * offers ONLY the direct action-complete confirmation. "אני צריך עזרה
- * מ-ARCHI" (-> Full ARC) is always available as an explicit, optional
- * fallback, never a requirement.
+ * confirmation; Week 2 offers Mini ARCHI Link, Mini ARC, a direct action
+ * confirmation, and an "אני צריך עזרה נוספת" Full-ARC fallback (plus,
+ * until one is linked, Mini ARC create/select); Week 3 offers Mini ARC
+ * Link, an inline Identity Recall, an optional Mini ARC, and a direct
+ * action-complete confirmation; Week 4 offers ONLY the direct
+ * action-complete confirmation. "אני צריך עזרה מ-ARCHI" (-> Full ARC) is
+ * always available as an explicit, optional fallback, never a
+ * requirement.
  *
- * Four-Week Program task correction: "ARCHI ARC Link" (Week 1) and
- * "Mini ARC Link עם ARCHI" (Weeks 2-3) are their OWN distinct guided
- * linking practices -- they lead INTO Full ARC/Mini ARC (spec's own
- * routes: ARCHI ARC Link -> linked Full ARC -> identity-based action ->
- * Success Focus; Mini ARC Link with ARCHI -> linked Mini ARC -> target
- * habit/beneficial action) but are never the same practice as, or
- * interchangeable with, Full ARC/Mini ARC themselves -- each routes to
- * its own real screen (live/ArcLinkScreen.tsx / live/MiniArcLinkScreen.tsx
- * vs. live/LiveSessionScreen.tsx / live/MiniArcLiveScreen.tsx) and logs
- * its own distinct practice-record kind (arc_link/mini_arc_link vs.
- * full_arc/mini_arc -- see ArcGoalWeekPracticeRecord's own doc), so
- * "Track ... separately" is a real, queryable distinction, never just
- * a difference in button label. Full ARC and Mini ARC also both stay
- * directly reachable on their own, without going through their Link
- * practice first.
+ * Four-Week Program task correction: THREE separate, never-merged
+ * linking practices --
+ *   - "ARCHI ARC Link" (Week 1): links the trigger to starting the
+ *     linked Full ARC in ARCHI (route: ARCHI ARC Link -> linked Full ARC
+ *     -> identity-based action -> Success Focus).
+ *   - "Mini ARCHI Link" (Week 2): links the trigger to starting the
+ *     linked Mini ARC in ARCHI (route: Mini ARCHI Link -> linked Mini
+ *     ARC -> target habit/beneficial action).
+ *   - "Mini ARC Link" (Week 3): the shorter, learned link toward the
+ *     real-world action itself, with Mini ARC used only when needed --
+ *     a DIFFERENT practice from Mini ARCHI Link above, tracked as a
+ *     different kind even though both route through the SAME
+ *     live/MiniArcLinkScreen.tsx (see that screen's own doc for how the
+ *     explicit fourWeekKind param tells them apart).
+ * None of these three is ever the same practice as, or interchangeable
+ * with, Full ARC/Mini ARC themselves -- each routes to its own real
+ * screen and logs its own distinct practice-record kind (arc_link/
+ * mini_archi_link/mini_arc_link vs. full_arc/mini_arc -- see
+ * ArcGoalWeekPracticeRecord's own doc), so "Track ... separately" is a
+ * real, queryable distinction, never just a difference in button label.
+ * Full ARC and Mini ARC also both stay directly reachable on their own,
+ * without going through their Link practice first.
  *
  * Reaching a week's own planned end date NEVER auto-advances it -- it
  * only surfaces the decision prompt (spec section 2) below, and
@@ -163,16 +170,23 @@ export default function ArcGoalFourWeekDashboardScreen() {
 
   /**
    * Four-Week Program task correction: four distinct, non-interchangeable
-   * targets -- "fullArc"/"miniArc" launch the real Full ARC/Mini ARC
-   * session directly; "arcLink"/"miniArcLink" launch their OWN guided
-   * linking practice (live/ArcLinkScreen.tsx / live/MiniArcLinkScreen.tsx),
-   * which itself leads into starting the linked Full ARC/Mini ARC. Each
-   * records its own practice-record kind on return (see those screens'
-   * own fourWeekGoalId-aware completion) -- this function only sets the
-   * return context and navigates; it never logs the practice record
-   * itself; that only happens once the trainee actually finishes there.
+   * ROUTE targets -- "fullArc"/"miniArc" launch the real Full ARC/Mini
+   * ARC session directly; "arcLink"/"miniArcLink" launch their OWN
+   * guided linking practice (live/ArcLinkScreen.tsx /
+   * live/MiniArcLinkScreen.tsx), which itself leads into starting the
+   * linked Full ARC/Mini ARC. Each records its own practice-record kind
+   * on return (see those screens' own fourWeekGoalId-aware completion)
+   * -- this function only sets the return context and navigates; it
+   * never logs the practice record itself; that only happens once the
+   * trainee actually finishes there.
+   *
+   * live/MiniArcLinkScreen.tsx backs TWO distinct kinds (Week 2's "Mini
+   * ARCHI Link" and Week 3's "Mini ARC Link" -- never the same practice
+   * despite sharing a screen), so the route target alone can't tell it
+   * which one this run is; `kind` is threaded through as an explicit
+   * fourWeekKind param for exactly that case.
    */
-  function startSupportFlow(target: "fullArc" | "miniArc" | "arcLink" | "miniArcLink", actionLabel: string) {
+  function startSupportFlow(target: "fullArc" | "miniArc" | "arcLink" | "miniArcLink", kind: "full_arc" | "mini_arc" | "arc_link" | "mini_archi_link" | "mini_arc_link", actionLabel: string) {
     if (!goal || !goal.fourWeekProgram) return;
     const now = new Date().toISOString();
     const updatedProgram = setReturnContext(goal.fourWeekProgram, goal.fourWeekProgram.currentWeek, actionLabel, now);
@@ -185,7 +199,7 @@ export default function ArcGoalFourWeekDashboardScreen() {
     } else if (target === "miniArc" && updatedProgram.linkedMiniArcId) {
       router.push({ pathname: "/mini-arc/live/[id]", params: { id: updatedProgram.linkedMiniArcId, ...fourWeekParams } });
     } else if (target === "miniArcLink" && updatedProgram.linkedMiniArcId) {
-      router.push({ pathname: "/mini-arc-link/[id]", params: { id: updatedProgram.linkedMiniArcId, ...fourWeekParams } });
+      router.push({ pathname: "/mini-arc-link/[id]", params: { id: updatedProgram.linkedMiniArcId, fourWeekKind: kind, ...fourWeekParams } });
     }
   }
 
@@ -274,11 +288,11 @@ export default function ArcGoalFourWeekDashboardScreen() {
         {currentWeek.weekNumber === 1 && (
           <View>
             {goal.identityProtocolId && (
-              <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => startSupportFlow("arcLink", "ARCHI ARC Link")}>
+              <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => startSupportFlow("arcLink", "arc_link", "ARCHI ARC Link")}>
                 <Text style={styles.buttonText}>תרגול ARCHI ARC Link</Text>
               </Pressable>
             )}
-            <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("fullArc", "ARC מלא")}>
+            <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("fullArc", "full_arc", "ARC מלא")}>
               <Text style={styles.secondaryButtonText}>התחל ARC מלא</Text>
             </Pressable>
             <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setActionConfirmOpen(true)}>
@@ -312,16 +326,16 @@ export default function ArcGoalFourWeekDashboardScreen() {
               </View>
             ) : (
               <View>
-                <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArcLink", "Mini ARC Link עם ARCHI")}>
-                  <Text style={styles.buttonText}>תרגול Mini ARC Link עם ARCHI</Text>
+                <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArcLink", "mini_archi_link", "Mini ARCHI Link")}>
+                  <Text style={styles.buttonText}>תרגול Mini ARCHI Link</Text>
                 </Pressable>
-                <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArc", "Mini ARC")}>
+                <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArc", "mini_arc", "Mini ARC")}>
                   <Text style={styles.secondaryButtonText}>התחל Mini ARC</Text>
                 </Pressable>
                 <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setActionConfirmOpen(true)}>
                   <Text style={styles.buttonText}>בצע את הפעולה</Text>
                 </Pressable>
-                <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("fullArc", "ARC מלא -- תמיכה נוספת")}>
+                <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("fullArc", "full_arc", "ARC מלא -- תמיכה נוספת")}>
                   <Text style={styles.secondaryButtonText}>אני צריך עזרה נוספת</Text>
                 </Pressable>
               </View>
@@ -332,7 +346,7 @@ export default function ArcGoalFourWeekDashboardScreen() {
         {currentWeek.weekNumber === 3 && (
           <View>
             {linkedMiniArc && (
-              <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArcLink", "Mini ARC Link")}>
+              <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArcLink", "mini_arc_link", "Mini ARC Link")}>
                 <Text style={styles.buttonText}>Mini ARC Link</Text>
               </Pressable>
             )}
@@ -355,7 +369,7 @@ export default function ArcGoalFourWeekDashboardScreen() {
               </View>
             )}
             {linkedMiniArc && (
-              <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArc", "Mini ARC")}>
+              <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArc", "mini_arc", "Mini ARC")}>
                 <Text style={styles.secondaryButtonText}>Mini ARC (בהנחיה)</Text>
               </Pressable>
             )}
@@ -377,7 +391,7 @@ export default function ArcGoalFourWeekDashboardScreen() {
           style={[styles.button, styles.secondaryButton, styles.fullWidthButton]}
           onPress={() => {
             recordAndPersist("archi_support", "אני צריך עזרה מ-ARCHI");
-            startSupportFlow("fullArc", "אני צריך עזרה מ-ARCHI");
+            startSupportFlow("fullArc", "full_arc", "אני צריך עזרה מ-ARCHI");
           }}
         >
           <Text style={styles.secondaryButtonText}>אני צריך עזרה מ-ARCHI</Text>
