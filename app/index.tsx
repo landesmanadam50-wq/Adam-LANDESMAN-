@@ -1,239 +1,68 @@
-import { useCallback, useState } from "react";
-import { Link, useFocusEffect } from "expo-router";
+import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { loadArcBuilds } from "../data/storage.ts";
-import { DEFERRAL_OPTIONS, scheduleDeferredReminder } from "../data/reminders.ts";
-import type { DeferralOption } from "../data/reminders.ts";
-
 /**
- * Reminder/timer-update task (#5): scheduling a future ARC session
- * reminder, independently of any LIVE session in progress -- reuses
- * the exact same chip-picker/scheduling mechanism as deferred Focus
- * Success (data/reminders.ts's scheduleDeferredReminder, kind "arc"),
- * so there is only ever one reminder-scheduling system, not two.
- * arcRequested is always true for this kind (a future ARC reminder is,
- * by construction, "with ARC") -- see data/storage.ts's PendingReminder.
+ * New architecture task, Phase 1 (spec section 1): Home now offers
+ * exactly the two primary modes -- "replace the confusing mixed entry
+ * experience with two primary choices." Every previous Home entry
+ * point (Mini ARC, ARC Goals, Urge ARC, Life Manifest, stats, routines,
+ * negative action, the future-reminder scheduler) still exists at its
+ * exact original route, unchanged -- see build/SelfDevelopmentDashboardScreen.tsx
+ * and build/ReachYourGoalDashboardScreen.tsx, which now host those entry
+ * points instead of Home itself (spec section 19's own removal
+ * ordering: move the entry BUTTON off the new UI, never delete the
+ * underlying screen/route/data).
  */
-function ScheduleArcReminder() {
-  const [open, setOpen] = useState(false);
-  const [confirmedOption, setConfirmedOption] = useState<DeferralOption | null>(null);
-
-  if (!open) {
-    return (
-      <Pressable style={styles.secondaryButton} onPress={() => setOpen(true)}>
-        <Text style={styles.secondaryButtonText}>קבע תזכורת ARC עתידית</Text>
-      </Pressable>
-    );
-  }
-
-  if (confirmedOption) {
-    return <Text style={styles.confirmationText}>{`תזכורת נקבעה: ${confirmedOption.label}.`}</Text>;
-  }
-
-  return (
-    <View style={styles.reminderPicker}>
-      <Text style={styles.reminderPickerLabel}>מתי תרצה לקבל תזכורת לסשן ARC?</Text>
-      <View style={styles.chipRow}>
-        {DEFERRAL_OPTIONS.map((option) => (
-          <Pressable
-            key={option.id}
-            style={styles.chip}
-            onPress={() => {
-              scheduleDeferredReminder({
-                kind: "arc",
-                option,
-                arcRequested: true,
-                title: "ARCHI",
-                body: "זמן לסשן ARC.",
-              });
-              setConfirmedOption(option);
-            }}
-          >
-            <Text style={styles.secondaryButtonText}>{option.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
-
 export default function Home() {
-  const [hasArcBuilds, setHasArcBuilds] = useState<boolean | null>(null);
-
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      loadArcBuilds()
-        .then((builds) => {
-          if (!cancelled) setHasArcBuilds(builds.length > 0);
-        })
-        // Startup-safety fix: loadArcBuilds() itself no longer rejects,
-        // but this stays as defense-in-depth so Home can never get stuck
-        // showing nothing (hasArcBuilds staying null forever) if some
-        // other, unrelated failure occurs here -- falls back to the
-        // "no ARC Builds yet" empty state, never a blank screen.
-        .catch((error) => {
-          console.warn("[Home] Failed to load ARC Builds -- showing the empty state.", error);
-          if (!cancelled) setHasArcBuilds(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }, [])
-  );
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.content}>
         <Text style={styles.title}>Archi</Text>
 
-        {/* Mini ARC task: an independent feature -- available regardless of
-            whether the trainee has any full ARC Build yet, since it's meant
-            for immediate support without the full protocol. */}
-        <Link href="/mini-arc" asChild>
-          <Pressable style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>Mini ARC</Text>
+        <Link href="/self-development" asChild>
+          <Pressable style={[styles.modeButton, styles.selfDevelopmentButton]}>
+            <Text style={styles.modeButtonLabel}>התפתחות אישית</Text>
+            <Text style={styles.modeButtonHint}>עבודה על רגש, דחף, מחשבה או הרגל מפריע -- ללא מטרה או תהליך ארוך</Text>
+            <Text style={styles.modeButtonAction}>כניסה להתפתחות אישית</Text>
           </Pressable>
         </Link>
 
-        {/* ARC Goal task: an independent top-level area (spec section 18),
-            available regardless of whether the trainee has any full ARC
-            Build yet -- same reasoning as Mini ARC above. Creating/editing
-            goals never requires an ArcBuild to exist first; running one
-            live does (gated inside live/ArcGoalSessionScreen.tsx itself). */}
-        <Link href="/goals" asChild>
-          <Pressable style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>ARC Goals</Text>
+        <Link href="/reach-your-goal" asChild>
+          <Pressable style={[styles.modeButton, styles.reachGoalButton]}>
+            <Text style={styles.modeButtonLabel}>השגת מטרה</Text>
+            <Text style={styles.modeButtonHint}>מניפסט חיים, חיזוק זהות ותתי־מטרות עם יומן ותזכורות</Text>
+            <Text style={styles.modeButtonAction}>השגת מטרה</Text>
           </Pressable>
         </Link>
-
-        {/* ARC Goal Urge route task: Urge ARC is a building block referenced
-            from an ARC Goal's own urge mappings (build/ArcGoalEditorScreen.tsx),
-            never launched standalone -- listed here purely so it can be
-            authored ahead of, or independently of, any specific goal, same
-            reasoning as Mini ARC/ARC Goals above. */}
-        <Link href="/urge-arcs" asChild>
-          <Pressable style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>Urge ARC</Text>
-          </Pressable>
-        </Link>
-
-        {/* Life Manifest task: an independent top-level area (spec section
-            17, "Add 'Life Manifest' as a separate top-level area. Do not
-            replace ARC Live"), available regardless of whether the
-            trainee has any full ARC Build yet -- same reasoning as Mini
-            ARC/ARC Goals/Urge ARC above. References existing ArcBuild/
-            ArcGoal/MiniArc/UrgeArc/ArcLink protocols by id; never
-            duplicates or restructures them. */}
-        <Link href="/life-manifest" asChild>
-          <Pressable style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>מניפסט החיים שלי</Text>
-          </Pressable>
-        </Link>
-
-        {hasArcBuilds === false && (
-          <Link href="/build" asChild>
-            <Pressable style={styles.button}>
-              <Text style={styles.buttonText}>הוסף ARC Build ראשון</Text>
-            </Pressable>
-          </Link>
-        )}
-
-        {hasArcBuilds === true && (
-          <>
-            <Link href="/live/select" asChild>
-              <Pressable style={styles.button}>
-                <Text style={styles.buttonText}>התחל סשן LIVE</Text>
-              </Pressable>
-            </Link>
-            <Link href="/stats" asChild>
-              <Pressable style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>התקדמות שבועית</Text>
-              </Pressable>
-            </Link>
-            <Link href="/build" asChild>
-              <Pressable style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>BUILD</Text>
-              </Pressable>
-            </Link>
-            <Link href="/routines" asChild>
-              <Pressable style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>השגרה שלי</Text>
-              </Pressable>
-            </Link>
-            <Link href="/negative-action" asChild>
-              <Pressable style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>פעולה שלילית מוגבלת (רשות)</Text>
-              </Pressable>
-            </Link>
-            <ScheduleArcReminder />
-          </>
-        )}
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#fff",
+  safeArea: { flex: 1, backgroundColor: "#fff" },
+  content: { flex: 1, alignItems: "center", justifyContent: "center", gap: 20, padding: 24 },
+  title: { fontSize: 28, fontWeight: "700", marginBottom: 8 },
+  modeButton: {
+    width: "100%",
+    borderRadius: 14,
+    padding: 20,
+    alignItems: "flex-end",
   },
-  content: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-  button: {
-    backgroundColor: "#0a7ea4",
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 10,
-  },
-  buttonText: {
+  selfDevelopmentButton: { backgroundColor: "#0a7ea4" },
+  reachGoalButton: { backgroundColor: "#1a6b4a" },
+  modeButtonLabel: { color: "#fff", fontSize: 22, fontWeight: "700", textAlign: "right" },
+  modeButtonHint: { color: "#e6f4fe", fontSize: 13, textAlign: "right", marginTop: 6, marginBottom: 14 },
+  modeButtonAction: {
     color: "#fff",
+    fontSize: 15,
     fontWeight: "600",
-    fontSize: 17,
-  },
-  secondaryButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-  },
-  secondaryButtonText: {
-    color: "#0a7ea4",
-    fontSize: 15,
-  },
-  reminderPicker: {
-    alignItems: "center",
-    gap: 8,
-  },
-  reminderPickerLabel: {
-    fontSize: 15,
-    textAlign: "center",
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: 8,
-  },
-  chip: {
-    backgroundColor: "#E6F4FE",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    textAlign: "right",
+    backgroundColor: "rgba(255,255,255,0.18)",
     borderRadius: 8,
-  },
-  confirmationText: {
-    fontSize: 15,
-    textAlign: "center",
-    color: "#0a7ea4",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    alignSelf: "flex-end",
   },
 });

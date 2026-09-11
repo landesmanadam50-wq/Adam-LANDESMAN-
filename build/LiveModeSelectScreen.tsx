@@ -23,21 +23,31 @@ import type { ArcBuild } from "../arc/types.ts";
  * with the SAME buildId param as before this feature existed --
  * normal ARC's own entry point and behavior are completely unchanged.
  *
- * ARC Goal task: one new top-level gate ("mode" below), shown BEFORE
+ * ARC Goal task: one new top-level gate ("uiStep" below), shown BEFORE
  * any ArcBuild is loaded -- "ARC Goal" (spec section 6's "two clear
  * primary options") pushes straight to /arc-goal/select
  * (build/ArcGoalSelectScreen.tsx), never touching this screen's own
  * ArcBuild-picker state at all. "ARC רגיל" reveals the EXACT same
  * picker/mode flow this screen has always had, completely unchanged.
+ *
+ * New architecture task, Phase 1 (spec section 2): an optional
+ * `mode=self_development` param -- set only by
+ * build/SelfDevelopmentDashboardScreen.tsx's own "LIVE התפתחות אישית"
+ * button -- skips this screen's own mixed "ARC רגיל / ARC Goal" chooser
+ * entirely, starting directly at the ArcBuild-picker step. Self
+ * Development LIVE must never offer ARC Goal (spec section 2's "must
+ * not require... ARC Goal"); every OTHER caller (the original Home
+ * entry point, routine "start" buttons) omits this param and keeps
+ * today's exact chooser behavior, unchanged.
  */
 export default function LiveModeSelectScreen() {
-  const [mode, setMode] = useState<"chooser" | "regular">("chooser");
   // Weekly Routine + ARC Link management task: an optional `buildId` param
   // -- when a weekly action is linked to a specific ArcBuild, its own
   // "start" button pre-selects that build directly instead of always
   // falling back to "auto-pick when exactly one, else show a picker".
   // Absent (the original entry point from Home), behavior is unchanged.
-  const { buildId } = useLocalSearchParams<{ buildId?: string }>();
+  const { buildId, mode: modeParam } = useLocalSearchParams<{ buildId?: string; mode?: string }>();
+  const [mode, setMode] = useState<"chooser" | "regular">(modeParam === "self_development" ? "regular" : "chooser");
   const [builds, setBuilds] = useState<ArcBuild[] | null>(null);
   const [selectedBuild, setSelectedBuild] = useState<ArcBuild | null>(null);
 
