@@ -1,22 +1,12 @@
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
 import { getMiniArcBuild, upsertMiniArcBuild } from "../data/storage.ts";
-import {
-  buildMiniArcFromDraft,
-  createEmptyMiniArcDraft,
-  draftFromMiniArc,
-  generateMiniArcId,
-  isMiniArcDraftComplete,
-  MINI_ARC_COLOR_PRESETS,
-  MINI_ARC_ENCODING_ACTION_PRESETS,
-  MINI_ARC_REGULATION_ANCHOR_PRESETS,
-} from "../arc/miniArc.ts";
+import { buildMiniArcFromDraft, createEmptyMiniArcDraft, draftFromMiniArc, generateMiniArcId, isMiniArcDraftComplete } from "../arc/miniArc.ts";
 import type { MiniArcDraft } from "../arc/miniArc.ts";
-import { ARC_LINK_TRIGGER_TYPE_LABELS } from "../arc/bodyImagery.ts";
-import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
+import { MiniArcProfileForm } from "./MiniArcProfileForm.tsx";
 
 /**
  * build/MiniArcEditorScreen.tsx (route: /mini-arc/[id], id="new" to create)
@@ -30,6 +20,14 @@ import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
  * one just sets the same text field a trainee could type into directly,
  * so a fully custom entry always works for every field (the "preserve a
  * custom-cue option" requirement).
+ *
+ * Single-page BUILD task (spec section 3): the actual field rendering
+ * now lives in build/MiniArcProfileForm.tsx, grouped into
+ * CollapsibleSection blocks (required fields expanded, advanced
+ * body-part/movement-text and trigger fields collapsed by default) --
+ * reused unchanged by build/SelfDevelopmentBuildScreen.tsx's new unified
+ * single-page BUILD. This screen still owns loading/saving the ONE
+ * MiniArcBuild identified by its own `id` route param, unchanged.
  *
  * Never saves an incomplete Mini ARC: the Save button is disabled while
  * isMiniArcDraftComplete is false, AND finishAndSave re-checks the same
@@ -108,139 +106,7 @@ export default function MiniArcEditorScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>{isNew ? "Mini ARC חדש" : "עריכת Mini ARC"}</Text>
 
-        <Text style={styles.question}>איך תרצה לקרוא ל־Mini ARC הזה?</Text>
-        <TextInput
-          style={styles.textInput}
-          value={draft.name}
-          onChangeText={(value) => setDraft({ ...draft, name: value })}
-          textAlign="right"
-          placeholder="לדוגמה: עצירה מול דחף"
-        />
-
-        <Text style={styles.question}>באיזה צבע מתמלאת הנוכחות שלך?</Text>
-        <View style={styles.chipRow}>
-          {MINI_ARC_COLOR_PRESETS.map((color) => (
-            <Pressable
-              key={color}
-              style={[styles.chip, draft.presenceColor === color && styles.chipSelected]}
-              onPress={() => setDraft({ ...draft, presenceColor: color })}
-            >
-              <Text style={styles.chipText}>{color}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <TextInput
-          style={styles.textInput}
-          value={draft.presenceColor}
-          onChangeText={(value) => setDraft({ ...draft, presenceColor: value })}
-          textAlign="right"
-          placeholder="לדוגמה: סגול"
-        />
-
-        <Text style={styles.question}>באיזה עוגן ויסות אחד תרצה להשתמש?</Text>
-        <View style={styles.chipRow}>
-          {MINI_ARC_REGULATION_ANCHOR_PRESETS.map((preset) => (
-            <Pressable
-              key={preset.label}
-              style={[styles.chip, draft.regulationAnchor === preset.instruction && styles.chipSelected]}
-              onPress={() => setDraft({ ...draft, regulationAnchor: preset.instruction })}
-            >
-              <Text style={styles.chipText}>{preset.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <TextInput
-          style={styles.textInput}
-          value={draft.regulationAnchor}
-          onChangeText={(value) => setDraft({ ...draft, regulationAnchor: value })}
-          textAlign="right"
-          placeholder="לדוגמה: הרגש את כפות הרגליים על הקרקע."
-          multiline
-        />
-
-        <Text style={styles.question}>באילו חלקי גוף מתרחש עוגן הוויסות שהגדרת? (רשות, לדמיון ב-Mini ARC Link, מופרדים בפסיק)</Text>
-        <TextInput
-          style={styles.textInput}
-          value={draft.regulationBodyParts}
-          onChangeText={(value) => setDraft({ ...draft, regulationBodyParts: value })}
-          textAlign="right"
-          placeholder="לדוגמה: הבטן, האף"
-        />
-        <Text style={styles.question}>איך הגוף מבצע אותו? (רשות)</Text>
-        <TextInput
-          style={styles.textInput}
-          value={draft.regulationMovementText}
-          onChangeText={(value) => setDraft({ ...draft, regulationMovementText: value })}
-          textAlign="right"
-          multiline
-        />
-
-        <Text style={styles.question}>איזו פעולת קידוד גופנית קטנה תחבר אותך למצב הרצוי?</Text>
-        <View style={styles.chipRow}>
-          {MINI_ARC_ENCODING_ACTION_PRESETS.map((preset) => (
-            <Pressable
-              key={preset}
-              style={[styles.chip, draft.encodingAction === preset && styles.chipSelected]}
-              onPress={() => setDraft({ ...draft, encodingAction: preset })}
-            >
-              <Text style={styles.chipText}>{preset}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <TextInput
-          style={styles.textInput}
-          value={draft.encodingAction}
-          onChangeText={(value) => setDraft({ ...draft, encodingAction: value })}
-          textAlign="right"
-          placeholder="לדוגמה: ליישר בעדינות את הגב"
-        />
-
-        <Text style={styles.question}>באילו חלקי גוף מתרחשת פעולת הקידוד שהגדרת? (רשות, לדמיון ב-Mini ARC Link, מופרדים בפסיק)</Text>
-        <TextInput
-          style={styles.textInput}
-          value={draft.encodingBodyParts}
-          onChangeText={(value) => setDraft({ ...draft, encodingBodyParts: value })}
-          textAlign="right"
-          placeholder="לדוגמה: הגב, עמוד השדרה"
-        />
-        <Text style={styles.question}>איך הגוף מבצע אותה? (רשות)</Text>
-        <TextInput
-          style={styles.textInput}
-          value={draft.encodingMovementText}
-          onChangeText={(value) => setDraft({ ...draft, encodingMovementText: value })}
-          textAlign="right"
-          multiline
-        />
-
-        <Text style={styles.question}>מהי הפעולה המיטיבה שאליה ה־Mini ARC יוביל?</Text>
-        <TextInput
-          style={styles.textInput}
-          value={draft.beneficialAction}
-          onChangeText={(value) => setDraft({ ...draft, beneficialAction: value })}
-          textAlign="right"
-          placeholder="לדוגמה: להרחיק את היד מהאוזן ולהניח אותה על הרגל."
-          multiline
-        />
-
-        <Text style={styles.question}>מתי או אחרי מה תרצה לזכור להתחיל את התרגיל? (רשות)</Text>
-        <View style={styles.chipRow}>
-          {(Object.keys(ARC_LINK_TRIGGER_TYPE_LABELS) as ArcLinkTriggerType[]).map((type) => (
-            <Pressable
-              key={type}
-              style={[styles.chip, draft.linkTriggerType === type && styles.chipSelected]}
-              onPress={() => setDraft({ ...draft, linkTriggerType: type })}
-            >
-              <Text style={styles.chipText}>{ARC_LINK_TRIGGER_TYPE_LABELS[type]}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <TextInput
-          style={styles.textInput}
-          value={draft.linkTriggerText}
-          onChangeText={(value) => setDraft({ ...draft, linkTriggerText: value })}
-          textAlign="right"
-          placeholder="לדוגמה: בשעה 10:00 / אחרי שאני קם מהמיטה"
-        />
+        <MiniArcProfileForm draft={draft} setDraft={setDraft} />
 
         {!complete && <Text style={styles.errorText}>יש למלא שם, צבע נוכחות, עוגן ויסות, פעולת קידוד ופעולה מיטיבה לפני השמירה.</Text>}
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}
@@ -261,12 +127,6 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
   content: { flexGrow: 1, padding: 24 },
   title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 16 },
-  question: { fontSize: 16, fontWeight: "600", textAlign: "right", marginTop: 20, marginBottom: 8 },
-  textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16 },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginBottom: 8 },
-  chip: { backgroundColor: "#E6F4FE", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
-  chipSelected: { backgroundColor: "#0a7ea4" },
-  chipText: { color: "#0a7ea4", fontSize: 14 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 16 },
   button: {
     backgroundColor: "#0a7ea4",

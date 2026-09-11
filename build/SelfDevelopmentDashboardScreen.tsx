@@ -18,10 +18,17 @@ import type { DeferralOption } from "../data/reminders.ts";
  *
  * Reuses every existing collection/screen as-is (no duplicate data, no
  * placeholder screens): ArcBuild (Full ARC) and MiniArcBuild lists are
- * the real, currently-saved self-development protocols -- a later phase
- * (spec section 3) adds a unified single-page BUILD that tags a program
- * TYPE onto these; until then, this dashboard shows exactly what's
- * really saved today, honestly. "LIVE התפתחות אישית" reuses
+ * the real, currently-saved self-development protocols. Single-page
+ * BUILD task (spec section 3): the old two separate creation entry
+ * points ("בניית תוכנית" -> /build, "בניית Mini ARC" -> /mini-arc, each
+ * its own inline "+" creation flow) are replaced here by ONE "+ בניית
+ * תוכנית חדשה" button, routing to the new unified single-page BUILD
+ * (build/SelfDevelopmentBuildScreen.tsx, route /self-development/build)
+ * that lets a trainee build Full ARC only, Mini ARC only, or both
+ * together, from one scrollable page. /build and /mini-arc themselves
+ * are fully preserved, unchanged routes -- still reachable here as
+ * "ניהול" links for renaming/deleting/reopening an already-saved
+ * program, exactly as before. "LIVE התפתחות אישית" reuses
  * build/LiveModeSelectScreen.tsx's own ArcBuild-picking/ARC-Link logic
  * via its new `mode=self_development` param (see that file's own doc),
  * which skips its old mixed "ARC רגיל / ARC Goal" chooser entirely --
@@ -77,6 +84,10 @@ export default function SelfDevelopmentDashboardScreen() {
           <Text style={styles.buttonText}>LIVE התפתחות אישית</Text>
         </Pressable>
 
+        <Pressable style={[styles.button, styles.buildButton, styles.fullWidthButton]} onPress={() => router.push("/self-development/build")}>
+          <Text style={styles.buttonText}>+ בניית תוכנית חדשה</Text>
+        </Pressable>
+
         <Text style={styles.sectionTitle}>{`תוכניות ARC מלא${!loading ? ` (${arcBuilds!.length})` : ""}`}</Text>
         {!loading &&
           arcBuilds!.map((build) => (
@@ -88,8 +99,8 @@ export default function SelfDevelopmentDashboardScreen() {
               <Text style={styles.itemText}>{build.name}</Text>
             </Pressable>
           ))}
-        <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.push("/build")}>
-          <Text style={styles.buttonText}>בניית תוכנית</Text>
+        <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.push("/build")}>
+          <Text style={styles.secondaryButtonText}>ניהול תוכניות ARC מלא</Text>
         </Pressable>
 
         <Text style={styles.sectionTitle}>{`תוכניות Mini ARC${!loading ? ` (${miniArcBuilds!.length})` : ""}`}</Text>
@@ -104,7 +115,7 @@ export default function SelfDevelopmentDashboardScreen() {
             </Pressable>
           ))}
         <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.push("/mini-arc")}>
-          <Text style={styles.secondaryButtonText}>בניית Mini ARC</Text>
+          <Text style={styles.secondaryButtonText}>ניהול תוכניות Mini ARC</Text>
         </Pressable>
 
         <Text style={styles.sectionTitle}>כלים נוספים</Text>
@@ -192,6 +203,7 @@ const styles = StyleSheet.create({
   },
   itemText: { fontSize: 16, textAlign: "right", color: "#0a7ea4" },
   button: { backgroundColor: "#0a7ea4", paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, alignItems: "center" },
+  buildButton: { backgroundColor: "#1a6b4a" },
   secondaryButton: { backgroundColor: "#3d8fa8" },
   fullWidthButton: { marginTop: 8 },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
