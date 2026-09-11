@@ -920,6 +920,115 @@ export interface UrgeArc {
  * final "goal action" step, reached only after the outer identity run's
  * own "complete" stage.
  */
+export type FourWeekProgramWeekNumber = 1 | 2 | 3 | 4;
+export type FourWeekProgramWeekStatus = "not_started" | "active" | "completed";
+
+/** One "I extended this week" event -- keeps the original planned end date visible even after it's been pushed out, per the Four-Week Program task's "preserve all completed practices and reflections" / never silently losing history. */
+export interface ArcGoalWeekDateExtension {
+  extendedAt: string;
+  previousPlannedEndDate: string | null;
+  newPlannedEndDate: string | null;
+}
+
+/**
+ * Four-Week Program task: one logged practice/action/support-use event
+ * for a week -- "kind" distinguishes a guided practice (Full ARC/Mini
+ * ARC/ARC Link session) from a real-world action confirmation from a
+ * turn to "אני צריך עזרה מ-ARCHI" (recorded so "Whether ARCHI support
+ * was used" can be read back per week without a separate flag to keep
+ * in sync).
+ */
+export interface ArcGoalWeekPracticeRecord {
+  id: string;
+  kind: "practice" | "action" | "archi_support";
+  label: string;
+  occurredAt: string;
+}
+
+/** The four weekly-reflection questions (spec section 9), answered once per week, right before confirming that week complete. */
+export interface ArcGoalWeekReflection {
+  whatHelped: string | null;
+  whatWasHard: string | null;
+  identityEvidence: string | null;
+  readyToReduceSupport: boolean | null;
+  answeredAt: string;
+}
+
+/**
+ * Four-Week Program task: one week's own configuration + live progress.
+ * plannedStartDate/plannedEndDate are the ONLY thing that unlocks
+ * nothing by themselves -- reaching plannedEndDate only ever triggers a
+ * decision prompt (arc/fourWeekProgram.ts's own doc), never automatic
+ * advancement. datesManuallyEdited marks a week whose own dates the
+ * trainee has directly edited, so a later cascade recalculation (after
+ * an earlier week's dates change) skips it instead of silently
+ * overwriting a deliberate choice.
+ */
+export interface ArcGoalProgramWeek {
+  weekNumber: FourWeekProgramWeekNumber;
+  plannedStartDate: string | null;
+  plannedEndDate: string | null;
+  datesManuallyEdited: boolean;
+  practiceFrequency: string | null;
+  recommendedPractice: string | null;
+  remindersEnabled: boolean;
+  reminderNotificationId: string | null;
+  reminderScheduledFor: string | null;
+  completionRequirement: string | null;
+  notes: string | null;
+  status: FourWeekProgramWeekStatus;
+  actualCompletedAt: string | null;
+  dateExtensions: ArcGoalWeekDateExtension[];
+  practiceRecords: ArcGoalWeekPracticeRecord[];
+  reflection: ArcGoalWeekReflection | null;
+}
+
+/**
+ * Four-Week Program task, section 10 ("Optional support and return
+ * context"): saved onto the ArcGoal itself right before the trainee
+ * leaves the four-week LIVE dashboard for a support flow (Full ARC,
+ * Mini ARC, ARC Link...) -- so where that flow ends up returning to can
+ * be resolved even if the route params it was ALSO launched with
+ * somehow don't survive the round trip (belt-and-suspenders; the route
+ * params are the primary mechanism -- see live/LiveSessionScreen.tsx
+ * and live/MiniArcLiveScreen.tsx's own fourWeekGoalId handling).
+ */
+export interface ArcGoalSupportReturnContext {
+  week: FourWeekProgramWeekNumber;
+  actionLabel: string;
+  savedAt: string;
+}
+
+/**
+ * Four-Week Program task: an ArcGoal's own OPTIONAL identity-and-habit
+ * program (spec's "Core order": Life Manifest -> ARC Goal -> four-week
+ * program -> sub-goals/targets in a later phase). `enabled` defaults to
+ * false/null (see ArcGoal.fourWeekProgram's own doc) -- never silently
+ * turned on for a legacy goal; the trainee always enables it explicitly
+ * from the BUILD screen's own "תוכנית ארבעת השבועות" section.
+ *
+ * linkedMiniArcId is this program's own goal-level Mini ARC reference
+ * (weeks 2-3), separate from any per-mapping miniArcId already used
+ * elsewhere on ArcGoal -- set once, from the LIVE dashboard or BUILD,
+ * never duplicated as a second Mini ARC per week.
+ *
+ * readyForSubGoalActivation is set true the moment Week 4 is confirmed
+ * complete -- a safe integration point for the later sub-goal/calendar
+ * phase to read (per this task's "prepare safe integration points,
+ * without implementing" scope) and currently otherwise inert: nothing
+ * in this phase reads it to auto-activate anything.
+ */
+export interface ArcGoalFourWeekProgram {
+  enabled: boolean;
+  currentWeek: FourWeekProgramWeekNumber;
+  linkedMiniArcId: string | null;
+  weeks: [ArcGoalProgramWeek, ArcGoalProgramWeek, ArcGoalProgramWeek, ArcGoalProgramWeek];
+  startedAt: string | null;
+  completedAt: string | null;
+  readyForSubGoalActivation: boolean;
+  returnContext: ArcGoalSupportReturnContext | null;
+}
+
 export interface ArcGoal {
   id: string;
   name: string;
@@ -931,6 +1040,15 @@ export interface ArcGoal {
   interferingMappings: ArcGoalInterferingMapping[];
   /** ARC Goal task (Urge route): parallel to interferingMappings above, one row per mapped urge. Defaults to [] for every ArcGoal saved before this field existed -- see arc/arcGoals.ts's normalizeArcGoal. */
   urgeMappings: ArcGoalUrgeMapping[];
+  /**
+   * Four-Week Program task: null for every ArcGoal saved before this
+   * field existed, and for every new ArcGoal until the trainee
+   * explicitly enables it -- see arc/arcGoals.ts's normalizeArcGoal and
+   * createEmptyArcGoal below. A null value means this goal behaves
+   * EXACTLY as it always has: /arc-goal/select routes straight to
+   * /arc-goal/live/[goalId], never through the new four-week dashboard.
+   */
+  fourWeekProgram?: ArcGoalFourWeekProgram | null;
   /**
    * Sub-goal↔ARC Goal connection task: an optional back-REFERENCE to the
    * Life Manifest Sub-goal (arc/lifeManifest.ts's SubGoal.id) this ArcGoal
@@ -965,6 +1083,11 @@ export function generateArcGoalUrgeMappingId(): string {
   return `arcgoalurgemap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Same id-pattern for a Four-Week Program practice/action record, scoped within its own week. */
+export function generateArcGoalWeekPracticeRecordId(): string {
+  return `arcgoalweekpractice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** Same stable-id-string pattern as generateArcBuildId/generateMiniArcId. */
 export function generateUrgeArcId(): string {
   return `urgearc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -982,6 +1105,7 @@ export function createEmptyArcGoal(id: string, name: string, now: string): ArcGo
     identityProtocolId: null,
     interferingMappings: [],
     urgeMappings: [],
+    fourWeekProgram: null,
     createdAt: now,
     updatedAt: now,
   };

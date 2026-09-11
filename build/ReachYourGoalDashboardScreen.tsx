@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
@@ -25,9 +25,13 @@ function titleFor(manifest: LifeManifest): string {
  * own investigation report, spec section 7 is already implemented).
  * "LIVE השגת מטרה" routes straight to the existing /arc-goal/select,
  * which was already mode-pure (ARC Goal only, no ARC רגיל mixed in) --
- * no change needed there. The four-week program, sub-goal/target
- * progression, and calendar integration (spec sections 10-16) are later
- * phases; this dashboard surfaces exactly what's really saved today.
+ * unaffected by the Four-Week Program task (that screen itself now
+ * branches per-goal, see build/ArcGoalSelectScreen.tsx's own doc). This
+ * dashboard's own per-goal row gets one small addition: a goal with an
+ * enabled fourWeekProgram shows its current week and a direct link to
+ * live/ArcGoalFourWeekDashboardScreen.tsx, alongside its existing
+ * "open in BUILD" row -- never replacing it. Sub-goal/target execution
+ * and calendar integration (spec sections 10-16) remain later phases.
  */
 export default function ReachYourGoalDashboardScreen() {
   const [manifests, setManifests] = useState<LifeManifest[] | null>(null);
@@ -85,13 +89,19 @@ export default function ReachYourGoalDashboardScreen() {
         <Text style={styles.sectionTitle}>{`מטרות ARC Goal${!loading ? ` (${arcGoals!.length})` : ""}`}</Text>
         {!loading &&
           arcGoals!.map((goal) => (
-            <Pressable
-              key={goal.id}
-              style={styles.itemRow}
-              onPress={() => router.push({ pathname: "/goals/[id]", params: { id: goal.id } })}
-            >
-              <Text style={styles.itemText}>{goal.name}</Text>
-            </Pressable>
+            <View key={goal.id} style={styles.goalRowColumn}>
+              <Pressable style={styles.itemRow} onPress={() => router.push({ pathname: "/goals/[id]", params: { id: goal.id } })}>
+                <Text style={styles.itemText}>{goal.name}</Text>
+              </Pressable>
+              {goal.fourWeekProgram?.enabled && (
+                <Pressable
+                  style={styles.fourWeekRow}
+                  onPress={() => router.push({ pathname: "/goals/live/[goalId]", params: { goalId: goal.id } })}
+                >
+                  <Text style={styles.fourWeekRowText}>{`תוכנית ארבעת השבועות -- שבוע ${goal.fourWeekProgram.currentWeek}`}</Text>
+                </Pressable>
+              )}
+            </View>
           ))}
         <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.push("/goals")}>
           <Text style={styles.secondaryButtonText}>ניהול מטרות ARC Goal</Text>
@@ -120,6 +130,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   itemText: { fontSize: 16, textAlign: "right", color: "#0a7ea4" },
+  goalRowColumn: { marginBottom: 8 },
+  fourWeekRow: { backgroundColor: "#f7fbfd", borderRadius: 8, padding: 8, marginTop: -4, marginBottom: 8 },
+  fourWeekRowText: { fontSize: 13, textAlign: "right", color: "#1a6b4a", fontWeight: "600" },
   button: { backgroundColor: "#0a7ea4", paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, alignItems: "center" },
   secondaryButton: { backgroundColor: "#3d8fa8" },
   fullWidthButton: { marginTop: 8 },
