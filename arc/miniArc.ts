@@ -139,6 +139,26 @@ export interface MiniArcBuild {
    * timer offered).
    */
   actionDurationMinutes?: number | null;
+  /**
+   * Phase 6 (ARC Belief and ARC Mini Belief), spec section 21 ("Short
+   * post-action imagery duration"): how long ARC Mini Belief's own
+   * short "imagine the action as it actually happened" stage dwells --
+   * see arc/beliefLive.ts's Mini engine. A generic, shared-named field
+   * (like secondaryEncodingAction/actionDurationMinutes above) so a
+   * later phase's own Mini protocol can reuse it unchanged rather than
+   * adding a third near-duplicate duration field; only Belief Mini
+   * reads it today. null (every Mini saved before this field existed,
+   * and every non-Belief kind) falls back to a short fixed default.
+   */
+  miniActionImageryDwellSeconds?: number | null;
+  /**
+   * Phase 6, spec section 21 ("Short Gratitude prompt"): an optional
+   * override for ARC Mini Belief's own short Gratitude question --
+   * same generic/shared-named convention as
+   * miniActionImageryDwellSeconds above. null uses the standard short
+   * default ("על מה אתה מודה לעצמך בעקבות הפעולה?").
+   */
+  miniGratitudePrompt?: string | null;
 }
 
 /**

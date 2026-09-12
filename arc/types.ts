@@ -1215,6 +1215,95 @@ export function createEmptyPresenceArc(id: string, name: string, now: string): P
   return { id, name, createdAt: now, updatedAt: now, presenceColor: null, presenceDwellSeconds: null };
 }
 
+// ---------------------------------------------------------------------------
+// Phase 6 (ARC Belief and ARC Mini Belief): like UrgeArc/ThoughtArc (and
+// unlike PresenceArc), Full ARC Belief gets its OWN independent pure
+// engine (arc/beliefLive.ts) -- self-contained, mirroring
+// arc/urgeLive.ts/arc/thoughtLive.ts's own "regulate"/mantra-line
+// pattern exactly (stayMantra/acceptanceMantra/regulationMantra/
+// bridgeMantra are structurally MantraProfile-compatible, see
+// arc/mantras.ts). ARC Belief is distinct from ARC Thought (spec
+// section 2): a broader RECURRING belief about self/others/the world,
+// never a single current thought/image.
+//
+// Existing belief-related scaffolding this phase reuses rather than
+// duplicates: ArcBuildProfile.identityLimitingBelief/
+// identityBridgeBelief/stateLimitingBelief/stateBridgeBelief (the
+// regular ARC State/Identity Awareness step's own "Limiting Belief" and
+// its empowering reframe) and MiniArcBuild.replacementBelief/
+// bridgeMantraText (already wired into Mini ARC Link's own "belief"
+// case in arc/miniArcLink.ts, since Phase 1/2). See
+// arc/beliefArcs.ts's own resolveBeliefFallback* functions for the
+// documented fallback order between these fields and BeliefArc's own.
+// ---------------------------------------------------------------------------
+
+export interface BeliefArc {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  /** The limiting belief itself (spec section 3/5) -- recognition-only, never required in LIVE (a saved belief can also be selected, or a session-only one entered fresh without saving). */
+  limitingBelief: string | null;
+  situationContext: string | null;
+  associatedEmotion: string | null;
+  /** MantraProfile-compatible, exactly like UrgeArc/ThoughtArc's own equivalents. */
+  stayMantra: string | null;
+  acceptanceMantra: string | null;
+  regulationMantra: string | null;
+  /** The single free-text Regulation anchor, mirroring UrgeArc.regulationAnchor exactly (spec section 8: "existing Regulation anchors" -- kept as one configurable anchor, same precedent every other independent protocol already uses; the fixed feet/shoulders/wider-visual-field cues are rendered as standard instructional text alongside it, not a second configurable field). */
+  regulationAnchor: string | null;
+  /** Shown once, at the end of Regulation and before the replacement belief (spec section 9) -- never re-shown during Encoding. Falls back to a linked MiniArcBuild's own bridgeMantraText when unset (see arc/beliefArcs.ts). */
+  bridgeMantra: string | null;
+  /** The balanced, credible supportive/replacement belief (spec section 10). Falls back to a linked MiniArcBuild's own replacementBelief, then to ArcBuildProfile.identityBridgeBelief/stateBridgeBelief (spec section 26) -- see arc/beliefArcs.ts. null with nothing entered in LIVE either means the anchor-only fallback (spec section 10: "Do not crash or block completion"). */
+  replacementBelief: string | null;
+  encodingAnchor: string | null;
+  gentleNodCue: string | null;
+  supportiveImage: string | null;
+  supportiveVoiceInstruction: string | null;
+  futureInsight: string | null;
+  /** "Future way of acting" (spec section 13) -- distinct from shortAction below, which is the immediate belief-consistent action this session performs. */
+  futureAction: string | null;
+  shortAction: string | null;
+  futureImageryDwellSeconds: number | null;
+  /** Post-action reinforcement (spec section 16, and the saved global post-action-completion requirement): how long the "imagine the action as it actually happened" and "imagine the improved action" stages dwell. Shared by both -- neither spec asks for two separate durations. */
+  postActionImageryDwellSeconds: number | null;
+  /** Optional override for the Gratitude prompt; null uses the standard default line. */
+  gratitudePrompt: string | null;
+}
+
+export function generateBeliefArcId(): string {
+  return `beliefarc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** A fresh, empty BeliefArc -- mirrors createEmptyThoughtArc/createEmptyUrgeArc's own shape. */
+export function createEmptyBeliefArc(id: string, name: string, now: string): BeliefArc {
+  return {
+    id,
+    name,
+    createdAt: now,
+    updatedAt: now,
+    limitingBelief: null,
+    situationContext: null,
+    associatedEmotion: null,
+    stayMantra: null,
+    acceptanceMantra: null,
+    regulationMantra: null,
+    regulationAnchor: null,
+    bridgeMantra: null,
+    replacementBelief: null,
+    encodingAnchor: null,
+    gentleNodCue: null,
+    supportiveImage: null,
+    supportiveVoiceInstruction: null,
+    futureInsight: null,
+    futureAction: null,
+    shortAction: null,
+    futureImageryDwellSeconds: null,
+    postActionImageryDwellSeconds: null,
+    gratitudePrompt: null,
+  };
+}
+
 /**
  * Modular ARC architecture task (LIVE entry categories, spec section 2):
  * tags which of the five independent LIVE entry points launched/owns a

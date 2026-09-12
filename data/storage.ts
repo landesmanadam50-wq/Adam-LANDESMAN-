@@ -12,7 +12,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { generateArcBuildId } from "../arc/types.ts";
-import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcGoalTarget, ArcProgramProgress, PresenceArc, ThoughtArc, UrgeArc } from "../arc/types.ts";
+import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcGoalTarget, ArcProgramProgress, BeliefArc, PresenceArc, ThoughtArc, UrgeArc } from "../arc/types.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
@@ -22,6 +22,7 @@ import { deleteArcGoalTargetFromList, upsertArcGoalTargetInList } from "../arc/s
 import type { ArcGoalTargetOccurrenceCompletion } from "../arc/subGoalExecution.ts";
 import { deleteUrgeArcFromList, normalizeUrgeArc, upsertUrgeArcInList } from "../arc/urgeArcs.ts";
 import { deleteThoughtArcFromList, normalizeThoughtArc, upsertThoughtArcInList } from "../arc/thoughtArcs.ts";
+import { deleteBeliefArcFromList, normalizeBeliefArc, upsertBeliefArcInList } from "../arc/beliefArcs.ts";
 import { deletePresenceArcFromList, normalizePresenceArc, upsertPresenceArcInList } from "../arc/presenceArcs.ts";
 import {
   deleteLifeManifestFromList,
@@ -422,6 +423,48 @@ export async function upsertThoughtArc(thoughtArc: ThoughtArc): Promise<void> {
 export async function deleteThoughtArc(id: string): Promise<void> {
   const thoughtArcs = await loadThoughtArcs();
   await saveThoughtArcs(deleteThoughtArcFromList(thoughtArcs, id));
+}
+
+/**
+ * Phase 6 (ARC Belief and ARC Mini Belief): a brand-new, independent
+ * collection storing full BeliefArc records -- mirrors
+ * ARC_THOUGHT_ARCS_KEY exactly. No legacy migration: there is no prior
+ * data format, so an absent key simply means "no ARC Beliefs yet".
+ */
+const ARC_BELIEF_ARCS_KEY = "archi.beliefArcs.v1";
+
+export async function loadBeliefArcs(): Promise<BeliefArc[]> {
+  const raw = await AsyncStorage.getItem(ARC_BELIEF_ARCS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as BeliefArc[];
+    return Array.isArray(parsed) ? parsed.map(normalizeBeliefArc) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ARC Beliefs are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveThoughtArcs' own style. */
+export async function saveBeliefArcs(beliefArcs: BeliefArc[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_BELIEF_ARCS_KEY, JSON.stringify(beliefArcs));
+}
+
+export async function getBeliefArc(id: string): Promise<BeliefArc | null> {
+  const beliefArcs = await loadBeliefArcs();
+  return beliefArcs.find((beliefArc) => beliefArc.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/beliefArcs.ts's upsertBeliefArcInList. */
+export async function upsertBeliefArc(beliefArc: BeliefArc): Promise<void> {
+  const beliefArcs = await loadBeliefArcs();
+  await saveBeliefArcs(upsertBeliefArcInList(beliefArcs, beliefArc));
+}
+
+/** Removes exactly the one matching ARC Belief (by id) -- see arc/beliefArcs.ts's deleteBeliefArcFromList. */
+export async function deleteBeliefArc(id: string): Promise<void> {
+  const beliefArcs = await loadBeliefArcs();
+  await saveBeliefArcs(deleteBeliefArcFromList(beliefArcs, id));
 }
 
 /**
