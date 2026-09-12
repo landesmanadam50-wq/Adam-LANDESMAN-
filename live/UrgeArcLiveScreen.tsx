@@ -51,6 +51,7 @@ export default function UrgeArcLiveScreen() {
   const [fullStage, setFullStage] = useState<UrgeLiveStage>(getFirstUrgeLiveStage());
   const [fullState, setFullState] = useState<UrgeLiveState>(createEmptyUrgeLiveState());
   const [recheckIntensityText, setRecheckIntensityText] = useState("");
+  const [pendingText, setPendingText] = useState("");
 
   const [miniStage, setMiniStage] = useState<MiniUrgeLiveStage>(getFirstMiniUrgeLiveStage());
   const [miniState, setMiniState] = useState<MiniUrgeLiveState>(createEmptyMiniUrgeLiveState());
@@ -73,6 +74,7 @@ export default function UrgeArcLiveScreen() {
         setMiniStage(getFirstMiniUrgeLiveStage());
         setMiniState(createEmptyMiniUrgeLiveState());
         setRecheckIntensityText("");
+        setPendingText("");
         setSessionStartedAt(new Date().toISOString());
         setStatus(mini ? "modeChoice" : "runningFull");
       });
@@ -92,6 +94,7 @@ export default function UrgeArcLiveScreen() {
     const hop = getNextUrgeLiveStage(fullStage, patched);
     setFullStage(hop.stage);
     setFullState(hop.state);
+    setPendingText("");
     if (hop.stage === "recheck") setRecheckIntensityText("");
     if (hop.stage === "complete") {
       finalizeCompletion();
@@ -260,7 +263,28 @@ export default function UrgeArcLiveScreen() {
           </>
         )}
 
-        {fullStage !== "representation" && fullStage !== "recheck" && (
+        {fullStage === "improvement_entry" && (
+          <>
+            <TextInput style={styles.textInput} value={pendingText} onChangeText={setPendingText} textAlign="right" multiline />
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advanceFull({ postAction: { ...fullState.postAction, improvementText: pendingText || null } })}>
+              <Text style={styles.buttonText}>{copy.buttonLabel}</Text>
+            </Pressable>
+            <Pressable style={styles.cancelButton} onPress={() => advanceFull()}>
+              <Text style={styles.cancelButtonText}>דילוג</Text>
+            </Pressable>
+          </>
+        )}
+
+        {fullStage === "gratitude" && (
+          <>
+            <TextInput style={styles.textInput} value={pendingText} onChangeText={setPendingText} textAlign="right" multiline />
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advanceFull({ postAction: { ...fullState.postAction, gratitudeText: pendingText || null } })}>
+              <Text style={styles.buttonText}>{copy.buttonLabel}</Text>
+            </Pressable>
+          </>
+        )}
+
+        {fullStage !== "representation" && fullStage !== "recheck" && fullStage !== "improvement_entry" && fullStage !== "gratitude" && (
           <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advanceFull()}>
             <Text style={styles.buttonText}>{copy.buttonLabel}</Text>
           </Pressable>
@@ -286,4 +310,6 @@ const styles = StyleSheet.create({
   fullWidthButton: { marginTop: 10 },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
   secondaryButtonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  cancelButton: { marginTop: 10, alignItems: "center" },
+  cancelButtonText: { color: "#888", fontSize: 14 },
 });

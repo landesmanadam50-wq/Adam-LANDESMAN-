@@ -370,6 +370,27 @@ export default function ThoughtArcLiveScreen() {
           </>
         )}
 
+        {fullStage === "improvement_entry" && (
+          <>
+            <TextInput style={styles.textInput} value={pendingText} onChangeText={setPendingText} textAlign="right" multiline />
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advanceFull({ postAction: { ...fullState.postAction, improvementText: pendingText || null } })}>
+              <Text style={styles.buttonText}>{copy.buttonLabel}</Text>
+            </Pressable>
+            <Pressable style={styles.cancelButton} onPress={() => advanceFull()}>
+              <Text style={styles.cancelButtonText}>דילוג</Text>
+            </Pressable>
+          </>
+        )}
+
+        {fullStage === "gratitude" && (
+          <>
+            <TextInput style={styles.textInput} value={pendingText} onChangeText={setPendingText} textAlign="right" multiline />
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advanceFull({ postAction: { ...fullState.postAction, gratitudeText: pendingText || null } })}>
+              <Text style={styles.buttonText}>{copy.buttonLabel}</Text>
+            </Pressable>
+          </>
+        )}
+
         {![
           "opening_decision",
           "recognition",
@@ -381,6 +402,8 @@ export default function ThoughtArcLiveScreen() {
           "supportive_fallback",
           "supportive_thought_select",
           "future_insight_action",
+          "improvement_entry",
+          "gratitude",
         ].includes(fullStage) && (
           <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advanceFull()}>
             <Text style={styles.buttonText}>{copy.buttonLabel}</Text>

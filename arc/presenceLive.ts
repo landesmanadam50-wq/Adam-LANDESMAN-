@@ -47,6 +47,14 @@ import type { MiniArcBuild } from "./miniArc.ts";
 import { safeText } from "./miniArc.ts";
 import { getFreeBreathingLine } from "./naturalBreathing.ts";
 import { getEnergyColorLine } from "./presenceColor.ts";
+import { DEFAULT_DWELL_TIMES } from "./dwellTimes.ts";
+import {
+  createEmptyPostActionCompletionState,
+  getMiniPostActionCompletionCopy,
+  getNextPostActionCompletionStage,
+  getPostActionCompletionCopy,
+} from "./postActionCompletion.ts";
+import type { PostActionCompletionState } from "./postActionCompletion.ts";
 
 /**
  * Pure adapter -- every OTHER ArcBuildProfile field is left at
@@ -125,10 +133,110 @@ export function createPresenceArcInitialSession(): ArcLiveState {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 8 (universal post-action completion retrofit): Full ARC Presence
+// previously stopped the instant the reused arc/arcEngine.ts session
+// reached PRESENCE_EXIT_STAGE -- with no action concept of its own at
+// all (unlike Urge/Thought, Presence never asked the trainee to actually
+// DO anything). This small, separate, NEW local sub-engine picks up
+// exactly where the reused engine leaves off: a genuine "action" stage
+// (the trainee actually performs presenceArc.beneficialAction now),
+// followed by the shared post-action tail (see
+// arc/postActionCompletion.ts's own module doc). It deliberately does
+// NOT touch arc/arcEngine.ts or the reused Presence stages themselves --
+// the driving screen (live/PresenceArcLiveScreen.tsx) switches from the
+// reused engine to THIS one only once isPresenceComplete(...) is true.
+// ---------------------------------------------------------------------------
+
+export type PresenceActionLiveStage = "action" | "action_imagery" | "improvement_entry" | "improved_action_imagery" | "gratitude" | "complete";
+
+export const PRESENCE_ACTION_LIVE_STAGE_ORDER: PresenceActionLiveStage[] = ["action", "action_imagery", "improvement_entry", "improved_action_imagery", "gratitude", "complete"];
+
+export interface PresenceActionLiveState {
+  postAction: PostActionCompletionState;
+}
+
+export function createEmptyPresenceActionLiveState(): PresenceActionLiveState {
+  return { postAction: createEmptyPostActionCompletionState() };
+}
+
+export function getFirstPresenceActionLiveStage(): PresenceActionLiveStage {
+  return "action";
+}
+
+export interface PresenceActionLiveStageResult {
+  stage: PresenceActionLiveStage;
+  state: PresenceActionLiveState;
+}
+
+/** Pure, total, never throws, never gates -- "action" is a real performed-action confirmation (like Urge's own "act"/Thought's own "action"), never blocking progression. */
+export function getNextPresenceActionLiveStage(current: PresenceActionLiveStage, state: PresenceActionLiveState): PresenceActionLiveStageResult {
+  switch (current) {
+    case "action":
+      return { stage: "action_imagery", state };
+    case "action_imagery":
+    case "improvement_entry":
+    case "improved_action_imagery":
+    case "gratitude": {
+      const hop = getNextPostActionCompletionStage(current, state.postAction);
+      return { stage: hop.stage, state: { ...state, postAction: hop.state } };
+    }
+    case "complete":
+      return { stage: "complete", state };
+  }
+}
+
+export interface PresenceActionLiveStageCopy {
+  title: string;
+  body: string;
+  secondaryBody: string | null;
+  buttonLabel: string;
+}
+
+/** Pure copy generator -- never throws, never renders "undefined"/"null" even for a legacy PresenceArc missing every Phase 8 field. */
+export function getPresenceActionLiveStageCopy(stage: PresenceActionLiveStage, presenceArc: PresenceArc, state: PresenceActionLiveState): PresenceActionLiveStageCopy {
+  switch (stage) {
+    case "action": {
+      const action = safeText(presenceArc.beneficialAction);
+      return { title: "פעולה מיטיבה", body: action.length > 0 ? action : "הפעולה המיטיבה שהגדרת.", secondaryBody: null, buttonLabel: "ביצעתי" };
+    }
+    case "action_imagery":
+    case "improvement_entry":
+    case "improved_action_imagery":
+    case "gratitude": {
+      // Phase 8: reuses the ONE shared module -- see
+      // arc/postActionCompletion.ts's own module doc.
+      const copy = getPostActionCompletionCopy(stage, state.postAction, presenceArc.gratitudePrompt ?? null);
+      return copy;
+    }
+    case "complete":
+      return { title: "סיום", body: "סיימת את ה-ARC Presence.", secondaryBody: null, buttonLabel: "סיום" };
+  }
+}
+
+/** Dwell durations for the two post-action imagery stages -- honors presenceArc.postActionImageryDwellSeconds when configured, otherwise the same shared defaults Urge/Thought already use. */
+export function getPresenceActionLiveDwellSeconds(stage: PresenceActionLiveStage, presenceArc: PresenceArc | null): number | null {
+  switch (stage) {
+    case "action_imagery":
+      return presenceArc?.postActionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.completedActionImageryDwellSeconds;
+    case "improved_action_imagery":
+      return presenceArc?.postActionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.improvedActionImageryDwellSeconds;
+    default:
+      return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ARC Mini Presence
 // ---------------------------------------------------------------------------
 
-export type MiniPresenceLiveStage = "notice_present" | "natural_breathing" | "attention_anchor" | "energy_color_or_cue" | "return_to_action" | "complete";
+// Phase 8 (universal post-action completion retrofit): "return_to_action"
+// already serves as Mini Presence's own de facto action step (spec
+// wording "return to the intended action") -- DOES gain the compact
+// tail (action_imagery -> gratitude) right after it, overriding the
+// previous rule that Mini ARC always ended immediately after the
+// beneficial action, per that phase's own saved requirement. Still no
+// written improvement, no improved-action imagery.
+export type MiniPresenceLiveStage = "notice_present" | "natural_breathing" | "attention_anchor" | "energy_color_or_cue" | "return_to_action" | "action_imagery" | "gratitude" | "complete";
 
 export const MINI_PRESENCE_LIVE_STAGE_ORDER: MiniPresenceLiveStage[] = [
   "notice_present",
@@ -136,6 +244,8 @@ export const MINI_PRESENCE_LIVE_STAGE_ORDER: MiniPresenceLiveStage[] = [
   "attention_anchor",
   "energy_color_or_cue",
   "return_to_action",
+  "action_imagery",
+  "gratitude",
   "complete",
 ];
 
@@ -143,7 +253,7 @@ export function getFirstMiniPresenceLiveStage(): MiniPresenceLiveStage {
   return "notice_present";
 }
 
-/** Purely linear -- no decision points, no representation/modality branching (unlike Mini Urge/Thought), matching spec's own fixed 5-step order. */
+/** Purely linear -- no decision points, no representation/modality branching (unlike Mini Urge/Thought), matching spec's own fixed order (now extended with Phase 8's compact post-action tail). */
 export function getNextMiniPresenceLiveStage(current: MiniPresenceLiveStage): MiniPresenceLiveStage {
   switch (current) {
     case "notice_present":
@@ -155,6 +265,10 @@ export function getNextMiniPresenceLiveStage(current: MiniPresenceLiveStage): Mi
     case "energy_color_or_cue":
       return "return_to_action";
     case "return_to_action":
+      return "action_imagery";
+    case "action_imagery":
+      return "gratitude";
+    case "gratitude":
       return "complete";
     case "complete":
       return "complete";
@@ -203,7 +317,19 @@ export function getMiniPresenceLiveStageCopy(stage: MiniPresenceLiveStage, build
       const action = safeText(build.beneficialAction);
       return { title: "חזרה לפעולה המיועדת", body: action.length > 0 ? action : "הפעולה המיועדת שהגדרת.", secondaryBody: null, buttonLabel: "סיימתי" };
     }
+    case "action_imagery":
+    case "gratitude": {
+      // Phase 8 (universal post-action completion retrofit): reuses the
+      // ONE shared Mini module -- see arc/postActionCompletion.ts.
+      const copy = getMiniPostActionCompletionCopy(stage, build.miniGratitudePrompt ?? null);
+      return copy;
+    }
     case "complete":
       return { title: "סיום", body: "סיימת את ה-ARC Mini Presence.", secondaryBody: null, buttonLabel: "סיום" };
   }
+}
+
+/** Phase 8: Mini Presence's own compact post-action imagery dwell -- mirrors getMiniUrgeActionImageryDwellSeconds/getMiniThoughtActionImageryDwellSeconds exactly, reusing the SAME generic MiniArcBuild field (miniActionImageryDwellSeconds), never a second field name. */
+export function getMiniPresenceActionImageryDwellSeconds(build: MiniArcBuild): number {
+  return build.miniActionImageryDwellSeconds ?? 5;
 }

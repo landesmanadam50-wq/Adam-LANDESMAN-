@@ -60,6 +60,9 @@ export interface ThoughtArcDraft {
   futureInsight: string;
   shortAction: string;
   futureImageryDwellSeconds: string;
+  /** Phase 8 (universal post-action completion retrofit). */
+  postActionImageryDwellSeconds: string;
+  gratitudePrompt: string;
 }
 
 export function createEmptyThoughtArcDraft(): ThoughtArcDraft {
@@ -84,6 +87,8 @@ export function createEmptyThoughtArcDraft(): ThoughtArcDraft {
     futureInsight: "",
     shortAction: "",
     futureImageryDwellSeconds: "",
+    postActionImageryDwellSeconds: "",
+    gratitudePrompt: "",
   };
 }
 
@@ -109,6 +114,8 @@ export function draftFromThoughtArc(thoughtArc: ThoughtArc): ThoughtArcDraft {
     futureInsight: safeText(thoughtArc.futureInsight),
     shortAction: safeText(thoughtArc.shortAction),
     futureImageryDwellSeconds: thoughtArc.futureImageryDwellSeconds != null ? String(thoughtArc.futureImageryDwellSeconds) : "",
+    postActionImageryDwellSeconds: thoughtArc.postActionImageryDwellSeconds != null ? String(thoughtArc.postActionImageryDwellSeconds) : "",
+    gratitudePrompt: safeText(thoughtArc.gratitudePrompt),
   };
 }
 
@@ -142,6 +149,7 @@ export function buildThoughtArcFromDraft(draft: ThoughtArcDraft, id: string, cre
   const gentleNodCue = draft.gentleNodCue.trim();
   const futureInsight = draft.futureInsight.trim();
   const shortAction = draft.shortAction.trim();
+  const gratitudePrompt = draft.gratitudePrompt.trim();
   return {
     id,
     name: draft.name.trim(),
@@ -166,6 +174,8 @@ export function buildThoughtArcFromDraft(draft: ThoughtArcDraft, id: string, cre
     futureInsight: futureInsight.length > 0 ? futureInsight : null,
     shortAction: shortAction.length > 0 ? shortAction : null,
     futureImageryDwellSeconds: parseOptionalDwellSeconds(draft.futureImageryDwellSeconds),
+    postActionImageryDwellSeconds: parseOptionalDwellSeconds(draft.postActionImageryDwellSeconds),
+    gratitudePrompt: gratitudePrompt.length > 0 ? gratitudePrompt : null,
   };
 }
 
@@ -198,6 +208,8 @@ export function normalizeThoughtArc(thoughtArc: ThoughtArc): ThoughtArc {
     futureInsight: thoughtArc.futureInsight ?? null,
     shortAction: thoughtArc.shortAction ?? null,
     futureImageryDwellSeconds: thoughtArc.futureImageryDwellSeconds ?? null,
+    postActionImageryDwellSeconds: thoughtArc.postActionImageryDwellSeconds ?? null,
+    gratitudePrompt: thoughtArc.gratitudePrompt ?? null,
   };
 }
 

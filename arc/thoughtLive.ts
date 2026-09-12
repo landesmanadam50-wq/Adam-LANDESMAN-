@@ -35,6 +35,13 @@ import type { ThoughtArc, ThoughtModality, ThoughtRoute, ThoughtTimeOrientation 
 import { getAcceptanceMantraLine, getStayMantraLine } from "./mantras.ts";
 import { getFreeBreathingLine } from "./naturalBreathing.ts";
 import { DEFAULT_DWELL_TIMES } from "./dwellTimes.ts";
+import {
+  createEmptyPostActionCompletionState,
+  getMiniPostActionCompletionCopy,
+  getNextPostActionCompletionStage,
+  getPostActionCompletionCopy,
+} from "./postActionCompletion.ts";
+import type { PostActionCompletionState } from "./postActionCompletion.ts";
 
 function safeText(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
@@ -67,9 +74,20 @@ export type ThoughtLiveStage =
   | "encoding"
   | "future_insight_action"
   | "future_imagery"
+  // Phase 8 (universal post-action completion retrofit): ARC Thought
+  // previously ended at "future_imagery" -- an IMAGINED future rehearsal,
+  // never an actually performed action. "action" is the genuine new
+  // stage where the trainee actually performs thoughtArc.shortAction
+  // now, followed by the shared post-action tail (see
+  // arc/postActionCompletion.ts's own module doc).
+  | "action"
+  | "action_imagery"
+  | "improvement_entry"
+  | "improved_action_imagery"
+  | "gratitude"
   | "complete";
 
-/** The exact fixed order for the disturbing-thought route (spec section 5), for tests/callers that need the whole sequence rather than hopping one stage at a time. */
+/** The exact fixed order for the disturbing-thought route (spec section 5), for tests/callers that need the whole sequence rather than hopping one stage at a time. Phase 8 appends action -> action_imagery -> improvement_entry -> improved_action_imagery -> gratitude between "future_imagery" and "complete". */
 export const THOUGHT_DISTURBING_ROUTE_STAGE_ORDER_WITH_INSIGHT: ThoughtLiveStage[] = [
   "opening_decision",
   "recognition",
@@ -85,10 +103,15 @@ export const THOUGHT_DISTURBING_ROUTE_STAGE_ORDER_WITH_INSIGHT: ThoughtLiveStage
   "encoding",
   "future_insight_action",
   "future_imagery",
+  "action",
+  "action_imagery",
+  "improvement_entry",
+  "improved_action_imagery",
+  "gratitude",
   "complete",
 ];
 
-/** The exact fixed order for the supportive-thought route (spec section 19). */
+/** The exact fixed order for the supportive-thought route (spec section 19). Phase 8 appends the same post-action tail as the disturbing route. */
 export const THOUGHT_SUPPORTIVE_ROUTE_STAGE_ORDER: ThoughtLiveStage[] = [
   "opening_decision",
   "supportive_thought_select",
@@ -99,6 +122,11 @@ export const THOUGHT_SUPPORTIVE_ROUTE_STAGE_ORDER: ThoughtLiveStage[] = [
   "encoding",
   "future_insight_action",
   "future_imagery",
+  "action",
+  "action_imagery",
+  "improvement_entry",
+  "improved_action_imagery",
+  "gratitude",
   "complete",
 ];
 
@@ -128,6 +156,8 @@ export interface ThoughtLiveState {
   liveSupportiveThought: string | null;
   futureInsightText: string | null;
   actionText: string | null;
+  /** Phase 8 (universal post-action completion retrofit): the shared action_imagery/improvement_entry/improved_action_imagery/gratitude tail's own local answers -- see arc/postActionCompletion.ts. */
+  postAction: PostActionCompletionState;
 }
 
 export function createEmptyThoughtLiveState(): ThoughtLiveState {
@@ -144,6 +174,7 @@ export function createEmptyThoughtLiveState(): ThoughtLiveState {
     liveSupportiveThought: null,
     futureInsightText: null,
     actionText: null,
+    postAction: createEmptyPostActionCompletionState(),
   };
 }
 
@@ -239,7 +270,20 @@ export function getNextThoughtLiveStage(current: ThoughtLiveStage, state: Though
     case "future_insight_action":
       return { stage: "future_imagery", state };
     case "future_imagery":
-      return { stage: "complete", state };
+      // Phase 8 (universal post-action completion retrofit): "future_imagery"
+      // used to jump straight to "complete" -- now continues into a genuine
+      // "action" stage (the trainee actually performs shortAction now),
+      // followed by the shared post-action tail.
+      return { stage: "action", state };
+    case "action":
+      return { stage: "action_imagery", state };
+    case "action_imagery":
+    case "improvement_entry":
+    case "improved_action_imagery":
+    case "gratitude": {
+      const hop = getNextPostActionCompletionStage(current, state.postAction);
+      return { stage: hop.stage, state: { ...state, postAction: hop.state } };
+    }
     case "complete":
       return { stage: "complete", state };
   }
@@ -504,6 +548,26 @@ export function getThoughtLiveStageCopy(stage: ThoughtLiveStage, thoughtArc: Tho
         buttonLabel: "המשך",
       };
     }
+    case "action": {
+      const action = safeText(thoughtArc?.shortAction);
+      return {
+        title: "פעולה",
+        body: action.length > 0 ? action : "הפעולה הקצרה שהגדרת.",
+        secondaryBody: null,
+        hint: null,
+        buttonLabel: "ביצעתי",
+      };
+    }
+    case "action_imagery":
+    case "improvement_entry":
+    case "improved_action_imagery":
+    case "gratitude": {
+      // Phase 8 (universal post-action completion retrofit): reuses the
+      // ONE shared module rather than duplicating this copy -- see
+      // arc/postActionCompletion.ts's own module doc.
+      const copy = getPostActionCompletionCopy(stage, state.postAction, thoughtArc?.gratitudePrompt ?? null);
+      return { ...copy, hint: null };
+    }
     case "complete":
       return { title: "סיום", body: "סיימת את ה-ARC Thought.", secondaryBody: null, hint: null, buttonLabel: "סיום" };
   }
@@ -521,6 +585,10 @@ export function getThoughtLiveDwellSeconds(stage: ThoughtLiveStage, thoughtArc: 
       return thoughtArc?.flexibleAttentionDwellSeconds ?? DEFAULT_DWELL_TIMES.regulationDwellSeconds;
     case "future_imagery":
       return thoughtArc?.futureImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.actionImageryDwellSeconds;
+    case "action_imagery":
+      return thoughtArc?.postActionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.completedActionImageryDwellSeconds;
+    case "improved_action_imagery":
+      return thoughtArc?.postActionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.improvedActionImageryDwellSeconds;
     default:
       return null;
   }
@@ -531,10 +599,16 @@ export function getThoughtLiveDwellSeconds(stage: ThoughtLiveStage, thoughtArc: 
 // protocol, deliberately excluding Presence rating, three Presence
 // stages, a separate Stay stage, a separate Acceptance stage, long
 // Awareness, long flexible-attention stages, mandatory writing, long
-// future imagery, Success Focus, Gratitude, and post-action reflection.
+// future imagery, and Success Focus. Phase 8 (universal post-action
+// completion retrofit) DOES add its own compact tail (action_imagery ->
+// gratitude, arc/postActionCompletion.ts's own Mini shape) right after
+// the existing "action" stage -- overriding the previous rule that Mini
+// ARC always ended immediately after the beneficial action, per that
+// phase's own saved requirement. Still no written improvement, no
+// improved-action imagery -- Mini stays lightweight by design.
 // ---------------------------------------------------------------------------
 
-export type MiniThoughtLiveStage = "recognition" | "modality" | "attention_anchor" | "insight_or_supportive" | "encoding" | "action" | "complete";
+export type MiniThoughtLiveStage = "recognition" | "modality" | "attention_anchor" | "insight_or_supportive" | "encoding" | "action" | "action_imagery" | "gratitude" | "complete";
 
 export const MINI_THOUGHT_LIVE_STAGE_ORDER: MiniThoughtLiveStage[] = [
   "recognition",
@@ -543,6 +617,8 @@ export const MINI_THOUGHT_LIVE_STAGE_ORDER: MiniThoughtLiveStage[] = [
   "insight_or_supportive",
   "encoding",
   "action",
+  "action_imagery",
+  "gratitude",
   "complete",
 ];
 
@@ -577,6 +653,10 @@ export function getNextMiniThoughtLiveStage(current: MiniThoughtLiveStage, state
     case "encoding":
       return { stage: "action", state };
     case "action":
+      return { stage: "action_imagery", state };
+    case "action_imagery":
+      return { stage: "gratitude", state };
+    case "gratitude":
       return { stage: "complete", state };
     case "complete":
       return { stage: "complete", state };
@@ -659,7 +739,19 @@ export function getMiniThoughtLiveStageCopy(
       const action = safeText(build.beneficialAction);
       return { title: "פעולה קצרה", body: action.length > 0 ? action : "הפעולה הקצרה שהגדרת.", secondaryBody: null, buttonLabel: "סיימתי" };
     }
+    case "action_imagery":
+    case "gratitude": {
+      // Phase 8 (universal post-action completion retrofit): reuses the
+      // ONE shared Mini module -- see arc/postActionCompletion.ts.
+      const copy = getMiniPostActionCompletionCopy(stage, build.miniGratitudePrompt ?? null);
+      return copy;
+    }
     case "complete":
       return { title: "סיום", body: "סיימת את ה-ARC Mini Thought.", secondaryBody: null, buttonLabel: "סיום" };
   }
+}
+
+/** Phase 8: Mini Thought's own compact post-action imagery dwell -- mirrors getMiniUrgeActionImageryDwellSeconds/getMiniBeliefActionImageryDwellSeconds exactly, reusing the SAME generic MiniArcBuild field (miniActionImageryDwellSeconds), never a second field name. */
+export function getMiniThoughtActionImageryDwellSeconds(build: MiniArcBuild): number {
+  return build.miniActionImageryDwellSeconds ?? 5;
 }

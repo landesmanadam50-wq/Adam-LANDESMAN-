@@ -36,6 +36,13 @@ import type { MiniArcBuild } from "./miniArc.ts";
 import { getAcceptanceMantraLine, getBridgeMantraLine, getRegulationMantraLine, getStayMantraLine } from "./mantras.ts";
 import { getFreeBreathingLine } from "./naturalBreathing.ts";
 import { DEFAULT_DWELL_TIMES } from "./dwellTimes.ts";
+import {
+  createEmptyPostActionCompletionState,
+  getMiniPostActionCompletionCopy,
+  getNextPostActionCompletionStage,
+  getPostActionCompletionCopy,
+} from "./postActionCompletion.ts";
+import type { PostActionCompletionState } from "./postActionCompletion.ts";
 
 function safeText(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
@@ -55,9 +62,13 @@ export type UrgeLiveStage =
   | "encode"
   | "act"
   | "recheck"
+  | "action_imagery"
+  | "improvement_entry"
+  | "improved_action_imagery"
+  | "gratitude"
   | "complete";
 
-/** The one fixed order this phase's spec requires -- exported so tests/callers never have to hand-maintain a second copy. */
+/** The one fixed order this phase's spec requires (non-looping path -- "recheck" can also loop back to "regulate"/"act", see getNextUrgeLiveStage) -- exported so tests/callers never have to hand-maintain a second copy. Phase 8 (universal post-action completion retrofit) appends action_imagery -> improvement_entry -> improved_action_imagery -> gratitude between "recheck" and "complete". */
 export const URGE_LIVE_STAGE_ORDER: UrgeLiveStage[] = [
   "recognition",
   "representation",
@@ -68,6 +79,10 @@ export const URGE_LIVE_STAGE_ORDER: UrgeLiveStage[] = [
   "encode",
   "act",
   "recheck",
+  "action_imagery",
+  "improvement_entry",
+  "improved_action_imagery",
+  "gratitude",
   "complete",
 ];
 
@@ -88,10 +103,12 @@ export interface UrgeLiveState {
   recheckIntensity: number | null;
   /** Safety cap for the recheck loop, mirroring arc/arcEngine.ts's own loopIterationCount pattern -- prevents an unbounded repeat_regulation/repeat_action loop from trapping the trainee. */
   recheckLoopCount: number;
+  /** Phase 8 (universal post-action completion retrofit): the shared action_imagery/improvement_entry/improved_action_imagery/gratitude tail's own local answers -- see arc/postActionCompletion.ts. */
+  postAction: PostActionCompletionState;
 }
 
 export function createEmptyUrgeLiveState(): UrgeLiveState {
-  return { representation: null, recheckChoice: null, recheckIntensity: null, recheckLoopCount: 0 };
+  return { representation: null, recheckChoice: null, recheckIntensity: null, recheckLoopCount: 0, postAction: createEmptyPostActionCompletionState() };
 }
 
 export const MAX_URGE_RECHECK_LOOPS = 3;
@@ -149,12 +166,19 @@ export function getNextUrgeLiveStage(current: UrgeLiveStage, state: UrgeLiveStat
       return { stage: "recheck", state };
     case "recheck": {
       if (state.recheckChoice === null) return { stage: current, state };
-      if (state.recheckChoice === "finish") return { stage: "complete", state };
+      // Phase 8 (universal post-action completion retrofit): "finish"
+      // and the safety cap both used to jump straight to "complete" --
+      // now they continue into the shared post-action tail instead,
+      // since the real action has genuinely been performed by this
+      // point. Never re-entered by a repeat_regulation/repeat_action
+      // loop-back (those still return to "regulate"/"act" below,
+      // exactly as before).
+      if (state.recheckChoice === "finish") return { stage: "action_imagery", state };
       if (state.recheckLoopCount >= MAX_URGE_RECHECK_LOOPS) {
         // Safety cap reached -- continue forward rather than being marked
         // failure or trapped in a loop (spec section 11: "Do not treat an
         // unchanged or stronger urge as failure").
-        return { stage: "complete", state };
+        return { stage: "action_imagery", state };
       }
       const advanced: UrgeLiveState = { ...state, recheckChoice: null, recheckLoopCount: state.recheckLoopCount + 1 };
       if (state.recheckChoice === "repeat_regulation") return { stage: "regulate", state: advanced };
@@ -162,6 +186,13 @@ export function getNextUrgeLiveStage(current: UrgeLiveStage, state: UrgeLiveStat
       // the alternative action is still performed as THIS session's
       // beneficial action, never a separate stage of its own.
       return { stage: "act", state: advanced };
+    }
+    case "action_imagery":
+    case "improvement_entry":
+    case "improved_action_imagery":
+    case "gratitude": {
+      const hop = getNextPostActionCompletionStage(current, state.postAction);
+      return { stage: hop.stage, state: { ...state, postAction: hop.state } };
     }
     case "complete":
       return { stage: "complete", state };
@@ -338,13 +369,23 @@ export function getUrgeLiveStageCopy(stage: UrgeLiveStage, urgeArc: UrgeArc, sta
         hint: null,
         buttonLabel: "המשך",
       };
+    case "action_imagery":
+    case "improvement_entry":
+    case "improved_action_imagery":
+    case "gratitude": {
+      // Phase 8 (universal post-action completion retrofit): reuses the
+      // ONE shared module rather than duplicating this copy -- see
+      // arc/postActionCompletion.ts's own module doc.
+      const copy = getPostActionCompletionCopy(stage, state.postAction, urgeArc.gratitudePrompt ?? null);
+      return { ...copy, hint: null };
+    }
     case "complete":
       return { title: "סיום", body: "סיימת את ה-ARC Urge.", secondaryBody: null, hint: null, buttonLabel: "סיום" };
   }
 }
 
-/** Every dwell duration Full ARC Urge uses -- the habit layer has no ARC Map of its own, so it always resolves to these exact defaults, unchanged from before this phase (arc/dwellTimes.ts's own module doc). Exposed here so a caller never hard-codes its own copy. */
-export function getUrgeLiveDwellSeconds(stage: UrgeLiveStage): number | null {
+/** Every dwell duration Full ARC Urge uses -- the habit layer has no ARC Map of its own, so it always resolves to these exact defaults, unchanged from before this phase (arc/dwellTimes.ts's own module doc), except the two Phase 8 post-action imagery stages, which honor urgeArc.postActionImageryDwellSeconds when configured. Exposed here so a caller never hard-codes its own copy. */
+export function getUrgeLiveDwellSeconds(stage: UrgeLiveStage, urgeArc: UrgeArc | null = null): number | null {
   switch (stage) {
     case "stay":
       return DEFAULT_DWELL_TIMES.sensationDwellSeconds;
@@ -354,6 +395,10 @@ export function getUrgeLiveDwellSeconds(stage: UrgeLiveStage): number | null {
       return DEFAULT_DWELL_TIMES.regulationDwellSeconds;
     case "encode":
       return DEFAULT_DWELL_TIMES.encodingDwellSeconds;
+    case "action_imagery":
+      return urgeArc?.postActionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.completedActionImageryDwellSeconds;
+    case "improved_action_imagery":
+      return urgeArc?.postActionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.improvedActionImageryDwellSeconds;
     default:
       return null;
   }
@@ -364,11 +409,16 @@ export function getUrgeLiveDwellSeconds(stage: UrgeLiveStage): number | null {
 // protocol, deliberately excluding Presence rating, three Presence
 // stages, a separate Stay stage, a separate Acceptance stage, long
 // Awareness, Updated Sensation as its own stage, long Action Imagery,
-// Success Focus, Gratitude, post-action reflection, and additional
-// writing screens.
+// Success Focus, and additional writing screens. Phase 8 (universal
+// post-action completion retrofit) DOES add its own compact tail
+// (action_imagery -> gratitude, arc/postActionCompletion.ts's own
+// Mini shape) -- overriding the previous rule that Mini ARC always
+// ended immediately after the beneficial action, per that phase's own
+// saved requirement. Still no Success Focus, no written improvement,
+// no improved-action imagery -- Mini stays lightweight by design.
 // ---------------------------------------------------------------------------
 
-export type MiniUrgeLiveStage = "recognition" | "representation" | "preventive_action" | "regulate" | "encode" | "act" | "complete";
+export type MiniUrgeLiveStage = "recognition" | "representation" | "preventive_action" | "regulate" | "encode" | "act" | "action_imagery" | "gratitude" | "complete";
 
 export const MINI_URGE_LIVE_STAGE_ORDER: MiniUrgeLiveStage[] = [
   "recognition",
@@ -377,6 +427,8 @@ export const MINI_URGE_LIVE_STAGE_ORDER: MiniUrgeLiveStage[] = [
   "regulate",
   "encode",
   "act",
+  "action_imagery",
+  "gratitude",
   "complete",
 ];
 
@@ -411,6 +463,10 @@ export function getNextMiniUrgeLiveStage(current: MiniUrgeLiveStage, state: Mini
     case "encode":
       return { stage: "act", state };
     case "act":
+      return { stage: "action_imagery", state };
+    case "action_imagery":
+      return { stage: "gratitude", state };
+    case "gratitude":
       return { stage: "complete", state };
     case "complete":
       return { stage: "complete", state };
@@ -482,7 +538,19 @@ export function getMiniUrgeLiveStageCopy(stage: MiniUrgeLiveStage, build: MiniAr
       const action = safeText(build.beneficialAction);
       return { title: "פעולה מיטיבה", body: action.length > 0 ? action : "הפעולה המיטיבה שהגדרת.", secondaryBody: null, buttonLabel: "סיימתי" };
     }
+    case "action_imagery":
+    case "gratitude": {
+      // Phase 8 (universal post-action completion retrofit): reuses the
+      // ONE shared Mini module -- see arc/postActionCompletion.ts.
+      const copy = getMiniPostActionCompletionCopy(stage, build.miniGratitudePrompt ?? null);
+      return copy;
+    }
     case "complete":
       return { title: "סיום", body: "סיימת את ה-ARC Mini Urge.", secondaryBody: null, buttonLabel: "סיום" };
   }
+}
+
+/** Phase 8: Mini Urge's own compact post-action imagery dwell -- mirrors arc/beliefLive.ts's getMiniBeliefActionImageryDwellSeconds exactly, reusing the SAME generic MiniArcBuild field (miniActionImageryDwellSeconds) Belief Mini already established, never a second field name. */
+export function getMiniUrgeActionImageryDwellSeconds(build: MiniArcBuild): number {
+  return build.miniActionImageryDwellSeconds ?? 5;
 }

@@ -40,10 +40,14 @@ export interface PresenceArcDraft {
   name: string;
   presenceColor: string;
   presenceDwellSeconds: string;
+  /** Phase 8 (universal post-action completion retrofit). */
+  beneficialAction: string;
+  postActionImageryDwellSeconds: string;
+  gratitudePrompt: string;
 }
 
 export function createEmptyPresenceArcDraft(): PresenceArcDraft {
-  return { name: "", presenceColor: "", presenceDwellSeconds: "" };
+  return { name: "", presenceColor: "", presenceDwellSeconds: "", beneficialAction: "", postActionImageryDwellSeconds: "", gratitudePrompt: "" };
 }
 
 export function draftFromPresenceArc(presenceArc: PresenceArc): PresenceArcDraft {
@@ -51,10 +55,13 @@ export function draftFromPresenceArc(presenceArc: PresenceArc): PresenceArcDraft
     name: safeText(presenceArc.name),
     presenceColor: safeText(presenceArc.presenceColor),
     presenceDwellSeconds: presenceArc.presenceDwellSeconds != null ? String(presenceArc.presenceDwellSeconds) : "",
+    beneficialAction: safeText(presenceArc.beneficialAction),
+    postActionImageryDwellSeconds: presenceArc.postActionImageryDwellSeconds != null ? String(presenceArc.postActionImageryDwellSeconds) : "",
+    gratitudePrompt: safeText(presenceArc.gratitudePrompt),
   };
 }
 
-/** Only a name is required -- Energy Color and the dwell override both stay optional, exactly like the existing ArcBuildProfile.presenceColor field always has been. */
+/** Only a name is required -- Energy Color, the dwell override, and the (new) beneficial action all stay optional, exactly like the existing ArcBuildProfile.presenceColor field always has been. */
 export function isPresenceArcDraftComplete(draft: PresenceArcDraft): boolean {
   return draft.name.trim().length > 0;
 }
@@ -72,6 +79,8 @@ export function buildPresenceArcFromDraft(draft: PresenceArcDraft, id: string, c
     throw new Error("Cannot build a PresenceArc from an incomplete draft");
   }
   const presenceColor = draft.presenceColor.trim();
+  const beneficialAction = draft.beneficialAction.trim();
+  const gratitudePrompt = draft.gratitudePrompt.trim();
   return {
     id,
     name: draft.name.trim(),
@@ -79,6 +88,9 @@ export function buildPresenceArcFromDraft(draft: PresenceArcDraft, id: string, c
     updatedAt,
     presenceColor: presenceColor.length > 0 ? presenceColor : null,
     presenceDwellSeconds: parseOptionalDwellSeconds(draft.presenceDwellSeconds),
+    beneficialAction: beneficialAction.length > 0 ? beneficialAction : null,
+    postActionImageryDwellSeconds: parseOptionalDwellSeconds(draft.postActionImageryDwellSeconds),
+    gratitudePrompt: gratitudePrompt.length > 0 ? gratitudePrompt : null,
   };
 }
 
@@ -93,5 +105,8 @@ export function normalizePresenceArc(presenceArc: PresenceArc): PresenceArc {
     ...presenceArc,
     presenceColor: presenceArc.presenceColor ?? null,
     presenceDwellSeconds: presenceArc.presenceDwellSeconds ?? null,
+    beneficialAction: presenceArc.beneficialAction ?? null,
+    postActionImageryDwellSeconds: presenceArc.postActionImageryDwellSeconds ?? null,
+    gratitudePrompt: presenceArc.gratitudePrompt ?? null,
   };
 }

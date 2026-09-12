@@ -6,9 +6,11 @@ import {
   createEmptyUrgeLiveState,
   getFirstMiniUrgeLiveStage,
   getFirstUrgeLiveStage,
+  getMiniUrgeActionImageryDwellSeconds,
   getMiniUrgeLiveStageCopy,
   getNextMiniUrgeLiveStage,
   getNextUrgeLiveStage,
+  getUrgeLiveDwellSeconds,
   getUrgeLiveStageCopy,
   MAX_URGE_RECHECK_LOOPS,
   MINI_URGE_LIVE_STAGE_ORDER,
@@ -191,10 +193,10 @@ test("recheck's own copy is neutral ('מה עוצמת הדחף עכשיו?'), ne
 });
 
 // --- Required test 16: unchanged re-rating is not failure ---
-test("recheck reaching the safety cap continues forward to 'complete' rather than looping forever or failing", () => {
+test("recheck reaching the safety cap continues forward into the post-action completion tail rather than looping forever or failing", () => {
   let state: UrgeLiveState = { ...createEmptyUrgeLiveState(), recheckLoopCount: MAX_URGE_RECHECK_LOOPS };
   const hop = getNextUrgeLiveStage("recheck", { ...state, recheckChoice: "repeat_regulation" });
-  assert.equal(hop.stage, "complete");
+  assert.equal(hop.stage, "action_imagery");
 });
 
 test("recheck's 'repeat_regulation' choice loops back to 'regulate' (under the cap), and 'repeat_action'/'alternative_action' loop back to 'act'", () => {
@@ -206,11 +208,11 @@ test("recheck's 'repeat_regulation' choice loops back to 'regulate' (under the c
   const alternativeAction = getNextUrgeLiveStage("recheck", { ...state, recheckChoice: "alternative_action" });
   assert.equal(alternativeAction.stage, "act");
   const finish = getNextUrgeLiveStage("recheck", { ...state, recheckChoice: "finish" });
-  assert.equal(finish.stage, "complete");
+  assert.equal(finish.stage, "action_imagery");
 });
 
 // --- Required test 17: ARC Mini Urge exact short stage order ---
-test("ARC Mini Urge walks the exact fixed short order: recognition -> representation -> preventive_action -> regulate -> encode -> act -> complete", () => {
+test("ARC Mini Urge walks the exact fixed short order: recognition -> representation -> preventive_action -> regulate -> encode -> act -> action_imagery -> gratitude -> complete", () => {
   let stage = getFirstMiniUrgeLiveStage();
   let state = createEmptyMiniUrgeLiveState();
   const visited: MiniUrgeLiveStage[] = [stage];
@@ -308,4 +310,114 @@ test("missing preventiveStoppingAction/stopCue allows continuing safely rather t
 test("recognition is never gated on any answer -- always advances on the very next hop", () => {
   const hop = getNextUrgeLiveStage("recognition", createEmptyUrgeLiveState());
   assert.equal(hop.stage, "representation");
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8: universal post-action completion retrofit
+// ---------------------------------------------------------------------------
+
+test("Full ARC Urge's post-action tail runs action_imagery -> improvement_entry -> improved_action_imagery -> gratitude -> complete, right after 'recheck' finishes", () => {
+  const idx = (s: UrgeLiveStage) => URGE_LIVE_STAGE_ORDER.indexOf(s);
+  assert.ok(idx("recheck") < idx("action_imagery"));
+  assert.deepEqual(URGE_LIVE_STAGE_ORDER.slice(idx("action_imagery")), [
+    "action_imagery",
+    "improvement_entry",
+    "improved_action_imagery",
+    "gratitude",
+    "complete",
+  ]);
+});
+
+test("Full ARC Urge's post-action tail is never gated -- every stage advances even with no free-text answer supplied", () => {
+  let stage: UrgeLiveStage = "action_imagery";
+  let state = createEmptyUrgeLiveState();
+  const visited: UrgeLiveStage[] = [stage];
+  for (let i = 0; i < 10 && stage !== "complete"; i++) {
+    const hop = getNextUrgeLiveStage(stage, state);
+    stage = hop.stage;
+    state = hop.state;
+    visited.push(stage);
+  }
+  assert.deepEqual(visited, ["action_imagery", "improvement_entry", "improved_action_imagery", "gratitude", "complete"]);
+});
+
+test("Full ARC Urge's gratitude stage uses the UrgeArc's own gratitudePrompt when configured, otherwise the shared default question", () => {
+  const withPrompt = urgeArc({ gratitudePrompt: "על מה אתה אסיר תודה כרגע?" });
+  const copyWithPrompt = getUrgeLiveStageCopy("gratitude", withPrompt, createEmptyUrgeLiveState());
+  assert.equal(copyWithPrompt.body, "על מה אתה אסיר תודה כרגע?");
+
+  const withoutPrompt = urgeArc({ gratitudePrompt: null });
+  const copyWithoutPrompt = getUrgeLiveStageCopy("gratitude", withoutPrompt, createEmptyUrgeLiveState());
+  assert.equal(copyWithoutPrompt.body, "על מה אתה מודה לעצמך בעקבות הפעולה?");
+});
+
+test("Full ARC Urge's action_imagery/improved_action_imagery dwell honors UrgeArc.postActionImageryDwellSeconds when configured, otherwise falls back to the shared default dwell times", () => {
+  const configured = urgeArc({ postActionImageryDwellSeconds: 42 });
+  assert.equal(getUrgeLiveDwellSeconds("action_imagery", configured), 42);
+  assert.equal(getUrgeLiveDwellSeconds("improved_action_imagery", configured), 42);
+
+  const unconfigured = urgeArc({ postActionImageryDwellSeconds: null });
+  assert.ok((getUrgeLiveDwellSeconds("action_imagery", unconfigured) ?? 0) > 0);
+  assert.ok((getUrgeLiveDwellSeconds("improved_action_imagery", unconfigured) ?? 0) > 0);
+
+  assert.ok((getUrgeLiveDwellSeconds("action_imagery", null) ?? 0) > 0);
+});
+
+test("Full ARC Urge's improved_action_imagery reflects the trainee's own improvement text when supplied, and falls back to the shared generic line otherwise", () => {
+  const withImprovement = getUrgeLiveStageCopy("improved_action_imagery", urgeArc(), {
+    ...createEmptyUrgeLiveState(),
+    postAction: { improvementText: "לדבר בקול רגוע יותר", gratitudeText: null },
+  });
+  assert.match(withImprovement.body, /לדבר בקול רגוע יותר/);
+
+  const withoutImprovement = getUrgeLiveStageCopy("improved_action_imagery", urgeArc(), createEmptyUrgeLiveState());
+  assert.equal(withoutImprovement.body, "דמיין את עצמך מבצע שוב את הפעולה, תוך שמירה על מה שעבד היטב.");
+});
+
+test("Mini ARC Urge's compact post-action tail runs action_imagery -> gratitude -> complete, right after 'act', with no improvement/success-focus stage", () => {
+  const idx = (s: MiniUrgeLiveStage) => MINI_URGE_LIVE_STAGE_ORDER.indexOf(s);
+  assert.ok(idx("act") < idx("action_imagery"));
+  assert.deepEqual(MINI_URGE_LIVE_STAGE_ORDER.slice(idx("action_imagery")), ["action_imagery", "gratitude", "complete"]);
+  for (const forbidden of ["improvement_entry", "improved_action_imagery", "success_focus"]) {
+    assert.ok(!MINI_URGE_LIVE_STAGE_ORDER.includes(forbidden as MiniUrgeLiveStage));
+  }
+});
+
+test("Mini ARC Urge's gratitude stage uses the MiniArcBuild's own miniGratitudePrompt when configured, otherwise the shared default question", () => {
+  const withPrompt = miniBuild({ miniGratitudePrompt: "על מה תודה קצרה עכשיו?" });
+  const copyWithPrompt = getMiniUrgeLiveStageCopy("gratitude", withPrompt, createEmptyMiniUrgeLiveState());
+  assert.equal(copyWithPrompt.body, "על מה תודה קצרה עכשיו?");
+
+  const withoutPrompt = miniBuild({ miniGratitudePrompt: undefined });
+  const copyWithoutPrompt = getMiniUrgeLiveStageCopy("gratitude", withoutPrompt, createEmptyMiniUrgeLiveState());
+  assert.equal(copyWithoutPrompt.body, "על מה אתה מודה לעצמך בעקבות הפעולה?");
+});
+
+test("Mini ARC Urge's action_imagery/gratitude copy never throws and never renders 'undefined'/'null' for a build missing every Phase 8 field", () => {
+  const legacyBuild = miniBuild({ miniGratitudePrompt: undefined, miniActionImageryDwellSeconds: undefined });
+  for (const stage of ["action_imagery", "gratitude"] as MiniUrgeLiveStage[]) {
+    assert.doesNotThrow(() => getMiniUrgeLiveStageCopy(stage, legacyBuild, createEmptyMiniUrgeLiveState()));
+    const copy = getMiniUrgeLiveStageCopy(stage, legacyBuild, createEmptyMiniUrgeLiveState());
+    const text = `${copy.title} ${copy.body} ${copy.secondaryBody ?? ""}`;
+    assert.ok(!text.includes("undefined"));
+    assert.ok(!text.includes("null"));
+  }
+});
+
+test("Mini ARC Urge's action imagery dwell honors MiniArcBuild.miniActionImageryDwellSeconds when configured, otherwise a safe short default", () => {
+  const configured = miniBuild({ miniActionImageryDwellSeconds: 7 });
+  assert.equal(getMiniUrgeActionImageryDwellSeconds(configured), 7);
+  const unconfigured = miniBuild({ miniActionImageryDwellSeconds: undefined });
+  assert.ok(getMiniUrgeActionImageryDwellSeconds(unconfigured) > 0);
+});
+
+test("Full ARC Urge legacy record (none of Phase 8's fields ever set) renders the entire post-action tail safely, no crash and no 'undefined'/'null'", () => {
+  const legacy = createEmptyUrgeArc("legacy-2", "ישן", "2020-01-01T00:00:00.000Z");
+  for (const stage of ["action_imagery", "improvement_entry", "improved_action_imagery", "gratitude", "complete"] as UrgeLiveStage[]) {
+    assert.doesNotThrow(() => getUrgeLiveStageCopy(stage, legacy, createEmptyUrgeLiveState()));
+    const copy = getUrgeLiveStageCopy(stage, legacy, createEmptyUrgeLiveState());
+    const text = `${copy.title} ${copy.body} ${copy.secondaryBody ?? ""} ${copy.hint ?? ""}`;
+    assert.ok(!text.includes("undefined"));
+    assert.ok(!text.includes("null"));
+  }
 });

@@ -23,6 +23,14 @@ function splitCommaList(value: string): string[] {
     .filter((item) => item.length > 0);
 }
 
+/** Phase 8 (universal post-action completion retrofit): mirrors arc/thoughtArcs.ts's/arc/beliefArcs.ts's own identical helper. */
+function parseOptionalDwellSeconds(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+}
+
 /** Updates the one UrgeArc matching `urgeArc.id` in place if found, otherwise appends it as new. Never reorders the rest of the list, and never matches by anything other than id. */
 export function upsertUrgeArcInList(urgeArcs: UrgeArc[], urgeArc: UrgeArc): UrgeArc[] {
   const index = urgeArcs.findIndex((existing) => existing.id === urgeArc.id);
@@ -88,6 +96,9 @@ export interface UrgeArcDraft {
   acceptanceMantra: string;
   regulationMantra: string;
   bridgeMantra: string;
+  /** Phase 8 (universal post-action completion retrofit). */
+  postActionImageryDwellSeconds: string;
+  gratitudePrompt: string;
 }
 
 export function createEmptyUrgeArcDraft(): UrgeArcDraft {
@@ -115,6 +126,8 @@ export function createEmptyUrgeArcDraft(): UrgeArcDraft {
     acceptanceMantra: "",
     regulationMantra: "",
     bridgeMantra: "",
+    postActionImageryDwellSeconds: "",
+    gratitudePrompt: "",
   };
 }
 
@@ -143,6 +156,8 @@ export function draftFromUrgeArc(urgeArc: UrgeArc): UrgeArcDraft {
     acceptanceMantra: safeText(urgeArc.acceptanceMantra),
     regulationMantra: safeText(urgeArc.regulationMantra),
     bridgeMantra: safeText(urgeArc.bridgeMantra),
+    postActionImageryDwellSeconds: urgeArc.postActionImageryDwellSeconds != null ? String(urgeArc.postActionImageryDwellSeconds) : "",
+    gratitudePrompt: safeText(urgeArc.gratitudePrompt),
   };
 }
 
@@ -176,6 +191,7 @@ export function buildUrgeArcFromDraft(draft: UrgeArcDraft, id: string, createdAt
   const acceptanceMantra = draft.acceptanceMantra.trim();
   const regulationMantra = draft.regulationMantra.trim();
   const bridgeMantra = draft.bridgeMantra.trim();
+  const gratitudePrompt = draft.gratitudePrompt.trim();
   return {
     id,
     name: draft.name.trim(),
@@ -204,6 +220,8 @@ export function buildUrgeArcFromDraft(draft: UrgeArcDraft, id: string, createdAt
     acceptanceMantra: acceptanceMantra.length > 0 ? acceptanceMantra : null,
     regulationMantra: regulationMantra.length > 0 ? regulationMantra : null,
     bridgeMantra: bridgeMantra.length > 0 ? bridgeMantra : null,
+    postActionImageryDwellSeconds: parseOptionalDwellSeconds(draft.postActionImageryDwellSeconds),
+    gratitudePrompt: gratitudePrompt.length > 0 ? gratitudePrompt : null,
   };
 }
 
@@ -239,5 +257,7 @@ export function normalizeUrgeArc(urgeArc: UrgeArc): UrgeArc {
     acceptanceMantra: urgeArc.acceptanceMantra ?? null,
     regulationMantra: urgeArc.regulationMantra ?? null,
     bridgeMantra: urgeArc.bridgeMantra ?? null,
+    postActionImageryDwellSeconds: urgeArc.postActionImageryDwellSeconds ?? null,
+    gratitudePrompt: urgeArc.gratitudePrompt ?? null,
   };
 }

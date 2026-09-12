@@ -1064,6 +1064,17 @@ export interface UrgeArc {
   acceptanceMantra: string | null;
   regulationMantra: string | null;
   bridgeMantra: string | null;
+  /**
+   * Phase 8 (universal post-action completion retrofit): how long the
+   * "imagine the action as it actually happened"/"imagine the improved
+   * action" stages dwell -- same shared-naming convention as
+   * BeliefArc.postActionImageryDwellSeconds (arc/beliefLive.ts, Phase
+   * 6), reused here rather than inventing a second field name. null
+   * falls back to arc/dwellTimes.ts's own default.
+   */
+  postActionImageryDwellSeconds: number | null;
+  /** Phase 8: optional override for the post-action Gratitude prompt; null uses arc/postActionCompletion.ts's own standard default line. */
+  gratitudePrompt: string | null;
 }
 
 /**
@@ -1189,6 +1200,18 @@ export interface ThoughtArc {
   shortAction: string | null;
   /** Spec section 18 "Use a configurable dwell duration" for future imagery. null falls back to arc/dwellTimes.ts's DEFAULT_DWELL_TIMES.actionImageryDwellSeconds, exactly like Urge's own dwell handling. */
   futureImageryDwellSeconds: number | null;
+  /**
+   * Phase 8 (universal post-action completion retrofit): Full ARC
+   * Thought gains a genuine "perform shortAction now" action stage
+   * (previously shortAction was only ever referenced inside the
+   * imagined future_imagery instruction text, never actually
+   * performed) followed by this shared tail. Same shared-naming
+   * convention as BeliefArc/UrgeArc's own postActionImageryDwellSeconds
+   * -- null falls back to arc/dwellTimes.ts's own default.
+   */
+  postActionImageryDwellSeconds: number | null;
+  /** Phase 8: optional override for the post-action Gratitude prompt; null uses arc/postActionCompletion.ts's own standard default line. */
+  gratitudePrompt: string | null;
 }
 
 export function generateThoughtArcId(): string {
@@ -1221,6 +1244,8 @@ export function createEmptyThoughtArc(id: string, name: string, now: string): Th
     futureInsight: null,
     shortAction: null,
     futureImageryDwellSeconds: null,
+    postActionImageryDwellSeconds: null,
+    gratitudePrompt: null,
   };
 }
 
@@ -1258,6 +1283,22 @@ export interface PresenceArc {
   presenceColor: string | null;
   /** Optional override for the existing configurable Presence dwell (arc/dwellTimes.ts's resolvePresenceDwellSeconds/DEFAULT_DWELL_TIMES.presenceDwellSeconds). null (the default, and every PresenceArc saved before this field existed) uses the exact same default dwell every other target already falls back to -- never a different/new default. */
   presenceDwellSeconds: number | null;
+  /**
+   * Phase 8 (universal post-action completion retrofit): Full ARC
+   * Presence gains a genuine action stage (previously Presence stopped
+   * right at its own Presence/Regulation hand-off point, per Phase 5's
+   * own explicit scope -- "reusable later inside ARC State and other
+   * parent protocols" is exactly this later phase) followed by the
+   * shared post-action tail. null (every PresenceArc saved before this
+   * field existed) means no action configured -- the LIVE screen skips
+   * straight to completion, exactly as it did before this phase,
+   * because there is nothing to perform yet.
+   */
+  beneficialAction: string | null;
+  /** Same shared-naming convention as BeliefArc/UrgeArc/ThoughtArc's own postActionImageryDwellSeconds -- null falls back to arc/dwellTimes.ts's own default. */
+  postActionImageryDwellSeconds: number | null;
+  /** Optional override for the post-action Gratitude prompt; null uses arc/postActionCompletion.ts's own standard default line. */
+  gratitudePrompt: string | null;
 }
 
 export function generatePresenceArcId(): string {
@@ -1266,7 +1307,17 @@ export function generatePresenceArcId(): string {
 
 /** A fresh, empty PresenceArc -- mirrors createEmptyUrgeArc/createEmptyThoughtArc's own shape. */
 export function createEmptyPresenceArc(id: string, name: string, now: string): PresenceArc {
-  return { id, name, createdAt: now, updatedAt: now, presenceColor: null, presenceDwellSeconds: null };
+  return {
+    id,
+    name,
+    createdAt: now,
+    updatedAt: now,
+    presenceColor: null,
+    presenceDwellSeconds: null,
+    beneficialAction: null,
+    postActionImageryDwellSeconds: null,
+    gratitudePrompt: null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1851,6 +1902,8 @@ export function createEmptyUrgeArc(id: string, name: string, now: string): UrgeA
     acceptanceMantra: null,
     regulationMantra: null,
     bridgeMantra: null,
+    postActionImageryDwellSeconds: null,
+    gratitudePrompt: null,
   };
 }
 

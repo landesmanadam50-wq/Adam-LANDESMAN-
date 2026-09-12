@@ -106,6 +106,7 @@ import { resolveDwellSecondsFor, withTrailingDwellSegment } from "./dwellTimes.t
 import { getFreeBreathingLine } from "./naturalBreathing.ts";
 import { getUrgeLiveStageCopy, getUrgeRepresentationOptions } from "./urgeLive.ts";
 import type { UrgeLiveStageCopy } from "./urgeLive.ts";
+import { createEmptyPostActionCompletionState } from "./postActionCompletion.ts";
 
 export type ArcGoalUiStage =
   | "state_clarification_decision"
@@ -471,7 +472,7 @@ export function resolveAfterUrgeEncoding(goalState: ArcGoalLiveState): ArcGoalLi
 
 /** Reuses arc/urgeLive.ts's own getUrgeLiveStageCopy("encode", ...) content builder -- never a second, duplicated representation-routing implementation for the Goal-Achievement bridge. */
 export function getUrgeEncodingCopy(urgeArc: UrgeArc, representation: UrgeRepresentation): UrgeLiveStageCopy {
-  return getUrgeLiveStageCopy("encode", urgeArc, { representation, recheckChoice: null, recheckIntensity: null, recheckLoopCount: 0 });
+  return getUrgeLiveStageCopy("encode", urgeArc, { representation, recheckChoice: null, recheckIntensity: null, recheckLoopCount: 0, postAction: createEmptyPostActionCompletionState() });
 }
 
 export const URGE_REPRESENTATION_QUESTION_TITLE = "אופן הופעת הדחף";

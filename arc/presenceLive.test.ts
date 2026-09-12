@@ -2,17 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  createEmptyPresenceActionLiveState,
   createPresenceArcInitialSession,
   getFirstMiniPresenceLiveStage,
+  getFirstPresenceActionLiveStage,
+  getMiniPresenceActionImageryDwellSeconds,
   getMiniPresenceLiveStageCopy,
   getNextMiniPresenceLiveStage,
+  getNextPresenceActionLiveStage,
+  getPresenceActionLiveDwellSeconds,
+  getPresenceActionLiveStageCopy,
   isPresenceComplete,
   MINI_PRESENCE_LIVE_STAGE_ORDER,
+  PRESENCE_ACTION_LIVE_STAGE_ORDER,
   PRESENCE_EXIT_STAGE,
   PRESENCE_STAGE_SET,
   presenceArcToProfile,
 } from "./presenceLive.ts";
-import type { MiniPresenceLiveStage } from "./presenceLive.ts";
+import type { MiniPresenceLiveStage, PresenceActionLiveStage } from "./presenceLive.ts";
 import { createEmptyPresenceArc } from "./types.ts";
 import type { ArcLiveState, ArcStage, PresenceArc } from "./types.ts";
 import type { MiniArcBuild } from "./miniArc.ts";
@@ -171,14 +178,14 @@ test("getFirstMiniPresenceLiveStage always starts at notice_present", () => {
   assert.equal(getFirstMiniPresenceLiveStage(), "notice_present");
 });
 
-test("the Mini Presence stage order walks the exact fixed 5-step sequence from the spec, then stays on complete", () => {
+test("the Mini Presence stage order walks the exact fixed sequence from the spec (Phase 8: plus the compact post-action tail), then stays on complete", () => {
   let stage: MiniPresenceLiveStage = getFirstMiniPresenceLiveStage();
   const visited: MiniPresenceLiveStage[] = [stage];
   for (let i = 0; i < 10 && stage !== "complete"; i++) {
     stage = getNextMiniPresenceLiveStage(stage);
     visited.push(stage);
   }
-  assert.deepEqual(visited, ["notice_present", "natural_breathing", "attention_anchor", "energy_color_or_cue", "return_to_action", "complete"]);
+  assert.deepEqual(visited, ["notice_present", "natural_breathing", "attention_anchor", "energy_color_or_cue", "return_to_action", "action_imagery", "gratitude", "complete"]);
   assert.deepEqual(MINI_PRESENCE_LIVE_STAGE_ORDER, visited);
 });
 
@@ -223,4 +230,122 @@ test("Mini Presence stage copy never throws and never renders 'undefined'/'null'
     assert.ok(!copy.body.includes("undefined"));
     assert.ok(!copy.body.includes("null"));
   }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8: universal post-action completion retrofit -- Full ARC Presence
+// gains a genuine NEW "action" stage + shared post-action tail, run by
+// arc/presenceLive.ts's own small local sub-engine, once the reused
+// Presence session reaches PRESENCE_EXIT_STAGE.
+// ---------------------------------------------------------------------------
+
+test("Full ARC Presence's NEW local action tail runs action -> action_imagery -> improvement_entry -> improved_action_imagery -> gratitude -> complete", () => {
+  assert.deepEqual(PRESENCE_ACTION_LIVE_STAGE_ORDER, ["action", "action_imagery", "improvement_entry", "improved_action_imagery", "gratitude", "complete"]);
+});
+
+test("getFirstPresenceActionLiveStage always starts at 'action'", () => {
+  assert.equal(getFirstPresenceActionLiveStage(), "action");
+});
+
+test("Full ARC Presence's action tail is never gated -- every stage advances even with no free-text answer supplied", () => {
+  let stage: PresenceActionLiveStage = getFirstPresenceActionLiveStage();
+  let state = createEmptyPresenceActionLiveState();
+  const visited: PresenceActionLiveStage[] = [stage];
+  for (let i = 0; i < 10 && stage !== "complete"; i++) {
+    const hop = getNextPresenceActionLiveStage(stage, state);
+    stage = hop.stage;
+    state = hop.state;
+    visited.push(stage);
+  }
+  assert.deepEqual(visited, PRESENCE_ACTION_LIVE_STAGE_ORDER);
+});
+
+test("getNextPresenceActionLiveStage('complete') stays on complete rather than looping or throwing", () => {
+  const hop = getNextPresenceActionLiveStage("complete", createEmptyPresenceActionLiveState());
+  assert.equal(hop.stage, "complete");
+});
+
+test("Full ARC Presence's 'action' stage shows the NEW PresenceArc.beneficialAction field, and renders safely with no configured action", () => {
+  const withAction = getPresenceActionLiveStageCopy("action", presenceArc({ beneficialAction: "לצאת להליכה קצרה" }), createEmptyPresenceActionLiveState());
+  assert.match(withAction.body, /לצאת להליכה קצרה/);
+
+  const withoutAction = getPresenceActionLiveStageCopy("action", presenceArc({ beneficialAction: null }), createEmptyPresenceActionLiveState());
+  assert.ok(withoutAction.body.length > 0);
+  assert.ok(!withoutAction.body.includes("undefined"));
+  assert.ok(!withoutAction.body.includes("null"));
+});
+
+test("Full ARC Presence's gratitude stage uses the PresenceArc's own gratitudePrompt when configured, otherwise the shared default question", () => {
+  const withPrompt = getPresenceActionLiveStageCopy("gratitude", presenceArc({ gratitudePrompt: "על מה אתה מודה?" }), createEmptyPresenceActionLiveState());
+  assert.equal(withPrompt.body, "על מה אתה מודה?");
+
+  const withoutPrompt = getPresenceActionLiveStageCopy("gratitude", presenceArc({ gratitudePrompt: null }), createEmptyPresenceActionLiveState());
+  assert.equal(withoutPrompt.body, "על מה אתה מודה לעצמך בעקבות הפעולה?");
+});
+
+test("Full ARC Presence's improved_action_imagery reflects the trainee's own improvement text when supplied, and falls back to the shared generic line otherwise", () => {
+  const withImprovement = getPresenceActionLiveStageCopy("improved_action_imagery", presenceArc(), {
+    postAction: { improvementText: "לנשום עמוק יותר לפני הפעולה", gratitudeText: null },
+  });
+  assert.match(withImprovement.body, /לנשום עמוק יותר לפני הפעולה/);
+
+  const withoutImprovement = getPresenceActionLiveStageCopy("improved_action_imagery", presenceArc(), createEmptyPresenceActionLiveState());
+  assert.equal(withoutImprovement.body, "דמיין את עצמך מבצע שוב את הפעולה, תוך שמירה על מה שעבד היטב.");
+});
+
+test("Full ARC Presence's action_imagery/improved_action_imagery dwell honors PresenceArc.postActionImageryDwellSeconds when configured, otherwise falls back to the shared default dwell times", () => {
+  const configured = presenceArc({ postActionImageryDwellSeconds: 21 });
+  assert.equal(getPresenceActionLiveDwellSeconds("action_imagery", configured), 21);
+  assert.equal(getPresenceActionLiveDwellSeconds("improved_action_imagery", configured), 21);
+
+  const unconfigured = presenceArc({ postActionImageryDwellSeconds: null });
+  assert.ok((getPresenceActionLiveDwellSeconds("action_imagery", unconfigured) ?? 0) > 0);
+  assert.ok((getPresenceActionLiveDwellSeconds("improved_action_imagery", unconfigured) ?? 0) > 0);
+  assert.ok((getPresenceActionLiveDwellSeconds("action_imagery", null) ?? 0) > 0);
+});
+
+test("Full ARC Presence legacy record (createEmptyPresenceArc, none of Phase 8's fields ever set) renders the entire action tail safely, no crash and no 'undefined'/'null'", () => {
+  const legacy = createEmptyPresenceArc("legacy-1", "ישן", "2020-01-01T00:00:00.000Z");
+  for (const stage of PRESENCE_ACTION_LIVE_STAGE_ORDER) {
+    assert.doesNotThrow(() => getPresenceActionLiveStageCopy(stage, legacy, createEmptyPresenceActionLiveState()));
+    const copy = getPresenceActionLiveStageCopy(stage, legacy, createEmptyPresenceActionLiveState());
+    const text = `${copy.title} ${copy.body} ${copy.secondaryBody ?? ""}`;
+    assert.ok(!text.includes("undefined"));
+    assert.ok(!text.includes("null"));
+  }
+});
+
+test("Mini ARC Presence's compact post-action tail runs action_imagery -> gratitude -> complete right after the existing 'return_to_action' stage, with no improvement/success-focus stage", () => {
+  const idx = (s: MiniPresenceLiveStage) => MINI_PRESENCE_LIVE_STAGE_ORDER.indexOf(s);
+  assert.ok(idx("return_to_action") < idx("action_imagery"));
+  assert.deepEqual(MINI_PRESENCE_LIVE_STAGE_ORDER.slice(idx("action_imagery")), ["action_imagery", "gratitude", "complete"]);
+  for (const forbidden of ["improvement_entry", "improved_action_imagery", "success_focus"]) {
+    assert.ok(!MINI_PRESENCE_LIVE_STAGE_ORDER.includes(forbidden as MiniPresenceLiveStage));
+  }
+});
+
+test("Mini ARC Presence's gratitude stage uses the MiniArcBuild's own miniGratitudePrompt when configured, otherwise the shared default question", () => {
+  const withPrompt = getMiniPresenceLiveStageCopy("gratitude", miniBuild({ miniGratitudePrompt: "תודה על מה?" }));
+  assert.equal(withPrompt.body, "תודה על מה?");
+
+  const withoutPrompt = getMiniPresenceLiveStageCopy("gratitude", miniBuild({ miniGratitudePrompt: undefined }));
+  assert.equal(withoutPrompt.body, "על מה אתה מודה לעצמך בעקבות הפעולה?");
+});
+
+test("Mini ARC Presence's action_imagery/gratitude copy never throws and never renders 'undefined'/'null' for a build missing every Phase 8 field", () => {
+  const legacyBuild = miniBuild({ miniGratitudePrompt: undefined, miniActionImageryDwellSeconds: undefined });
+  for (const stage of ["action_imagery", "gratitude"] as MiniPresenceLiveStage[]) {
+    assert.doesNotThrow(() => getMiniPresenceLiveStageCopy(stage, legacyBuild));
+    const copy = getMiniPresenceLiveStageCopy(stage, legacyBuild);
+    const text = `${copy.title} ${copy.body} ${copy.secondaryBody ?? ""}`;
+    assert.ok(!text.includes("undefined"));
+    assert.ok(!text.includes("null"));
+  }
+});
+
+test("Mini ARC Presence's action imagery dwell honors MiniArcBuild.miniActionImageryDwellSeconds when configured, otherwise a safe short default", () => {
+  const configured = miniBuild({ miniActionImageryDwellSeconds: 6 });
+  assert.equal(getMiniPresenceActionImageryDwellSeconds(configured), 6);
+  const unconfigured = miniBuild({ miniActionImageryDwellSeconds: undefined });
+  assert.ok(getMiniPresenceActionImageryDwellSeconds(unconfigured) > 0);
 });

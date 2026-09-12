@@ -43,6 +43,8 @@ export default function PresenceArcEditorScreen() {
   const [miniSaveError, setMiniSaveError] = useState<string | null>(null);
   const [miniSecondaryEncodingAction, setMiniSecondaryEncodingAction] = useState("");
   const [miniActionDurationMinutes, setMiniActionDurationMinutes] = useState("");
+  const [miniGratitudePrompt, setMiniGratitudePrompt] = useState("");
+  const [miniActionImageryDwellSecondsText, setMiniActionImageryDwellSecondsText] = useState("");
 
   useEffect(() => {
     if (isNew || !id) return;
@@ -72,6 +74,8 @@ export default function PresenceArcEditorScreen() {
     setMiniDraft(createLinkedMiniArcDraft(draft.name, draft.presenceColor, "", "", ""));
     setMiniSecondaryEncodingAction("");
     setMiniActionDurationMinutes("");
+    setMiniGratitudePrompt("");
+    setMiniActionImageryDwellSecondsText("");
   }
 
   async function handleSaveLinkedMini() {
@@ -86,17 +90,23 @@ export default function PresenceArcEditorScreen() {
       const built = buildMiniArcFromDraft(miniDraft, generateMiniArcId(), now, now);
       const secondaryTrimmed = miniSecondaryEncodingAction.trim();
       const parsedDuration = Number(miniActionDurationMinutes);
+      const gratitudeTrimmed = miniGratitudePrompt.trim();
+      const parsedImageryDwell = Number(miniActionImageryDwellSecondsText);
       const linked: MiniArcBuild = {
         ...linkMiniArcToParent(built, existingMeta.id),
         protocolKind: "presence",
         secondaryEncodingAction: secondaryTrimmed.length > 0 ? secondaryTrimmed : null,
         actionDurationMinutes: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : null,
+        miniGratitudePrompt: gratitudeTrimmed.length > 0 ? gratitudeTrimmed : null,
+        miniActionImageryDwellSeconds: Number.isFinite(parsedImageryDwell) && parsedImageryDwell > 0 ? parsedImageryDwell : null,
       };
       await upsertMiniArcBuild(linked);
       setLinkedMini(linked);
       setMiniDraft(null);
       setMiniSecondaryEncodingAction("");
       setMiniActionDurationMinutes("");
+      setMiniGratitudePrompt("");
+      setMiniActionImageryDwellSecondsText("");
     } catch {
       setMiniSaveError("אירעה שגיאה בשמירת ה-ARC Mini. נסה שוב.");
     }
@@ -158,6 +168,15 @@ export default function PresenceArcEditorScreen() {
         <Text style={styles.helperText}>אם לא תוגדר, ייעשה שימוש בזמן ברירת המחדל של הפרוטוקול הרגיל.</Text>
         <TextInput style={styles.textInput} value={draft.presenceDwellSeconds} onChangeText={(value) => setDraft({ ...draft, presenceDwellSeconds: value })} textAlign="right" keyboardType="numeric" />
 
+        <Text style={styles.sectionHeader}>פעולה מיטיבה ולאחר הפעולה (רשות)</Text>
+        <Text style={styles.helperText}>לאחר שהנוכחות מגיעה למצב הרצוי, מבצעים בפועל פעולה מיטיבה.</Text>
+        <Text style={styles.question}>הפעולה המיטיבה (רשות)</Text>
+        <TextInput style={styles.textInput} value={draft.beneficialAction} onChangeText={(value) => setDraft({ ...draft, beneficialAction: value })} textAlign="right" multiline />
+        <Text style={styles.question}>שאלת תודה מותאמת (רשות)</Text>
+        <TextInput style={styles.textInput} value={draft.gratitudePrompt} onChangeText={(value) => setDraft({ ...draft, gratitudePrompt: value })} textAlign="right" placeholder="על מה אתה מודה לעצמך בעקבות הפעולה?" multiline />
+        <Text style={styles.question}>משך דמיון הפעולה בשניות (רשות)</Text>
+        <TextInput style={styles.textInput} value={draft.postActionImageryDwellSeconds} onChangeText={(value) => setDraft({ ...draft, postActionImageryDwellSeconds: value })} textAlign="right" keyboardType="numeric" />
+
         {!complete && <Text style={styles.errorText}>יש למלא שם לפני השמירה.</Text>}
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}
 
@@ -202,6 +221,10 @@ export default function PresenceArcEditorScreen() {
                 <TextInput style={styles.textInput} value={miniDraft.beneficialAction} onChangeText={(value) => setMiniDraft({ ...miniDraft, beneficialAction: value })} textAlign="right" multiline />
                 <Text style={styles.question}>משך פעולה בדקות (רשות)</Text>
                 <TextInput style={styles.textInput} value={miniActionDurationMinutes} onChangeText={setMiniActionDurationMinutes} textAlign="right" keyboardType="numeric" />
+                <Text style={styles.question}>שאלת תודה קצרה (רשות)</Text>
+                <TextInput style={styles.textInput} value={miniGratitudePrompt} onChangeText={setMiniGratitudePrompt} textAlign="right" placeholder="על מה אתה מודה לעצמך בעקבות הפעולה?" multiline />
+                <Text style={styles.question}>משך דמיון הפעולה בשניות (רשות)</Text>
+                <TextInput style={styles.textInput} value={miniActionImageryDwellSecondsText} onChangeText={setMiniActionImageryDwellSecondsText} textAlign="right" keyboardType="numeric" />
 
                 {miniSaveError && <Text style={styles.errorText}>{miniSaveError}</Text>}
 

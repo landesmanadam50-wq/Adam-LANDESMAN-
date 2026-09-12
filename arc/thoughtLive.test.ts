@@ -6,9 +6,11 @@ import {
   createEmptyThoughtLiveState,
   getFirstMiniThoughtLiveStage,
   getFirstThoughtLiveStage,
+  getMiniThoughtActionImageryDwellSeconds,
   getMiniThoughtLiveStageCopy,
   getNextMiniThoughtLiveStage,
   getNextThoughtLiveStage,
+  getThoughtLiveDwellSeconds,
   getThoughtLiveStageCopy,
   getThoughtModalityOptions,
   getThoughtOpeningDecisionOptions,
@@ -430,4 +432,110 @@ test("a Mini Thought build with no parentArcBuildId (standalone/legacy) still re
 test("no stage transition or copy in this module references a negative-action timer", () => {
   const source = getThoughtLiveStageCopy.toString() + getNextThoughtLiveStage.toString() + getMiniThoughtLiveStageCopy.toString();
   assert.ok(!/negative[_-]?[Aa]ction/.test(source));
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8: universal post-action completion retrofit
+// ---------------------------------------------------------------------------
+
+test("Full ARC Thought gains a genuine 'action' stage right after 'future_imagery', followed by the shared post-action tail, for BOTH routes", () => {
+  for (const order of [THOUGHT_DISTURBING_ROUTE_STAGE_ORDER_WITH_INSIGHT, THOUGHT_SUPPORTIVE_ROUTE_STAGE_ORDER]) {
+    const idx = (s: ThoughtLiveStage) => order.indexOf(s);
+    assert.ok(idx("future_imagery") < idx("action"));
+    assert.deepEqual(order.slice(idx("action")), ["action", "action_imagery", "improvement_entry", "improved_action_imagery", "gratitude", "complete"]);
+  }
+});
+
+test("Full ARC Thought's 'action' stage shows the configured shortAction, and always advances to action_imagery next", () => {
+  const arc = thoughtArc({ shortAction: "לצאת להליכה קצרה" });
+  const copy = getThoughtLiveStageCopy("action", arc, createEmptyThoughtLiveState());
+  assert.match(copy.body, /לצאת להליכה קצרה/);
+  const hop = getNextThoughtLiveStage("action", createEmptyThoughtLiveState());
+  assert.equal(hop.stage, "action_imagery");
+});
+
+test("Full ARC Thought's 'action' stage renders safely with no configured shortAction, never 'undefined'/'null'", () => {
+  const arc = thoughtArc({ shortAction: null });
+  const copy = getThoughtLiveStageCopy("action", arc, createEmptyThoughtLiveState());
+  assert.ok(copy.body.length > 0);
+  assert.ok(!copy.body.includes("undefined"));
+  assert.ok(!copy.body.includes("null"));
+});
+
+test("Full ARC Thought's post-action tail is never gated -- every stage advances even with no free-text answer supplied", () => {
+  let stage: ThoughtLiveStage = "action_imagery";
+  let state = createEmptyThoughtLiveState();
+  const visited: ThoughtLiveStage[] = [stage];
+  for (let i = 0; i < 10 && stage !== "complete"; i++) {
+    const hop = getNextThoughtLiveStage(stage, state);
+    stage = hop.stage;
+    state = hop.state;
+    visited.push(stage);
+  }
+  assert.deepEqual(visited, ["action_imagery", "improvement_entry", "improved_action_imagery", "gratitude", "complete"]);
+});
+
+test("Full ARC Thought's gratitude stage uses the ThoughtArc's own gratitudePrompt when configured, otherwise the shared default question", () => {
+  const withPrompt = thoughtArc({ gratitudePrompt: "על מה אתה מודה לעצמך?" });
+  assert.equal(getThoughtLiveStageCopy("gratitude", withPrompt, createEmptyThoughtLiveState()).body, "על מה אתה מודה לעצמך?");
+
+  const withoutPrompt = thoughtArc({ gratitudePrompt: null });
+  assert.equal(getThoughtLiveStageCopy("gratitude", withoutPrompt, createEmptyThoughtLiveState()).body, "על מה אתה מודה לעצמך בעקבות הפעולה?");
+});
+
+test("Full ARC Thought's action_imagery/improved_action_imagery dwell honors ThoughtArc.postActionImageryDwellSeconds when configured, otherwise falls back to the shared default dwell times", () => {
+  const configured = thoughtArc({ postActionImageryDwellSeconds: 33 });
+  assert.equal(getThoughtLiveDwellSeconds("action_imagery", configured), 33);
+  assert.equal(getThoughtLiveDwellSeconds("improved_action_imagery", configured), 33);
+
+  const unconfigured = thoughtArc({ postActionImageryDwellSeconds: null });
+  assert.ok((getThoughtLiveDwellSeconds("action_imagery", unconfigured) ?? 0) > 0);
+  assert.ok((getThoughtLiveDwellSeconds("improved_action_imagery", unconfigured) ?? 0) > 0);
+  assert.ok((getThoughtLiveDwellSeconds("action_imagery", null) ?? 0) > 0);
+});
+
+test("Mini ARC Thought's compact post-action tail runs action_imagery -> gratitude -> complete, right after the existing 'action' stage, with no improvement/success-focus stage", () => {
+  const idx = (s: MiniThoughtLiveStage) => MINI_THOUGHT_LIVE_STAGE_ORDER.indexOf(s);
+  assert.ok(idx("action") < idx("action_imagery"));
+  assert.deepEqual(MINI_THOUGHT_LIVE_STAGE_ORDER.slice(idx("action_imagery")), ["action_imagery", "gratitude", "complete"]);
+  for (const forbidden of ["improvement_entry", "improved_action_imagery", "success_focus"]) {
+    assert.ok(!MINI_THOUGHT_LIVE_STAGE_ORDER.includes(forbidden as MiniThoughtLiveStage));
+  }
+});
+
+test("Mini ARC Thought's gratitude stage uses the MiniArcBuild's own miniGratitudePrompt when configured, otherwise the shared default question", () => {
+  const withPrompt = miniBuild({ miniGratitudePrompt: "תודה קצרה על מה?" });
+  assert.equal(getMiniThoughtLiveStageCopy("gratitude", withPrompt, null, { modality: null }).body, "תודה קצרה על מה?");
+
+  const withoutPrompt = miniBuild({ miniGratitudePrompt: undefined });
+  assert.equal(getMiniThoughtLiveStageCopy("gratitude", withoutPrompt, null, { modality: null }).body, "על מה אתה מודה לעצמך בעקבות הפעולה?");
+});
+
+test("Mini ARC Thought's action_imagery/gratitude copy never throws and never renders 'undefined'/'null' for a build missing every Phase 8 field", () => {
+  const legacyBuild = miniBuild({ miniGratitudePrompt: undefined, miniActionImageryDwellSeconds: undefined });
+  for (const stage of ["action_imagery", "gratitude"] as MiniThoughtLiveStage[]) {
+    assert.doesNotThrow(() => getMiniThoughtLiveStageCopy(stage, legacyBuild, null, { modality: null }));
+    const copy = getMiniThoughtLiveStageCopy(stage, legacyBuild, null, { modality: null });
+    const text = `${copy.title} ${copy.body} ${copy.secondaryBody ?? ""}`;
+    assert.ok(!text.includes("undefined"));
+    assert.ok(!text.includes("null"));
+  }
+});
+
+test("Mini ARC Thought's action imagery dwell honors MiniArcBuild.miniActionImageryDwellSeconds when configured, otherwise a safe short default", () => {
+  const configured = miniBuild({ miniActionImageryDwellSeconds: 9 });
+  assert.equal(getMiniThoughtActionImageryDwellSeconds(configured), 9);
+  const unconfigured = miniBuild({ miniActionImageryDwellSeconds: undefined });
+  assert.ok(getMiniThoughtActionImageryDwellSeconds(unconfigured) > 0);
+});
+
+test("Full ARC Thought legacy record (none of Phase 8's fields ever set) renders the 'action' stage and the entire post-action tail safely, no crash and no 'undefined'/'null'", () => {
+  const legacy = createEmptyThoughtArc("legacy-2", "ישן", "2020-01-01T00:00:00.000Z");
+  for (const stage of ["action", "action_imagery", "improvement_entry", "improved_action_imagery", "gratitude", "complete"] as ThoughtLiveStage[]) {
+    assert.doesNotThrow(() => getThoughtLiveStageCopy(stage, legacy, createEmptyThoughtLiveState()));
+    const copy = getThoughtLiveStageCopy(stage, legacy, createEmptyThoughtLiveState());
+    const text = `${copy.title} ${copy.body} ${copy.secondaryBody ?? ""} ${copy.hint ?? ""}`;
+    assert.ok(!text.includes("undefined"));
+    assert.ok(!text.includes("null"));
+  }
 });

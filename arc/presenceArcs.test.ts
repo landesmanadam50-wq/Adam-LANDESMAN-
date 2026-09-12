@@ -73,7 +73,7 @@ test("buildPresenceArcFromDraft converts blank optional fields to null, never an
 });
 
 test("buildPresenceArcFromDraft persists every filled-in field, trimmed", () => {
-  const draft: PresenceArcDraft = { name: "  נוכחות  ", presenceColor: "  כחול  ", presenceDwellSeconds: "12" };
+  const draft: PresenceArcDraft = { ...createEmptyPresenceArcDraft(), name: "  נוכחות  ", presenceColor: "  כחול  ", presenceDwellSeconds: "12" };
   const built = buildPresenceArcFromDraft(draft, "p1", "2024-01-01T00:00:00.000Z", "2024-01-01T00:00:00.000Z");
   assert.equal(built.name, "נוכחות");
   assert.equal(built.presenceColor, "כחול");

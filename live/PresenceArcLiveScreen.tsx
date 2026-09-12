@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
@@ -7,19 +7,23 @@ import { appendSessionLogEntry, getPresenceArc, loadMiniArcBuilds } from "../dat
 import type { ArcLiveState, ArcStage, PresenceArc } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import {
+  createEmptyPresenceActionLiveState,
   createPresenceArcInitialSession,
   getFirstMiniPresenceLiveStage,
+  getFirstPresenceActionLiveStage,
   getMiniPresenceLiveStageCopy,
   getNextMiniPresenceLiveStage,
+  getNextPresenceActionLiveStage,
+  getPresenceActionLiveStageCopy,
   isPresenceComplete,
   presenceArcToProfile,
 } from "../arc/presenceLive.ts";
-import type { MiniPresenceLiveStage } from "../arc/presenceLive.ts";
+import type { MiniPresenceLiveStage, PresenceActionLiveStage, PresenceActionLiveState } from "../arc/presenceLive.ts";
 import { getInlineRequiredRatingQuestion, getStageCopy } from "../arc/stageCopy.ts";
 import { advanceLiveSession } from "./liveEventAdapter.ts";
 import { InstructionScreen, PresenceExperienceScreen, PresenceObjectGroundingScreen, PresenceRatingScreen } from "./screens.tsx";
 
-type Status = "loading" | "notFound" | "modeChoice" | "runningFull" | "runningMini" | "completeFull" | "completeMini";
+type Status = "loading" | "notFound" | "modeChoice" | "runningFull" | "runningFullAction" | "runningMini" | "completeFull" | "completeMini";
 
 /**
  * live/PresenceArcLiveScreen.tsx (route: /presence-arcs/live/[id])
@@ -39,11 +43,16 @@ type Status = "loading" | "notFound" | "modeChoice" | "runningFull" | "runningMi
  * resolves through arc_thought_presence_recheck's transition -- see
  * live/LiveSessionScreen.tsx's own onPresenceExperienceRating for the
  * precedent this mirrors) is ever rendered here; reaching
- * PRESENCE_EXIT_STAGE ("desired_state_check") means Presence work is
- * complete and this screen stops, exactly the "reusable later inside
- * ARC State" hand-off point arc/presenceLive.ts's own module doc
+ * PRESENCE_EXIT_STAGE ("desired_state_check") means the reused Presence
+ * work is complete -- this screen then switches to arc/presenceLive.ts's
+ * own small NEW "runningFullAction" sub-engine (Phase 8, universal
+ * post-action completion retrofit): a genuine "action" stage (the
+ * trainee actually performs presenceArc.beneficialAction now), followed
+ * by the shared post-action tail. This is exactly the "reusable later
+ * inside ARC State" hand-off point arc/presenceLive.ts's own module doc
  * describes -- a later phase's ARC State composition can keep driving
- * the SAME session past that point instead.
+ * the SAME reused session past that point instead of this screen's own
+ * action tail.
  *
  * ARC Mini Presence's own short, linear run (when a linked Mini
  * exists) uses arc/presenceLive.ts's own small dedicated engine
@@ -65,6 +74,10 @@ export default function PresenceArcLiveScreen() {
   const [fullStage, setFullStage] = useState<ArcStage>("presence_check");
   const [fullSession, setFullSession] = useState<ArcLiveState>(() => createPresenceArcInitialSession());
   const [presenceObjectGroundingDone, setPresenceObjectGroundingDone] = useState(false);
+
+  const [fullActionStage, setFullActionStage] = useState<PresenceActionLiveStage>(getFirstPresenceActionLiveStage());
+  const [fullActionState, setFullActionState] = useState<PresenceActionLiveState>(createEmptyPresenceActionLiveState());
+  const [pendingText, setPendingText] = useState("");
 
   const [miniStage, setMiniStage] = useState<MiniPresenceLiveStage>(getFirstMiniPresenceLiveStage());
 
@@ -88,6 +101,9 @@ export default function PresenceArcLiveScreen() {
         setFullStage(hop.stage);
         setFullSession(hop.session);
         setPresenceObjectGroundingDone(false);
+        setFullActionStage(getFirstPresenceActionLiveStage());
+        setFullActionState(createEmptyPresenceActionLiveState());
+        setPendingText("");
 
         setMiniStage(getFirstMiniPresenceLiveStage());
         setSessionStartedAt(new Date().toISOString());
@@ -119,6 +135,24 @@ export default function PresenceArcLiveScreen() {
     setFullStage(hop.stage);
     setFullSession(hop.session);
     if (isPresenceComplete(hop.stage)) {
+      // Phase 8 (universal post-action completion retrofit): the reused
+      // Presence session is done -- continue into the NEW local action
+      // tail (arc/presenceLive.ts's own small sub-engine) rather than
+      // completing immediately.
+      setFullActionStage(getFirstPresenceActionLiveStage());
+      setFullActionState(createEmptyPresenceActionLiveState());
+      setPendingText("");
+      setStatus("runningFullAction");
+    }
+  }
+
+  function advanceFullAction(patch: Partial<PresenceActionLiveState["postAction"]> = {}) {
+    const patchedState: PresenceActionLiveState = { ...fullActionState, postAction: { ...fullActionState.postAction, ...patch } };
+    const hop = getNextPresenceActionLiveStage(fullActionStage, patchedState);
+    setFullActionStage(hop.stage);
+    setFullActionState(hop.state);
+    setPendingText("");
+    if (hop.stage === "complete") {
       finalizeCompletion();
       setStatus("completeFull");
     }
@@ -218,6 +252,47 @@ export default function PresenceArcLiveScreen() {
     );
   }
 
+  if (status === "runningFullAction") {
+    const actionCopy = getPresenceActionLiveStageCopy(fullActionStage, presenceArc, fullActionState);
+    const isFreeTextStage = fullActionStage === "improvement_entry" || fullActionStage === "gratitude";
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.title}>{actionCopy.title}</Text>
+          <Text style={styles.body}>{actionCopy.body}</Text>
+          {actionCopy.secondaryBody && <Text style={styles.body}>{actionCopy.secondaryBody}</Text>}
+
+          {fullActionStage === "improvement_entry" && (
+            <>
+              <TextInput style={styles.textInput} value={pendingText} onChangeText={setPendingText} textAlign="right" multiline />
+              <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advanceFullAction({ improvementText: pendingText || null })}>
+                <Text style={styles.buttonText}>{actionCopy.buttonLabel}</Text>
+              </Pressable>
+              <Pressable style={styles.cancelButton} onPress={() => advanceFullAction()}>
+                <Text style={styles.cancelButtonText}>דילוג</Text>
+              </Pressable>
+            </>
+          )}
+
+          {fullActionStage === "gratitude" && (
+            <>
+              <TextInput style={styles.textInput} value={pendingText} onChangeText={setPendingText} textAlign="right" multiline />
+              <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advanceFullAction({ gratitudeText: pendingText || null })}>
+                <Text style={styles.buttonText}>{actionCopy.buttonLabel}</Text>
+              </Pressable>
+            </>
+          )}
+
+          {!isFreeTextStage && (
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => advanceFullAction()}>
+              <Text style={styles.buttonText}>{actionCopy.buttonLabel}</Text>
+            </Pressable>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   // status === "runningFull"
   const { profile, activeLayers } = presenceArcToProfile(presenceArc);
   const copy = getStageCopy(fullStage, profile, fullSession, activeLayers);
@@ -259,4 +334,7 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
   secondaryButton: { backgroundColor: "#3d8fa8" },
   secondaryButtonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 8 },
+  cancelButton: { marginTop: 10, alignItems: "center" },
+  cancelButtonText: { color: "#888", fontSize: 14 },
 });
