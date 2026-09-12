@@ -7,12 +7,13 @@ import { getArcGoal, getArcLink, getMiniArcBuild, loadRoutineTriggers, upsertArc
 import { buildMiniArcLinkStartConfirmationStep, buildMiniArcLinkSteps } from "../arc/miniArcLink.ts";
 import type { MiniArcLinkStep } from "../arc/miniArcLink.ts";
 import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
-import { describeTrigger, resolveRoutineTrigger } from "../arc/routineLinks.ts";
+import { describeTrigger, resolveLinkTimerStyle, resolveRoutineTrigger } from "../arc/routineLinks.ts";
 import type { ArcLink } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
 import type { ArcGoalWeekPracticeRecord, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import BodyImageryStep from "./BodyImageryStep.tsx";
+import { LinkTimerDisplay } from "./LinkTimerDisplay.tsx";
 
 /**
  * live/MiniArcLinkScreen.tsx (route: /mini-arc-link/[id], optionally ?linkId=...)
@@ -176,6 +177,17 @@ export default function MiniArcLinkScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Link timers task: one continuous rehearsal timer for the
+            WHOLE Mini ARC Link session, when its own ArcLink has one
+            configured -- rendered at this stable tree position (never
+            gated per step id) so the same LinkTimerDisplay instance
+            stays mounted (and its own elapsed clock keeps running)
+            across every step transition, rather than resetting each
+            time. Never the same concept as the real Beneficial Action
+            timer inside Mini ARC itself. */}
+        {linkId && arcLink?.timerEnabled && (
+          <LinkTimerDisplay style={resolveLinkTimerStyle(arcLink)} targetDurationSeconds={arcLink.timerDurationSeconds ?? null} />
+        )}
         {(step.id === "regulation" || step.id === "encoding") && step.bodyImagery ? (
           <BodyImageryStep
             title={step.title}

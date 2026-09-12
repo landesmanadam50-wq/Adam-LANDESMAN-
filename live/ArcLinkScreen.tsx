@@ -6,21 +6,30 @@ import { router, useLocalSearchParams } from "expo-router";
 import { getArcBuild, getArcGoal, getArcLink, loadRoutineTriggers, upsertArcGoal, upsertArcLink } from "../data/storage.ts";
 import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
 import {
+  buildArcLinkFastSteps,
   buildArcLinkIntroSteps,
   buildArcLinkProtocolSteps,
-  buildArcLinkStartConfirmationStep,
-  buildArcLinkSteps,
+  buildArcLinkShortSteps,
   resolveArcLinkRouteOptions,
 } from "../arc/arcLink.ts";
-import type { ArcLinkRouteChoice, ArcLinkRouteOption, ArcLinkStep } from "../arc/arcLink.ts";
+import type { ArcLinkRehearsalContext, ArcLinkRouteChoice, ArcLinkRouteOption, ArcLinkStep } from "../arc/arcLink.ts";
 import { buildBridgingLinkSteps } from "../arc/bridgingArcLink.ts";
 import type { BridgingLinkStep } from "../arc/bridgingArcLink.ts";
-import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
-import { describeTrigger, resolveArcLinkKind, resolveArcLinkTriggerCategory, resolveRoutineTrigger } from "../arc/routineLinks.ts";
-import type { ArcLink } from "../arc/routineLinks.ts";
+import { hasConfiguredTrigger, safeTriggerText } from "../arc/bodyImagery.ts";
+import { LINK_TIMER_DEFAULT_DURATIONS } from "../arc/linkTimer.ts";
+import {
+  describeTrigger,
+  resolveArcLinkKind,
+  resolveArcLinkPracticeModeDefault,
+  resolveArcLinkTriggerCategory,
+  resolveLinkTimerStyle,
+  resolveRoutineTrigger,
+} from "../arc/routineLinks.ts";
+import type { ArcLink, ArcLinkPracticeMode, LinkTimerStyle } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import type { ArcBuild, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import BodyImageryStep from "./BodyImageryStep.tsx";
+import { LinkTimerDisplay } from "./LinkTimerDisplay.tsx";
 import { PresenceObjectGroundingScreen } from "./screens.tsx";
 
 type RouteChooserPhase = "kind" | "target" | null;
@@ -30,26 +39,37 @@ type RouteChooserPhase = "kind" | "target" | null;
  *
  * ARC Link task, extended by the Weekly Routine + ARC Link management
  * task: the imagery-rehearsal driver. Without a `linkId` param (the
- * ORIGINAL entry point, build/LiveModeSelectScreen.tsx), behavior is
- * 100% unchanged -- buildArcLinkSteps(profile), always "with_archi", no
- * route choice, no practice tracking. WITH a `linkId` param (the new
- * Routine-page Practice area), this reads the ArcLink entity's own
- * mode + RoutineTrigger, offers the interfering/supportive route
- * choice, and records a practice completion on the ArcLink itself once
- * finished -- never the linked ArcBuild's own beneficial-action
- * completion, which stays untouched here.
+ * ORIGINAL entry point, build/LiveModeSelectScreen.tsx) vs. WITH a
+ * `linkId` param (the Routine-page Practice area, offering the
+ * interfering/supportive route choice and recording a practice
+ * completion on the ArcLink itself -- never the linked ArcBuild's own
+ * beneficial-action completion, which stays untouched here).
+ *
+ * Link practice-mode task (spec section 8): BOTH paths now open with a
+ * "איזה סוג תרגול תרצה לבצע?" chooser (short/full/fast) BEFORE any
+ * rehearsal content -- Regular ARC Link / ARCHI ARC Link no longer
+ * force full-protocol visualization every time. "full" reproduces this
+ * screen's own original, unmodified behavior exactly (legacy path:
+ * buildArcLinkIntroSteps + buildArcLinkProtocolSteps(choice: null),
+ * confirmed elsewhere to reproduce the retired buildArcLinkSteps
+ * exactly; linkId path: the existing intro -> route choice -> protocol
+ * flow, completely unchanged). "short"/"fast" skip the route choice
+ * entirely (buildArcLinkShortSteps/buildArcLinkFastSteps resolve their
+ * own target automatically) and, for "fast", pair the rehearsal with an
+ * optional Link timer (arc/linkTimer.ts, live/LinkTimerDisplay.tsx) --
+ * its own, fully separate concept from the real Action/Presence/
+ * Success-Focus/Negative-Action timers, never auto-closing the session
+ * when it reaches zero.
  *
  * Four-Week Program task correction (spec section 10 + "ARCHI ARC Link
  * is its own distinct guided linking practice, never interchangeable
  * with Full ARC"): the optional fourWeekGoalId/fourWeekWeek params --
  * set only by live/ArcGoalFourWeekDashboardScreen.tsx's own "תרגול
  * ARCHI ARC Link" (Week 1) -- always arrive on the LEGACY (no linkId)
- * path, since that's the one always-"with_archi", no-route-choice mode
- * this screen already has, matching Week 1's own "ARCHI ARC Link"
- * exactly. On finishing, this records a kind:"arc_link" practice
- * (never "full_arc" -- tracked completely separately) and returns to
- * the dashboard instead of router.back(). Absent, both legacy
- * completion points below are completely unchanged.
+ * path. On finishing, this records a kind:"arc_link" practice (never
+ * "full_arc" -- tracked completely separately) and returns to the
+ * dashboard instead of router.back(). Absent, both legacy completion
+ * points below are completely unchanged.
  */
 export default function ArcLinkScreen() {
   const {
@@ -62,6 +82,24 @@ export default function ArcLinkScreen() {
   const [arcBuild, setArcBuild] = useState<ArcBuild | null>(null);
   const [arcLink, setArcLink] = useState<ArcLink | null>(null);
 
+  // Link practice-mode task: shared by both paths (mutually exclusive at
+  // render time) -- null means the "איזה סוג תרגול תרצה לבצע?" chooser
+  // hasn't been answered yet for this session.
+  const [practiceMode, setPracticeMode] = useState<ArcLinkPracticeMode | null>(null);
+  // The rehearsal context (trigger text/mode/category/mantra override)
+  // resolved once at load time, reused by whichever mode is chosen --
+  // legacy: { triggerText, mode: "with_archi" } (this screen's own
+  // original, always-with_archi legacy behavior); linkId: the ArcLink's
+  // own mode/triggerCategory/futureMantraOverride, exactly as before.
+  const [pendingCtx, setPendingCtx] = useState<ArcLinkRehearsalContext | null>(null);
+  // Link timers task: "fast" mode's own optional timer configuration --
+  // pre-filled from the ArcLink's own BUILD-configured fields when
+  // present (linkId path only); otherwise chosen immediately before
+  // rehearsal via fastConfigPending's own chip picker below.
+  const [fastConfigPending, setFastConfigPending] = useState(false);
+  const [fastTimerStyle, setFastTimerStyle] = useState<LinkTimerStyle>("guided");
+  const [fastTimerDurationSeconds, setFastTimerDurationSeconds] = useState<number | null>(null);
+
   // Legacy (no linkId) path.
   const [legacySteps, setLegacySteps] = useState<ArcLinkStep[]>([]);
   const [legacyIndex, setLegacyIndex] = useState(0);
@@ -69,7 +107,7 @@ export default function ArcLinkScreen() {
   // linkId path.
   const [introSteps, setIntroSteps] = useState<ArcLinkStep[]>([]);
   const [introIndex, setIntroIndex] = useState(0);
-  const [phase, setPhase] = useState<"intro" | "choose" | "protocol" | "bridging">("intro");
+  const [phase, setPhase] = useState<"mode" | "intro" | "choose" | "protocol" | "bridging">("mode");
   const [chooserPhase, setChooserPhase] = useState<RouteChooserPhase>(null);
   const [pendingKind, setPendingKind] = useState<"interfering" | "supportive" | null>(null);
   const [targetOptions, setTargetOptions] = useState<ArcLinkRouteOption[]>([]);
@@ -78,8 +116,9 @@ export default function ArcLinkScreen() {
 
   // Extended ARC Link trigger system: Bridging ARC Link's own step list --
   // an entirely separate content sequence (arc/bridgingArcLink.ts), never
-  // the intro/choose/protocol machinery above. Only populated when
-  // resolveArcLinkKind(link) === "bridging".
+  // the intro/choose/protocol machinery above, and never offered the
+  // short/full/fast practice-mode chooser (out of this task's scope).
+  // Only populated when resolveArcLinkKind(link) === "bridging".
   const [bridgingSteps, setBridgingSteps] = useState<BridgingLinkStep[]>([]);
   const [bridgingIndex, setBridgingIndex] = useState(0);
 
@@ -89,9 +128,10 @@ export default function ArcLinkScreen() {
    * questions + confirmation line as the main LIVE flow's own
    * PresenceObjectGroundingScreen -- live/screens.tsx), shown once
    * before whichever step imagines the final linked action
-   * ("beneficial_action" in every one of this screen's three rendering
-   * paths). Local component state only -- never added to ArcLink/
-   * ArcLinkFormState, never persisted.
+   * ("beneficial_action" when present -- short/fast mode never produce
+   * that step id, so this never applies to them). Local component
+   * state only -- never added to ArcLink/ArcLinkFormState, never
+   * persisted.
    */
   const [groundingDone, setGroundingDone] = useState(false);
 
@@ -107,15 +147,19 @@ export default function ArcLinkScreen() {
       }
       setArcBuild(existing);
       setGroundingDone(false);
+      setPracticeMode(null);
+      setFastConfigPending(false);
 
       if (!linkId) {
-        // Original entry point -- completely unchanged.
+        // Original entry point -- same trigger/mode resolution as
+        // before, but step-building is now deferred to the practice-mode
+        // chooser (see chooseLegacyMode below) instead of happening
+        // immediately.
         if (!hasConfiguredTrigger(existing.profile.linkSettings)) {
           setStatus("noTrigger");
           return;
         }
-        setLegacySteps(buildArcLinkSteps(existing.profile));
-        setLegacyIndex(0);
+        setPendingCtx({ triggerText: safeTriggerText(existing.profile.linkSettings), mode: "with_archi" });
         setStatus("ready");
         return;
       }
@@ -151,10 +195,8 @@ export default function ArcLinkScreen() {
         return;
       }
 
-      const ctx = { triggerText, mode: link.mode, triggerCategory, futureMantraOverride: link.futureMantraOverride };
-      setIntroSteps(buildArcLinkIntroSteps(existing.profile, ctx));
-      setIntroIndex(0);
-      setPhase("intro");
+      setPendingCtx({ triggerText, mode: link.mode, triggerCategory, futureMantraOverride: link.futureMantraOverride });
+      setPhase("mode");
       setStatus("ready");
     });
 
@@ -162,6 +204,65 @@ export default function ArcLinkScreen() {
       cancelled = true;
     };
   }, [id, linkId]);
+
+  // ---- Link practice-mode task: mode selection, shared logic. ----
+
+  function chooseLegacyMode(mode: ArcLinkPracticeMode) {
+    if (!arcBuild || !pendingCtx) return;
+    if (mode === "fast") {
+      setFastConfigPending(true);
+      return;
+    }
+    const steps =
+      mode === "short"
+        ? buildArcLinkShortSteps(arcBuild.profile, pendingCtx)
+        : [...buildArcLinkIntroSteps(arcBuild.profile, pendingCtx), ...buildArcLinkProtocolSteps(arcBuild.profile, null, pendingCtx)];
+    setLegacySteps(steps);
+    setLegacyIndex(0);
+    setPracticeMode(mode);
+  }
+
+  function chooseLinkMode(mode: ArcLinkPracticeMode) {
+    if (!arcBuild || !pendingCtx) return;
+    if (mode === "fast") {
+      if (arcLink?.timerEnabled && arcLink.timerDurationSeconds) {
+        startFastRehearsal(resolveLinkTimerStyle(arcLink), arcLink.timerDurationSeconds);
+        return;
+      }
+      setFastConfigPending(true);
+      return;
+    }
+    if (mode === "short") {
+      setProtocolSteps(buildArcLinkShortSteps(arcBuild.profile, pendingCtx));
+      setProtocolIndex(0);
+      setPhase("protocol");
+      setPracticeMode("short");
+      return;
+    }
+    // "full" -- exactly this screen's own original intro -> route choice
+    // -> protocol flow, completely unchanged.
+    setIntroSteps(buildArcLinkIntroSteps(arcBuild.profile, pendingCtx));
+    setIntroIndex(0);
+    setPhase("intro");
+    setPracticeMode("full");
+  }
+
+  function startFastRehearsal(style: LinkTimerStyle, durationSeconds: number | null) {
+    if (!arcBuild || !pendingCtx) return;
+    setFastTimerStyle(style);
+    setFastTimerDurationSeconds(durationSeconds);
+    setFastConfigPending(false);
+    setPracticeMode("fast");
+    const steps = buildArcLinkFastSteps(arcBuild.profile, pendingCtx);
+    if (!linkId) {
+      setLegacySteps(steps);
+      setLegacyIndex(0);
+    } else {
+      setProtocolSteps(steps);
+      setProtocolIndex(0);
+      setPhase("protocol");
+    }
+  }
 
   function beginRouteChoice() {
     if (!arcBuild) return;
@@ -218,11 +319,19 @@ export default function ArcLinkScreen() {
       const trigger = resolveRoutineTrigger(arcLink.triggerId, triggers);
       const triggerText = describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger);
       const ctx = { triggerText, mode: arcLink.mode, triggerCategory: resolveArcLinkTriggerCategory(arcLink), futureMantraOverride: arcLink.futureMantraOverride };
-      // Coherent-architecture task (#22 "With ARCHI"): once the route is
-      // chosen (imagining selecting it in the app), with_archi mode ends
-      // right after imagining pressing Start -- never the full
-      // stage-by-stage rehearsal, which only without_archi mode shows.
-      const steps = arcLink.mode === "with_archi" ? [buildArcLinkStartConfirmationStep(ctx)] : buildArcLinkProtocolSteps(arcBuild.profile, choice, ctx);
+      // Link practice-mode task: this function is now reached ONLY via
+      // practiceMode "full" (chooseLinkMode routes "short"/"fast"
+      // straight into buildArcLinkShortSteps/buildArcLinkFastSteps,
+      // bypassing route choice entirely) -- so "full" always means the
+      // COMPLETE stage-by-stage rehearsal now, regardless of ArcLinkMode.
+      // ArcLinkMode (with_archi/without_archi) still steers the ENDING
+      // WORDING only (open ARCHI vs "from memory" -- see
+      // buildArcLinkProtocolSteps' own mode-aware reinforce step), never
+      // whether the full content is shown -- that's what makes ARCHI ARC
+      // Link's own full rehearsal genuinely OPTIONAL: with_archi's short
+      // single-confirmation ending now belongs to "short"/"fast" practice
+      // mode instead (see buildArcLinkShortSteps' own with_archi branch).
+      const steps = buildArcLinkProtocolSteps(arcBuild.profile, choice, ctx);
       setProtocolSteps(steps);
       setProtocolIndex(0);
       setPhase("protocol");
@@ -301,10 +410,51 @@ export default function ArcLinkScreen() {
     );
   }
 
-  // ---- Legacy (no linkId) path -- unchanged except for the new,
-  // optional environmental-grounding sub-phase (section 3/10) shown
-  // once before the final linked-action step. ----
+  // ---- Link timers task: the fast-mode duration/style chip picker,
+  // shared by both paths -- shown only once "תרגול מהיר" is chosen and
+  // no BUILD-configured timer was already found. ----
+  if (fastConfigPending) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.content}>
+          <Text style={styles.title}>משך התרגול המהיר</Text>
+          <Text style={styles.body}>אפשר לבחור טיימר קצר, או לתרגל בלי טיימר בקצב שלך.</Text>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => startFastRehearsal("guided", null)}>
+            <Text style={styles.buttonText}>בלי טיימר</Text>
+          </Pressable>
+          {LINK_TIMER_DEFAULT_DURATIONS.fast_regular.map((seconds) => (
+            <Pressable key={seconds} style={[styles.button, styles.fullWidthButton]} onPress={() => startFastRehearsal("speed", seconds)}>
+              <Text style={styles.buttonText}>{`${seconds} שניות`}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ---- Legacy (no linkId) path. ----
   if (!linkId) {
+    // Link practice-mode task: the "איזה סוג תרגול תרצה לבצע?" chooser,
+    // shown before any rehearsal content -- see this screen's own doc.
+    if (practiceMode === null) {
+      return (
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.content}>
+            <Text style={styles.title}>איזה סוג תרגול תרצה לבצע?</Text>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => chooseLegacyMode("short")}>
+              <Text style={styles.buttonText}>קישור קצר</Text>
+            </Pressable>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => chooseLegacyMode("full")}>
+              <Text style={styles.buttonText}>תרגול מלא</Text>
+            </Pressable>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => chooseLegacyMode("fast")}>
+              <Text style={styles.buttonText}>תרגול מהיר</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      );
+    }
+
     const step = legacySteps[legacyIndex];
     if (!step) return null;
     if (step.id === "beneficial_action" && !groundingDone) {
@@ -336,6 +486,7 @@ export default function ArcLinkScreen() {
                   {line}
                 </Text>
               ))}
+              {step.id === "fast_response" && <LinkTimerDisplay style={fastTimerStyle} targetDurationSeconds={fastTimerDurationSeconds} />}
               <Pressable
                 style={[styles.button, styles.fullWidthButton]}
                 onPress={() => (legacyIndex === legacySteps.length - 1 ? finishLegacy() : setLegacyIndex(legacyIndex + 1))}
@@ -350,6 +501,26 @@ export default function ArcLinkScreen() {
   }
 
   // ---- New (linkId) path. ----
+
+  if (phase === "mode") {
+    const recommended = arcLink ? resolveArcLinkPracticeModeDefault(arcLink) : "full";
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.content}>
+          <Text style={styles.title}>איזה סוג תרגול תרצה לבצע?</Text>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => chooseLinkMode("short")}>
+            <Text style={styles.buttonText}>{recommended === "short" ? "קישור קצר (מומלץ)" : "קישור קצר"}</Text>
+          </Pressable>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => chooseLinkMode("full")}>
+            <Text style={styles.buttonText}>{recommended === "full" ? "תרגול מלא (מומלץ)" : "תרגול מלא"}</Text>
+          </Pressable>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => chooseLinkMode("fast")}>
+            <Text style={styles.buttonText}>{recommended === "fast" ? "תרגול מהיר (מומלץ)" : "תרגול מהיר"}</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (phase === "intro") {
     const step = introSteps[introIndex];
@@ -489,6 +660,7 @@ export default function ArcLinkScreen() {
                 {line}
               </Text>
             ))}
+            {step.id === "fast_response" && <LinkTimerDisplay style={fastTimerStyle} targetDurationSeconds={fastTimerDurationSeconds} />}
             <Pressable
               style={[styles.button, styles.fullWidthButton]}
               onPress={() => (isLastProtocolStep ? completePractice() : setProtocolIndex(protocolIndex + 1))}
