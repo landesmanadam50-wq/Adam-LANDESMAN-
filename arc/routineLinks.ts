@@ -41,6 +41,30 @@ export type RoutineProtocolType = "arc" | "mini_arc" | "arc_goal";
 export type ArcLinkMode = "with_archi" | "without_archi";
 
 /**
+ * Link practice-mode task (spec section 8): the trainee's own "איזה סוג
+ * תרגול תרצה לבצע?" choice, shown before a Regular ARC Link or ARCHI ARC
+ * Link rehearsal -- a DIFFERENT, orthogonal axis from ArcLinkMode above
+ * (with_archi/without_archi decides whether ARCHI guides the rehearsal
+ * or the trainee does it from memory; ArcLinkPracticeMode decides HOW
+ * MUCH of the linked protocol gets rehearsed either way). "short" =
+ * קישור קצר (time/place/trigger/Linking Mantra/first response only,
+ * never full-protocol visualization); "full" = תרגול מלא (the complete
+ * linked-protocol rehearsal); "fast" = תרגול מהיר (one short timed
+ * sequence, no long explanations). Never applies to Mini ARC Link,
+ * which has its own fixed short structure regardless (spec section 7.3).
+ */
+export type ArcLinkPracticeMode = "short" | "full" | "fast";
+
+/**
+ * Link timers task (spec section 9): "guided" = no countdown pressure,
+ * optional count-up-only display, focused on learning the correct
+ * sequence; "speed" = an optional countdown the trainee may continue
+ * past once it reaches zero -- never auto-closes/auto-completes the
+ * session, and reaching zero is never itself labeled success/failure.
+ */
+export type LinkTimerStyle = "guided" | "speed";
+
+/**
  * Extended ARC Link trigger system: two orthogonal, independently
  * optional axes on ArcLink, both new.
  *
@@ -275,6 +299,50 @@ export interface ArcLink {
    * futureMantraOverride instead, since it references two ARCs.
    */
   futureMantraOverride?: string | null;
+  /**
+   * Link practice-mode task: this Link's own BUILD-configured default
+   * practice mode (spec section 15.2, "Default Link practice mode") --
+   * pre-selects an answer on the "איזה סוג תרגול תרצה לבצע?" chooser
+   * without removing the choice itself (spec section 8.2: "it must
+   * remain a choice"). Optional/undefined on every ArcLink that
+   * predates this field (or was never configured) -- see
+   * resolveArcLinkPracticeModeDefault below for the safe fallback.
+   * Meaningless for a Mini ARC Link (kind implied by protocolType ===
+   * "mini_arc"), which never shows this chooser at all.
+   */
+  defaultPracticeMode?: ArcLinkPracticeMode | null;
+  /**
+   * Link timers task: whether THIS Link's own rehearsal timer (distinct
+   * from the real Action/Success-Focus/Negative-Action timers -- see
+   * data/storage.ts's TimerType, never extended by this field) is
+   * offered at all. Optional/undefined (treated as false/disabled) on
+   * every ArcLink that predates this task.
+   */
+  timerEnabled?: boolean;
+  /** Link timers task: this Link's own configured target duration in seconds, meaningful only when timerEnabled and timerStyle === "speed" (a "guided" timer never counts down to a target). null/undefined means no duration configured yet -- the trainee picks one immediately before rehearsal instead (spec section 9.2, "Duration selected in BUILD or immediately before rehearsal"). */
+  timerDurationSeconds?: number | null;
+  /** Link timers task: "guided" (no countdown pressure) vs "speed" (optional countdown, never auto-closing) -- see LinkTimerStyle's own doc. null/undefined means not yet configured; resolveLinkTimerStyle below is the one place this is safely defaulted. */
+  timerStyle?: LinkTimerStyle | null;
+}
+
+/**
+ * Link practice-mode task: the safe default when `defaultPracticeMode`
+ * is missing/null -- "full" reproduces this app's ORIGINAL, pre-this-task
+ * behavior (buildArcLinkSteps/buildArcLinkProtocolSteps in without_archi
+ * mode already rehearsed the complete linked protocol unconditionally),
+ * so an existing ArcLink that never configured this field keeps
+ * defaulting to exactly what it already did -- the mode CHOOSER (spec
+ * section 8) still lets the trainee pick a different mode for any given
+ * session; this only decides what's pre-selected/suggested.
+ */
+export function resolveArcLinkPracticeModeDefault(link: Pick<ArcLink, "defaultPracticeMode">): ArcLinkPracticeMode {
+  const mode = link.defaultPracticeMode;
+  return mode === "short" || mode === "fast" ? mode : "full";
+}
+
+/** Link timers task: the safe default when `timerStyle` is missing/null -- "guided" (no countdown pressure) matches this app's existing behavior before Link timers existed at all (no timer of any kind was ever shown). */
+export function resolveLinkTimerStyle(link: Pick<ArcLink, "timerStyle">): LinkTimerStyle {
+  return link.timerStyle === "speed" ? "speed" : "guided";
 }
 
 // ---------------------------------------------------------------------------

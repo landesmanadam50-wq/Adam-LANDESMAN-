@@ -8,6 +8,7 @@ import {
   draftFromUrgeArc,
   duplicateUrgeArc,
   isUrgeArcDraftComplete,
+  normalizeUrgeArc,
   upsertUrgeArcInList,
 } from "./urgeArcs.ts";
 import type { UrgeArcDraft } from "./urgeArcs.ts";
@@ -105,6 +106,43 @@ test("createEmptyUrgeArc starts with every optional field at its own empty/null 
   assert.equal(u.regulationAnchor, "");
   assert.equal(u.acceptanceContent, null);
   assert.equal(u.beneficialAlternativeAction, "");
+  assert.equal(u.representationPreference, null, "Representation-based Urge Encoding task: defaults to 'decide in LIVE' (null)");
+  assert.equal(u.visualEncodingAction, null);
+  assert.equal(u.alternativeDesiredImage, null);
+  assert.equal(u.bodilyEncodingAction, null);
+  assert.equal(u.desiredBodilySensation, null);
+  assert.equal(u.primaryMiniArcEncodingAction, null);
+  assert.equal(u.secondaryMiniArcEncodingAction, null);
+});
+
+// --- Representation-based Urge Encoding task: backward-compatible
+// normalization (test #13 from the modular-ARC spec: "existing older
+// urge program without new fields").
+
+test("normalizeUrgeArc backfills every representation-related field to null for an urge saved before this task existed", () => {
+  const legacyUrgeArc = createEmptyUrgeArc("id1", "דחף ישן", "2023-01-01T00:00:00.000Z");
+  // Simulate a genuinely legacy record: strip the new fields entirely,
+  // as JSON.parse would for anything saved before this task existed.
+  const { representationPreference, visualEncodingAction, alternativeDesiredImage, bodilyEncodingAction, desiredBodilySensation, primaryMiniArcEncodingAction, secondaryMiniArcEncodingAction, ...legacyShape } = legacyUrgeArc;
+  const normalized = normalizeUrgeArc(legacyShape as UrgeArc);
+  assert.equal(normalized.representationPreference, null);
+  assert.equal(normalized.visualEncodingAction, null);
+  assert.equal(normalized.alternativeDesiredImage, null);
+  assert.equal(normalized.bodilyEncodingAction, null);
+  assert.equal(normalized.desiredBodilySensation, null);
+  assert.equal(normalized.primaryMiniArcEncodingAction, null);
+  assert.equal(normalized.secondaryMiniArcEncodingAction, null);
+});
+
+test("normalizeUrgeArc never overwrites an already-configured representation field", () => {
+  const urgeArc: UrgeArc = {
+    ...createEmptyUrgeArc("id1", "דחף", "2024-01-01T00:00:00.000Z"),
+    representationPreference: "visual",
+    visualEncodingAction: "להקטין את התמונה",
+  };
+  const normalized = normalizeUrgeArc(urgeArc);
+  assert.equal(normalized.representationPreference, "visual");
+  assert.equal(normalized.visualEncodingAction, "להקטין את התמונה");
 });
 
 // --- Draft/validation pattern -- mirrors arc/miniArc.ts's own

@@ -11,8 +11,10 @@ import {
   describeTrigger,
   markWeeklyActionCompletedToday,
   resolveArcLinkKind,
+  resolveArcLinkPracticeModeDefault,
   resolveArcLinkTriggerCategory,
   resolveCurrentTriggerLevel,
+  resolveLinkTimerStyle,
   resolveRoutineTrigger,
   resolveWeeklyAction,
   upsertArcLinkInList,
@@ -233,6 +235,29 @@ test("resolveArcLinkTriggerCategory defaults to 'scheduled' for a legacy record 
   assert.equal(resolveArcLinkTriggerCategory(arcLink({ triggerCategory: "routine" })), "routine");
   assert.equal(resolveArcLinkTriggerCategory(arcLink({ triggerCategory: "preventive" })), "preventive");
   assert.equal(resolveArcLinkTriggerCategory(arcLink({ triggerCategory: "reactive" })), "reactive");
+});
+
+// --- Link practice-mode + timers task: safe defaults for a legacy
+// ArcLink saved before these fields existed (test #13-equivalent from
+// the modular-ARC spec: "existing older program without new fields").
+
+test("resolveArcLinkPracticeModeDefault defaults to 'full' for a legacy record with no defaultPracticeMode field -- reproducing this app's original unconditional full-rehearsal behavior", () => {
+  const legacy = arcLink();
+  delete (legacy as { defaultPracticeMode?: unknown }).defaultPracticeMode;
+  assert.equal(resolveArcLinkPracticeModeDefault(legacy), "full");
+  assert.equal(resolveArcLinkPracticeModeDefault(arcLink({ defaultPracticeMode: "short" })), "short");
+  assert.equal(resolveArcLinkPracticeModeDefault(arcLink({ defaultPracticeMode: "fast" })), "fast");
+  assert.equal(resolveArcLinkPracticeModeDefault(arcLink({ defaultPracticeMode: "full" })), "full");
+  assert.equal(resolveArcLinkPracticeModeDefault(arcLink({ defaultPracticeMode: null })), "full", "null (explicitly configured, then cleared) is treated the same as never-configured");
+});
+
+test("resolveLinkTimerStyle defaults to 'guided' for a legacy record with no timerStyle field -- reproducing this app's original no-timer-at-all behavior", () => {
+  const legacy = arcLink();
+  delete (legacy as { timerStyle?: unknown }).timerStyle;
+  assert.equal(resolveLinkTimerStyle(legacy), "guided");
+  assert.equal(resolveLinkTimerStyle(arcLink({ timerStyle: "speed" })), "speed");
+  assert.equal(resolveLinkTimerStyle(arcLink({ timerStyle: "guided" })), "guided");
+  assert.equal(resolveLinkTimerStyle(arcLink({ timerStyle: null })), "guided");
 });
 
 test("describeArcLinkKindAndCategory clearly distinguishes all five UI-facing ARC Link types", () => {

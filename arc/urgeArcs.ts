@@ -136,6 +136,18 @@ export function buildUrgeArcFromDraft(draft: UrgeArcDraft, id: string, createdAt
     bodyLanguageCue: bodyLanguageCue.length > 0 ? bodyLanguageCue : null,
     encodingMantra: encodingMantra.length > 0 ? encodingMantra : null,
     beneficialAlternativeAction: draft.beneficialAlternativeAction.trim(),
+    // Representation-based Urge Encoding task: not yet BUILD-editable
+    // (UrgeArcDraft has no fields for these -- see Phase 3, which adds
+    // the BUILD UI); every UrgeArc created via this draft form starts
+    // with "decide in LIVE" until that BUILD step exists, exactly like
+    // an urge saved before this task ever existed.
+    representationPreference: null,
+    visualEncodingAction: null,
+    alternativeDesiredImage: null,
+    bodilyEncodingAction: null,
+    desiredBodilySensation: null,
+    primaryMiniArcEncodingAction: null,
+    secondaryMiniArcEncodingAction: null,
   };
 }
 
@@ -154,5 +166,15 @@ export function normalizeUrgeArc(urgeArc: UrgeArc): UrgeArc {
     acceptanceContent: urgeArc.acceptanceContent ?? null,
     bodyLanguageCue: urgeArc.bodyLanguageCue ?? null,
     encodingMantra: urgeArc.encodingMantra ?? null,
+    // Representation-based Urge Encoding task: every UrgeArc saved
+    // before these fields existed backfills to null/"decide in LIVE" --
+    // never invented, matching every field above.
+    representationPreference: urgeArc.representationPreference ?? null,
+    visualEncodingAction: urgeArc.visualEncodingAction ?? null,
+    alternativeDesiredImage: urgeArc.alternativeDesiredImage ?? null,
+    bodilyEncodingAction: urgeArc.bodilyEncodingAction ?? null,
+    desiredBodilySensation: urgeArc.desiredBodilySensation ?? null,
+    primaryMiniArcEncodingAction: urgeArc.primaryMiniArcEncodingAction ?? null,
+    secondaryMiniArcEncodingAction: urgeArc.secondaryMiniArcEncodingAction ?? null,
   };
 }

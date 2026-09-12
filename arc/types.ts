@@ -946,6 +946,122 @@ export interface UrgeArc {
   encodingMantra: string | null;
   /** The bridge action shown once this urge's own Full protocol run reaches (but does not itself perform) "act" -- see urge_action_confirm, arc/arcGoalEngine.ts. */
   beneficialAlternativeAction: string;
+  /**
+   * Representation-based Urge Encoding task: how this urge typically
+   * appears to the trainee -- configured once in BUILD, read live to
+   * pick which representation-specific Encoding line(s) to show (see
+   * arc/stageCopy.ts's urge Encoding case, added alongside this field).
+   * "decide_in_live" (distinct from the LIVE-only "unsure"/"לא בטוח"
+   * recognition answer) means the trainee prefers to answer this fresh
+   * each session rather than commit to one representation in BUILD --
+   * LIVE always still asks Recognition's own representation question
+   * regardless of this preference; this field only supplies which
+   * answer is PRESELECTED/suggested. null (every UrgeArc saved before
+   * this field existed) behaves exactly like "decide_in_live" -- no
+   * BUILD-configured default, ask fresh every time.
+   */
+  representationPreference: UrgeRepresentationPreference | null;
+  /** Visual representation Encoding: how to adjust the image already present (e.g. "להקטין ולהרחיק את התמונה") -- shown only when Recognition resolves to "visual" or "both". null means no BUILD-configured adjustment; the Encoding stage falls back to its own generic representation-based line. */
+  visualEncodingAction: string | null;
+  /** Visual representation Encoding: an alternative/supportive image connected to the Desired State or beneficial action, offered alongside (never instead of) adjusting the original image. null means none configured. */
+  alternativeDesiredImage: string | null;
+  /** Bodily/sensory representation Encoding: how to work with the sensation already present. null means no BUILD-configured action; falls back to the generic representation-based line. */
+  bodilyEncodingAction: string | null;
+  /** Bodily/sensory representation Encoding: the configured desired bodily sensation introduced alongside (never forcibly replacing) the existing one -- see the exact required phrasing in arc/stageCopy.ts's urge Encoding case. null means none configured. */
+  desiredBodilySensation: string | null;
+  /** Mini ARC Urge's own single, pre-selected Encoding action for its one short Encoding step (never the full visual+bodily pair above -- Mini ARC Urge uses exactly one). Resolved from representationPreference/visualEncodingAction/bodilyEncodingAction when unset -- see arc/miniArc.ts's urge-aware Encoding resolution, added alongside this field. null means no override; the resolver falls back to the Full ARC Urge fields above. */
+  primaryMiniArcEncodingAction: string | null;
+  /** Mini ARC Urge's optional quick-switch secondary Encoding action, only meaningful when representationPreference is "both" -- lets the trainee switch to the other representation's action without leaving the short Encoding step. null means no secondary action configured (the common case). */
+  secondaryMiniArcEncodingAction: string | null;
+}
+
+/**
+ * Representation-based Urge Encoding task: how an urge appears to the
+ * trainee, as answered LIVE on Recognition's own question ("כיצד הדחף
+ * מופיע אצלך עכשיו?") -- "unsure" means Recognition continues with the
+ * standard Regulation/Encoding route without forcing classification
+ * (never a representation-specific Encoding line). Distinct from
+ * UrgeRepresentationPreference below (a BUILD-time default/suggestion,
+ * which additionally allows "decide_in_live").
+ */
+export type UrgeRepresentation = "visual" | "bodily" | "both" | "unsure";
+
+/** BUILD-configured default for UrgeRepresentation, plus "decide_in_live" -- see UrgeArc.representationPreference's own doc. */
+export type UrgeRepresentationPreference = UrgeRepresentation | "decide_in_live";
+
+/**
+ * Modular ARC architecture task (LIVE entry categories, spec section 2):
+ * tags which of the five independent LIVE entry points launched/owns a
+ * session -- distinct from DevelopmentLayer ("state"/"identity"/"habit",
+ * an ENCODING TARGET a session resolves onto), and distinct from
+ * TriggerType (reactive_emotion/reactive_urge/proactive, how a session
+ * was entered). "state" here means the ARC State PARENT PROTOCOL (a
+ * LIVE entry that may embed Presence/Thought/Belief/Urge modules) --
+ * never confused with the "state" DevelopmentLayer, which a session of
+ * ANY LiveProtocolKind may still resolve onto for its own Encoding/
+ * Action. Purely a tag for navigation/context-carrying purposes (see
+ * ProtocolReturnContext below); adding it here does not change any
+ * existing routing -- no existing code constructs or reads it yet.
+ */
+export type LiveProtocolKind = "state" | "urge" | "presence" | "thought" | "belief";
+
+/**
+ * Personal Development vs. Goal Achievement task (spec section 5):
+ * which track a session belongs to -- decides whether the shortened
+ * Identity Extension after an internal protocol is OPTIONAL
+ * (personal_development, asked via a Yes/No screen) or MANDATORY
+ * (goal_achievement, entered automatically, tied to the current ArcGoal
+ * and active sub-goal). Purely a tag; no existing code constructs or
+ * reads it yet -- see ProtocolReturnContext below.
+ */
+export type IdentityExtensionTrack = "personal_development" | "goal_achievement";
+
+/**
+ * Modular ARC architecture task (spec section 2, "Possible inherited
+ * context"): the context a shared/embedded module (Presence/Thought/
+ * Belief/Urge, or the shortened Identity Extension) needs from its
+ * PARENT protocol, so it can render correctly and return to the right
+ * place afterward -- e.g. ARC State embedding ARC Thought must hand the
+ * Thought module the parent's situation description and get routed back
+ * into ARC State's own next selected module, not into ARC State's start.
+ *
+ * Every field is optional/nullable by construction (a module opened
+ * completely standalone, e.g. independent ARC Presence from the Home
+ * screen, has none of this) and this type is not yet constructed or
+ * read anywhere in the app -- it is forward-looking scaffolding for the
+ * later modular-composition phases (ARC State, Identity Extension),
+ * added now so those phases share one consistent shape rather than each
+ * inventing its own ad-hoc context object. Session-only, exactly like
+ * ArcLiveState's own session-specific fields -- never persisted, never
+ * written onto ArcBuildProfile/ArcGoal.
+ */
+export interface ProtocolReturnContext {
+  /** Which LIVE entry category is the ultimate parent of this session (e.g. "state" when ARC Thought is embedded inside ARC State). null when this module was opened standalone, with no parent. */
+  parentProtocol: LiveProtocolKind | null;
+  /** Personal Development vs. Goal Achievement -- decides Identity Extension's optional/mandatory gating once the embedded/parent work completes. null when not yet resolved (e.g. a standalone independent-protocol session with no Identity Extension offer at all). */
+  track: IdentityExtensionTrack | null;
+  /** The parent ARC State session's selected/identified emotional or internal state, carried into an embedded module (e.g. so ARC Thought's own copy can reference it) without re-asking. null when not applicable/not yet identified. */
+  selectedEmotionalState: string | null;
+  /** The id of the UrgeArc selected/active in the parent session, when the embedded module needs it (e.g. Urge embedded inside ARC State). null when not applicable. */
+  selectedUrgeId: string | null;
+  /** The parent session's current disturbing/supportive thought text, carried into an embedded ARC Thought module. null when not applicable. */
+  currentThought: string | null;
+  /** The parent session's selected limiting belief (a saved belief's id, or free text for a newly-entered one), carried into an embedded ARC Belief module. null when not applicable. */
+  selectedLimitingBelief: string | null;
+  /** The parent session's own situation/context description, reused by an embedded module rather than re-asked. null when not applicable. */
+  situationDescription: string | null;
+  /** The current ArcGoal id this session is working within, when track is "goal_achievement". null for Personal Development or when not yet resolved. */
+  currentArcGoalId: string | null;
+  /** The active sub-goal id (see arc/subGoalExecution.ts's resolveActiveSubGoal) this session is working within. null when not applicable. */
+  activeSubGoalId: string | null;
+  /** The identity this session's Identity Extension should use -- an existing identity's id/reference for Goal Achievement (resolved from the ArcGoal), or the trainee's Personal-Development choice. null when not yet resolved. */
+  linkedIdentityId: string | null;
+  /** The habit/action linked to this session's Identity Extension -- resolved from the current ArcGoal/active sub-goal for Goal Achievement, or the trainee's own choice for Personal Development. null when not yet resolved. */
+  linkedHabitOrActionId: string | null;
+  /** Which module (or "identity_extension") the parent protocol still requires next, once the current embedded module finishes -- read by the parent's own routing to decide whether to continue into another selected module or into Desired State Encoding/Identity Extension. null once nothing remains. */
+  requiredNextModule: LiveProtocolKind | "identity_extension" | null;
+  /** Where to return control once this module (and any Identity Extension) finishes -- e.g. back to the parent ARC State session, or to an ArcGoal session's own outer/inner run. null when there is no parent to return to (a genuinely standalone session). */
+  returnDestination: string | null;
 }
 
 /**
@@ -1353,6 +1469,13 @@ export function createEmptyUrgeArc(id: string, name: string, now: string): UrgeA
     bodyLanguageCue: null,
     encodingMantra: null,
     beneficialAlternativeAction: "",
+    representationPreference: null,
+    visualEncodingAction: null,
+    alternativeDesiredImage: null,
+    bodilyEncodingAction: null,
+    desiredBodilySensation: null,
+    primaryMiniArcEncodingAction: null,
+    secondaryMiniArcEncodingAction: null,
   };
 }
 
