@@ -41,6 +41,23 @@ export function parseCalendarDate(localDate: string): CalendarDate {
   return { year, month, day };
 }
 
+/**
+ * Non-throwing companion to parseCalendarDate -- callers that read a date
+ * a trainee may still be mid-typing (e.g. a raw "YYYY-MM-DD" TextInput,
+ * with no picker/modal involved) must check this BEFORE any date
+ * arithmetic, since a partial or malformed string must never reach
+ * parseCalendarDate/addCalendarDays/daysBetweenCalendarDates and throw.
+ */
+export function isValidCalendarDateString(value: string | null | undefined): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    parseCalendarDate(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function daysFromCivil(date: CalendarDate): number {
   const y = date.month <= 2 ? date.year - 1 : date.year;
   const era = Math.floor(y / 400);

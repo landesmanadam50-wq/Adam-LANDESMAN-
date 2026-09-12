@@ -11,7 +11,7 @@ import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { findSubGoalOwner } from "../arc/lifeManifest.ts";
 import type { SubGoalOwner } from "../arc/lifeManifest.ts";
 import CollapsibleSection from "./CollapsibleSection.tsx";
-import { todayLocalDateString } from "../program/dateUtils.ts";
+import { isValidCalendarDateString, todayLocalDateString } from "../program/dateUtils.ts";
 import { createFourWeekProgram, FOUR_WEEK_META, FOUR_WEEK_PROGRAM_WEEK_NUMBERS, resolveNextWeekOpeningDate, resolveWeek, setWeekEndDate, setWeekStartDate } from "../arc/fourWeekProgram.ts";
 
 const EXECUTION_MODE_LABELS: Record<ExecutionMode, string> = {
@@ -303,9 +303,12 @@ export default function ArcGoalEditorScreen() {
                 )}
                 <Text style={styles.fieldLabel}>תאריך התחלה מתוכנן לשבוע 1 (YYYY-MM-DD)</Text>
                 <TextInput style={styles.textInput} value={week1StartDraft} onChangeText={setWeek1StartDraft} textAlign="right" placeholder="2025-01-06" />
+                {!isValidCalendarDateString(week1StartDraft) && (
+                  <Text style={styles.hint}>יש להזין תאריך תקין בפורמט YYYY-MM-DD כדי להפעיל את התוכנית.</Text>
+                )}
                 <Pressable
-                  style={[styles.button, styles.fullWidthButton, !goal.identityProtocolId && styles.buttonDisabled]}
-                  disabled={!goal.identityProtocolId}
+                  style={[styles.button, styles.fullWidthButton, (!goal.identityProtocolId || !isValidCalendarDateString(week1StartDraft)) && styles.buttonDisabled]}
+                  disabled={!goal.identityProtocolId || !isValidCalendarDateString(week1StartDraft)}
                   onPress={() => patchGoal({ fourWeekProgram: createFourWeekProgram(week1StartDraft) })}
                 >
                   <Text style={styles.buttonText}>הפעל תוכנית ארבעת השבועות</Text>
