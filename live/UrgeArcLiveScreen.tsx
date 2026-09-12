@@ -3,8 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
-import { appendSessionLogEntry, getUrgeArc, loadMiniArcBuilds } from "../data/storage.ts";
-import type { UrgeArc, UrgeRepresentation } from "../arc/types.ts";
+import { appendSessionLogEntry, getPersonalDevelopmentProgram, getUrgeArc, loadMiniArcBuilds, upsertPersonalDevelopmentProgram } from "../data/storage.ts";
+import { addPracticeRecord, clearReturnContext } from "../arc/personalDevelopmentProgram.ts";
+import type { UrgeArc, UrgeRepresentation, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import {
   createEmptyMiniUrgeLiveState,
@@ -40,10 +41,31 @@ type Status = "loading" | "notFound" | "modeChoice" | "runningFull" | "runningMi
  * incomplete duplicate of it (spec's own explicit allowance: "Offer
  * the optional Identity Extension when that shared routing becomes
  * available").
+ *
+ * Phase 9 (four-week program integration): optional `mode` ("full"/
+ * "mini") lets a launching screen -- specifically the new Personal
+ * Development four-week dashboard -- pre-select which version to run,
+ * bypassing the modeChoice screen above (used only when the trainee
+ * opened this Urge ARC directly, with no specific week task in mind).
+ * Optional `pdProgramId`/`pdWeek` mirror live/ArcLinkScreen.tsx's own
+ * fourWeekGoalId/fourWeekWeek pattern exactly: when present, completion
+ * logs a "full"/"mini" practice record onto that Personal Development
+ * program's own week (never onto an ArcGoal -- the two four-week
+ * systems stay completely separate, see arc/personalDevelopmentProgram.ts's
+ * own module doc) and offers a route back to its dashboard alongside the
+ * existing optional Identity Extension offer -- never mandatory, exactly
+ * like every other Personal Development completion.
  */
 export default function UrgeArcLiveScreen() {
-  const { id, goalId } = useLocalSearchParams<{ id: string; goalId?: string }>();
+  const { id, goalId, mode, pdProgramId, pdWeek } = useLocalSearchParams<{
+    id: string;
+    goalId?: string;
+    mode?: "full" | "mini";
+    pdProgramId?: string;
+    pdWeek?: string;
+  }>();
   const hasGoal = typeof goalId === "string" && goalId.length > 0;
+  const hasPd = typeof pdProgramId === "string" && pdProgramId.length > 0;
   const [status, setStatus] = useState<Status>("loading");
   const [urgeArc, setUrgeArc] = useState<UrgeArc | null>(null);
   const [linkedMini, setLinkedMini] = useState<MiniArcBuild | null>(null);
@@ -77,17 +99,31 @@ export default function UrgeArcLiveScreen() {
         setRecheckIntensityText("");
         setPendingText("");
         setSessionStartedAt(new Date().toISOString());
-        setStatus(mini ? "modeChoice" : "runningFull");
+        if (mode === "mini" && mini) setStatus("runningMini");
+        else if (mode === "full") setStatus("runningFull");
+        else setStatus(mini ? "modeChoice" : "runningFull");
       });
       return () => {
         cancelled = true;
       };
-    }, [id])
+    }, [id, mode])
   );
 
-  function finalizeCompletion() {
+  async function recordPdPracticeIfNeeded(kind: "full" | "mini") {
+    if (!hasPd || typeof pdProgramId !== "string") return;
+    const program = await getPersonalDevelopmentProgram(pdProgramId);
+    if (!program) return;
+    const now = new Date().toISOString();
+    const week = (Number(pdWeek) || program.currentWeek) as FourWeekProgramWeekNumber;
+    const label = kind === "full" ? "ARC Urge מלא" : "ARC Mini Urge";
+    const updated = clearReturnContext(addPracticeRecord(program, week, kind, label, now));
+    await upsertPersonalDevelopmentProgram({ ...updated, updatedAt: now });
+  }
+
+  function finalizeCompletion(kind: "full" | "mini") {
     const finishedAt = new Date().toISOString();
     appendSessionLogEntry({ id: `urge_${sessionStartedAt}_${finishedAt}`, startedAt: sessionStartedAt, finishedAt, success: true, fall: false });
+    recordPdPracticeIfNeeded(kind);
   }
 
   function advanceFull(next: Partial<UrgeLiveState> = {}) {
@@ -98,7 +134,7 @@ export default function UrgeArcLiveScreen() {
     setPendingText("");
     if (hop.stage === "recheck") setRecheckIntensityText("");
     if (hop.stage === "complete") {
-      finalizeCompletion();
+      finalizeCompletion("full");
       setStatus("completeFull");
     }
   }
@@ -109,7 +145,7 @@ export default function UrgeArcLiveScreen() {
     setMiniStage(hop.stage);
     setMiniState(hop.state);
     if (hop.stage === "complete") {
-      finalizeCompletion();
+      finalizeCompletion("mini");
       setStatus("completeMini");
     }
   }
@@ -184,12 +220,20 @@ export default function UrgeArcLiveScreen() {
             <>
               <Pressable
                 style={[styles.button, styles.fullWidthButton]}
-                onPress={() => router.push({ pathname: "/identity-extension/offer", params: { returnTo: "/self-development" } })}
+                onPress={() =>
+                  router.push({
+                    pathname: "/identity-extension/offer",
+                    params: { returnTo: hasPd ? `/personal-development-program/live/${pdProgramId}` : "/self-development" },
+                  })
+                }
               >
                 <Text style={styles.buttonText}>כן, להמשיך לבניית הזהות</Text>
               </Pressable>
-              <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.replace("/self-development")}>
-                <Text style={styles.secondaryButtonText}>לא, סיימתי</Text>
+              <Pressable
+                style={[styles.button, styles.secondaryButton, styles.fullWidthButton]}
+                onPress={() => router.replace(hasPd ? { pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId as string } } : "/self-development")}
+              >
+                <Text style={styles.secondaryButtonText}>{hasPd ? "לא, סיימתי -- חזרה לתוכנית" : "לא, סיימתי"}</Text>
               </Pressable>
             </>
           )}

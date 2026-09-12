@@ -3,10 +3,11 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcBuild, getArcGoal, getBeliefArc, getMiniArcBuild, getThoughtArc, getUrgeArc, upsertArcGoal } from "../data/storage.ts";
+import { getArcBuild, getArcGoal, getBeliefArc, getMiniArcBuild, getPersonalDevelopmentProgram, getThoughtArc, getUrgeArc, upsertArcGoal, upsertPersonalDevelopmentProgram } from "../data/storage.ts";
 import { getMiniArcPersistentColorLine, getMiniArcStageCopy, getNextMiniArcStage } from "../arc/miniArc.ts";
 import type { MiniArcBuild, MiniArcStage } from "../arc/miniArc.ts";
 import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
+import { addPracticeRecord as addPdPracticeRecord, clearReturnContext as clearPdReturnContext } from "../arc/personalDevelopmentProgram.ts";
 import type { FourWeekProgramWeekNumber } from "../arc/types.ts";
 import { resolveMiniStateEncodingContent } from "../arc/stateLive.ts";
 import type { MiniStateEncodingContent } from "../arc/stateLive.ts";
@@ -37,9 +38,22 @@ import type { MiniStateEncodingContent } from "../arc/stateLive.ts";
  * routineId-aware pattern already used by live/LiveSessionScreen.tsx.
  * Absent (every other Mini ARC run, including one launched from
  * anywhere else) leaves this screen's behavior completely unchanged.
+ *
+ * Phase 9 (four-week program integration): optional pdProgramId/pdWeek
+ * -- set only by the new Personal Development four-week dashboard's own
+ * "mini" task for a "state" protocol -- mirrors fourWeekGoalId/
+ * fourWeekWeek exactly, as its own separate pair (see
+ * arc/personalDevelopmentProgram.ts's own module doc: the two four-week
+ * systems stay completely independent).
  */
 export default function MiniArcLiveScreen() {
-  const { id, fourWeekGoalId, fourWeekWeek } = useLocalSearchParams<{ id: string; fourWeekGoalId?: string; fourWeekWeek?: string }>();
+  const { id, fourWeekGoalId, fourWeekWeek, pdProgramId, pdWeek } = useLocalSearchParams<{
+    id: string;
+    fourWeekGoalId?: string;
+    fourWeekWeek?: string;
+    pdProgramId?: string;
+    pdWeek?: string;
+  }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "ready">("loading");
   const [build, setBuild] = useState<MiniArcBuild | null>(null);
   const [stage, setStage] = useState<MiniArcStage>("pause");
@@ -88,6 +102,17 @@ export default function MiniArcLiveScreen() {
         await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
       }
       router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });
+      return;
+    }
+    if (typeof pdProgramId === "string" && build) {
+      const program = await getPersonalDevelopmentProgram(pdProgramId);
+      if (program) {
+        const now = new Date().toISOString();
+        const week = (Number(pdWeek) || program.currentWeek) as FourWeekProgramWeekNumber;
+        const updatedProgram = clearPdReturnContext(addPdPracticeRecord(program, week, "mini", `Mini ARC -- ${build.name}`, now));
+        await upsertPersonalDevelopmentProgram({ ...updatedProgram, updatedAt: now });
+      }
+      router.replace({ pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId } });
       return;
     }
     router.replace("/mini-arc");

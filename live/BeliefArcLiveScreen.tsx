@@ -3,9 +3,10 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
-import { appendSessionLogEntry, getBeliefArc, loadMiniArcBuilds, loadProfile } from "../data/storage.ts";
+import { appendSessionLogEntry, getBeliefArc, getPersonalDevelopmentProgram, loadMiniArcBuilds, loadProfile, upsertPersonalDevelopmentProgram } from "../data/storage.ts";
 import { createEmptyBeliefArc } from "../arc/types.ts";
-import type { ArcBuildProfile, BeliefArc } from "../arc/types.ts";
+import { addPracticeRecord, clearReturnContext } from "../arc/personalDevelopmentProgram.ts";
+import type { ArcBuildProfile, BeliefArc, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import {
   createEmptyBeliefLiveState,
@@ -45,9 +46,20 @@ const FREE_TEXT_STAGES: BeliefLiveStage[] = ["recognition", "replacement_belief"
  * Optional goalId query param (same "minimum shared context and return
  * routing" scope as Phase 4/5's own LIVE screens): when present, this
  * screen returns to that Goal Achievement context on completion.
+ *
+ * Phase 9 (four-week program integration): optional `mode`/`pdProgramId`/
+ * `pdWeek` -- same shape and reasoning as live/UrgeArcLiveScreen.tsx's own
+ * Phase 9 doc comment.
  */
 export default function BeliefArcLiveScreen() {
-  const { id, goalId } = useLocalSearchParams<{ id: string; goalId?: string }>();
+  const { id, goalId, mode, pdProgramId, pdWeek } = useLocalSearchParams<{
+    id: string;
+    goalId?: string;
+    mode?: "full" | "mini";
+    pdProgramId?: string;
+    pdWeek?: string;
+  }>();
+  const hasPd = typeof pdProgramId === "string" && pdProgramId.length > 0;
   const isSessionOnly = id === "new";
   const [status, setStatus] = useState<Status>(isSessionOnly ? "openingChoice" : "loading");
   const [beliefArc, setBeliefArc] = useState<BeliefArc | null>(null);
@@ -77,12 +89,14 @@ export default function BeliefArcLiveScreen() {
         setBeliefArc(resolveEffectiveBeliefArc(loaded, mini, profile));
         setLinkedMini(mini);
         resetSession();
-        setStatus(mini ? "modeChoice" : "runningFull");
+        if (mode === "mini" && mini) setStatus("runningMini");
+        else if (mode === "full") setStatus("runningFull");
+        else setStatus(mini ? "modeChoice" : "runningFull");
       });
       return () => {
         cancelled = true;
       };
-    }, [id, isSessionOnly])
+    }, [id, isSessionOnly, mode])
   );
 
   function resetSession() {
@@ -102,12 +116,28 @@ export default function BeliefArcLiveScreen() {
     setStatus("runningFull");
   }
 
-  function finalizeCompletion() {
+  async function recordPdPracticeIfNeeded(kind: "full" | "mini") {
+    if (!hasPd || typeof pdProgramId !== "string") return;
+    const program = await getPersonalDevelopmentProgram(pdProgramId);
+    if (!program) return;
+    const now = new Date().toISOString();
+    const week = (Number(pdWeek) || program.currentWeek) as FourWeekProgramWeekNumber;
+    const label = kind === "full" ? "ARC Belief מלא" : "ARC Mini Belief";
+    const updated = clearReturnContext(addPracticeRecord(program, week, kind, label, now));
+    await upsertPersonalDevelopmentProgram({ ...updated, updatedAt: now });
+  }
+
+  function finalizeCompletion(kind: "full" | "mini") {
     const finishedAt = new Date().toISOString();
     appendSessionLogEntry({ id: `belief_${sessionStartedAt}_${finishedAt}`, startedAt: sessionStartedAt, finishedAt, success: true, fall: false });
+    recordPdPracticeIfNeeded(kind);
   }
 
   function returnAfterCompletion() {
+    if (hasPd && typeof pdProgramId === "string") {
+      router.replace({ pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId } });
+      return;
+    }
     if (typeof goalId === "string" && goalId.length > 0) {
       router.replace({ pathname: "/goals/live/[goalId]", params: { goalId } });
       return;
@@ -124,7 +154,7 @@ export default function BeliefArcLiveScreen() {
     setPendingSecondaryText("");
     setPendingTertiaryText("");
     if (hop.stage === "complete") {
-      finalizeCompletion();
+      finalizeCompletion("full");
       setStatus("completeFull");
     }
   }
@@ -133,7 +163,7 @@ export default function BeliefArcLiveScreen() {
     const next = getNextMiniBeliefLiveStage(miniStage).stage;
     setMiniStage(next);
     if (next === "complete") {
-      finalizeCompletion();
+      finalizeCompletion("mini");
       setStatus("completeMini");
     }
   }
@@ -226,12 +256,17 @@ export default function BeliefArcLiveScreen() {
             <>
               <Pressable
                 style={[styles.button, styles.fullWidthButton]}
-                onPress={() => router.push({ pathname: "/identity-extension/offer", params: { returnTo: "/self-development" } })}
+                onPress={() =>
+                  router.push({
+                    pathname: "/identity-extension/offer",
+                    params: { returnTo: hasPd && typeof pdProgramId === "string" ? `/personal-development-program/live/${pdProgramId}` : "/self-development" },
+                  })
+                }
               >
                 <Text style={styles.buttonText}>כן, להמשיך לבניית הזהות</Text>
               </Pressable>
               <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={returnAfterCompletion}>
-                <Text style={styles.secondaryButtonText}>לא, סיימתי</Text>
+                <Text style={styles.secondaryButtonText}>{hasPd ? "לא, סיימתי -- חזרה לתוכנית" : "לא, סיימתי"}</Text>
               </Pressable>
             </>
           )}

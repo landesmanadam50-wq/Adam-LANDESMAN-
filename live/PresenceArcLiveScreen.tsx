@@ -3,8 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
-import { appendSessionLogEntry, getPresenceArc, loadMiniArcBuilds } from "../data/storage.ts";
-import type { ArcLiveState, ArcStage, PresenceArc } from "../arc/types.ts";
+import { appendSessionLogEntry, getPersonalDevelopmentProgram, getPresenceArc, loadMiniArcBuilds, upsertPersonalDevelopmentProgram } from "../data/storage.ts";
+import { addPracticeRecord, clearReturnContext } from "../arc/personalDevelopmentProgram.ts";
+import type { ArcLiveState, ArcStage, FourWeekProgramWeekNumber, PresenceArc } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import {
   createEmptyPresenceActionLiveState,
@@ -63,9 +64,20 @@ type Status = "loading" | "notFound" | "modeChoice" | "runningFull" | "runningFu
  * routing" scope as Phase 4's ThoughtArcLiveScreen): when present, this
  * screen returns to that Goal Achievement context on completion instead
  * of Home.
+ *
+ * Phase 9 (four-week program integration): optional `mode`/`pdProgramId`/
+ * `pdWeek` -- same shape and reasoning as live/UrgeArcLiveScreen.tsx's own
+ * Phase 9 doc comment.
  */
 export default function PresenceArcLiveScreen() {
-  const { id, goalId } = useLocalSearchParams<{ id: string; goalId?: string }>();
+  const { id, goalId, mode, pdProgramId, pdWeek } = useLocalSearchParams<{
+    id: string;
+    goalId?: string;
+    mode?: "full" | "mini";
+    pdProgramId?: string;
+    pdWeek?: string;
+  }>();
+  const hasPd = typeof pdProgramId === "string" && pdProgramId.length > 0;
   const [status, setStatus] = useState<Status>("loading");
   const [presenceArc, setPresenceArc] = useState<PresenceArc | null>(null);
   const [linkedMini, setLinkedMini] = useState<MiniArcBuild | null>(null);
@@ -107,20 +119,38 @@ export default function PresenceArcLiveScreen() {
 
         setMiniStage(getFirstMiniPresenceLiveStage());
         setSessionStartedAt(new Date().toISOString());
-        setStatus(mini ? "modeChoice" : "runningFull");
+        if (mode === "mini" && mini) setStatus("runningMini");
+        else if (mode === "full") setStatus("runningFull");
+        else setStatus(mini ? "modeChoice" : "runningFull");
       });
       return () => {
         cancelled = true;
       };
-    }, [id])
+    }, [id, mode])
   );
 
-  function finalizeCompletion() {
+  async function recordPdPracticeIfNeeded(kind: "full" | "mini") {
+    if (!hasPd || typeof pdProgramId !== "string") return;
+    const program = await getPersonalDevelopmentProgram(pdProgramId);
+    if (!program) return;
+    const now = new Date().toISOString();
+    const week = (Number(pdWeek) || program.currentWeek) as FourWeekProgramWeekNumber;
+    const label = kind === "full" ? "ARC Presence מלא" : "ARC Mini Presence";
+    const updated = clearReturnContext(addPracticeRecord(program, week, kind, label, now));
+    await upsertPersonalDevelopmentProgram({ ...updated, updatedAt: now });
+  }
+
+  function finalizeCompletion(kind: "full" | "mini") {
     const finishedAt = new Date().toISOString();
     appendSessionLogEntry({ id: `presence_${sessionStartedAt}_${finishedAt}`, startedAt: sessionStartedAt, finishedAt, success: true, fall: false });
+    recordPdPracticeIfNeeded(kind);
   }
 
   function returnAfterCompletion() {
+    if (hasPd && typeof pdProgramId === "string") {
+      router.replace({ pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId } });
+      return;
+    }
     if (typeof goalId === "string" && goalId.length > 0) {
       router.replace({ pathname: "/goals/live/[goalId]", params: { goalId } });
       return;
@@ -153,7 +183,7 @@ export default function PresenceArcLiveScreen() {
     setFullActionState(hop.state);
     setPendingText("");
     if (hop.stage === "complete") {
-      finalizeCompletion();
+      finalizeCompletion("full");
       setStatus("completeFull");
     }
   }
@@ -162,7 +192,7 @@ export default function PresenceArcLiveScreen() {
     const next = getNextMiniPresenceLiveStage(miniStage);
     setMiniStage(next);
     if (next === "complete") {
-      finalizeCompletion();
+      finalizeCompletion("mini");
       setStatus("completeMini");
     }
   }
@@ -239,12 +269,17 @@ export default function PresenceArcLiveScreen() {
             <>
               <Pressable
                 style={[styles.button, styles.fullWidthButton]}
-                onPress={() => router.push({ pathname: "/identity-extension/offer", params: { returnTo: "/self-development" } })}
+                onPress={() =>
+                  router.push({
+                    pathname: "/identity-extension/offer",
+                    params: { returnTo: hasPd && typeof pdProgramId === "string" ? `/personal-development-program/live/${pdProgramId}` : "/self-development" },
+                  })
+                }
               >
                 <Text style={styles.buttonText}>כן, להמשיך לבניית הזהות</Text>
               </Pressable>
               <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={returnAfterCompletion}>
-                <Text style={styles.secondaryButtonText}>לא, סיימתי</Text>
+                <Text style={styles.secondaryButtonText}>{hasPd ? "לא, סיימתי -- חזרה לתוכנית" : "לא, סיימתי"}</Text>
               </Pressable>
             </>
           )}

@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcGoal, getArcLink, getMiniArcBuild, getThoughtArc, loadRoutineTriggers, upsertArcGoal, upsertArcLink } from "../data/storage.ts";
+import { getArcGoal, getArcLink, getMiniArcBuild, getPersonalDevelopmentProgram, getThoughtArc, loadRoutineTriggers, upsertArcGoal, upsertArcLink, upsertPersonalDevelopmentProgram } from "../data/storage.ts";
 import { buildMiniArcLinkStartConfirmationStep, buildProtocolSpecificMiniArcLinkSteps } from "../arc/miniArcLink.ts";
 import type { MiniArcLinkStep } from "../arc/miniArcLink.ts";
 import { resolveMiniThoughtContent } from "../arc/thoughtLive.ts";
@@ -12,6 +12,11 @@ import { describeTrigger, resolveLinkTimerStyle, resolveRoutineTrigger } from ".
 import type { ArcLink } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
+import {
+  addPracticeRecord as addPdPracticeRecord,
+  clearReturnContext as clearPdReturnContext,
+  isSpeedFluencyWeek,
+} from "../arc/personalDevelopmentProgram.ts";
 import type { ArcGoalWeekPracticeRecord, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import BodyImageryStep from "./BodyImageryStep.tsx";
 import { LinkTimerDisplay } from "./LinkTimerDisplay.tsx";
@@ -40,14 +45,27 @@ import { LinkTimerDisplay } from "./LinkTimerDisplay.tsx";
  * fourWeekKind defaults to this screen's own original "mini_arc_link"
  * semantic. Absent fourWeekGoalId entirely, completePractice is
  * completely unchanged.
+ *
+ * Phase 9 (four-week program integration): optional pdProgramId/pdWeek
+ * -- set only by the new Personal Development four-week dashboard's own
+ * "mini_link" task, for any of the 5 protocol kinds (this screen already
+ * supports all of them via getMiniArcBuild's own protocolKind
+ * branching). Unlike the ArcGoal fourWeekKind distinction above, PD
+ * tracks a single "mini_link" kind regardless of week -- "guided"
+ * (Weeks 1-2) vs "speed/fluency" (Weeks 3-4) framing is a label-only
+ * distinction (isSpeedFluencyWeek), never a second practice-record kind
+ * or a second rehearsal mechanism (see arc/personalDevelopmentProgram.ts's
+ * own module doc).
  */
 export default function MiniArcLinkScreen() {
-  const { id, linkId, fourWeekGoalId, fourWeekWeek, fourWeekKind } = useLocalSearchParams<{
+  const { id, linkId, fourWeekGoalId, fourWeekWeek, fourWeekKind, pdProgramId, pdWeek } = useLocalSearchParams<{
     id: string;
     linkId?: string;
     fourWeekGoalId?: string;
     fourWeekWeek?: string;
     fourWeekKind?: string;
+    pdProgramId?: string;
+    pdWeek?: string;
   }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "noTrigger" | "ready">("loading");
   const [steps, setSteps] = useState<MiniArcLinkStep[]>([]);
@@ -148,6 +166,18 @@ export default function MiniArcLinkScreen() {
         await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
       }
       router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });
+      return;
+    }
+    if (typeof pdProgramId === "string") {
+      const program = await getPersonalDevelopmentProgram(pdProgramId);
+      if (program) {
+        const now = new Date().toISOString();
+        const week = (Number(pdWeek) || program.currentWeek) as FourWeekProgramWeekNumber;
+        const label = isSpeedFluencyWeek(week) ? "Mini ARC Link (שטף)" : "Mini ARC Link (מונחה)";
+        const updatedProgram = clearPdReturnContext(addPdPracticeRecord(program, week, "mini_link", label, now));
+        await upsertPersonalDevelopmentProgram({ ...updatedProgram, updatedAt: now });
+      }
+      router.replace({ pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId } });
       return;
     }
     router.back();

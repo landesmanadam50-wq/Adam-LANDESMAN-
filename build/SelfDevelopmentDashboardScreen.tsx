@@ -119,6 +119,11 @@ export default function SelfDevelopmentDashboardScreen() {
         </Pressable>
 
         <Text style={styles.sectionTitle}>כלים נוספים</Text>
+        <Link href="/personal-development-program" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>תוכנית ארבעת השבועות -- התפתחות אישית</Text>
+          </Pressable>
+        </Link>
         <Link href="/urge-arcs" asChild>
           <Pressable style={styles.itemRow}>
             <Text style={styles.itemText}>Urge ARC</Text>

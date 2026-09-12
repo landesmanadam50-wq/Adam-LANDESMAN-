@@ -3,8 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcBuild, getArcGoal, getArcLink, loadRoutineTriggers, upsertArcGoal, upsertArcLink } from "../data/storage.ts";
+import { getArcBuild, getArcGoal, getArcLink, getPersonalDevelopmentProgram, loadRoutineTriggers, upsertArcGoal, upsertArcLink, upsertPersonalDevelopmentProgram } from "../data/storage.ts";
 import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
+import { addPracticeRecord as addPdPracticeRecord, clearReturnContext as clearPdReturnContext } from "../arc/personalDevelopmentProgram.ts";
 import {
   buildArcLinkFastSteps,
   buildArcLinkIntroSteps,
@@ -77,7 +78,9 @@ export default function ArcLinkScreen() {
     linkId,
     fourWeekGoalId,
     fourWeekWeek,
-  } = useLocalSearchParams<{ id: string; linkId?: string; fourWeekGoalId?: string; fourWeekWeek?: string }>();
+    pdProgramId,
+    pdWeek,
+  } = useLocalSearchParams<{ id: string; linkId?: string; fourWeekGoalId?: string; fourWeekWeek?: string; pdProgramId?: string; pdWeek?: string }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "noTrigger" | "ready">("loading");
   const [arcBuild, setArcBuild] = useState<ArcBuild | null>(null);
   const [arcLink, setArcLink] = useState<ArcLink | null>(null);
@@ -359,6 +362,11 @@ export default function ArcLinkScreen() {
    * ARCHI ARC Link"), logs a kind:"arc_link" practice onto that week and
    * returns to the dashboard; otherwise router.back(), completely
    * unchanged from before this correction.
+   *
+   * Phase 9: pdProgramId/pdWeek is the exact same pattern for a
+   * Personal Development four-week program (only ever a "state"
+   * protocolKind -- see arc/personalDevelopmentProgram.ts's own doc on
+   * why archi_link is state-only).
    */
   async function finishLegacy() {
     if (typeof fourWeekGoalId === "string" && id) {
@@ -370,6 +378,17 @@ export default function ArcLinkScreen() {
         await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
       }
       router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });
+      return;
+    }
+    if (typeof pdProgramId === "string" && id) {
+      const program = await getPersonalDevelopmentProgram(pdProgramId);
+      if (program) {
+        const now = new Date().toISOString();
+        const week = (Number(pdWeek) || program.currentWeek) as FourWeekProgramWeekNumber;
+        const updatedProgram = clearPdReturnContext(addPdPracticeRecord(program, week, "archi_link", "ARCHI ARC Link", now));
+        await upsertPersonalDevelopmentProgram({ ...updatedProgram, updatedAt: now });
+      }
+      router.replace({ pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId } });
       return;
     }
     router.back();

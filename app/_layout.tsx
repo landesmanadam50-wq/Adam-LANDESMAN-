@@ -69,6 +69,11 @@ function handleReminderResponse(response: Notifications.NotificationResponse | n
     if (goalId) router.push({ pathname: "/goals/live/[goalId]", params: { goalId } });
     return;
   }
+  if (kind === "personalDevelopmentProgramWeek") {
+    const programId = typeof data.personalDevelopmentProgramId === "string" ? data.personalDevelopmentProgramId : null;
+    if (programId) router.push({ pathname: "/personal-development-program/live/[id]", params: { id: programId } });
+    return;
+  }
   cancelPendingReminder(kind);
   router.push(resolveReminderRoute(kind));
 }
@@ -119,6 +124,8 @@ export default function RootLayout() {
         <Stack.Screen name="belief-arcs/live/[id]" options={{ title: "ARC Belief LIVE" }} />
         <Stack.Screen name="identity-extension/offer" options={{ title: "המשך לבניית הזהות" }} />
         <Stack.Screen name="identity-extension/live" options={{ title: "בניית הזהות והפעולה" }} />
+        <Stack.Screen name="personal-development-program/index" options={{ title: "תוכניות התפתחות אישית" }} />
+        <Stack.Screen name="personal-development-program/live/[id]" options={{ title: "תוכנית התפתחות אישית" }} />
         <Stack.Screen name="goals/index" options={{ title: "מטרות ARC Goal" }} />
         <Stack.Screen name="goals/[id]" options={{ title: "עריכת מטרה" }} />
         <Stack.Screen name="goals/live/[goalId]" options={{ title: "תוכנית ארבעת השבועות" }} />

@@ -12,7 +12,19 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { generateArcBuildId } from "../arc/types.ts";
-import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcGoalTarget, ArcProgramProgress, BeliefArc, PresenceArc, ThoughtArc, UrgeArc } from "../arc/types.ts";
+import type {
+  ArcBuild,
+  ArcBuildProfile,
+  ArcGoal,
+  ArcGoalTarget,
+  ArcProgramProgress,
+  BeliefArc,
+  PersonalDevelopmentFourWeekProgram,
+  PresenceArc,
+  ThoughtArc,
+  UrgeArc,
+} from "../arc/types.ts";
+import { deletePersonalDevelopmentProgramFromList, upsertPersonalDevelopmentProgramInList } from "../arc/personalDevelopmentProgram.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
@@ -293,6 +305,8 @@ export async function deleteArcGoal(id: string): Promise<void> {
 const ARC_GOAL_TARGETS_KEY = "archi.arcGoalTargets.v1";
 /** Sub-goal execution task: append-only, per-occurrence completion record for a RECURRING ArcGoalTarget -- exact mirror of RoutineOccurrenceCompletion's own shape/guarantees (see that interface's own doc): completing today's occurrence of target A never marks yesterday's, tomorrow's, or any other target's occurrence complete. */
 const ARC_GOAL_TARGET_OCCURRENCE_COMPLETIONS_KEY = "archi.arcGoalTargetOccurrenceCompletions.v1";
+/** Phase 9: Personal Development's own four-week programs -- see arc/personalDevelopmentProgram.ts's own module doc. */
+const PERSONAL_DEVELOPMENT_PROGRAMS_KEY = "archi.personalDevelopmentPrograms.v1";
 
 export async function loadArcGoalTargets(): Promise<ArcGoalTarget[]> {
   const raw = await AsyncStorage.getItem(ARC_GOAL_TARGETS_KEY);
@@ -338,6 +352,50 @@ export async function appendArcGoalTargetOccurrenceCompletion(entry: ArcGoalTarg
   const existing = await loadArcGoalTargetOccurrenceCompletions();
   existing.push(entry);
   await AsyncStorage.setItem(ARC_GOAL_TARGET_OCCURRENCE_COMPLETIONS_KEY, JSON.stringify(existing));
+}
+
+/**
+ * Phase 9: Personal Development's own four-week programs -- a brand-new,
+ * independent collection, entirely separate from ARC_GOALS_KEY (never
+ * read/written by it, and vice versa -- see
+ * arc/personalDevelopmentProgram.ts's own module doc on why this is a
+ * new top-level entity rather than nested onto ArcGoal or any of the
+ * five protocol record types). No legacy migration: there is no prior
+ * data format for this, so an absent key simply means "no Personal
+ * Development programs yet".
+ */
+export async function loadPersonalDevelopmentPrograms(): Promise<PersonalDevelopmentFourWeekProgram[]> {
+  const raw = await AsyncStorage.getItem(PERSONAL_DEVELOPMENT_PROGRAMS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PersonalDevelopmentFourWeekProgram[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored Personal Development programs are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveArcGoals' own style. */
+export async function savePersonalDevelopmentPrograms(programs: PersonalDevelopmentFourWeekProgram[]): Promise<void> {
+  await AsyncStorage.setItem(PERSONAL_DEVELOPMENT_PROGRAMS_KEY, JSON.stringify(programs));
+}
+
+export async function getPersonalDevelopmentProgram(id: string): Promise<PersonalDevelopmentFourWeekProgram | null> {
+  const programs = await loadPersonalDevelopmentPrograms();
+  return programs.find((program) => program.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/personalDevelopmentProgram.ts's upsertPersonalDevelopmentProgramInList. Updates the one matching program in place, never touching any other program's own fields, or appends it as new. */
+export async function upsertPersonalDevelopmentProgram(program: PersonalDevelopmentFourWeekProgram): Promise<void> {
+  const programs = await loadPersonalDevelopmentPrograms();
+  await savePersonalDevelopmentPrograms(upsertPersonalDevelopmentProgramInList(programs, program));
+}
+
+/** Removes exactly the one matching program (by id) -- a no-op if the id doesn't match any program. Never touches the underlying protocol record this program merely referenced. */
+export async function deletePersonalDevelopmentProgram(id: string): Promise<void> {
+  const programs = await loadPersonalDevelopmentPrograms();
+  await savePersonalDevelopmentPrograms(deletePersonalDevelopmentProgramFromList(programs, id));
 }
 
 /**
@@ -867,7 +925,15 @@ export async function clearTimerRun(timerType: TimerType): Promise<void> {
  * play PendingReminder's role instead, one pair per entity -- see
  * data/lifeManifestReminders.ts.
  */
-export type ReminderKind = "focusSuccess" | "arc" | "routine" | "lifeManifestSubGoal" | "lifeManifestTarget" | "arcGoalTarget" | "fourWeekProgramWeek";
+export type ReminderKind =
+  | "focusSuccess"
+  | "arc"
+  | "routine"
+  | "lifeManifestSubGoal"
+  | "lifeManifestTarget"
+  | "arcGoalTarget"
+  | "fourWeekProgramWeek"
+  | "personalDevelopmentProgramWeek";
 
 export interface PendingReminder {
   kind: ReminderKind;

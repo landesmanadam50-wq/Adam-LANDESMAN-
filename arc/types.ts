@@ -1635,6 +1635,101 @@ export interface ArcGoalFourWeekProgram {
   returnContext: ArcGoalSupportReturnContext | null;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 9: Personal Development's own four-week program -- deliberately
+// NOT nested on ArcGoal (that stays exactly as it is above, untouched)
+// and deliberately NOT nested on ArcBuild/UrgeArc/ThoughtArc/PresenceArc/
+// BeliefArc either (would mean touching five unrelated record types for
+// one feature). Its own independent, top-level entity instead
+// (data/storage.ts's own CRUD list), referencing whichever ONE saved
+// protocol record it tracks via protocolKind+protocolId -- never a
+// second/duplicated copy of that record's own content. Reuses
+// FourWeekProgramWeekNumber/FourWeekProgramWeekStatus verbatim (already
+// fully generic, no ArcGoal-specific meaning) but deliberately does NOT
+// reuse ArcGoalProgramWeek/ArcGoalWeekPracticeRecord/
+// ArcGoalSupportReturnContext (those carry ArcGoal-specific
+// practice-kind vocabulary and fields like dateExtensions/reflection
+// this simpler program never needs -- see
+// arc/personalDevelopmentProgram.ts's own module doc for the full
+// reasoning).
+// ---------------------------------------------------------------------------
+
+/** Which real, already-existing protocol record this program tracks -- never a duplicated copy of it. */
+export type PersonalDevelopmentProtocolKind = "state" | "urge" | "thought" | "presence" | "belief";
+
+/**
+ * Full/Mini/Link practice kinds this program tracks, deliberately
+ * distinct from ArcGoalWeekPracticeRecord.kind's own vocabulary (this
+ * program is never confused with an ArcGoal one, even where both exist
+ * for the same trainee): "full" (the real Full protocol), "mini" (the
+ * real ARC Mini), "archi_link" (the guided ARCHI Link rehearsal --
+ * Week 1's own with_archi rehearsal of the full response), "mini_link"
+ * (ARC Mini Link rehearsal, guided in Week 1-2 or speed/fluency in
+ * Week 3-4 -- see arc/personalDevelopmentProgram.ts's own doc on why
+ * this is a copy/tracking distinction only, never a second rehearsal
+ * mechanism), "action" (the direct "I performed the real action"
+ * confirmation, Week 4's own independent-performance record).
+ */
+export interface PersonalDevelopmentWeekPracticeRecord {
+  id: string;
+  kind: "full" | "mini" | "archi_link" | "mini_link" | "action";
+  label: string;
+  occurredAt: string;
+}
+
+/**
+ * One week's own schedule/progress -- deliberately simpler than
+ * ArcGoalProgramWeek (no manual date-cascade editing, no dateExtensions,
+ * no weekly reflection): the PD spec never asks for either, and adding
+ * them would be scope this program doesn't need. Reuses
+ * FourWeekProgramWeekStatus/FourWeekProgramWeekNumber verbatim.
+ */
+export interface PersonalDevelopmentProgramWeek {
+  weekNumber: FourWeekProgramWeekNumber;
+  plannedStartDate: string | null;
+  plannedEndDate: string | null;
+  remindersEnabled: boolean;
+  reminderNotificationId: string | null;
+  reminderScheduledFor: string | null;
+  status: FourWeekProgramWeekStatus;
+  actualCompletedAt: string | null;
+  practiceRecords: PersonalDevelopmentWeekPracticeRecord[];
+}
+
+/** Saved right before leaving the LIVE dashboard for a support flow (Full/Mini/Link) -- mirrors ArcGoalSupportReturnContext's own reasoning, kept as its own separate type (never conflated with the ArcGoal one, even though both can exist for the same trainee at once). */
+export interface PersonalDevelopmentSupportReturnContext {
+  week: FourWeekProgramWeekNumber;
+  actionLabel: string;
+  savedAt: string;
+}
+
+/**
+ * One trainee-created four-week program tracking ONE real, already-saved
+ * protocol record (protocolKind+protocolId) -- never a duplicate of that
+ * record's own content. linkedMiniArcId is this program's own resolved
+ * ARC Mini reference (a MiniArcBuild whose own protocolKind/
+ * parentArcBuildId already matches protocolKind/protocolId) -- resolved
+ * once at creation/refresh time, never a second, independently-editable
+ * copy of that relationship (see arc/personalDevelopmentProgram.ts's
+ * resolveLinkedMiniArc). null means no compatible ARC Mini exists yet --
+ * the spec's own "offer a clear path to create/configure the ARC Mini,
+ * never invent Mini content" case.
+ */
+export interface PersonalDevelopmentFourWeekProgram {
+  id: string;
+  protocolKind: PersonalDevelopmentProtocolKind;
+  protocolId: string;
+  name: string;
+  linkedMiniArcId: string | null;
+  currentWeek: FourWeekProgramWeekNumber;
+  weeks: [PersonalDevelopmentProgramWeek, PersonalDevelopmentProgramWeek, PersonalDevelopmentProgramWeek, PersonalDevelopmentProgramWeek];
+  startedAt: string | null;
+  completedAt: string | null;
+  returnContext: PersonalDevelopmentSupportReturnContext | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /**
  * Sub-goal execution task (Phase 5, the "later phase" ArcGoalFourWeekProgram.
  * readyForSubGoalActivation was always meant to unlock): an ArcGoal's OWN
@@ -1838,6 +1933,16 @@ export function generateArcGoalUrgeMappingId(): string {
 /** Same id-pattern for a Four-Week Program practice/action record, scoped within its own week. */
 export function generateArcGoalWeekPracticeRecordId(): string {
   return `arcgoalweekpractice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Phase 9: same stable-id-string pattern for a new PersonalDevelopmentFourWeekProgram. */
+export function generatePersonalDevelopmentProgramId(): string {
+  return `pdprogram-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Phase 9: same id-pattern for a Personal Development week's own practice record, scoped within its own week -- a distinct prefix from generateArcGoalWeekPracticeRecordId so the two are never confused. */
+export function generatePersonalDevelopmentWeekPracticeRecordId(): string {
+  return `pdweekpractice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /** Sub-goal execution task: same stable-id-string pattern for a new ArcGoalSubGoal. */

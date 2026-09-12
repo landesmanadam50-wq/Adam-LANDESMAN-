@@ -3,9 +3,10 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
-import { appendSessionLogEntry, getThoughtArc, loadMiniArcBuilds, upsertThoughtArc } from "../data/storage.ts";
+import { appendSessionLogEntry, getPersonalDevelopmentProgram, getThoughtArc, loadMiniArcBuilds, upsertPersonalDevelopmentProgram, upsertThoughtArc } from "../data/storage.ts";
 import { saveUsefulInsightToThoughtArc } from "../arc/thoughtArcs.ts";
-import type { ThoughtArc, ThoughtModality, ThoughtTimeOrientation } from "../arc/types.ts";
+import { addPracticeRecord, clearReturnContext } from "../arc/personalDevelopmentProgram.ts";
+import type { FourWeekProgramWeekNumber, ThoughtArc, ThoughtModality, ThoughtTimeOrientation } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import {
   createEmptyMiniThoughtLiveState,
@@ -49,9 +50,20 @@ type Status = "loading" | "notFound" | "modeChoice" | "runningFull" | "runningMi
  * Phase 3 is explicitly out of scope this phase (spec: "except for the
  * minimum shared context and return routing required for ARC
  * Thought").
+ *
+ * Phase 9 (four-week program integration): optional `mode`/`pdProgramId`/
+ * `pdWeek` -- same shape and reasoning as live/UrgeArcLiveScreen.tsx's own
+ * Phase 9 doc comment.
  */
 export default function ThoughtArcLiveScreen() {
-  const { id, goalId } = useLocalSearchParams<{ id: string; goalId?: string }>();
+  const { id, goalId, mode, pdProgramId, pdWeek } = useLocalSearchParams<{
+    id: string;
+    goalId?: string;
+    mode?: "full" | "mini";
+    pdProgramId?: string;
+    pdWeek?: string;
+  }>();
+  const hasPd = typeof pdProgramId === "string" && pdProgramId.length > 0;
   const [status, setStatus] = useState<Status>("loading");
   const [thoughtArc, setThoughtArc] = useState<ThoughtArc | null>(null);
   const [linkedMini, setLinkedMini] = useState<MiniArcBuild | null>(null);
@@ -85,20 +97,38 @@ export default function ThoughtArcLiveScreen() {
         setPendingText("");
         setPendingSecondaryText("");
         setSessionStartedAt(new Date().toISOString());
-        setStatus(mini ? "modeChoice" : "runningFull");
+        if (mode === "mini" && mini) setStatus("runningMini");
+        else if (mode === "full") setStatus("runningFull");
+        else setStatus(mini ? "modeChoice" : "runningFull");
       });
       return () => {
         cancelled = true;
       };
-    }, [id])
+    }, [id, mode])
   );
 
-  function finalizeCompletion() {
+  async function recordPdPracticeIfNeeded(kind: "full" | "mini") {
+    if (!hasPd || typeof pdProgramId !== "string") return;
+    const program = await getPersonalDevelopmentProgram(pdProgramId);
+    if (!program) return;
+    const now = new Date().toISOString();
+    const week = (Number(pdWeek) || program.currentWeek) as FourWeekProgramWeekNumber;
+    const label = kind === "full" ? "ARC Thought מלא" : "ARC Mini Thought";
+    const updated = clearReturnContext(addPracticeRecord(program, week, kind, label, now));
+    await upsertPersonalDevelopmentProgram({ ...updated, updatedAt: now });
+  }
+
+  function finalizeCompletion(kind: "full" | "mini") {
     const finishedAt = new Date().toISOString();
     appendSessionLogEntry({ id: `thought_${sessionStartedAt}_${finishedAt}`, startedAt: sessionStartedAt, finishedAt, success: true, fall: false });
+    recordPdPracticeIfNeeded(kind);
   }
 
   function returnAfterCompletion() {
+    if (hasPd && typeof pdProgramId === "string") {
+      router.replace({ pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId } });
+      return;
+    }
     if (typeof goalId === "string" && goalId.length > 0) {
       router.replace({ pathname: "/goals/live/[goalId]", params: { goalId } });
       return;
@@ -114,7 +144,6 @@ export default function ThoughtArcLiveScreen() {
     setPendingText("");
     setPendingSecondaryText("");
     if (hop.stage === "complete") {
-      finalizeCompletion();
       // Spec sections 13/22: a LIVE-found useful insight is saved back
       // onto the ThoughtArc so future Full/Mini sessions can reuse it
       // without asking again -- never for a "not now" answer, and never
@@ -123,6 +152,7 @@ export default function ThoughtArcLiveScreen() {
         const updated = saveUsefulInsightToThoughtArc(thoughtArc, hop.state.usefulInsightText, new Date().toISOString());
         upsertThoughtArc(updated);
       }
+      finalizeCompletion("full");
       setStatus("completeFull");
     }
   }
@@ -133,7 +163,7 @@ export default function ThoughtArcLiveScreen() {
     setMiniStage(hop.stage);
     setMiniState(hop.state);
     if (hop.stage === "complete") {
-      finalizeCompletion();
+      finalizeCompletion("mini");
       setStatus("completeMini");
     }
   }
@@ -210,12 +240,17 @@ export default function ThoughtArcLiveScreen() {
             <>
               <Pressable
                 style={[styles.button, styles.fullWidthButton]}
-                onPress={() => router.push({ pathname: "/identity-extension/offer", params: { returnTo: "/self-development" } })}
+                onPress={() =>
+                  router.push({
+                    pathname: "/identity-extension/offer",
+                    params: { returnTo: hasPd && typeof pdProgramId === "string" ? `/personal-development-program/live/${pdProgramId}` : "/self-development" },
+                  })
+                }
               >
                 <Text style={styles.buttonText}>כן, להמשיך לבניית הזהות</Text>
               </Pressable>
               <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={returnAfterCompletion}>
-                <Text style={styles.secondaryButtonText}>לא, סיימתי</Text>
+                <Text style={styles.secondaryButtonText}>{hasPd ? "לא, סיימתי -- חזרה לתוכנית" : "לא, סיימתי"}</Text>
               </Pressable>
             </>
           )}
