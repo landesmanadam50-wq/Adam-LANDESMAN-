@@ -100,6 +100,23 @@ export function getFirstUrgeLiveStage(): UrgeLiveStage {
   return "recognition";
 }
 
+/**
+ * Phase 7 (ARC State composition), spec section 9.2 ("Urge Encoding:
+ * Reuse only the representation-based Encoding part of ARC Urge... Do
+ * not rerun Urge Stay, Acceptance or Regulation"): the entry point a
+ * combined ARC State session uses once it has already run its own
+ * shared Recognition (which captures the urge + its representation
+ * preference, per that spec's own "Urge recognition" section),
+ * combined Awareness/Stay/Acceptance, and shared Regulation -- starts
+ * this exact same engine directly at "encode", never repeating
+ * recognition/representation/preventive_action/stay/accept/regulate.
+ * Standalone Full ARC Urge is completely unaffected -- getFirstUrgeLiveStage
+ * above still starts every independent session at "recognition".
+ */
+export function getFirstEmbeddedUrgeLiveStage(): UrgeLiveStage {
+  return "encode";
+}
+
 export interface UrgeLiveStageResult {
   stage: UrgeLiveStage;
   state: UrgeLiveState;

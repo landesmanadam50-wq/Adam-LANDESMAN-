@@ -3,11 +3,13 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcGoal, getMiniArcBuild, upsertArcGoal } from "../data/storage.ts";
+import { getArcBuild, getArcGoal, getBeliefArc, getMiniArcBuild, getThoughtArc, getUrgeArc, upsertArcGoal } from "../data/storage.ts";
 import { getMiniArcPersistentColorLine, getMiniArcStageCopy, getNextMiniArcStage } from "../arc/miniArc.ts";
 import type { MiniArcBuild, MiniArcStage } from "../arc/miniArc.ts";
 import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
 import type { FourWeekProgramWeekNumber } from "../arc/types.ts";
+import { resolveMiniStateEncodingContent } from "../arc/stateLive.ts";
+import type { MiniStateEncodingContent } from "../arc/stateLive.ts";
 
 /**
  * live/MiniArcLiveScreen.tsx (route: /mini-arc/live/[id])
@@ -42,11 +44,13 @@ export default function MiniArcLiveScreen() {
   const [build, setBuild] = useState<MiniArcBuild | null>(null);
   const [stage, setStage] = useState<MiniArcStage>("pause");
   const [currentStateText, setCurrentStateText] = useState("");
+  /** Phase 7 (ARC State composition), spec section 16: resolved only for a protocolKind:"state" Mini with a configured miniStatePrimaryComponent -- null for every other Mini (the overwhelming majority), leaving the existing generic "encoding" copy completely untouched. */
+  const [miniStateEncodingOverride, setMiniStateEncodingOverride] = useState<MiniStateEncodingContent | null>(null);
 
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    getMiniArcBuild(id).then((existing) => {
+    getMiniArcBuild(id).then(async (existing) => {
       if (cancelled) return;
       if (!existing) {
         setStatus("notFound");
@@ -54,6 +58,16 @@ export default function MiniArcLiveScreen() {
       }
       setBuild(existing);
       setStatus("ready");
+      if (existing.protocolKind === "state" && existing.miniStatePrimaryComponent && existing.miniStatePrimaryComponent !== "emotion" && existing.parentArcBuildId) {
+        const parentBuild = await getArcBuild(existing.parentArcBuildId);
+        const [linkedUrgeArc, linkedThoughtArc, linkedBeliefArc] = await Promise.all([
+          parentBuild?.profile.linkedUrgeArcId ? getUrgeArc(parentBuild.profile.linkedUrgeArcId) : Promise.resolve(null),
+          parentBuild?.profile.linkedThoughtArcId ? getThoughtArc(parentBuild.profile.linkedThoughtArcId) : Promise.resolve(null),
+          parentBuild?.profile.linkedBeliefArcId ? getBeliefArc(parentBuild.profile.linkedBeliefArcId) : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
+        setMiniStateEncodingOverride(resolveMiniStateEncodingContent(existing, linkedUrgeArc, linkedThoughtArc, linkedBeliefArc));
+      }
     });
     return () => {
       cancelled = true;
@@ -100,7 +114,8 @@ export default function MiniArcLiveScreen() {
     );
   }
 
-  const copy = getMiniArcStageCopy(stage, build);
+  const baseCopy = getMiniArcStageCopy(stage, build);
+  const copy = stage === "encoding" && miniStateEncodingOverride ? { ...baseCopy, body: miniStateEncodingOverride.body, secondaryBody: miniStateEncodingOverride.secondaryBody } : baseCopy;
   const persistentColorLine = getMiniArcPersistentColorLine(build);
 
   return (

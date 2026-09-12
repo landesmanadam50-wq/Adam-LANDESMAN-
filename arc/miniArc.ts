@@ -26,7 +26,7 @@
 
 import { bodyImageryFromCustomFields } from "./bodyImagery.ts";
 import type { ArcLinkSettings, BodyImagery } from "./bodyImagery.ts";
-import type { UrgeRepresentationPreference } from "./types.ts";
+import type { ArcStateComponentKind, UrgeRepresentationPreference } from "./types.ts";
 
 /** Never renders "undefined"/"null"/"[object Object]" for a value that -- despite MiniArcBuild's type -- turns out missing or malformed after JSON.parse of a corrupted/legacy record. Always returns a plain, trimmed string (possibly empty). */
 export function safeText(value: unknown): string {
@@ -159,6 +159,18 @@ export interface MiniArcBuild {
    * default ("על מה אתה מודה לעצמך בעקבות הפעולה?").
    */
   miniGratitudePrompt?: string | null;
+  /**
+   * Phase 7 (ARC State composition), spec section 16 ("allow a primary
+   * component to be configured for the Mini route"): for a Mini whose
+   * protocolKind is "state", which single component's recognition/
+   * Encoding content this ARC Mini State shows -- keeps the Mini
+   * genuinely short by never trying to combine several components'
+   * worth of content the way Full ARC State's own Encoding sequence
+   * does. null (every Mini saved before this field existed, and every
+   * non-"state" kind) means the existing, unmodified generic Mini ARC
+   * behavior -- see arc/stateLive.ts's resolveMiniStateEncodingContent.
+   */
+  miniStatePrimaryComponent?: ArcStateComponentKind | null;
 }
 
 /**

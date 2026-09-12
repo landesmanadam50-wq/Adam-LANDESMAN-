@@ -158,6 +158,12 @@ export default function ArcBuildEditorScreen() {
 
         <ArcBuildProfileForm target={activeTarget} draft={draft} setDraft={setDraft} evidenceIndex={evidenceIndex} />
 
+        {activeTarget === "state" && build && (
+          <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.push({ pathname: "/arc-state-composition/[id]", params: { id: build.id } })}>
+            <Text style={styles.buttonText}>הרכבת ARC State (דחף, מחשבה, אמונה)</Text>
+          </Pressable>
+        )}
+
         {!complete && <Text style={styles.errorText}>יש להשלים את כל השדות הנדרשים לפני השמירה (כולל צבע אנרגיה וכלי ויסות).</Text>}
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}
         <Pressable style={[styles.button, styles.fullWidthButton, !complete && styles.buttonDisabled]} disabled={!complete} onPress={finishAndSave}>
@@ -184,4 +190,5 @@ const styles = StyleSheet.create({
   fullWidthButton: { marginTop: 16 },
   buttonDisabled: { opacity: 0.4 },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+  secondaryButton: { backgroundColor: "#3d8fa8" },
 });

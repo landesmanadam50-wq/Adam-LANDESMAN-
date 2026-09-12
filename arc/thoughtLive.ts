@@ -151,6 +151,27 @@ export function getFirstThoughtLiveStage(): ThoughtLiveStage {
   return "opening_decision";
 }
 
+/**
+ * Phase 7 (ARC State composition), spec section 9.3 ("Thought Encoding:
+ * Reuse only the post-Regulation Thought decision and Encoding. Ask:
+ * 'האם אתה יכול למצוא...'"): the entry point a combined ARC State
+ * session uses once it has already run its own shared Recognition
+ * (which captures the current thought + modality, per that spec's own
+ * "Thought recognition" section), combined Awareness/Stay/Acceptance,
+ * and shared Regulation -- starts this exact same engine directly at
+ * "useful_insight_decision" (the disturbing-route's own "did you find
+ * something useful" question, immediately followed by its existing
+ * useful_insight_entry/supportive_fallback -> encoding tail), never
+ * repeating opening_decision/recognition/modality/emotion/
+ * time_orientation/breathing_stay/acceptance/flexible_attention_1/2.
+ * Standalone Full ARC Thought is completely unaffected --
+ * getFirstThoughtLiveStage above still starts every independent
+ * session at "opening_decision".
+ */
+export function getFirstEmbeddedThoughtLiveStage(): ThoughtLiveStage {
+  return "useful_insight_decision";
+}
+
 export interface ThoughtLiveStageResult {
   stage: ThoughtLiveStage;
   state: ThoughtLiveState;

@@ -724,6 +724,26 @@ export interface ArcBuildProfile {
   identitySuccessfulPerformanceCustomQuality?: string | null;
   identitySuccessfulPerformanceResult?: string | null;
   identitySuccessMantra?: string | null;
+
+  /**
+   * Phase 7 (ARC State composition): which additional components
+   * (Urge/Thought/Belief, alongside the state layer's own always-
+   * implicit "emotion" recognition) this ArcBuild's ARC State session
+   * may combine, and which of those are selected by default -- see
+   * arc/arcStateComposer.ts's own module doc for the full architecture.
+   * Only meaningful when this ArcBuild targets the "state" layer
+   * (needsState); ignored otherwise. null/undefined (every ArcBuild
+   * saved before this field existed, and any "state" build the trainee
+   * never configured for composition) means the existing, unmodified
+   * single-component route -- arc/arcStateComposer.ts's own
+   * resolveEffectiveArcStateComponents treats this identically to an
+   * explicit { available: ["emotion"], defaultSelected: ["emotion"] }.
+   */
+  stateComposition?: ArcStateComposition | null;
+  /** Phase 7: which saved UrgeArc/ThoughtArc/BeliefArc this ArcBuild's ARC State reuses for its "urge"/"thought"/"belief" embedded components -- a reference only, never a duplicate of that record's own content (same "reference, never duplicate" convention as ArcGoal's own interferingMappings). null means that component, even if selected in stateComposition, has no linked record to pull recognition/Encoding content from yet (arc/arcStateComposer.ts's embedded resolvers fall back to a safe anchor-only default, never inventing content, never crashing). */
+  linkedUrgeArcId?: string | null;
+  linkedThoughtArcId?: string | null;
+  linkedBeliefArcId?: string | null;
 }
 
 /**
@@ -801,7 +821,41 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     identitySuccessfulPerformanceCustomQuality: null,
     identitySuccessfulPerformanceResult: null,
     identitySuccessMantra: null,
+    stateComposition: null,
+    linkedUrgeArcId: null,
+    linkedThoughtArcId: null,
+    linkedBeliefArcId: null,
   };
+}
+
+/**
+ * Phase 7 (ARC State composition): the four components a combined ARC
+ * State session may recognize/encode -- "emotion" is the state layer's
+ * own always-present recognition (the existing, unmodified sensation/
+ * state Awareness+Encoding this app has always had), never itself
+ * optional/deselectable; "urge"/"thought"/"belief" are the OPTIONAL
+ * additional components a trainee (or coach) may choose to combine in.
+ * Presence is deliberately NOT a member here -- per the saved spec,
+ * "Presence is the shared Awareness/Stay/Acceptance/Regulation support
+ * layer rather than another full protocol," i.e. it's what the SHARED
+ * blocks below already use (arc/arcEngine.ts's existing presence_check/
+ * arc_thought_* stages), never a selectable fourth component.
+ */
+export type ArcStateComponentKind = "emotion" | "urge" | "thought" | "belief";
+
+/**
+ * BUILD-configured composition for one "state"-target ArcBuild: which
+ * components MAY be combined this program (offered as LIVE's "מה
+ * מעורב במצב הזה כרגע?" multi-select), and which are pre-selected by
+ * default. "emotion" is always implicitly available/selected even if a
+ * trainee never explicitly adds it (arc/arcStateComposer.ts's own
+ * resolveEffectiveArcStateComponents guarantees this), so it is never
+ * required to appear in either array for correctness -- BUILD screens
+ * may still show it as an always-on chip for clarity.
+ */
+export interface ArcStateComposition {
+  available: ArcStateComponentKind[];
+  defaultSelected: ArcStateComponentKind[];
 }
 
 /** Same stable-id-string pattern already used for ScheduledRoutine (arc/routines.ts's generateRoutineId) -- unique per build, never derived from array position, so an ArcBuild's identity survives reordering/deletion of any other build. */

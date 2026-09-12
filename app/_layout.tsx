@@ -91,6 +91,7 @@ export default function RootLayout() {
         <Stack.Screen name="reach-your-goal/index" options={{ title: "השגת מטרה" }} />
         <Stack.Screen name="build/index" options={{ title: "ARC Builds" }} />
         <Stack.Screen name="build/[id]" options={{ title: "עריכת ARC Build" }} />
+        <Stack.Screen name="arc-state-composition/[id]" options={{ title: "הרכבת ARC State" }} />
         <Stack.Screen name="live/index" options={{ title: "ARCHI LIVE" }} />
         <Stack.Screen name="stats/index" options={{ title: "התקדמות שבועית" }} />
         <Stack.Screen name="focus-success" options={{ title: "התמקדות בהצלחה" }} />
