@@ -65,6 +65,7 @@ import {
   TriggerSelectScreen,
   UrgeCheckScreen,
 } from "./screens.tsx";
+import { ComposedEncodingScreen } from "./ComposedEncodingScreen.tsx";
 
 const BODY_LOCATIONS = ["חזה", "בטן", "גרון", "כתפיים", "ראש"];
 const ALTERNATIVE_ACTION_DURATION_MINUTES = [5, 10, 15, 20, 30];
@@ -442,8 +443,25 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       return <DesiredStateRatingScreen copy={copy} onSelect={props.onScaleAnswer} />;
     }
 
-    case "encode":
+    case "encode": {
+      // Phase 7 (ARC State composition): a "state"-target build whose
+      // trainee/coach configured extra components (Urge/Thought/Belief,
+      // via build/ArcStateCompositionScreen.tsx) runs the combined,
+      // protocol-specific Encoding sequence instead of the plain
+      // existing EncodingScreen -- every OTHER build (no
+      // stateComposition configured at all, the overwhelming majority
+      // today) keeps rendering EncodingScreen exactly as it always has.
+      // ComposedEncodingScreen's own onComplete just forwards into the
+      // SAME onGenericContinue this stage has always used, so the
+      // existing "encode" -> "act" transition (Desired State Encoding
+      // already having run via this component itself before reaching
+      // the caller) is completely unmodified.
+      const hasComposedComponents = Boolean(profile.stateComposition && profile.stateComposition.available.some((kind) => kind !== "emotion"));
+      if (hasComposedComponents) {
+        return <ComposedEncodingScreen key={stage} profile={profile} onComplete={props.onGenericContinue} />;
+      }
       return <EncodingScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
+    }
 
     case "act": {
       // Which of the "act" stage's three sub-phases to show -- same
