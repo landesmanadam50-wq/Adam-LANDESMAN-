@@ -11,6 +11,7 @@ import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { findSubGoalOwner } from "../arc/lifeManifest.ts";
 import type { SubGoalOwner } from "../arc/lifeManifest.ts";
 import CollapsibleSection from "./CollapsibleSection.tsx";
+import ArcGoalSubGoalsSection from "./ArcGoalSubGoalsSection.tsx";
 import { isValidCalendarDateString, todayLocalDateString } from "../program/dateUtils.ts";
 import { createFourWeekProgram, FOUR_WEEK_META, FOUR_WEEK_PROGRAM_WEEK_NUMBERS, resolveNextWeekOpeningDate, resolveWeek, setWeekEndDate, setWeekStartDate } from "../arc/fourWeekProgram.ts";
 
@@ -324,6 +325,12 @@ export default function ArcGoalEditorScreen() {
                 onReloadMiniArcs={reloadUrgeArcsAndMiniArcs}
               />
             )}
+          </View>
+        </CollapsibleSection>
+
+        <CollapsibleSection title={`תת־מטרות ויעדים${(goal.subGoals ?? []).length > 0 ? ` (${(goal.subGoals ?? []).length})` : ""}`}>
+          <View style={styles.sectionBody}>
+            <ArcGoalSubGoalsSection goal={goal} onPatchGoal={patchGoal} />
           </View>
         </CollapsibleSection>
 

@@ -57,6 +57,16 @@ export function duplicateArcGoal(goal: ArcGoal, newId: string, now: string): Arc
     // dates, or practice history. The trainee enables/configures its
     // own program from scratch, same as any newly-created ArcGoal.
     fourWeekProgram: null,
+    // Sub-goal execution task: same "brand-new, never a continuation"
+    // rule -- a duplicate never inherits another goal's phase, execution
+    // progress, or in-flight support return context. Sub-goals/targets
+    // themselves are a SEPARATE, flat-stored entity (ArcGoalTarget) keyed
+    // by arcGoalId, so a duplicate goal starting with subGoals: [] never
+    // orphans or duplicates the original's own targets.
+    phase: null,
+    subGoals: [],
+    executionReturnContext: null,
+    executionCompletedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -107,5 +117,13 @@ export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
     // never silently invented/enabled. See ArcGoal.fourWeekProgram's
     // own doc.
     fourWeekProgram: goal.fourWeekProgram ?? null,
+    // Sub-goal execution task: every ArcGoal saved before these fields
+    // existed backfills to their safe, inert defaults -- "preserve
+    // existing sub-goal behavior" for a legacy goal means exactly this:
+    // no phase, no sub-goals, nothing auto-activates.
+    phase: goal.phase ?? null,
+    subGoals: goal.subGoals ?? [],
+    executionReturnContext: goal.executionReturnContext ?? null,
+    executionCompletedAt: goal.executionCompletedAt ?? null,
   };
 }

@@ -364,3 +364,26 @@ export function computeOverallProgress(program: ArcGoalFourWeekProgram): number 
   const total = program.weeks.reduce((sum, week) => sum + computeWeekProgress(week), 0);
   return Math.round(total / 4);
 }
+
+/** A week's own reminder fires once, at a fixed 9:00 local time on its planned start date -- there is no per-week time-of-day field to read (remindersEnabled is a plain toggle, spec section 9's "without changing their existing UI"). */
+const WEEK_REMINDER_HOUR = 9;
+
+/**
+ * Sub-goal execution task, spec section 9 ("Also wire the four-week
+ * reminder toggles created in Phase 4 to real notifications"): the pure
+ * "when should this week's reminder fire" decision, mirroring
+ * isValidCalendarDateString-guarded date reads used throughout this
+ * file. Returns null (never schedule) when remindersEnabled is off, the
+ * week has no valid plannedStartDate, or that date's own 9:00 moment has
+ * already passed -- "Do not schedule reminders in the past" is satisfied
+ * by simply never producing a past moment here; there is no time-of-day
+ * picker on this toggle to instead ask the trainee to pick a future
+ * time.
+ */
+export function resolveWeekReminderFireAt(week: ArcGoalProgramWeek, now: Date = new Date()): Date | null {
+  if (!week.remindersEnabled) return null;
+  if (!isValidCalendarDateString(week.plannedStartDate)) return null;
+  const fireAt = new Date(`${week.plannedStartDate}T00:00:00`);
+  fireAt.setHours(WEEK_REMINDER_HOUR, 0, 0, 0);
+  return fireAt.getTime() > now.getTime() ? fireAt : null;
+}

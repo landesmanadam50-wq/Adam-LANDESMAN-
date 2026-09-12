@@ -182,6 +182,10 @@ export interface ScheduleReminderNotificationInput {
   arcRequested: boolean;
   /** Only meaningful for kind "routine" (data/storage.ts's ScheduledRoutine) -- which specific routine this notification belongs to, so tapping it (app/_layout.tsx's handleReminderResponse) opens the correct routine's LIVE flow rather than a generic one. Omitted for every other kind. */
   routineId?: string;
+  /** Sub-goal execution task: only meaningful for kind "arcGoalTarget" -- which specific ArcGoalTarget this notification belongs to, so tapping it deep-links straight to that target's own screen (spec section 9: "Deep-link to the exact target"), never a generic one. Omitted for every other kind. */
+  targetId?: string;
+  /** Sub-goal execution task: only meaningful for kind "fourWeekProgramWeek" -- which ArcGoal's own four-week dashboard to open. Omitted for every other kind. */
+  arcGoalId?: string;
 }
 
 /**
@@ -216,6 +220,8 @@ export async function scheduleReminderNotification(input: ScheduleReminderNotifi
           kind: input.kind,
           arcRequested: input.arcRequested,
           ...(input.routineId !== undefined ? { routineId: input.routineId } : {}),
+          ...(input.targetId !== undefined ? { targetId: input.targetId } : {}),
+          ...(input.arcGoalId !== undefined ? { arcGoalId: input.arcGoalId } : {}),
         },
       },
       trigger: {
