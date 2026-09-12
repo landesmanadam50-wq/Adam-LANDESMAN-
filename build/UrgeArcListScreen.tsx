@@ -15,12 +15,15 @@ import type { UrgeArc } from "../arc/types.ts";
  * ARC_URGE_ARCS_KEY, completely separate from ARC_BUILDS_KEY/
  * MINI_ARC_BUILDS_KEY/ARC_GOALS_KEY) and lets the trainee create, edit,
  * duplicate, delete, and later reference any number of them from an
- * ARC Goal's own urgeMappings (build/ArcGoalEditorScreen.tsx) -- never
- * launched standalone the way a Mini ARC/full ArcBuild session is,
- * since an urge only ever runs bridged from within an ARC Goal
- * session. Reuses build/MiniArcListScreen.tsx's own visual/interaction
- * conventions (row + action-button layout, confirm-delete Modal,
- * styling) but is its own component.
+ * ARC Goal's own urgeMappings (build/ArcGoalEditorScreen.tsx) --
+ * Goal-Achievement sessions still run bridged from within an ARC Goal
+ * session, exactly as before. Phase 3 (Full + Mini ARC Urge
+ * representation encoding) adds a genuine Personal Development
+ * standalone LIVE entry too (live/UrgeArcLiveScreen.tsx, route
+ * /urge-arcs/live/[id]) -- the "LIVE" button below. Reuses
+ * build/MiniArcListScreen.tsx's own visual/interaction conventions (row
+ * + action-button layout, confirm-delete Modal, styling) but is its own
+ * component.
  *
  * "+ הוסף Urge ARC" navigates straight to the editor in create mode
  * (route param id="new", see build/UrgeArcEditorScreen.tsx) -- nothing
@@ -82,6 +85,12 @@ export default function UrgeArcListScreen() {
             <Text style={styles.cardRow}>{`פעולה מיטיבה חלופית: ${urgeArc.beneficialAlternativeAction}`}</Text>
 
             <View style={styles.cardActions}>
+              <Pressable
+                style={styles.actionButton}
+                onPress={() => router.push({ pathname: "/urge-arcs/live/[id]", params: { id: urgeArc.id } })}
+              >
+                <Text style={styles.actionButtonText}>LIVE</Text>
+              </Pressable>
               <Pressable
                 style={styles.actionButton}
                 onPress={() => router.push({ pathname: "/urge-arcs/[id]", params: { id: urgeArc.id } })}

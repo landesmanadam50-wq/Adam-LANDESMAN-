@@ -60,7 +60,9 @@ import {
   getThirdPersonImageryCopy,
   getTriggerIdentificationCopy,
   getUrgeActionConfirmCopy,
+  getUrgeEncodingCopy,
   getUrgeNeedIdentificationCopy,
+  getUrgeRepresentationChoices,
   getUrgeStopActionCopy,
   GOAL_INTERFERING_STATE_SELECT_TITLE,
   needsReassessmentDetour,
@@ -72,15 +74,21 @@ import {
   resolveAfterStateClarificationDecision,
   resolveAfterThirdPersonImagery,
   resolveAfterTriggerIdentification,
+  resolveAfterUrgeEncoding,
   resolveAfterUrgeNeedIdentification,
+  resolveAfterUrgeRepresentation,
   resolveAfterUrgeStopAction,
   resolveExecutionMode,
   resolveSelectedMapping,
   resolveSelectedUrgeMapping,
   selectSupportiveMapping,
   selectUrgeMapping,
+  shouldInterceptInnerAfterRegulate,
+  shouldInterceptInnerAfterSensationCheck,
   shouldInterceptInnerAtAct,
   URGE_NEED_IDENTIFICATION_PRESETS,
+  URGE_REPRESENTATION_QUESTION_BODY,
+  URGE_REPRESENTATION_QUESTION_TITLE,
   URGE_SELECT_TITLE,
   URGE_STOP_ACTION_DONE_LABEL,
   urgeArcToProfile,
@@ -279,6 +287,26 @@ export default function ArcGoalSessionScreen() {
     setGoalState({ ...hop.goalState, uiStage: hop.uiStage });
   }
 
+  /**
+   * Phase 3, spec sections 2-9: resumes the urge inner run once a
+   * representation/preventive-stopping-action/encoding detour finishes
+   * -- when the hop lands back on "inner", applies the ALREADY-COMPUTED
+   * pendingInnerResumeStage as the real innerStage (never re-running
+   * advanceLiveSession, since that transition was already resolved at
+   * interception time in commitAdvanceInner below) and clears it;
+   * otherwise behaves exactly like applyGoalHop (e.g. still routing
+   * urge_representation -> urge_stop_action, where the inner run stays
+   * paused).
+   */
+  function resumeInnerAfterDetour(hop: { uiStage: ArcGoalUiStage; goalState: ArcGoalLiveState }) {
+    if (hop.uiStage === "inner" && hop.goalState.pendingInnerResumeStage) {
+      setInnerStage(hop.goalState.pendingInnerResumeStage);
+      setGoalState({ ...hop.goalState, uiStage: "inner", pendingInnerResumeStage: null });
+      return;
+    }
+    applyGoalHop(hop);
+  }
+
   function commitAdvanceOuter(patchedSession: ArcLiveState, transitionStage: ArcStage = outerStage) {
     if (!identityProfile || !goal) return;
     const { session: nextSession, stage: nextStage } = advanceLiveSession(transitionStage, patchedSession, identityProfile, ["identity"]);
@@ -338,8 +366,27 @@ export default function ArcGoalSessionScreen() {
     if (!ctx) return;
     const { session: nextSession, stage: nextStage } = advanceLiveSession(transitionStage, patchedSession, ctx.profile, ctx.activeLayers);
     clearPendingFields();
+    const route: "urge" | "supportive" = goalState.reassessmentChoice === "urge" ? "urge" : "supportive";
+    // Phase 3, spec sections 2-5: Recognition (sensation_check) has just
+    // resolved -- detour into urge_representation (then, when
+    // configured, the repositioned urge_stop_action) BEFORE letting the
+    // inner run continue toward Stay. nextStage !== transitionStage
+    // confirms sensation_check actually resolved (an unanswered/gated
+    // hop returns itself unchanged -- never intercept that).
+    if (shouldInterceptInnerAfterSensationCheck(route, transitionStage) && nextStage !== transitionStage) {
+      setInnerSession(nextSession);
+      setGoalState((current) => ({ ...current, uiStage: "urge_representation", pendingInnerResumeStage: nextStage }));
+      return;
+    }
+    // Phase 3, spec section 9: Regulation has just resolved -- detour
+    // into the representation-routed urge_encoding screen instead of
+    // rendering the generic habit "encode" stage.
+    if (shouldInterceptInnerAfterRegulate(route, transitionStage) && nextStage !== transitionStage) {
+      setInnerSession(nextSession);
+      setGoalState((current) => ({ ...current, uiStage: "urge_encoding", pendingInnerResumeStage: nextStage }));
+      return;
+    }
     if (shouldInterceptInnerAtAct(nextStage)) {
-      const route: "urge" | "supportive" = goalState.reassessmentChoice === "urge" ? "urge" : "supportive";
       const mapping = route === "urge" ? resolveSelectedUrgeMapping(goal, goalState) : resolveSelectedMapping(goal, goalState);
       const configuredMode = mapping?.executionMode ?? "full";
       const miniArcId = mapping?.miniArcId ?? null;
@@ -687,6 +734,29 @@ export default function ArcGoalSessionScreen() {
     );
   }
 
+  if (goalState.uiStage === "urge_representation") {
+    const mapping = resolveSelectedUrgeMapping(goal, goalState);
+    const urgeArc = mapping ? urgeArcsById[mapping.urgeArcId] : undefined;
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <View style={styles.content}>
+          <Text style={styles.title}>{URGE_REPRESENTATION_QUESTION_TITLE}</Text>
+          <Text style={styles.body}>{URGE_REPRESENTATION_QUESTION_BODY}</Text>
+          {getUrgeRepresentationChoices().map((option) => (
+            <Pressable
+              key={option.value}
+              style={[styles.button, styles.fullWidthButton]}
+              onPress={() => resumeInnerAfterDetour(resolveAfterUrgeRepresentation(goalState, option.value, urgeArc ?? null))}
+            >
+              <Text style={styles.buttonText}>{option.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (goalState.uiStage === "urge_stop_action") {
     const mapping = resolveSelectedUrgeMapping(goal, goalState);
     const urgeArc = mapping ? urgeArcsById[mapping.urgeArcId] : undefined;
@@ -699,9 +769,31 @@ export default function ArcGoalSessionScreen() {
           <Text style={styles.body}>{copy.body}</Text>
           <Pressable
             style={[styles.button, styles.fullWidthButton]}
-            onPress={() => setGoalState((current) => resolveAfterUrgeStopAction(current))}
+            onPress={() => resumeInnerAfterDetour({ uiStage: "inner", goalState: resolveAfterUrgeStopAction(goalState) })}
           >
             <Text style={styles.buttonText}>{URGE_STOP_ACTION_DONE_LABEL}</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "urge_encoding") {
+    const mapping = resolveSelectedUrgeMapping(goal, goalState);
+    const urgeArc = mapping ? urgeArcsById[mapping.urgeArcId] : undefined;
+    const copy = urgeArc ? getUrgeEncodingCopy(urgeArc, goalState.urgeRepresentation ?? "unsure") : { title: "קידוד מותאם", body: "", secondaryBody: null, hint: null, buttonLabel: "המשך" };
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <View style={styles.content}>
+          <Text style={styles.title}>{copy.title}</Text>
+          <Text style={styles.body}>{copy.body}</Text>
+          {copy.secondaryBody && <Text style={styles.body}>{copy.secondaryBody}</Text>}
+          <Pressable
+            style={[styles.button, styles.fullWidthButton]}
+            onPress={() => resumeInnerAfterDetour({ uiStage: "inner", goalState: resolveAfterUrgeEncoding(goalState) })}
+          >
+            <Text style={styles.buttonText}>{copy.buttonLabel}</Text>
           </Pressable>
         </View>
       </SafeAreaView>

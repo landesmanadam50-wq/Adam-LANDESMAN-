@@ -8,7 +8,7 @@
  * stable id.
  */
 
-import type { UrgeArc } from "./types.ts";
+import type { UrgeArc, UrgeRepresentationPreference } from "./types.ts";
 import { generateUrgeArcId } from "./types.ts";
 
 function safeText(value: unknown): string {
@@ -71,6 +71,23 @@ export interface UrgeArcDraft {
   bodyLanguageCue: string;
   encodingMantra: string;
   beneficialAlternativeAction: string;
+  // Phase 3 (Full + Mini ARC Urge representation encoding), spec
+  // section 19 -- see UrgeArc's own field docs (arc/types.ts) for what
+  // each of these means; all optional, all editable here for the first
+  // time (previously typed but "not yet BUILD-editable").
+  representationPreference: UrgeRepresentationPreference;
+  visualEncodingAction: string;
+  alternativeDesiredImage: string;
+  bodilyEncodingAction: string;
+  desiredBodilySensation: string;
+  allowBothEncodingActions: boolean;
+  standardFallbackEncodingAction: string;
+  primaryMiniArcEncodingAction: string;
+  secondaryMiniArcEncodingAction: string;
+  stayMantra: string;
+  acceptanceMantra: string;
+  regulationMantra: string;
+  bridgeMantra: string;
 }
 
 export function createEmptyUrgeArcDraft(): UrgeArcDraft {
@@ -85,6 +102,19 @@ export function createEmptyUrgeArcDraft(): UrgeArcDraft {
     bodyLanguageCue: "",
     encodingMantra: "",
     beneficialAlternativeAction: "",
+    representationPreference: "decide_in_live",
+    visualEncodingAction: "",
+    alternativeDesiredImage: "",
+    bodilyEncodingAction: "",
+    desiredBodilySensation: "",
+    allowBothEncodingActions: false,
+    standardFallbackEncodingAction: "",
+    primaryMiniArcEncodingAction: "",
+    secondaryMiniArcEncodingAction: "",
+    stayMantra: "",
+    acceptanceMantra: "",
+    regulationMantra: "",
+    bridgeMantra: "",
   };
 }
 
@@ -100,6 +130,19 @@ export function draftFromUrgeArc(urgeArc: UrgeArc): UrgeArcDraft {
     bodyLanguageCue: safeText(urgeArc.bodyLanguageCue),
     encodingMantra: safeText(urgeArc.encodingMantra),
     beneficialAlternativeAction: safeText(urgeArc.beneficialAlternativeAction),
+    representationPreference: urgeArc.representationPreference ?? "decide_in_live",
+    visualEncodingAction: safeText(urgeArc.visualEncodingAction),
+    alternativeDesiredImage: safeText(urgeArc.alternativeDesiredImage),
+    bodilyEncodingAction: safeText(urgeArc.bodilyEncodingAction),
+    desiredBodilySensation: safeText(urgeArc.desiredBodilySensation),
+    allowBothEncodingActions: urgeArc.allowBothEncodingActions ?? false,
+    standardFallbackEncodingAction: safeText(urgeArc.standardFallbackEncodingAction),
+    primaryMiniArcEncodingAction: safeText(urgeArc.primaryMiniArcEncodingAction),
+    secondaryMiniArcEncodingAction: safeText(urgeArc.secondaryMiniArcEncodingAction),
+    stayMantra: safeText(urgeArc.stayMantra),
+    acceptanceMantra: safeText(urgeArc.acceptanceMantra),
+    regulationMantra: safeText(urgeArc.regulationMantra),
+    bridgeMantra: safeText(urgeArc.bridgeMantra),
   };
 }
 
@@ -122,6 +165,17 @@ export function buildUrgeArcFromDraft(draft: UrgeArcDraft, id: string, createdAt
   const acceptanceContent = draft.acceptanceContent.trim();
   const bodyLanguageCue = draft.bodyLanguageCue.trim();
   const encodingMantra = draft.encodingMantra.trim();
+  const visualEncodingAction = draft.visualEncodingAction.trim();
+  const alternativeDesiredImage = draft.alternativeDesiredImage.trim();
+  const bodilyEncodingAction = draft.bodilyEncodingAction.trim();
+  const desiredBodilySensation = draft.desiredBodilySensation.trim();
+  const standardFallbackEncodingAction = draft.standardFallbackEncodingAction.trim();
+  const primaryMiniArcEncodingAction = draft.primaryMiniArcEncodingAction.trim();
+  const secondaryMiniArcEncodingAction = draft.secondaryMiniArcEncodingAction.trim();
+  const stayMantra = draft.stayMantra.trim();
+  const acceptanceMantra = draft.acceptanceMantra.trim();
+  const regulationMantra = draft.regulationMantra.trim();
+  const bridgeMantra = draft.bridgeMantra.trim();
   return {
     id,
     name: draft.name.trim(),
@@ -136,18 +190,20 @@ export function buildUrgeArcFromDraft(draft: UrgeArcDraft, id: string, createdAt
     bodyLanguageCue: bodyLanguageCue.length > 0 ? bodyLanguageCue : null,
     encodingMantra: encodingMantra.length > 0 ? encodingMantra : null,
     beneficialAlternativeAction: draft.beneficialAlternativeAction.trim(),
-    // Representation-based Urge Encoding task: not yet BUILD-editable
-    // (UrgeArcDraft has no fields for these -- see Phase 3, which adds
-    // the BUILD UI); every UrgeArc created via this draft form starts
-    // with "decide in LIVE" until that BUILD step exists, exactly like
-    // an urge saved before this task ever existed.
-    representationPreference: null,
-    visualEncodingAction: null,
-    alternativeDesiredImage: null,
-    bodilyEncodingAction: null,
-    desiredBodilySensation: null,
-    primaryMiniArcEncodingAction: null,
-    secondaryMiniArcEncodingAction: null,
+    // Phase 3: fully BUILD-editable now.
+    representationPreference: draft.representationPreference,
+    visualEncodingAction: visualEncodingAction.length > 0 ? visualEncodingAction : null,
+    alternativeDesiredImage: alternativeDesiredImage.length > 0 ? alternativeDesiredImage : null,
+    bodilyEncodingAction: bodilyEncodingAction.length > 0 ? bodilyEncodingAction : null,
+    desiredBodilySensation: desiredBodilySensation.length > 0 ? desiredBodilySensation : null,
+    allowBothEncodingActions: draft.allowBothEncodingActions,
+    standardFallbackEncodingAction: standardFallbackEncodingAction.length > 0 ? standardFallbackEncodingAction : null,
+    primaryMiniArcEncodingAction: primaryMiniArcEncodingAction.length > 0 ? primaryMiniArcEncodingAction : null,
+    secondaryMiniArcEncodingAction: secondaryMiniArcEncodingAction.length > 0 ? secondaryMiniArcEncodingAction : null,
+    stayMantra: stayMantra.length > 0 ? stayMantra : null,
+    acceptanceMantra: acceptanceMantra.length > 0 ? acceptanceMantra : null,
+    regulationMantra: regulationMantra.length > 0 ? regulationMantra : null,
+    bridgeMantra: bridgeMantra.length > 0 ? bridgeMantra : null,
   };
 }
 
@@ -176,5 +232,12 @@ export function normalizeUrgeArc(urgeArc: UrgeArc): UrgeArc {
     desiredBodilySensation: urgeArc.desiredBodilySensation ?? null,
     primaryMiniArcEncodingAction: urgeArc.primaryMiniArcEncodingAction ?? null,
     secondaryMiniArcEncodingAction: urgeArc.secondaryMiniArcEncodingAction ?? null,
+    // Phase 3: same backfill rule for every field this phase adds.
+    allowBothEncodingActions: urgeArc.allowBothEncodingActions ?? null,
+    standardFallbackEncodingAction: urgeArc.standardFallbackEncodingAction ?? null,
+    stayMantra: urgeArc.stayMantra ?? null,
+    acceptanceMantra: urgeArc.acceptanceMantra ?? null,
+    regulationMantra: urgeArc.regulationMantra ?? null,
+    bridgeMantra: urgeArc.bridgeMantra ?? null,
   };
 }

@@ -111,6 +111,28 @@ export interface MiniArcBuild {
   replacementBelief?: string | null;
   /** Belief Mini: this Mini's own Bridge Mantra text, rehearsed right after recognizing the belief -- never replaces replacementBelief, exactly like the full protocol's own Bridge Mantra never replaces the new supportive belief (arc/mantras.ts's own doc). */
   bridgeMantraText?: string | null;
+  /**
+   * Phase 3 (Full + Mini ARC Urge representation encoding), spec
+   * section 19 ("ARC Mini Urge... Optional secondary Encoding action"):
+   * Urge Mini only -- this Mini's own quick-switch second Encoding
+   * action, meaningful only when representationPreference is "both".
+   * encodingAction (the shared generic field) doubles as the PRIMARY
+   * action for every Mini kind, including Urge -- this field is the one
+   * genuinely Urge-Mini-specific addition, never read by any other
+   * kind. null (every Mini saved before this phase) means no secondary
+   * action -- the "both" case simply uses the primary action alone.
+   */
+  secondaryEncodingAction?: string | null;
+  /**
+   * Phase 3, spec section 19 ("ARC Mini Urge... Optional
+   * beneficial-action duration"): reuses the exact same concept/shape
+   * as ArcBuildProfile.beneficialActionDurationMinutes (arc/types.ts) --
+   * never a second, parallel duration system. null (the default, and
+   * every Mini saved before this phase) means no configured duration;
+   * the beneficial-action step then behaves exactly as it always has
+   * for every other Mini kind (no optional timer offered).
+   */
+  actionDurationMinutes?: number | null;
 }
 
 /**

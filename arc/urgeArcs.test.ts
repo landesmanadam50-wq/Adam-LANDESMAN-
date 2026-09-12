@@ -169,15 +169,12 @@ test("createEmptyUrgeArcDraft is never itself complete", () => {
 
 test("buildUrgeArcFromDraft splits comma-separated mappedTriggers/underlyingNeeds into trimmed, non-empty arrays", () => {
   const draft: UrgeArcDraft = {
+    ...createEmptyUrgeArcDraft(),
     name: "דחף",
     interferingAction: "פעולה",
     mappedTriggers: "לחץ,  שעת הפסקה ,,",
     underlyingNeeds: "רגיעה, הפוגה",
-    stopCue: "",
     regulationAnchor: "עוגן",
-    acceptanceContent: "",
-    bodyLanguageCue: "",
-    encodingMantra: "",
     beneficialAlternativeAction: "פעולה מיטיבה",
   };
   const built = buildUrgeArcFromDraft(draft, "u1", "2024-01-01T00:00:00.000Z", "2024-01-01T00:00:00.000Z");
@@ -187,15 +184,11 @@ test("buildUrgeArcFromDraft splits comma-separated mappedTriggers/underlyingNeed
 
 test("buildUrgeArcFromDraft converts blank optional fields (stopCue/acceptanceContent) to null, never an empty string", () => {
   const draft: UrgeArcDraft = {
+    ...createEmptyUrgeArcDraft(),
     name: "דחף",
     interferingAction: "פעולה",
-    mappedTriggers: "",
-    underlyingNeeds: "",
     stopCue: "   ",
     regulationAnchor: "עוגן",
-    acceptanceContent: "",
-    bodyLanguageCue: "",
-    encodingMantra: "",
     beneficialAlternativeAction: "פעולה מיטיבה",
   };
   const built = buildUrgeArcFromDraft(draft, "u1", "2024-01-01T00:00:00.000Z", "2024-01-01T00:00:00.000Z");

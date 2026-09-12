@@ -52,6 +52,14 @@ export default function UrgeArcEditorScreen() {
   const [linkedMini, setLinkedMini] = useState<MiniArcBuild | null>(null);
   const [miniDraft, setMiniDraft] = useState<MiniArcDraft | null>(null);
   const [miniSaveError, setMiniSaveError] = useState<string | null>(null);
+  // Phase 3 (Full + Mini ARC Urge representation encoding), spec section
+  // 19 ("ARC Mini Urge... Optional secondary Encoding action... Optional
+  // beneficial-action duration") -- these two fields have no home on the
+  // shared 5-field MiniArcDraft (every other Mini kind never uses them),
+  // so they're held here, alongside miniDraft, exactly like protocolKind/
+  // preventiveStoppingAction already are in handleSaveLinkedMini below.
+  const [miniSecondaryEncodingAction, setMiniSecondaryEncodingAction] = useState("");
+  const [miniActionDurationMinutes, setMiniActionDurationMinutes] = useState("");
 
   useEffect(() => {
     if (isNew || !id) return;
@@ -81,8 +89,15 @@ export default function UrgeArcEditorScreen() {
     // Pre-fills from THIS UrgeArc's own compatible values (spec section
     // 9: "may reuse compatible parent values... but must NOT copy the
     // entire full protocol") -- the trainee still fills in presenceColor
-    // and reviews/edits the rest before saving.
-    setMiniDraft(createLinkedMiniArcDraft(draft.name, "", draft.regulationAnchor, "", draft.beneficialAlternativeAction));
+    // and reviews/edits the rest before saving. Phase 3: the Mini's own
+    // primary Encoding action pre-fills from the parent's own
+    // primaryMiniArcEncodingAction (not the Full protocol's own
+    // visual/bodily Encoding pair, which stays Full-only).
+    setMiniDraft(
+      createLinkedMiniArcDraft(draft.name, "", draft.regulationAnchor, draft.primaryMiniArcEncodingAction, draft.beneficialAlternativeAction)
+    );
+    setMiniSecondaryEncodingAction(draft.secondaryMiniArcEncodingAction);
+    setMiniActionDurationMinutes("");
   }
 
   async function handleSaveLinkedMini() {
@@ -95,14 +110,25 @@ export default function UrgeArcEditorScreen() {
     try {
       const now = new Date().toISOString();
       const built = buildMiniArcFromDraft(miniDraft, generateMiniArcId(), now, now);
+      const secondaryTrimmed = miniSecondaryEncodingAction.trim();
+      const parsedDuration = Number(miniActionDurationMinutes);
       const linked: MiniArcBuild = {
         ...linkMiniArcToParent(built, existingMeta.id),
         protocolKind: "urge",
         preventiveStoppingAction: draft.stopCue.trim().length > 0 ? draft.stopCue : null,
+        // Phase 3: inherits the Full protocol's own BUILD-configured
+        // representation preference unless the trainee wants LIVE to
+        // decide fresh each session -- never copies the Full protocol's
+        // own visual/bodily Encoding pair, only this one preference.
+        representationPreference: draft.representationPreference !== "decide_in_live" ? draft.representationPreference : null,
+        secondaryEncodingAction: secondaryTrimmed.length > 0 ? secondaryTrimmed : null,
+        actionDurationMinutes: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : null,
       };
       await upsertMiniArcBuild(linked);
       setLinkedMini(linked);
       setMiniDraft(null);
+      setMiniSecondaryEncodingAction("");
+      setMiniActionDurationMinutes("");
     } catch {
       setMiniSaveError("אירעה שגיאה בשמירת ה-ARC Mini. נסה שוב.");
     }
@@ -232,6 +258,138 @@ export default function UrgeArcEditorScreen() {
           multiline
         />
 
+        {/*
+          Phase 3 (Full + Mini ARC Urge representation encoding), spec
+          section 19: the full "Urge representation preference" block --
+          every field here is optional/backward-compatible (a legacy
+          UrgeArc simply has all of these as null, falling back to
+          "decide in LIVE"/generic Encoding, per arc/urgeLive.ts).
+        */}
+        <Text style={styles.sectionHeader}>אופן הופעת הדחף וקידוד מותאם</Text>
+        <Text style={styles.helperText}>
+          כיצד הדחף הזה בדרך כלל מופיע אצלך -- דימוי, תחושה בגוף, שניהם, או שתרצה להחליט בזמן אמת בכל תרגול.
+        </Text>
+        <View style={styles.chipRow}>
+          {(
+            [
+              { value: "visual", label: "דימוי" },
+              { value: "bodily", label: "תחושה בגוף" },
+              { value: "both", label: "גם וגם" },
+              { value: "decide_in_live", label: "להחליט בזמן אמת" },
+            ] as const
+          ).map((option) => (
+            <Pressable
+              key={option.value}
+              style={[styles.chip, draft.representationPreference === option.value && styles.chipSelected]}
+              onPress={() => setDraft({ ...draft, representationPreference: option.value })}
+            >
+              <Text style={styles.chipText}>{option.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={styles.question}>פעולת קידוד לדימוי (רשות)</Text>
+        <Text style={styles.helperText}>לדוגמה: להקטין ולהרחיק את התמונה, להפחית בהירות, להאט תנועה.</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.visualEncodingAction}
+          onChangeText={(value) => setDraft({ ...draft, visualEncodingAction: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.question}>תמונה חלופית רצויה (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.alternativeDesiredImage}
+          onChangeText={(value) => setDraft({ ...draft, alternativeDesiredImage: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.question}>פעולת קידוד לתחושת גוף (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.bodilyEncodingAction}
+          onChangeText={(value) => setDraft({ ...draft, bodilyEncodingAction: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.question}>תחושת גוף רצויה (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.desiredBodilySensation}
+          onChangeText={(value) => setDraft({ ...draft, desiredBodilySensation: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Pressable
+          style={styles.toggleRow}
+          onPress={() => setDraft({ ...draft, allowBothEncodingActions: !draft.allowBothEncodingActions })}
+        >
+          <Text style={styles.question}>{draft.allowBothEncodingActions ? "☑" : "☐"} לאפשר ביצוע שתי פעולות הקידוד יחד כש"גם וגם" נבחר</Text>
+        </Pressable>
+
+        <Text style={styles.question}>פעולת קידוד קבועה כשהתשובה "לא בטוח" (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.standardFallbackEncodingAction}
+          onChangeText={(value) => setDraft({ ...draft, standardFallbackEncodingAction: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.question}>פעולת קידוד ראשית ל-ARC Mini Urge (רשות)</Text>
+        <Text style={styles.helperText}>ערך ברירת מחדל שממנו ARC Mini Urge המקושר יתחיל -- ניתן לערוך לאחר מכן בנפרד.</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.primaryMiniArcEncodingAction}
+          onChangeText={(value) => setDraft({ ...draft, primaryMiniArcEncodingAction: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.question}>פעולת קידוד משנית ל-ARC Mini Urge (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.secondaryMiniArcEncodingAction}
+          onChangeText={(value) => setDraft({ ...draft, secondaryMiniArcEncodingAction: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.sectionHeader}>מנטרות (רשות)</Text>
+        <Text style={styles.question}>מנטרת שהייה</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.stayMantra}
+          onChangeText={(value) => setDraft({ ...draft, stayMantra: value })}
+          textAlign="right"
+        />
+        <Text style={styles.question}>מנטרת קבלה</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.acceptanceMantra}
+          onChangeText={(value) => setDraft({ ...draft, acceptanceMantra: value })}
+          textAlign="right"
+        />
+        <Text style={styles.question}>מנטרת ויסות</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.regulationMantra}
+          onChangeText={(value) => setDraft({ ...draft, regulationMantra: value })}
+          textAlign="right"
+        />
+        <Text style={styles.question}>מנטרת גשר (בסוף הוויסות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.bridgeMantra}
+          onChangeText={(value) => setDraft({ ...draft, bridgeMantra: value })}
+          textAlign="right"
+        />
+
         <Text style={styles.question}>הערות לקבלה של הדחף, בלי להילחם בו (רשות)</Text>
         <TextInput
           style={styles.textInput}
@@ -341,6 +499,26 @@ export default function UrgeArcEditorScreen() {
                   multiline
                 />
 
+                <Text style={styles.question}>פעולת קידוד משנית (רשות)</Text>
+                <Text style={styles.helperText}>מעבר מהיר בין הפעולה הראשית לפעולה המשנית, רק כשאופן הופעת הדחף הוא "גם וגם" -- אף פעם לא חובה.</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniSecondaryEncodingAction}
+                  onChangeText={setMiniSecondaryEncodingAction}
+                  textAlign="right"
+                  multiline
+                />
+
+                <Text style={styles.question}>משך פעולה מיטיבה בדקות (רשות)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniActionDurationMinutes}
+                  onChangeText={setMiniActionDurationMinutes}
+                  textAlign="right"
+                  keyboardType="numeric"
+                  placeholder="לדוגמה: 2"
+                />
+
                 {miniSaveError && <Text style={styles.errorText}>{miniSaveError}</Text>}
 
                 <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleSaveLinkedMini}>
@@ -384,4 +562,9 @@ const styles = StyleSheet.create({
   miniCardRow: { fontSize: 14, textAlign: "right", color: "#555", marginBottom: 10 },
   cancelButton: { marginTop: 10, alignItems: "center" },
   cancelButtonText: { color: "#888", fontSize: 14 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginTop: 4, marginBottom: 8 },
+  chip: { backgroundColor: "#E6F4FE", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+  chipSelected: { backgroundColor: "#0a7ea4" },
+  chipText: { color: "#0a7ea4", fontSize: 14 },
+  toggleRow: { marginTop: 4, marginBottom: 8, alignItems: "flex-end" },
 });

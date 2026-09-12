@@ -973,6 +973,43 @@ export interface UrgeArc {
   primaryMiniArcEncodingAction: string | null;
   /** Mini ARC Urge's optional quick-switch secondary Encoding action, only meaningful when representationPreference is "both" -- lets the trainee switch to the other representation's action without leaving the short Encoding step. null means no secondary action configured (the common case). */
   secondaryMiniArcEncodingAction: string | null;
+  /**
+   * Phase 3 (Full + Mini ARC Urge representation encoding), spec
+   * section 9.3: when representationPreference is "both" and both
+   * visualEncodingAction/bodilyEncodingAction are configured, whether
+   * LIVE lets the trainee perform BOTH configured Encoding actions in
+   * sequence (true) or offers a single-session choice of which one to
+   * perform (false/null, the default) -- "If a primary action was
+   * configured in BUILD, show it first" either way. Meaningless for any
+   * other representation; never forces classification.
+   */
+  allowBothEncodingActions: boolean | null;
+  /**
+   * Phase 3, spec section 9.4 ("Unsure"): the configured fallback
+   * Encoding action shown when Recognition's representation answer is
+   * "unsure" (never a forced visual/bodily classification). null means
+   * no BUILD-configured fallback -- LIVE falls back to the existing
+   * generic habit Encoding line (regulationAnchor/bodyLanguageCue),
+   * exactly as before this phase.
+   */
+  standardFallbackEncodingAction: string | null;
+  /**
+   * Phase 3, spec sections 6-8 ("Preserve: Existing Stay Mantra... the
+   * saved Acceptance Mantra... Regulation Mantra... Bridge Mantra at the
+   * end of Regulation"). Structurally compatible with arc/mantras.ts's
+   * MantraProfile (same field names/shapes as ArcBuildProfile's own
+   * stayMantra/acceptanceMantra/regulationMantra/bridgeMantra) so the
+   * EXACT SAME getStayMantraLine/getAcceptanceMantraLine/
+   * getRegulationMantraLine/getBridgeMantraLine functions apply here
+   * unchanged -- never a second, parallel mantra system. null (every
+   * UrgeArc, including every one saved before this phase) means no
+   * mantra line for that stage, exactly like an unconfigured
+   * ArcBuildProfile mantra.
+   */
+  stayMantra: string | null;
+  acceptanceMantra: string | null;
+  regulationMantra: string | null;
+  bridgeMantra: string | null;
 }
 
 /**
@@ -1476,6 +1513,12 @@ export function createEmptyUrgeArc(id: string, name: string, now: string): UrgeA
     desiredBodilySensation: null,
     primaryMiniArcEncodingAction: null,
     secondaryMiniArcEncodingAction: null,
+    allowBothEncodingActions: null,
+    standardFallbackEncodingAction: null,
+    stayMantra: null,
+    acceptanceMantra: null,
+    regulationMantra: null,
+    bridgeMantra: null,
   };
 }
 
