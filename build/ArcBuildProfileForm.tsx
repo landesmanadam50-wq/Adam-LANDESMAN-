@@ -316,6 +316,8 @@ const DWELL_ROWS: { key: keyof DwellTimes; label: string }[] = [
   { key: "actionImageryDwellSeconds", label: "דמיון פעולה" },
   { key: "presenceDwellSeconds", label: "נוכחות" },
   { key: "stopImageryDwellSeconds", label: "דמיון עצירה" },
+  { key: "completedActionImageryDwellSeconds", label: "דמיון הפעולה שקרתה" },
+  { key: "improvedActionImageryDwellSeconds", label: "דמיון הפעולה המשופרת" },
 ];
 
 /** Maps a dwell category + the chosen target to its ProfileDraft field name -- only meaningful for target "state"/"identity" (habit has no dwellTimes step). */

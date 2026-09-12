@@ -1965,26 +1965,42 @@ export function NegativeActionStartScreen({
 }
 
 /**
- * Reinforcement's completion screen, extended with an optional written
- * Gratitude entry -- reuses this same existing completion/storage flow
- * rather than a standalone gratitude architecture (see
- * data/storage.ts's updateLastSessionLogEntryGratitude). Both fields
- * are entirely optional: onRestart always fires, whatever either field
- * currently holds (including empty), and LiveSessionScreen.tsx decides
- * whether either is worth persisting.
+ * Post-action reflection/imagery task, Section 2 (Gratitude and
+ * Learning): the SAME Gratitude/memory-detail/Evidence-of-Progress
+ * fields that used to live directly on the terminal "complete" screen
+ * (see CompleteScreen's own, now-much-shorter doc below), relocated
+ * verbatim onto their own earlier stage so the mandated order (Gratitude
+ * -> recognition of what went well -> one small improvement -> imagery)
+ * can hold -- gratitude_and_learning always precedes
+ * completed_action_imagery/improved_action_imagery, which in turn always
+ * precede "complete". Content/wording of these three fields is
+ * byte-for-byte unchanged from before this task; only their screen
+ * position moved.
  *
- * Evidence-encoding task (#4/#5): the Gratitude prompt is now
- * protocol-linked -- specifically about something from THIS ARC
- * experience, not a random/general Gratitude -- and, once the trainee
- * has written something, a second question asks for ONE concrete
- * memory detail from that SAME experience. The memory-detail field only
- * appears once Gratitude has non-empty text (a simple, honest
- * "after you enter X, Y appears" sequencing -- see #5), never before;
- * both are saved together onto the SAME session log entry (see
- * data/storage.ts's updateLastSessionLogEntryGratitude), never
- * inferred or fabricated when left blank.
+ * The new fourth field -- "מה אפשר לשפר בפעם הבאה?" -- is the ONE small,
+ * practical, realistic, in-the-trainee's-control improvement that
+ * improved_action_imagery below turns into forward imagery. Never framed
+ * as criticism: it sits after, not instead of, the recognition questions
+ * above, and its own helper text frames it as a constructive choice, not
+ * a failure. Session-only (component-local answerImprovementText,
+ * exactly like the three fields above) -- never touches
+ * ArcBuildProfile/the saved ARC or ARCHI program unless the trainee
+ * later explicitly chooses to save it (out of scope here; no such save
+ * action exists yet).
+ *
+ * All four fields are optional writing -- Continue always fires,
+ * whatever they currently hold, so the trainee is never forced to type
+ * to finish the session. But since completing the improvement question
+ * is what full completion stars require (see arc/types.ts's
+ * ArcLiveState.completedActionImageryFinished/improvedActionImageryFinished
+ * doc and data/sessionLog.ts's fullReflectionCreditEarned), leaving it
+ * empty first shows one confirmation interstitial naming that tradeoff
+ * explicitly, rather than silently downgrading the reward -- "לחזור
+ * ולענות" simply closes the interstitial (the trainee's own text, if
+ * any, is preserved untouched); "להמשיך ללא מלוא הכוכבים" proceeds
+ * exactly as if Continue had been pressed with an empty answer.
  */
-export function CompleteScreen({
+export function GratitudeAndLearningScreen({
   copy,
   gratitudeText,
   onChangeGratitudeText,
@@ -1992,28 +2008,32 @@ export function CompleteScreen({
   onChangeGratitudeMemoryDetailText,
   progressEvidenceText,
   onChangeProgressEvidenceText,
-  restartLabel = "סשן חדש",
-  onRestart,
+  improvementText,
+  onChangeImprovementText,
+  onContinue,
 }: {
   copy: ArcStageCopy;
   gratitudeText: string;
   onChangeGratitudeText: (text: string) => void;
   gratitudeMemoryDetailText: string;
   onChangeGratitudeMemoryDetailText: (text: string) => void;
-  /**
-   * Coherent-architecture task (#13 "Evidence of Progress"): ONE small,
-   * optional observation about what was different this time -- "מה
-   * עשית הפעם שלא היית עושה קודם?" -- collected here, independently of
-   * Gratitude (always shown, never gated on Gratitude having text),
-   * and saved onto the same SessionLogEntry in the same call. See
-   * data/sessionLog.ts's SessionLogEntry.progressEvidence doc.
-   */
   progressEvidenceText: string;
   onChangeProgressEvidenceText: (text: string) => void;
-  /** Multiple Scheduled ARC + Success Focus Routines: a routine-launched session shows "המשך להתמקדות בהצלחה" here instead of "סשן חדש" -- onRestart, for that same session, continues into the routine's own post-ARC Success Focus timer rather than starting a brand-new session (see live/LiveSessionScreen.tsx's restart()). Every other, non-routine caller omits this and keeps the original label/behavior unchanged. */
-  restartLabel?: string;
-  onRestart: () => void;
+  improvementText: string;
+  onChangeImprovementText: (text: string) => void;
+  onContinue: () => void;
 }) {
+  const [showSkipWarning, setShowSkipWarning] = useState(false);
+
+  function handleContinuePress() {
+    if (improvementText.trim().length === 0 && !showSkipWarning) {
+      setShowSkipWarning(true);
+      return;
+    }
+    setShowSkipWarning(false);
+    onContinue();
+  }
+
   return (
     <View>
       <Title copy={copy} />
@@ -2048,6 +2068,173 @@ export function CompleteScreen({
         multiline
         textAlign="right"
       />
+      <Text style={styles.body}>מה אפשר לשפר בפעם הבאה?</Text>
+      <Text style={styles.hint}>בחר שיפור אחד קטן, מעשי ובשליטתך, שיעזור לך לבצע את הפעולה בצורה טובה יותר בפעם הבאה.</Text>
+      <TextInput
+        style={styles.textInput}
+        value={improvementText}
+        onChangeText={onChangeImprovementText}
+        placeholder="לדוגמה: להתחיל מוקדם יותר, להתכונן מראש או לפעול בקצב שמתאים לי."
+        multiline
+        textAlign="right"
+      />
+      {showSkipWarning && (
+        <View style={styles.textInput}>
+          <Text style={styles.body}>
+            אפשר להמשיך בלי לענות, אך כדי לקבל את מלוא הכוכבים על התרגול יש להשלים גם את שלבי ההתבוננות.
+          </Text>
+          <View style={styles.buttonRow}>
+            <Pressable style={styles.button} onPress={() => setShowSkipWarning(false)}>
+              <Text style={styles.buttonText}>לחזור ולענות</Text>
+            </Pressable>
+            <Pressable style={styles.button} onPress={onContinue}>
+              <Text style={styles.buttonText}>להמשיך ללא מלוא הכוכבים</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+      <PrimaryButton label="המשך" onPress={handleContinuePress} />
+    </View>
+  );
+}
+
+/**
+ * Post-action reflection/imagery task, Section 3 (Imagery of the Action
+ * That Happened): a REPLAY of the real action the trainee just
+ * performed -- never phrased as future/not-yet-happened, unlike every
+ * other forward-looking imagery screen in this app. `actionText` is the
+ * same resolveEncodingTarget-resolved action label the "act" stage and
+ * Action Imagery already used for this exact session (see
+ * live/ArcLiveRenderer.tsx's "completed_action_imagery" case) --
+ * incorporated when available, never fabricated when null.
+ *
+ * Dwell-only, no Skip: `dwellSeconds` (arc/dwellTimes.ts's own
+ * completedActionImageryDwellSeconds, resolved per layer) is the ONLY
+ * way this stage is ever marked complete -- entering the screen does
+ * NOT complete it, and leaving early (backgrounding the app, navigating
+ * away) simply never fires onContinue, so
+ * ArcLiveState.completedActionImageryFinished stays false. The visible
+ * countdown ("הישאר עם הדמיון עוד N שניות") is a deliberate departure
+ * from TimedInstructionBody's plain-text-forward style (see that
+ * function's own doc) -- this app's ONLY other visible countdown is the
+ * real Action/Success-Focus/Negative-Action Timer (formatRemainingTime),
+ * so a dedicated, self-contained, non-persisted mount-relative clock
+ * (useElapsedSeconds, reset on every fresh mount -- see
+ * live/ArcLiveRenderer.tsx's key on this stage) is built here rather
+ * than reusing or modifying that shared component.
+ */
+function useDwellCountdown(dwellSeconds: number): { remainingSeconds: number; complete: boolean } {
+  const elapsedSeconds = useElapsedSeconds();
+  const remainingSeconds = Math.max(0, dwellSeconds - elapsedSeconds);
+  return { remainingSeconds, complete: elapsedSeconds >= dwellSeconds };
+}
+
+export function CompletedActionImageryScreen({
+  copy,
+  actionText,
+  dwellSeconds,
+  onContinue,
+}: {
+  copy: ArcStageCopy;
+  actionText: string | null;
+  dwellSeconds: number;
+  onContinue: () => void;
+}) {
+  const { remainingSeconds, complete } = useDwellCountdown(dwellSeconds);
+  useDwellCompletionCue(null, complete);
+  return (
+    <View>
+      <Title copy={copy} />
+      <Text style={styles.body}>חזור בדמיון על הפעולה שזה עתה ביצעת.</Text>
+      {actionText && actionText.trim().length > 0 && <Text style={styles.body}>{`הפעולה שביצעת: ${actionText}`}</Text>}
+      <Text style={styles.body}>אפשר לעצום עיניים רק אם זה בטוח ונוח לך.</Text>
+      <Text style={styles.body}>דמיין כיצד התחלת, כיצד פעלת ומה עזר לך להשלים את הפעולה.</Text>
+      <Text style={styles.body}>שים לב למה שעשית טוב ולתחושת ההצלחה שנוצרה בעקבות הפעולה.</Text>
+      {!complete && <Text style={styles.body}>{`הישאר עם הדמיון עוד ${Math.ceil(remainingSeconds)} שניות`}</Text>}
+      <PrimaryButton label="לדמיון הפעולה המשופרת" onPress={onContinue} disabled={!complete} />
+    </View>
+  );
+}
+
+/**
+ * Post-action reflection/imagery task, Section 4 (Imagery of the
+ * Improved Action and Its Result): a SEPARATE dwell-gated screen (its
+ * own independent completedActionImageryDwellSeconds-parallel timer,
+ * improvedActionImageryDwellSeconds -- never shared with, or completing
+ * alongside, CompletedActionImageryScreen above). `improvementText` is
+ * whatever the trainee entered on GratitudeAndLearningScreen (possibly
+ * empty) -- an empty/whitespace-only answer renders the generic
+ * "בדרך מעט טובה, מדויקת ומציאותית יותר" wording instead of inventing a
+ * specific improvement never actually chosen (see that screen's own
+ * doc on why this can legitimately be empty).
+ *
+ * Result imagery is part of THIS SAME stage/screen (never a fifth
+ * ArcStage of its own), and the closing message only appears once this
+ * stage's own dwell has fully elapsed -- "after both imagery timers
+ * complete" (this one is the second) -- immediately before the button
+ * that advances to "complete" becomes enabled.
+ */
+export function ImprovedActionImageryScreen({
+  copy,
+  improvementText,
+  dwellSeconds,
+  onContinue,
+}: {
+  copy: ArcStageCopy;
+  improvementText: string;
+  dwellSeconds: number;
+  onContinue: () => void;
+}) {
+  const { remainingSeconds, complete } = useDwellCountdown(dwellSeconds);
+  useDwellCompletionCue(null, complete);
+  const trimmedImprovement = improvementText.trim();
+  return (
+    <View>
+      <Title copy={copy} />
+      {trimmedImprovement.length > 0 ? (
+        <>
+          <Text style={styles.body}>{`בפעם הבאה בחרת לשפר:\n${trimmedImprovement}`}</Text>
+          <Text style={styles.body}>כעת דמיין את הפעם הבאה שבה תבצע את הפעולה, כאשר אתה משלב את השיפור שבחרת.</Text>
+        </>
+      ) : (
+        <Text style={styles.body}>כעת דמיין את הפעם הבאה שבה תבצע את הפעולה בדרך מעט טובה, מדויקת ומציאותית יותר עבורך.</Text>
+      )}
+      <Text style={styles.body}>ראה את עצמך מתחיל, פועל ומסיים בדרך הטובה, המדויקת והמציאותית ביותר עבורך.</Text>
+      <Text style={styles.body}>דמיין את שפת הגוף שלך, את דרך הפעולה שלך ואת האופן שבו אתה ממשיך גם אם מופיע קושי קטן.</Text>
+      <Text style={styles.body}>כעת דמיין את התוצאה הישירה והמציאותית של ביצוע הפעולה בצורה טובה.</Text>
+      <Text style={styles.body}>שים לב למה שהשלמת, למה שהשתנה ולתחושה שעולה בך לאחר הפעולה.</Text>
+      {!complete && <Text style={styles.body}>{`הישאר עם הדמיון עוד ${Math.ceil(remainingSeconds)} שניות`}</Text>}
+      {complete && (
+        <Text style={styles.body}>
+          כבר ביצעת את הפעולה במציאות. עכשיו חיזקת את מה שעבד והתכוננת לבצע אותה אפילו טוב יותר בפעם הבאה.
+        </Text>
+      )}
+      <PrimaryButton label="סיימתי את הדמיון" onPress={onContinue} disabled={!complete} />
+    </View>
+  );
+}
+
+/**
+ * Reinforcement's completion screen -- since the post-action
+ * reflection/imagery task, Gratitude/memory-detail/Evidence-of-Progress
+ * (and the new improvement question) moved to their own earlier stage
+ * (GratitudeAndLearningScreen above), this screen is now just the
+ * closing title plus the session-restart action; nothing here reads or
+ * writes those fields anymore.
+ */
+export function CompleteScreen({
+  copy,
+  restartLabel = "סשן חדש",
+  onRestart,
+}: {
+  copy: ArcStageCopy;
+  /** Multiple Scheduled ARC + Success Focus Routines: a routine-launched session shows "המשך להתמקדות בהצלחה" here instead of "סשן חדש" -- onRestart, for that same session, continues into the routine's own post-ARC Success Focus timer rather than starting a brand-new session (see live/LiveSessionScreen.tsx's restart()). Every other, non-routine caller omits this and keeps the original label/behavior unchanged. */
+  restartLabel?: string;
+  onRestart: () => void;
+}) {
+  return (
+    <View>
+      <Title copy={copy} />
       <PrimaryButton label="סשן חדש" onPress={onRestart} />
     </View>
   );
@@ -2140,5 +2327,11 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 16,
+  },
+  hint: {
+    fontSize: 13,
+    textAlign: "right",
+    color: "#666",
+    marginBottom: 12,
   },
 });

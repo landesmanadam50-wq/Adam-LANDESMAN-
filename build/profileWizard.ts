@@ -385,6 +385,9 @@ export interface ProfileDraft {
   stateStopImageryDwellSeconds: string;
   /** ARC Goal task: paired with identityResultImageryDwellSeconds below -- the state layer carries this field only for shape symmetry with dwellTimesFromDraft (never surfaced as its own editable UI row; Successful Performance is identity-only). */
   stateResultImageryDwellSeconds: string;
+  /** Post-action reflection/imagery task: the state layer's own "זמן דמיון הפעולה שקרתה"/"זמן דמיון הפעולה המשופרת" -- same string-for-TextInput-binding convention, real editable UI rows for both layers (unlike resultImagery above, which is identity-only). */
+  stateCompletedActionImageryDwellSeconds: string;
+  stateImprovedActionImageryDwellSeconds: string;
 
   desiredIdentity: string;
   identityChallengeContext: string;
@@ -410,6 +413,9 @@ export interface ProfileDraft {
   identityStopImageryDwellSeconds: string;
   /** ARC Goal task: Result Imagery duration -- the identity layer's own half of the extended Action Imagery sequence (see arc/successfulPerformance.ts), edited in the Successful Performance section rather than the generic dwell-times step, but stored/resolved through the exact same DwellTimes mechanism as every field above. */
   identityResultImageryDwellSeconds: string;
+  /** Post-action reflection/imagery task: parallel to stateCompletedActionImageryDwellSeconds/stateImprovedActionImageryDwellSeconds above -- never mixed with them. */
+  identityCompletedActionImageryDwellSeconds: string;
+  identityImprovedActionImageryDwellSeconds: string;
 
   /**
    * ARC Goal task: the optional Successful Performance section (spec
@@ -517,6 +523,8 @@ export function createEmptyDraft(): ProfileDraft {
     statePresenceDwellSeconds: String(DEFAULT_DWELL_TIMES.presenceDwellSeconds),
     stateStopImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.stopImageryDwellSeconds),
     stateResultImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.resultImageryDwellSeconds),
+    stateCompletedActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.completedActionImageryDwellSeconds),
+    stateImprovedActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.improvedActionImageryDwellSeconds),
     desiredIdentity: "",
     identityChallengeContext: "",
     identityInterferingEmotion: "",
@@ -535,6 +543,8 @@ export function createEmptyDraft(): ProfileDraft {
     identityPresenceDwellSeconds: String(DEFAULT_DWELL_TIMES.presenceDwellSeconds),
     identityStopImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.stopImageryDwellSeconds),
     identityResultImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.resultImageryDwellSeconds),
+    identityCompletedActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.completedActionImageryDwellSeconds),
+    identityImprovedActionImageryDwellSeconds: String(DEFAULT_DWELL_TIMES.improvedActionImageryDwellSeconds),
     identityWantsSuccessfulPerformance: null,
     identitySuccessfulPerformanceAction: "",
     identitySuccessfulPerformanceQualities: [],
@@ -641,6 +651,12 @@ export function draftFromProfileAndSelection(
     stateResultImageryDwellSeconds: String(
       profile.stateDwellTimes?.resultImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.resultImageryDwellSeconds
     ),
+    stateCompletedActionImageryDwellSeconds: String(
+      profile.stateDwellTimes?.completedActionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.completedActionImageryDwellSeconds
+    ),
+    stateImprovedActionImageryDwellSeconds: String(
+      profile.stateDwellTimes?.improvedActionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.improvedActionImageryDwellSeconds
+    ),
     desiredIdentity: profile.desiredIdentity ?? "",
     identityChallengeContext: profile.identityChallengeContext ?? "",
     identityInterferingEmotion: profile.identityInterferingEmotion ?? "",
@@ -666,6 +682,12 @@ export function draftFromProfileAndSelection(
     ),
     identityResultImageryDwellSeconds: String(
       profile.identityDwellTimes?.resultImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.resultImageryDwellSeconds
+    ),
+    identityCompletedActionImageryDwellSeconds: String(
+      profile.identityDwellTimes?.completedActionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.completedActionImageryDwellSeconds
+    ),
+    identityImprovedActionImageryDwellSeconds: String(
+      profile.identityDwellTimes?.improvedActionImageryDwellSeconds ?? DEFAULT_DWELL_TIMES.improvedActionImageryDwellSeconds
     ),
     // Truthy check (never "!== null"), same reasoning as
     // stateWantsShortEncodingRegulationCue above: a profile stored
@@ -910,6 +932,8 @@ function dwellTimesFromDraft(draft: {
   presence: string;
   stopImagery: string;
   resultImagery: string;
+  completedActionImagery: string;
+  improvedActionImagery: string;
 }): DwellTimes {
   return {
     sensationDwellSeconds: parseDwellField(draft.sensation, DEFAULT_DWELL_TIMES.sensationDwellSeconds),
@@ -920,6 +944,14 @@ function dwellTimesFromDraft(draft: {
     presenceDwellSeconds: parseDwellField(draft.presence, DEFAULT_DWELL_TIMES.presenceDwellSeconds),
     stopImageryDwellSeconds: parseDwellField(draft.stopImagery, DEFAULT_DWELL_TIMES.stopImageryDwellSeconds),
     resultImageryDwellSeconds: parseDwellField(draft.resultImagery, DEFAULT_DWELL_TIMES.resultImageryDwellSeconds),
+    completedActionImageryDwellSeconds: parseDwellField(
+      draft.completedActionImagery,
+      DEFAULT_DWELL_TIMES.completedActionImageryDwellSeconds
+    ),
+    improvedActionImageryDwellSeconds: parseDwellField(
+      draft.improvedActionImagery,
+      DEFAULT_DWELL_TIMES.improvedActionImageryDwellSeconds
+    ),
   };
 }
 
@@ -1050,6 +1082,8 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
           presence: draft.statePresenceDwellSeconds,
           stopImagery: draft.stateStopImageryDwellSeconds,
           resultImagery: draft.stateResultImageryDwellSeconds,
+          completedActionImagery: draft.stateCompletedActionImageryDwellSeconds,
+          improvedActionImagery: draft.stateImprovedActionImageryDwellSeconds,
         })
       : null,
 
@@ -1104,6 +1138,8 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
           presence: draft.identityPresenceDwellSeconds,
           stopImagery: draft.identityStopImageryDwellSeconds,
           resultImagery: draft.identityResultImageryDwellSeconds,
+          completedActionImagery: draft.identityCompletedActionImageryDwellSeconds,
+          improvedActionImagery: draft.identityImprovedActionImageryDwellSeconds,
         })
       : null,
     identitySuccessfulPerformanceAction:

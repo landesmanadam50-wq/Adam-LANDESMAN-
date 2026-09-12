@@ -190,6 +190,9 @@ const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   encode: "info",
   act: "info",
   success_focus: "successFocus",
+  gratitude_and_learning: "info",
+  completed_action_imagery: "info",
+  improved_action_imagery: "info",
   negative_action: "info",
   complete: "finish",
 };
@@ -1012,6 +1015,20 @@ export function getStageCopy(
       // live/screens.tsx's SuccessFocusRetrospectiveScreen/
       // FutureSuccessFocusAskScreen for the rest of this sub-flow).
       return { title: "מיקוד הצלחה", body: "כמה זמן המשכת בפעולה המיטיבה מעבר לזמן שתכננת?", segments: null };
+
+    // Post-action reflection/imagery task: these three stages are all
+    // rendered by their own fully custom, dwell-gated components
+    // (live/screens.tsx's GratitudeAndLearningScreen/
+    // CompletedActionImageryScreen/ImprovedActionImageryScreen) --
+    // this copy is used only for the LIVE screen's own header title
+    // (ArcLiveRenderer's `ARCHI LIVE — ${copy.title}`), never for body
+    // text (each screen writes its own exact spec wording directly).
+    case "gratitude_and_learning":
+      return { title: "הוקרת תודה ולמידה", body: "", segments: null };
+    case "completed_action_imagery":
+      return { title: "דמיון הפעולה שקרתה", body: "", segments: null };
+    case "improved_action_imagery":
+      return { title: "דמיון הפעולה המשופרת", body: "", segments: null };
 
     case "negative_action": {
       // The trainee's own predefined interfering/negative behavior

@@ -674,7 +674,7 @@ test("REGRESSION: a legacy profile where negativeActionReductionEnabled is genui
   assert.equal(draft.habit, "גלילה ברשת");
 });
 
-test("buildProfileFromDraft saves the state target's eight dwell values (ARC Goal task: resultImagery joined presence + stop-imagery), applying the correct defaults when left unedited", () => {
+test("buildProfileFromDraft saves the state target's ten dwell values (ARC Goal task: resultImagery joined presence + stop-imagery; post-action reflection/imagery task: completedActionImagery + improvedActionImagery), applying the correct defaults when left unedited", () => {
   const p = buildProfileFromDraft(filledStateOnlyDraft());
   assert.deepEqual(p.stateDwellTimes, {
     sensationDwellSeconds: 8,
@@ -685,6 +685,8 @@ test("buildProfileFromDraft saves the state target's eight dwell values (ARC Goa
     presenceDwellSeconds: 8,
     stopImageryDwellSeconds: 8,
     resultImageryDwellSeconds: 8,
+    completedActionImageryDwellSeconds: 20,
+    improvedActionImageryDwellSeconds: 20,
   });
 });
 
@@ -709,6 +711,8 @@ test("buildProfileFromDraft saves a state target's CUSTOMIZED dwell values exact
     presenceDwellSeconds: 12,
     stopImageryDwellSeconds: 6,
     resultImageryDwellSeconds: 8,
+    completedActionImageryDwellSeconds: 20,
+    improvedActionImageryDwellSeconds: 20,
   });
 });
 

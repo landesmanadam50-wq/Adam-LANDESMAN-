@@ -156,6 +156,9 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     // see arc/types.ts's ArcLiveState doc.
     "balancedAlternativeInterpretationSeen",
     "beneficialActionDurationMinutes",
+    // Post-action reflection/imagery task: two new session-only flags --
+    // see arc/types.ts's ArcLiveState doc.
+    "completedActionImageryFinished",
     "currentArcStage",
     // Unified Presence/Mantra/Trigger/Imagery spec, sections 6-7: three
     // new session-only fields -- see arc/types.ts's ArcLiveState doc.
@@ -164,6 +167,7 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "desiredStateRating",
     "hasUrge",
     "identifiedNeed",
+    "improvedActionImageryFinished",
     "interferingThoughtChoice",
     "interferingThoughtSessionText",
     "loopIterationCount",
@@ -516,16 +520,29 @@ test("a reactive_urge session with the habit layer active and Negative Action re
 
   const actIndex = visitedStages.indexOf("act");
   const successFocusIndex = visitedStages.indexOf("success_focus");
+  const gratitudeIndex = visitedStages.indexOf("gratitude_and_learning");
+  const completedImageryIndex = visitedStages.indexOf("completed_action_imagery");
+  const improvedImageryIndex = visitedStages.indexOf("improved_action_imagery");
   const completeIndex = visitedStages.indexOf("complete");
 
-  assert.ok(actIndex >= 0 && successFocusIndex >= 0 && completeIndex >= 0, "sanity: every stage in the sequence must actually be reached");
+  assert.ok(
+    actIndex >= 0 && successFocusIndex >= 0 && gratitudeIndex >= 0 && completedImageryIndex >= 0 && improvedImageryIndex >= 0 && completeIndex >= 0,
+    "sanity: every stage in the sequence must actually be reached"
+  );
   assert.ok(actIndex < successFocusIndex, "Beneficial Action (act) must come before Success Focus");
   assert.ok(successFocusIndex < completeIndex, "Success Focus must come before complete");
-  assert.equal(successFocusIndex + 1, completeIndex, "Success Focus must continue DIRECTLY into complete -- no stage (Negative Action included) is ever inserted between them");
+  // Post-action reflection/imagery task: Success Focus now continues
+  // DIRECTLY into the mandatory reflection/imagery sequence (never
+  // Negative Action, and never anything else) -- which itself continues
+  // directly into complete, with no gap between any of the four stages.
+  assert.equal(successFocusIndex + 1, gratitudeIndex, "Success Focus must continue DIRECTLY into gratitude_and_learning");
+  assert.equal(gratitudeIndex + 1, completedImageryIndex, "gratitude_and_learning must continue DIRECTLY into completed_action_imagery");
+  assert.equal(completedImageryIndex + 1, improvedImageryIndex, "completed_action_imagery must continue DIRECTLY into improved_action_imagery");
+  assert.equal(improvedImageryIndex + 1, completeIndex, "improved_action_imagery must continue DIRECTLY into complete");
   assert.ok(!visitedStages.includes("negative_action"), "must never produce Negative Action automatically after ARC or Success Focus, even with the habit layer active and a negative action configured and enabled");
 });
 
-test("success_focus continues straight to complete regardless of activeLayers, habit configuration, or whether Negative Action reduction is enabled -- it is never required to complete the main routine", () => {
+test("success_focus continues straight to gratitude_and_learning regardless of activeLayers, habit configuration, or whether Negative Action reduction is enabled -- it is never required to complete the main routine", () => {
   const state: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_emotion" };
   const cases: Array<{ activeLayers: DevelopmentLayer[]; overrides: Partial<ArcBuildProfile> }> = [
     { activeLayers: ["state"], overrides: { habit: "גלילה ברשת", negativeActionReductionEnabled: true } },
@@ -536,6 +553,6 @@ test("success_focus continues straight to complete regardless of activeLayers, h
   for (const { activeLayers, overrides } of cases) {
     const p = profile(overrides);
     const next = getNextArcStage("success_focus", state, p, activeLayers);
-    assert.equal(next.stage, "complete", `activeLayers=${activeLayers.join("+")}, overrides=${JSON.stringify(overrides)}`);
+    assert.equal(next.stage, "gratitude_and_learning", `activeLayers=${activeLayers.join("+")}, overrides=${JSON.stringify(overrides)}`);
   }
 });

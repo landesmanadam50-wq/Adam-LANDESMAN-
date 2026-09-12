@@ -582,7 +582,22 @@ export async function updateLastSessionLogEntryGratitude(
    * Defaults to null so both pre-existing callers (there was only one)
    * keep working unchanged.
    */
-  progressEvidence: string | null = null
+  progressEvidence: string | null = null,
+  /**
+   * Post-action reflection/imagery task: the trainee's own "מה אפשר
+   * לשפר בפעם הבאה?" answer, saved onto this SAME entry in this SAME
+   * call -- see SessionLogEntry.improvementReflection's doc. Defaults
+   * to null so every pre-existing caller keeps working unchanged.
+   */
+  improvementReflection: string | null = null,
+  /**
+   * Post-action reflection/imagery task: whether this session earned
+   * full completion-star credit -- see
+   * SessionLogEntry.fullReflectionCreditEarned's doc. Defaults to null
+   * (never ran the reflection sequence at all) so every pre-existing
+   * caller keeps working unchanged.
+   */
+  fullReflectionCreditEarned: boolean | null = null
 ): Promise<void> {
   const existing = await loadSessionLog();
   if (existing.length === 0) return;
@@ -591,6 +606,8 @@ export async function updateLastSessionLogEntryGratitude(
     gratitude,
     gratitudeMemoryDetail: memoryDetail,
     progressEvidence,
+    improvementReflection,
+    fullReflectionCreditEarned,
   };
   await AsyncStorage.setItem(SESSION_LOG_KEY, JSON.stringify(existing));
 }

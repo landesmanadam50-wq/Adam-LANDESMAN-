@@ -1203,26 +1203,29 @@ test("proactive never uses the reactive intensity thresholds", () => {
 // (app/negative-action.tsx) -- it is never inserted into this sequencer
 // any more, regardless of activeLayers or profile.habit.
 
-test("the tail is a fixed line: encode -> act -> success_focus -> complete, unconditionally", () => {
+test("the tail is a fixed line: encode -> act -> success_focus -> gratitude_and_learning -> completed_action_imagery -> improved_action_imagery -> complete, unconditionally", () => {
   const p = profile(); // default profile has habit configured -- must not matter any more
   const s = state();
   assert.equal(getNextArcStage("encode", s, p, ALL_LAYERS).stage, "act");
   assert.equal(getNextArcStage("act", s, p, ALL_LAYERS).stage, "success_focus");
-  assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "complete");
+  assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "gratitude_and_learning");
+  assert.equal(getNextArcStage("gratitude_and_learning", s, p, ALL_LAYERS).stage, "completed_action_imagery");
+  assert.equal(getNextArcStage("completed_action_imagery", s, p, ALL_LAYERS).stage, "improved_action_imagery");
+  assert.equal(getNextArcStage("improved_action_imagery", s, p, ALL_LAYERS).stage, "complete");
 });
 
-test("success_focus continues straight to complete regardless of activeLayers -- habit layer active or not never matters any more", () => {
+test("success_focus continues straight to gratitude_and_learning (then the post-action reflection/imagery sequence to complete) regardless of activeLayers -- habit layer active or not never matters any more", () => {
   const p = profile();
   const s = state();
   const layersWithoutHabit: DevelopmentLayer[] = ["state", "identity"];
-  assert.equal(getNextArcStage("success_focus", s, p, layersWithoutHabit).stage, "complete");
-  assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "complete");
+  assert.equal(getNextArcStage("success_focus", s, p, layersWithoutHabit).stage, "gratitude_and_learning");
+  assert.equal(getNextArcStage("success_focus", s, p, ALL_LAYERS).stage, "gratitude_and_learning");
 });
 
-test("success_focus continues straight to complete regardless of whether a negative action is configured (profile.habit set or null)", () => {
+test("success_focus continues straight to gratitude_and_learning regardless of whether a negative action is configured (profile.habit set or null)", () => {
   const s = state();
-  assert.equal(getNextArcStage("success_focus", s, profile({ habit: "גלילה ברשת" }), ALL_LAYERS).stage, "complete");
-  assert.equal(getNextArcStage("success_focus", s, profile({ habit: null }), ALL_LAYERS).stage, "complete");
+  assert.equal(getNextArcStage("success_focus", s, profile({ habit: "גלילה ברשת" }), ALL_LAYERS).stage, "gratitude_and_learning");
+  assert.equal(getNextArcStage("success_focus", s, profile({ habit: null }), ALL_LAYERS).stage, "gratitude_and_learning");
 });
 
 test("negative_action always advances unconditionally to complete -- unreachable via the sequencer, but harmless if ever reached (exhaustiveness fallback)", () => {
@@ -1456,6 +1459,11 @@ test("existing downstream Reactive ARC progression is unchanged: from observer_p
     // here any more, even though the habit layer is active and
     // profile.habit is configured (base profile() default) -- it's an
     // optional, standalone tool now, never inserted into this sequence.
+    // Post-action reflection/imagery task: success_focus now continues
+    // through the mandatory reflection/imagery sequence before complete.
+    "gratitude_and_learning",
+    "completed_action_imagery",
+    "improved_action_imagery",
     "complete",
   ]);
 });

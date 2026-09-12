@@ -984,14 +984,21 @@ export function getNextArcStage(
     case "act":
       return result("success_focus", state.loopIterationCount);
     case "success_focus":
-      // Negative Action reduction task: the main routine is always
-      // ARC -> Success Focus -> completion -- success_focus continues
-      // straight to complete UNCONDITIONALLY now. The optional Negative
-      // Action Timer is never inserted here (or anywhere else in the
-      // main sequencer): it's a separate, BUILD-configured tool the
+      // Post-action reflection/imagery task: success_focus now continues
+      // UNCONDITIONALLY into the new Gratitude-and-Learning ->
+      // completed-action-imagery -> improved-action-imagery sequence,
+      // never straight to "complete" any more. The optional Negative
+      // Action Timer is still never inserted here (or anywhere else in
+      // the main sequencer): it's a separate, BUILD-configured tool the
       // trainee opens intentionally from its own standalone entry point
       // (app/negative-action.tsx), never required to finish a session.
       // See program/engine.ts's isNegativeActionAvailable.
+      return result("gratitude_and_learning", state.loopIterationCount);
+    case "gratitude_and_learning":
+      return result("completed_action_imagery", state.loopIterationCount);
+    case "completed_action_imagery":
+      return result("improved_action_imagery", state.loopIterationCount);
+    case "improved_action_imagery":
       return result("complete", state.loopIterationCount);
     // negative_action is never routed to by this sequencer any more (see
     // the "success_focus" case above) -- this case only exists so the

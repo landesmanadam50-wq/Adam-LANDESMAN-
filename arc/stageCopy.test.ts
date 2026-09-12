@@ -1656,3 +1656,18 @@ test("desired imagery (Encoding) and Action Imagery (arc/successfulPerformance.t
   const encode = getStageCopy("encode", p, stateSession, ["state"]);
   assert.ok(!encode.body.includes("דמיין את עצמך מתחיל"), "Encoding must never contain Action Imagery's own instruction wording");
 });
+
+// ---------------------------------------------------------------------------
+// Post-action reflection/imagery task
+// ---------------------------------------------------------------------------
+
+test("gratitude_and_learning/completed_action_imagery/improved_action_imagery each carry their exact spec title and an 'info' input kind", () => {
+  const p = profile();
+  const s = liveState();
+  assert.equal(getStageCopy("gratitude_and_learning", p, s, ["state"]).title, "הוקרת תודה ולמידה");
+  assert.equal(getStageCopy("completed_action_imagery", p, s, ["state"]).title, "דמיון הפעולה שקרתה");
+  assert.equal(getStageCopy("improved_action_imagery", p, s, ["state"]).title, "דמיון הפעולה המשופרת");
+  assert.equal(getStageInputKind("gratitude_and_learning"), "info");
+  assert.equal(getStageInputKind("completed_action_imagery"), "info");
+  assert.equal(getStageInputKind("improved_action_imagery"), "info");
+});
