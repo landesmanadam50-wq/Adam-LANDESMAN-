@@ -4,7 +4,10 @@ import assert from "node:assert/strict";
 import {
   createIdentityExtensionInitialSession,
   getFirstIdentityExtensionStage,
+  getIdentityExtensionActionModeOptions,
+  IDENTITY_EXTENSION_MICRO_DURATION_MINUTES,
   IDENTITY_EXTENSION_OFFER_QUESTION,
+  isIdentityExtensionActionScheduledOnly,
   isIdentityExtensionEligible,
   resolveIdentityExtensionActiveLayers,
   resolveIdentityExtensionEntry,
@@ -154,4 +157,26 @@ test("isIdentityExtensionEligible is true for a build with a configured identity
 test("isIdentityExtensionEligible is false, never throws, for a null ArcBuild (unresolved arcBuildId)", () => {
   assert.doesNotThrow(() => isIdentityExtensionEligible(null));
   assert.equal(isIdentityExtensionEligible(null), false);
+});
+
+// --- Action mode: full/micro/alternative/scheduled ---
+
+test("getIdentityExtensionActionModeOptions offers exactly the 4 spec modes, in order", () => {
+  assert.deepEqual(
+    getIdentityExtensionActionModeOptions().map((o) => o.value),
+    ["full", "micro", "alternative", "scheduled"]
+  );
+});
+
+test("isIdentityExtensionActionScheduledOnly is true ONLY for 'scheduled', never for full/micro/alternative/null", () => {
+  assert.equal(isIdentityExtensionActionScheduledOnly("scheduled"), true);
+  assert.equal(isIdentityExtensionActionScheduledOnly("full"), false);
+  assert.equal(isIdentityExtensionActionScheduledOnly("micro"), false);
+  assert.equal(isIdentityExtensionActionScheduledOnly("alternative"), false);
+  assert.equal(isIdentityExtensionActionScheduledOnly(null), false);
+});
+
+test("micro's own duration chips are shorter than, and never identical in shape to, the alternative mode's -- reinforcing the distinction in the UI itself", () => {
+  assert.deepEqual(IDENTITY_EXTENSION_MICRO_DURATION_MINUTES, [1, 2, 3, 5]);
+  assert.ok(Math.max(...IDENTITY_EXTENSION_MICRO_DURATION_MINUTES) < 10);
 });

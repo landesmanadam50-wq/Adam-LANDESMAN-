@@ -131,3 +131,55 @@ export function isIdentityExtensionEligible(arcBuild: ArcBuild | null): boolean 
   if (!arcBuild) return false;
   return resolveIdentityExtensionActiveLayers(arcBuild).includes("identity");
 }
+
+// ---------------------------------------------------------------------------
+// Action mode -- "Full, micro, alternative or scheduled identity/goal
+// action" (the user's own spec wording). arc/arcEngine.ts's existing
+// "act" stage only ever distinguishes two paths (the planned action via
+// plannedActionConfirmed, or ONE session-specific alternative via
+// selectedAction/selectedActionDuration -- see resolveActPhase/
+// liveEventAdapter.ts's applyPlannedActionConfirmed/applyAlternativeAction).
+// This module adds no third engine-level path -- it never touches
+// arc/arcEngine.ts. Instead, a driving screen asks the trainee to choose
+// ONE of these four modes BEFORE resolveActPhase would otherwise render
+// the plain two-option ActionChoiceScreen, then reuses the EXISTING
+// mechanism: "full" -> applyPlannedActionConfirmed (unchanged); "micro"
+// and "alternative" both -> applyAlternativeAction (unchanged) with the
+// trainee's own typed text/duration, differing only in the label/copy
+// shown and the duration chip set offered (micro's are short); never a
+// new field on ArcLiveState. "scheduled" is the one genuinely new
+// behavior: the driving screen must never advance past the "act" stage
+// for this mode -- no imagery, no performing, no success_focus, no
+// gratitude_and_learning, no completed/improved action imagery, and
+// never call appendSessionLogEntry (never "complete"). See each
+// screen's own doc for exactly how this is enforced.
+// ---------------------------------------------------------------------------
+
+export type IdentityExtensionActionMode = "full" | "micro" | "alternative" | "scheduled";
+
+export const IDENTITY_EXTENSION_ACTION_MODE_QUESTION = "כיצד תרצה לגשת לפעולה הפעם?";
+
+export interface IdentityExtensionActionModeOption {
+  value: IdentityExtensionActionMode;
+  label: string;
+}
+
+export function getIdentityExtensionActionModeOptions(): IdentityExtensionActionModeOption[] {
+  return [
+    { value: "full", label: "הפעולה המלאה כפי שתוכננה" },
+    { value: "micro", label: "גרסה מיקרו וקצרה של הפעולה" },
+    { value: "alternative", label: "פעולה חלופית" },
+    { value: "scheduled", label: "לתזמן לפעם אחרת, בלי לבצע עכשיו" },
+  ];
+}
+
+/** Short duration chips for the "micro" mode -- deliberately shorter than the "alternative" mode's own duration set (never the same options, so the UI itself reinforces the distinction). */
+export const IDENTITY_EXTENSION_MICRO_DURATION_MINUTES = [1, 2, 3, 5];
+
+/** Whether `mode` is the one mode that must never advance into imagery/performing/success_focus/gratitude or mark the session complete -- see module doc. */
+export function isIdentityExtensionActionScheduledOnly(mode: IdentityExtensionActionMode | null): boolean {
+  return mode === "scheduled";
+}
+
+export const IDENTITY_EXTENSION_SCHEDULED_CONFIRMATION_TITLE = "נקבע לפעם אחרת";
+export const IDENTITY_EXTENSION_SCHEDULED_CONFIRMATION_BODY = "הפעולה לא בוצעה עכשיו -- אפשר לחזור אליה כשיתאים.";

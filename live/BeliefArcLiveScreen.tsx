@@ -201,14 +201,40 @@ export default function BeliefArcLiveScreen() {
   }
 
   if (status === "completeFull" || status === "completeMini") {
+    const hasGoal = typeof goalId === "string" && goalId.length > 0;
+    // Phase 8 Part 2 (Identity Extension): Goal Achievement (goalId
+    // present) is MANDATORY -- the only button shown continues directly
+    // into Identity Extension, never a skip/finish-here alternative.
+    // Personal Development (no goalId) keeps the plain completion via
+    // returnAfterCompletion exactly as before, plus an additional
+    // OPTIONAL button opening live/IdentityExtensionOfferScreen.tsx's
+    // own offer question -- declining there (or never tapping it) is
+    // never penalized.
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.content}>
           <Text style={styles.title}>סיום</Text>
           <Text style={styles.body}>{status === "completeFull" ? "סיימת את ה-ARC Belief." : "סיימת את ה-ARC Mini Belief."}</Text>
-          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={returnAfterCompletion}>
-            <Text style={styles.buttonText}>{typeof goalId === "string" && goalId.length > 0 ? "חזרה למטרה" : "חזרה להתפתחות אישית"}</Text>
-          </Pressable>
+          {hasGoal ? (
+            <Pressable
+              style={[styles.button, styles.fullWidthButton]}
+              onPress={() => router.replace({ pathname: "/identity-extension/live", params: { track: "goal_achievement", goalId: goalId as string } })}
+            >
+              <Text style={styles.buttonText}>המשך לבניית הזהות ולפעולה</Text>
+            </Pressable>
+          ) : (
+            <>
+              <Pressable
+                style={[styles.button, styles.fullWidthButton]}
+                onPress={() => router.push({ pathname: "/identity-extension/offer", params: { returnTo: "/self-development" } })}
+              >
+                <Text style={styles.buttonText}>כן, להמשיך לבניית הזהות</Text>
+              </Pressable>
+              <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={returnAfterCompletion}>
+                <Text style={styles.secondaryButtonText}>לא, סיימתי</Text>
+              </Pressable>
+            </>
+          )}
         </View>
       </SafeAreaView>
     );

@@ -875,6 +875,25 @@ export default function LiveSessionScreen() {
           restartLabel={routine ? "המשך להתמקדות בהצלחה" : fourWeekGoalId ? "לחזור לתוכנית ארבעת השבועות" : undefined}
           onRestart={fourWeekGoalId && !routine ? returnToFourWeekProgram : restart}
         />
+        {/*
+          Phase 8 Part 2 (Identity Extension), Personal Development
+          track: an OPTIONAL, purely additive continuation offered
+          alongside (never instead of) the existing CompleteScreen's own
+          "סשן חדש"/routine/four-week-program button above -- declining
+          (or never tapping it) changes nothing about this session's own
+          completion, which has already been recorded via finalizeSession.
+          Never shown for a routine-launched or four-week-program-launched
+          session, matching every other special-case branch this screen
+          already reserves for those two contexts.
+        */}
+        {stage === "complete" && !routine && !fourWeekGoalId && (
+          <Pressable
+            style={[styles.pickerButton, styles.identityExtensionOfferButton]}
+            onPress={() => router.push({ pathname: "/identity-extension/offer", params: { returnTo: "/self-development" } })}
+          >
+            <Text style={styles.pickerButtonText}>להמשיך לבניית הזהות ולפעולה</Text>
+          </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -917,5 +936,8 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 16,
+  },
+  identityExtensionOfferButton: {
+    marginTop: 12,
   },
 });

@@ -117,6 +117,8 @@ export default function RootLayout() {
         <Stack.Screen name="belief-arcs/index" options={{ title: "בניית ARC Belief" }} />
         <Stack.Screen name="belief-arcs/[id]" options={{ title: "עריכת ARC Belief" }} />
         <Stack.Screen name="belief-arcs/live/[id]" options={{ title: "ARC Belief LIVE" }} />
+        <Stack.Screen name="identity-extension/offer" options={{ title: "המשך לבניית הזהות" }} />
+        <Stack.Screen name="identity-extension/live" options={{ title: "בניית הזהות והפעולה" }} />
         <Stack.Screen name="goals/index" options={{ title: "מטרות ARC Goal" }} />
         <Stack.Screen name="goals/[id]" options={{ title: "עריכת מטרה" }} />
         <Stack.Screen name="goals/live/[goalId]" options={{ title: "תוכנית ארבעת השבועות" }} />
