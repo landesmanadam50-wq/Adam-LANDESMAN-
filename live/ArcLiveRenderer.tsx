@@ -36,11 +36,14 @@ import {
   ActionImageryScreen,
   ActionScreen,
   BeneficialActionDurationChoiceScreen,
+  CompletedActionImageryScreen,
   CompleteScreen,
   DesiredStateRatingScreen,
   EncodingScreen,
   FutureSuccessFocusAskScreen,
   FutureSuccessFocusScheduleScreen,
+  GratitudeAndLearningScreen,
+  ImprovedActionImageryScreen,
   InstructionScreen,
   InterferingThoughtCheckScreen,
   NeedIdentificationScreen,
@@ -138,6 +141,12 @@ export interface ArcLiveRendererProps {
   onChangeGratitudeMemoryDetailText: (text: string) => void;
   progressEvidenceText: string;
   onChangeProgressEvidenceText: (text: string) => void;
+  /** Post-action reflection/imagery task: gratitude_and_learning's own new "מה אפשר לשפר בפעם הבאה?" answer -- session-local, exactly like the three fields above; empty is a valid, never-forced answer. Passed straight through into improved_action_imagery below (never re-typed or duplicated). */
+  improvementText: string;
+  onChangeImprovementText: (text: string) => void;
+  onGratitudeAndLearningContinue: () => void;
+  onCompletedActionImageryContinue: () => void;
+  onImprovedActionImageryContinue: () => void;
   restartLabel?: string;
   onRestart: () => void;
 }
@@ -583,9 +592,18 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       );
     }
 
-    case "complete":
+    case "gratitude_and_learning":
+      // Post-action reflection/imagery task, Section 2: relocated
+      // verbatim from the old "complete" stage (see
+      // GratitudeAndLearningScreen's own doc) plus the new improvement
+      // question. Reached only right after success_focus -- see
+      // arc/arcEngine.ts's "success_focus" case -- so this, and the two
+      // imagery stages after it, only ever appear in a real LIVE session
+      // that actually completed a beneficial action and passed through
+      // Success Focus (never ARC Link/Mini ARC/rehearsal-only flows,
+      // which never construct an ArcLiveState at all).
       return (
-        <CompleteScreen
+        <GratitudeAndLearningScreen
           copy={copy}
           gratitudeText={props.gratitudeText}
           onChangeGratitudeText={props.onChangeGratitudeText}
@@ -593,9 +611,66 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           onChangeGratitudeMemoryDetailText={props.onChangeGratitudeMemoryDetailText}
           progressEvidenceText={props.progressEvidenceText}
           onChangeProgressEvidenceText={props.onChangeProgressEvidenceText}
-          restartLabel={props.restartLabel}
-          onRestart={props.onRestart}
+          improvementText={props.improvementText}
+          onChangeImprovementText={props.onChangeImprovementText}
+          onContinue={props.onGratitudeAndLearningContinue}
         />
       );
+
+    case "completed_action_imagery": {
+      // Post-action reflection/imagery task, Section 3: replays the SAME
+      // action just resolved for "act"/Action Imagery -- same
+      // resolveEncodingTarget call, same layer, so this can never name a
+      // different action than what was actually performed. Dwell
+      // resolved from the CURRENT target's own configured value (never
+      // another layer's, never the identity-only resultImagery-style
+      // exception), key'd on the stage so a fresh mount (and so a fresh
+      // dwell clock) is guaranteed every time this stage is entered.
+      const { layer, actionLabel } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: session.triggerType,
+        selectedTarget: session.selectedTarget,
+        buildProfile: profile,
+        selectedAction: session.selectedAction,
+      });
+      const dwellSeconds = resolveDwellSecondsFor("completedActionImageryDwellSeconds", layer, profile);
+      return (
+        <CompletedActionImageryScreen
+          key={stage}
+          copy={copy}
+          actionText={actionLabel}
+          dwellSeconds={dwellSeconds}
+          onContinue={props.onCompletedActionImageryContinue}
+        />
+      );
+    }
+
+    case "improved_action_imagery": {
+      // Post-action reflection/imagery task, Section 4: its own
+      // independent dwell (improvedActionImageryDwellSeconds), resolved
+      // from the same layer -- never the same timer instance as
+      // completed_action_imagery above (separate ArcStage, separate
+      // mount, separate useDwellCountdown call).
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: session.triggerType,
+        selectedTarget: session.selectedTarget,
+        buildProfile: profile,
+        selectedAction: session.selectedAction,
+      });
+      const dwellSeconds = resolveDwellSecondsFor("improvedActionImageryDwellSeconds", layer, profile);
+      return (
+        <ImprovedActionImageryScreen
+          key={stage}
+          copy={copy}
+          improvementText={props.improvementText}
+          dwellSeconds={dwellSeconds}
+          onContinue={props.onImprovedActionImageryContinue}
+        />
+      );
+    }
+
+    case "complete":
+      return <CompleteScreen copy={copy} restartLabel={props.restartLabel} onRestart={props.onRestart} />;
   }
 }

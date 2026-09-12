@@ -97,6 +97,12 @@ test("STATE ONLY: a full reactive_emotion session walks through to completion wi
   stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "success_focus");
   stage = getNextArcStage(stage, s, p, activeLayers).stage;
+  assert.equal(stage, "gratitude_and_learning");
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
+  assert.equal(stage, "completed_action_imagery");
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
+  assert.equal(stage, "improved_action_imagery");
+  stage = getNextArcStage(stage, s, p, activeLayers).stage;
   assert.equal(stage, "complete");
 });
 

@@ -94,6 +94,8 @@ import {
   applyAlternativeAction,
   applyBalancedAlternativeInterpretationSeen,
   applyBeneficialActionDurationSelected,
+  applyCompletedActionImageryFinished,
+  applyImprovedActionImageryFinished,
   applyInterferingThoughtAnswer,
   applyNeedIdentificationAnswer,
   applyPlannedActionConfirmed,
@@ -171,6 +173,8 @@ export default function ArcGoalSessionScreen() {
   const [gratitudeText, setGratitudeText] = useState("");
   const [gratitudeMemoryDetailText, setGratitudeMemoryDetailText] = useState("");
   const [progressEvidenceText, setProgressEvidenceText] = useState("");
+  /** Post-action reflection/imagery task: same shape as live/LiveSessionScreen.tsx's own field -- only ever reached by the outer (identity) run, which alone can reach gratitude_and_learning/success_focus/complete; the inner run is always intercepted before "act" completes (see shouldInterceptInnerAtAct below) and never renders these stages. */
+  const [improvementText, setImprovementText] = useState("");
 
   function clearPendingFields() {
     setPendingSensationLocation("");
@@ -220,6 +224,7 @@ export default function ArcGoalSessionScreen() {
         setGratitudeText("");
         setGratitudeMemoryDetailText("");
         setProgressEvidenceText("");
+        setImprovementText("");
         setStatus("running");
         }
       );
@@ -361,14 +366,25 @@ export default function ArcGoalSessionScreen() {
     const trimmedGratitude = gratitudeText.trim();
     const trimmedMemoryDetail = gratitudeMemoryDetailText.trim();
     const trimmedProgressEvidence = progressEvidenceText.trim();
+    // Post-action reflection/imagery task: same star-eligibility
+    // computation as live/LiveSessionScreen.tsx's restart() -- this is
+    // only ever reached via the OUTER run (see this component's own
+    // restartLabel/onRestart wiring below), so outerSession is the
+    // exact ArcLiveState finalizeOuterSession() was just called with.
+    const trimmedImprovement = improvementText.trim();
+    const fullReflectionCreditEarned =
+      trimmedImprovement.length > 0 && outerSession.completedActionImageryFinished && outerSession.improvedActionImageryFinished;
     updateLastSessionLogEntryGratitude(
       trimmedGratitude.length > 0 ? trimmedGratitude : null,
       trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
-      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null
+      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null,
+      trimmedImprovement.length > 0 ? trimmedImprovement : null,
+      fullReflectionCreditEarned
     );
     setGratitudeText("");
     setGratitudeMemoryDetailText("");
     setProgressEvidenceText("");
+    setImprovementText("");
     setGoalState((current) => ({ ...current, uiStage: "goal_action_confirm" }));
   }
 
@@ -504,6 +520,17 @@ export default function ArcGoalSessionScreen() {
       onChangeGratitudeMemoryDetailText: setGratitudeMemoryDetailText,
       progressEvidenceText,
       onChangeProgressEvidenceText: setProgressEvidenceText,
+      improvementText,
+      onChangeImprovementText: setImprovementText,
+      // Post-action reflection/imagery task: reached only by the outer
+      // (identity) run -- the inner run is always intercepted before
+      // "act" completes (shouldInterceptInnerAtAct above) and so never
+      // renders gratitude_and_learning/the two imagery stages/complete
+      // at all, even though this shared props builder must still supply
+      // them for BOTH ctx calls (ArcLiveRendererProps' own shape).
+      onGratitudeAndLearningContinue: () => commitAdvance(session),
+      onCompletedActionImageryContinue: () => commitAdvance(applyCompletedActionImageryFinished(session)),
+      onImprovedActionImageryContinue: () => commitAdvance(applyImprovedActionImageryFinished(session)),
       restartLabel,
       onRestart,
     };

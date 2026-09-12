@@ -50,6 +50,10 @@ export const DEFAULT_DWELL_TIMES: DwellTimes = {
   presenceDwellSeconds: 8,
   stopImageryDwellSeconds: 8,
   resultImageryDwellSeconds: 8,
+  // Post-action reflection/imagery task: 20s each, independent of one
+  // another -- see DwellTimes' own field docs (arc/types.ts).
+  completedActionImageryDwellSeconds: 20,
+  improvedActionImageryDwellSeconds: 20,
 };
 
 /**

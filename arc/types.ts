@@ -136,6 +136,47 @@ export type ArcStage =
   | "act"
   | "success_focus"
   /**
+   * Post-action reflection/imagery task: the natural, emotionally
+   * supportive continuation of Success Focus, reached unconditionally
+   * once success_focus's own sub-flow finishes (see
+   * arc/arcEngine.ts's "success_focus" case). Hosts the SAME Gratitude/
+   * memory-detail/Evidence-of-Progress free-text questions that used to
+   * live on the "complete" stage's own screen (live/screens.tsx's
+   * CompleteScreen, unchanged in content, only relocated earlier so it
+   * can precede the two new imagery stages below), PLUS one new
+   * optional question -- "מה אפשר לשפר בפעם הבאה?" -- always framed
+   * AFTER recognition of what went well, never as criticism. All of
+   * this remains screen-local free text (gratitudeText/
+   * improvementReflectionText etc. in live/LiveSessionScreen.tsx /
+   * live/ArcGoalSessionScreen.tsx), never written to ArcLiveState --
+   * only actually persisted once the trainee leaves this whole session
+   * (restart()/returnToFourWeekProgram()/handleCompleteContinue()),
+   * exactly like Gratitude always has been.
+   */
+  | "gratitude_and_learning"
+  /**
+   * Post-action reflection/imagery task: a replay of the real action
+   * the trainee JUST performed (never future preparation, never
+   * phrased as if it hasn't happened yet) -- strengthens the real
+   * experience. Dwell-gated only (arc/dwellTimes.ts's
+   * completedActionImageryDwellSeconds) -- no writing, no Skip button;
+   * the trainee must remain the full configured minimum before
+   * Continue enables. See live/screens.tsx's
+   * CompletedActionImageryScreen.
+   */
+  | "completed_action_imagery"
+  /**
+   * Post-action reflection/imagery task: turns the trainee's own
+   * optional improvement answer (gratitude_and_learning above) into
+   * forward mental preparation for the next performance, plus its
+   * direct, realistic result -- generic wording when no improvement was
+   * given, never inventing one. Its own separate, independent dwell
+   * (improvedActionImageryDwellSeconds) -- no writing, no Skip button.
+   * Continues straight to "complete" once its dwell finishes. See
+   * live/screens.tsx's ImprovedActionImageryScreen.
+   */
+  | "improved_action_imagery"
+  /**
    * The trainee's own predefined interfering/negative behavior
    * (habit, below), timed to the current program week's gradually
    * reduced allowance -- see program/engine.ts's
@@ -143,13 +184,14 @@ export type ArcStage =
    * OPTIONAL, BUILD-configured tool (ArcBuildProfile.negativeActionReductionEnabled),
    * separate from the main ARC routine: this stage is never reached
    * through the main sequencer any more -- getNextArcStage's
-   * "success_focus" case always continues straight to "complete",
-   * unconditionally. The predefined-action/timer screens for this
-   * stage (live/screens.tsx's NegativeActionStartScreen/
-   * NegativeActionScreen, and this stage's own getStageCopy case) are
-   * still reused, but only by the standalone entry point
-   * (app/negative-action.tsx) the trainee opens intentionally --
-   * see program/engine.ts's isNegativeActionAvailable.
+   * "success_focus" case always continues straight to
+   * gratitude_and_learning/completed_action_imagery/
+   * improved_action_imagery/"complete", unconditionally. The
+   * predefined-action/timer screens for this stage (live/screens.tsx's
+   * NegativeActionStartScreen/NegativeActionScreen, and this stage's
+   * own getStageCopy case) are still reused, but only by the standalone
+   * entry point (app/negative-action.tsx) the trainee opens
+   * intentionally -- see program/engine.ts's isNegativeActionAvailable.
    */
   | "negative_action"
   | "complete";
@@ -231,6 +273,25 @@ export interface DwellTimes {
    * DEFAULT_DWELL_TIMES.resultImageryDwellSeconds.
    */
   resultImageryDwellSeconds: number;
+  /**
+   * Post-action reflection/imagery task: "זמן דמיון הפעולה שקרתה" -- how
+   * long, on the new completed_action_imagery stage (a replay of the
+   * real action just performed), the trainee must remain before
+   * Continue enables. Resolved via the exact same resolveDwellSecondsFor
+   * mechanism as every other field here; a legacy profile saved before
+   * this field existed falls back to DEFAULT_DWELL_TIMES.completedActionImageryDwellSeconds,
+   * same as every other optional DwellTimes field.
+   */
+  completedActionImageryDwellSeconds: number;
+  /**
+   * Post-action reflection/imagery task: "זמן דמיון הפעולה המשופרת" --
+   * the SEPARATE, independent dwell for the new improved_action_imagery
+   * stage (forward mental preparation + result imagery). Never shares a
+   * timer with completedActionImageryDwellSeconds above -- the two
+   * stages are always dwell-gated independently, even though both
+   * default to the same 20s value.
+   */
+  improvedActionImageryDwellSeconds: number;
 }
 
 export interface ArcBuildProfile {
@@ -1618,6 +1679,26 @@ export interface ArcLiveState {
   actionReached: boolean;
   /** The trainee confirmed they actually performed the real-world action -- the only thing that earns Training Day credit. */
   realActionCompleted: boolean;
+
+  /**
+   * Post-action reflection/imagery task: set true the moment the
+   * trainee presses Continue on completed_action_imagery -- which can
+   * only happen once that stage's own independent dwell timer has
+   * fully elapsed (the dwell-completed signal itself is local,
+   * per-screen timer state, exactly like every other dwell-gated
+   * screen in this app -- see live/screens.tsx's
+   * CompletedActionImageryScreen -- never persisted separately since
+   * nothing needs to read it once this flag is set). Never reset back
+   * to false within a session (one-directional, same shape as
+   * actionImageryCompleted/plannedActionConfirmed); read once, at
+   * session-finalize time, to decide star/completion-credit
+   * eligibility -- never recomputed afterward, so leaving the session
+   * early and somehow returning to this SAME flag can never re-trigger
+   * a reward it already contributed to.
+   */
+  completedActionImageryFinished: boolean;
+  /** Same shape and role as completedActionImageryFinished above, for the SEPARATE improved_action_imagery stage/dwell. */
+  improvedActionImageryFinished: boolean;
 }
 
 /**
@@ -1672,5 +1753,7 @@ export function createEmptyLiveState(): ArcLiveState {
     currentArcStage: "trigger_selection",
     actionReached: false,
     realActionCompleted: false,
+    completedActionImageryFinished: false,
+    improvedActionImageryFinished: false,
   };
 }

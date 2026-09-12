@@ -50,6 +50,8 @@ import {
   applyActionImageryCompleted,
   applyAlternativeAction,
   applyBeneficialActionDurationSelected,
+  applyCompletedActionImageryFinished,
+  applyImprovedActionImageryFinished,
   applyNegativeActionStarted,
   applyPlannedActionConfirmed,
   applyRegulationToolUsed,
@@ -1412,7 +1414,11 @@ test("success_focus's own engine transition is completely unaffected by successF
   const declinedOutcome = getNextArcStage("success_focus", declinedSession, pWithHabit, activeLayersWithHabit);
   const scheduledOutcome = getNextArcStage("success_focus", scheduledSession, pWithHabit, activeLayersWithHabit);
   assert.deepEqual(declinedOutcome, scheduledOutcome, "the transition never depends on the retrospective/future-scheduling sub-flow answers");
-  assert.equal(declinedOutcome.stage, "complete", "success_focus always continues straight to complete -- Negative Action reduction task");
+  assert.equal(
+    declinedOutcome.stage,
+    "gratitude_and_learning",
+    "success_focus always continues straight to gratitude_and_learning (then the post-action reflection/imagery sequence to complete)"
+  );
 });
 
 // --- Reactive-flow-strengthening task: applyTriggerContext (#1, #8) --
@@ -1616,6 +1622,90 @@ test("existing downstream ARC progression is unchanged for an unknown-trigger se
     "encode",
     "act",
     "success_focus",
+    "gratitude_and_learning",
+    "completed_action_imagery",
+    "improved_action_imagery",
     "complete",
   ]);
+});
+
+// ---------------------------------------------------------------------------
+// Post-action reflection/imagery task
+// ---------------------------------------------------------------------------
+
+test("applyCompletedActionImageryFinished sets completedActionImageryFinished, and only that flag", () => {
+  const before = createEmptyLiveState();
+  assert.equal(before.completedActionImageryFinished, false);
+  const after = applyCompletedActionImageryFinished(before);
+  assert.equal(after.completedActionImageryFinished, true);
+  assert.equal(after.improvedActionImageryFinished, false, "never sets the OTHER, independent imagery stage's own flag");
+});
+
+test("applyImprovedActionImageryFinished sets improvedActionImageryFinished, and only that flag", () => {
+  const before = createEmptyLiveState();
+  assert.equal(before.improvedActionImageryFinished, false);
+  const after = applyImprovedActionImageryFinished(before);
+  assert.equal(after.improvedActionImageryFinished, true);
+  assert.equal(after.completedActionImageryFinished, false, "never sets the OTHER, independent imagery stage's own flag");
+});
+
+test("the two imagery-finished flags are independent: applying one never flips the other, in either order", () => {
+  const bothOrderA = applyImprovedActionImageryFinished(applyCompletedActionImageryFinished(createEmptyLiveState()));
+  assert.equal(bothOrderA.completedActionImageryFinished, true);
+  assert.equal(bothOrderA.improvedActionImageryFinished, true);
+
+  const onlyCompleted = applyCompletedActionImageryFinished(createEmptyLiveState());
+  assert.equal(onlyCompleted.completedActionImageryFinished, true);
+  assert.equal(onlyCompleted.improvedActionImageryFinished, false, "completing the FIRST imagery stage must never complete the second");
+});
+
+test("commitAdvance's own sequence never marks either imagery stage complete merely by entering it -- only the dedicated apply function (fired from the dwell-gated screen's own Continue) does", () => {
+  const p = profile({ habit: "גלילה ברשת", beneficialAction: "לצאת להליכה" });
+  const activeLayers: DevelopmentLayer[] = ["habit"];
+  // Walk a session up to success_focus without ever calling either new
+  // apply function -- entering gratitude_and_learning/
+  // completed_action_imagery/improved_action_imagery via advanceLiveSession
+  // alone (the generic "stay at this stage" continue, exactly like
+  // onGenericContinue) must never flip either flag.
+  let session: ArcLiveState = { ...createEmptyLiveState(), triggerType: "reactive_urge", hasUrge: true, identifiedNeed: "רגיעה" };
+  let stage: ArcStage = "sensation_check";
+  session = { ...session, sensationIntensity: 2 };
+  let hop = advanceLiveSession(stage, session, p, activeLayers); // -> encode
+  session = hop.session;
+  stage = hop.stage;
+  session = { ...session, plannedActionConfirmed: true, actionImageryCompleted: true };
+  hop = advanceLiveSession(stage, session, p, activeLayers); // -> act
+  session = hop.session;
+  stage = hop.stage;
+  hop = advanceLiveSession(stage, session, p, activeLayers); // -> success_focus
+  session = hop.session;
+  stage = hop.stage;
+  session = { ...session, successFocusExtraMinutes: 0, wantsFutureSuccessFocus: false };
+  hop = advanceLiveSession(stage, session, p, activeLayers); // -> gratitude_and_learning
+  session = hop.session;
+  stage = hop.stage;
+  assert.equal(stage, "gratitude_and_learning");
+  assert.equal(session.completedActionImageryFinished, false);
+  assert.equal(session.improvedActionImageryFinished, false);
+
+  hop = advanceLiveSession(stage, session, p, activeLayers); // -> completed_action_imagery (plain continue, no apply function)
+  session = hop.session;
+  stage = hop.stage;
+  assert.equal(stage, "completed_action_imagery");
+  assert.equal(session.completedActionImageryFinished, false, "merely ENTERING completed_action_imagery must never mark it complete");
+
+  // Now the real dwell-gated Continue fires the dedicated apply function.
+  session = applyCompletedActionImageryFinished(session);
+  hop = advanceLiveSession("completed_action_imagery", session, p, activeLayers); // -> improved_action_imagery
+  session = hop.session;
+  stage = hop.stage;
+  assert.equal(stage, "improved_action_imagery");
+  assert.equal(session.completedActionImageryFinished, true);
+  assert.equal(session.improvedActionImageryFinished, false, "merely ENTERING improved_action_imagery must never mark it complete");
+
+  session = applyImprovedActionImageryFinished(session);
+  hop = advanceLiveSession("improved_action_imagery", session, p, activeLayers); // -> complete
+  assert.equal(hop.stage, "complete");
+  assert.equal(hop.session.completedActionImageryFinished, true, "never reset once true");
+  assert.equal(hop.session.improvedActionImageryFinished, true);
 });

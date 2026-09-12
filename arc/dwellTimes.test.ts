@@ -55,7 +55,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
 
 // --- B: five default dwell values -------------------------------------
 
-test("DEFAULT_DWELL_TIMES has exactly the eight specified default values (ARC Goal task: resultImagery joined presence + stop-imagery)", () => {
+test("DEFAULT_DWELL_TIMES has exactly the ten specified default values (post-action reflection/imagery task: completedActionImagery/improvedActionImagery joined the original eight)", () => {
   const expected: DwellTimes = {
     sensationDwellSeconds: 8,
     acceptanceDwellSeconds: 8,
@@ -65,6 +65,8 @@ test("DEFAULT_DWELL_TIMES has exactly the eight specified default values (ARC Go
     presenceDwellSeconds: 8,
     stopImageryDwellSeconds: 8,
     resultImageryDwellSeconds: 8,
+    completedActionImageryDwellSeconds: 20,
+    improvedActionImageryDwellSeconds: 20,
   };
   assert.deepEqual(DEFAULT_DWELL_TIMES, expected);
 });

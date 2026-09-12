@@ -110,4 +110,33 @@ export interface SessionLogEntry {
    * metadata to match on for that record, never invented).
    */
   context?: SessionEvidenceContext | null;
+  /**
+   * Post-action reflection/imagery task: the trainee's own "מה אפשר
+   * לשפר בפעם הבאה?" answer from gratitude_and_learning -- saved
+   * alongside Gratitude/progressEvidence in the SAME
+   * updateLastSessionLogEntryGratitude() call, same
+   * same-source/never-inferred guarantee as those two fields.
+   * Optional/absent whenever the trainee left it blank, and always
+   * absent on any entry logged before this field existed. This is
+   * session-specific reflection data only -- it never writes onto the
+   * saved ArcBuild/ArcGoal profile.
+   */
+  improvementReflection?: string | null;
+  /**
+   * Post-action reflection/imagery task: whether this session earned
+   * FULL completion-star credit -- true only when the trainee both (a)
+   * answered the improvement-reflection question above (a non-empty
+   * answer) and (b) genuinely completed both post-action imagery dwell
+   * periods (ArcLiveState.completedActionImageryFinished/
+   * improvedActionImageryFinished, read once at "complete" and never
+   * reset -- see that field's own doc in arc/types.ts). false means the
+   * session still completed normally (success/fall/every other field
+   * above are recorded exactly as they always were) but the reflection
+   * requirement for full stars wasn't met -- never removes, blocks, or
+   * invalidates anything else about this entry. null/absent on any
+   * entry logged before this field existed (no reflection sequence ran
+   * for it at all, so there is nothing to credit either way -- treated
+   * the same as false by any reader, never as true).
+   */
+  fullReflectionCreditEarned?: boolean | null;
 }

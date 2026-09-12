@@ -76,6 +76,8 @@ import {
   applyAlternativeAction,
   applyBalancedAlternativeInterpretationSeen,
   applyBeneficialActionDurationSelected,
+  applyCompletedActionImageryFinished,
+  applyImprovedActionImageryFinished,
   applyInterferingThoughtAnswer,
   applyNeedIdentificationAnswer,
   applyNegativeActionStarted,
@@ -171,6 +173,16 @@ export default function LiveSessionScreen() {
   const [gratitudeText, setGratitudeText] = useState("");
   const [gratitudeMemoryDetailText, setGratitudeMemoryDetailText] = useState("");
   const [progressEvidenceText, setProgressEvidenceText] = useState("");
+  /**
+   * Post-action reflection/imagery task: gratitude_and_learning's own
+   * new "מה אפשר לשפר בפעם הבאה?" answer -- session-local, exactly like
+   * the three fields above (never ArcLiveState, never ArcBuildProfile).
+   * Read by improved_action_imagery (via ArcLiveRenderer's
+   * improvementText prop) and by restart()/returnToFourWeekProgram()'s
+   * star-eligibility computation below; reset to "" on every fresh
+   * session, same as the three fields above.
+   */
+  const [improvementText, setImprovementText] = useState("");
   /**
    * Evidence-encoding task: derived once per session load from the
    * trainee's EXISTING session log (arc/evidence.ts's buildEvidenceIndex)
@@ -448,10 +460,26 @@ export default function LiveSessionScreen() {
     // this SAME call, onto this SAME entry, alongside Gratitude -- see
     // data/sessionLog.ts's SessionLogEntry.progressEvidence doc.
     const trimmedProgressEvidence = progressEvidenceText.trim();
+    // Post-action reflection/imagery task: star eligibility, computed
+    // once here (the one place a just-finished session's Gratitude is
+    // already saved) from state that's fully settled by the time
+    // "complete" -- and so restart() -- is reachable: `session` still
+    // holds the exact ArcLiveState finalizeSession() was called with
+    // (completedActionImageryFinished/improvedActionImageryFinished are
+    // set immediately before the transition INTO "complete", and never
+    // reset afterward -- see arc/types.ts's own field docs). Full stars
+    // require the reflection question actually answered AND both real
+    // (dwell-timed, un-skippable) imagery stages genuinely completed --
+    // never awarded merely for reaching "complete".
+    const trimmedImprovement = improvementText.trim();
+    const fullReflectionCreditEarned =
+      trimmedImprovement.length > 0 && session.completedActionImageryFinished && session.improvedActionImageryFinished;
     updateLastSessionLogEntryGratitude(
       trimmedGratitude.length > 0 ? trimmedGratitude : null,
       trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
-      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null
+      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null,
+      trimmedImprovement.length > 0 ? trimmedImprovement : null,
+      fullReflectionCreditEarned
     ).then(() => {
       // Rebuilds the evidence index so a "סשן חדש" restart within this
       // SAME screen instance (no navigation, so useFocusEffect above
@@ -491,6 +519,7 @@ export default function LiveSessionScreen() {
       setGratitudeText("");
       setGratitudeMemoryDetailText("");
       setProgressEvidenceText("");
+      setImprovementText("");
       setRoutineSuccessFocusSelectedMinutes(null);
       setRoutinePhase("successFocus");
       return;
@@ -510,6 +539,7 @@ export default function LiveSessionScreen() {
     setGratitudeText("");
     setGratitudeMemoryDetailText("");
     setProgressEvidenceText("");
+    setImprovementText("");
   };
 
   /**
@@ -525,10 +555,17 @@ export default function LiveSessionScreen() {
     const trimmedGratitude = gratitudeText.trim();
     const trimmedMemoryDetail = gratitudeMemoryDetailText.trim();
     const trimmedProgressEvidence = progressEvidenceText.trim();
+    // Post-action reflection/imagery task: same star-eligibility
+    // computation as restart() above -- see that function's own doc.
+    const trimmedImprovement = improvementText.trim();
+    const fullReflectionCreditEarned =
+      trimmedImprovement.length > 0 && session.completedActionImageryFinished && session.improvedActionImageryFinished;
     updateLastSessionLogEntryGratitude(
       trimmedGratitude.length > 0 ? trimmedGratitude : null,
       trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
-      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null
+      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null,
+      trimmedImprovement.length > 0 ? trimmedImprovement : null,
+      fullReflectionCreditEarned
     ).finally(async () => {
       if (fourWeekGoalId) {
         const goal = await getArcGoal(fourWeekGoalId);
@@ -830,6 +867,11 @@ export default function LiveSessionScreen() {
           onChangeGratitudeMemoryDetailText={setGratitudeMemoryDetailText}
           progressEvidenceText={progressEvidenceText}
           onChangeProgressEvidenceText={setProgressEvidenceText}
+          improvementText={improvementText}
+          onChangeImprovementText={setImprovementText}
+          onGratitudeAndLearningContinue={() => commitAdvance(session)}
+          onCompletedActionImageryContinue={() => commitAdvance(applyCompletedActionImageryFinished(session))}
+          onImprovedActionImageryContinue={() => commitAdvance(applyImprovedActionImageryFinished(session))}
           restartLabel={routine ? "המשך להתמקדות בהצלחה" : fourWeekGoalId ? "לחזור לתוכנית ארבעת השבועות" : undefined}
           onRestart={fourWeekGoalId && !routine ? returnToFourWeekProgram : restart}
         />

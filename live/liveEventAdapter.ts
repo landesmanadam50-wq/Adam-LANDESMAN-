@@ -362,6 +362,31 @@ export function applyNegativeActionStarted(session: ArcLiveState): ArcLiveState 
 }
 
 /**
+ * Post-action reflection/imagery task: the completed_action_imagery
+ * screen's own dwell-completion signal -- reached ONLY once the full
+ * configured dwell time has actually elapsed (see
+ * live/screens.tsx's CompletedActionImageryScreen; there is no Skip
+ * button, so this is the sole way this flag ever becomes true). Never
+ * reset once true (mirrors realActionCompleted/actionImageryCompleted
+ * above): exiting the session before the dwell timer finishes simply
+ * never calls this, leaving the flag at its default false.
+ */
+export function applyCompletedActionImageryFinished(session: ArcLiveState): ArcLiveState {
+  return { ...session, completedActionImageryFinished: true };
+}
+
+/**
+ * Post-action reflection/imagery task: the improved_action_imagery
+ * screen's own dwell-completion signal -- parallel to
+ * applyCompletedActionImageryFinished above, its own independent dwell
+ * timer, never conflated with it. Reached only once THIS screen's own
+ * configured dwell time elapses (no Skip button here either).
+ */
+export function applyImprovedActionImageryFinished(session: ArcLiveState): ArcLiveState {
+  return { ...session, improvedActionImageryFinished: true };
+}
+
+/**
  * When a proactive session lands on desired_state_check with no target
  * chosen yet and exactly one target is available, pick it automatically
  * instead of prompting for a choice with only one option. More than one
