@@ -12,7 +12,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { generateArcBuildId } from "../arc/types.ts";
-import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcGoalTarget, ArcProgramProgress, ThoughtArc, UrgeArc } from "../arc/types.ts";
+import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcGoalTarget, ArcProgramProgress, PresenceArc, ThoughtArc, UrgeArc } from "../arc/types.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
@@ -22,6 +22,7 @@ import { deleteArcGoalTargetFromList, upsertArcGoalTargetInList } from "../arc/s
 import type { ArcGoalTargetOccurrenceCompletion } from "../arc/subGoalExecution.ts";
 import { deleteUrgeArcFromList, normalizeUrgeArc, upsertUrgeArcInList } from "../arc/urgeArcs.ts";
 import { deleteThoughtArcFromList, normalizeThoughtArc, upsertThoughtArcInList } from "../arc/thoughtArcs.ts";
+import { deletePresenceArcFromList, normalizePresenceArc, upsertPresenceArcInList } from "../arc/presenceArcs.ts";
 import {
   deleteLifeManifestFromList,
   deleteTargetFromList,
@@ -421,6 +422,49 @@ export async function upsertThoughtArc(thoughtArc: ThoughtArc): Promise<void> {
 export async function deleteThoughtArc(id: string): Promise<void> {
   const thoughtArcs = await loadThoughtArcs();
   await saveThoughtArcs(deleteThoughtArcFromList(thoughtArcs, id));
+}
+
+/**
+ * Phase 5 (ARC Presence and ARC Mini Presence): a brand-new, independent
+ * collection storing full PresenceArc records -- mirrors
+ * ARC_THOUGHT_ARCS_KEY/ARC_URGE_ARCS_KEY exactly. No legacy migration:
+ * there is no prior data format, so an absent key simply means "no ARC
+ * Presences yet".
+ */
+const ARC_PRESENCE_ARCS_KEY = "archi.presenceArcs.v1";
+
+export async function loadPresenceArcs(): Promise<PresenceArc[]> {
+  const raw = await AsyncStorage.getItem(ARC_PRESENCE_ARCS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PresenceArc[];
+    return Array.isArray(parsed) ? parsed.map(normalizePresenceArc) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ARC Presences are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveThoughtArcs' own style. */
+export async function savePresenceArcs(presenceArcs: PresenceArc[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_PRESENCE_ARCS_KEY, JSON.stringify(presenceArcs));
+}
+
+export async function getPresenceArc(id: string): Promise<PresenceArc | null> {
+  const presenceArcs = await loadPresenceArcs();
+  return presenceArcs.find((presenceArc) => presenceArc.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/presenceArcs.ts's upsertPresenceArcInList. */
+export async function upsertPresenceArc(presenceArc: PresenceArc): Promise<void> {
+  const presenceArcs = await loadPresenceArcs();
+  await savePresenceArcs(upsertPresenceArcInList(presenceArcs, presenceArc));
+}
+
+/** Removes exactly the one matching ARC Presence (by id) -- see arc/presenceArcs.ts's deletePresenceArcFromList. */
+export async function deletePresenceArc(id: string): Promise<void> {
+  const presenceArcs = await loadPresenceArcs();
+  await savePresenceArcs(deletePresenceArcFromList(presenceArcs, id));
 }
 
 /**

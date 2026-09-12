@@ -1170,6 +1170,51 @@ export function createEmptyThoughtArc(id: string, name: string, now: string): Th
   };
 }
 
+// ---------------------------------------------------------------------------
+// Phase 5 (ARC Presence and ARC Mini Presence): unlike ThoughtArc/UrgeArc,
+// this does NOT get its own independent pure engine -- per explicit
+// instruction, Full ARC Presence REUSES the existing, already-working
+// Presence implementation verbatim (arc/arcEngine.ts's presence_check/
+// presence_grounding/arc_thought_awareness/arc_thought_combined_attention/
+// arc_thought_expand_presence/arc_thought_presence_recheck stages,
+// arc/stageCopy.ts's own copy for them, live/ArcLiveRenderer.tsx's own
+// rendering) via a synthetic ArcBuildProfile adapter (arc/presenceLive.ts's
+// presenceArcToProfile), exactly mirroring arc/arcGoalEngine.ts's own
+// urgeArcToProfile pattern. This is what makes it "reusable later inside
+// ARC State and other parent protocols" (spec): a later phase's ARC State
+// composition can drive the SAME session past the point this phase stops
+// it, through the exact same already-tested engine, with zero duplicated
+// Presence logic anywhere.
+// ---------------------------------------------------------------------------
+
+/**
+ * Phase 5: ARC Presence's own independent full-protocol entity -- only
+ * the two fields the existing Presence implementation actually reads
+ * per-target (presenceColor/dwell), since every other piece of "its own
+ * stages, rating-based routing, natural-breathing instruction, current
+ * anchors" is the EXISTING arc/arcEngine.ts implementation, reused
+ * as-is, never reconfigured per-PresenceArc beyond these two.
+ */
+export interface PresenceArc {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  /** "Energy Color in the Body" -- the exact same concept/field arc/presenceColor.ts's getEnergyColorLine already reads from ArcBuildProfile.presenceColor; presenceArcToProfile assigns this value onto that same field. null (never configured) means no Energy Color line renders, exactly like an ArcBuild whose trainee left it blank. */
+  presenceColor: string | null;
+  /** Optional override for the existing configurable Presence dwell (arc/dwellTimes.ts's resolvePresenceDwellSeconds/DEFAULT_DWELL_TIMES.presenceDwellSeconds). null (the default, and every PresenceArc saved before this field existed) uses the exact same default dwell every other target already falls back to -- never a different/new default. */
+  presenceDwellSeconds: number | null;
+}
+
+export function generatePresenceArcId(): string {
+  return `presencearc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** A fresh, empty PresenceArc -- mirrors createEmptyUrgeArc/createEmptyThoughtArc's own shape. */
+export function createEmptyPresenceArc(id: string, name: string, now: string): PresenceArc {
+  return { id, name, createdAt: now, updatedAt: now, presenceColor: null, presenceDwellSeconds: null };
+}
+
 /**
  * Modular ARC architecture task (LIVE entry categories, spec section 2):
  * tags which of the five independent LIVE entry points launched/owns a

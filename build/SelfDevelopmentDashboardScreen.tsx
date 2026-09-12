@@ -129,6 +129,11 @@ export default function SelfDevelopmentDashboardScreen() {
             <Text style={styles.itemText}>ARC Thought</Text>
           </Pressable>
         </Link>
+        <Link href="/presence-arcs" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>ARC Presence</Text>
+          </Pressable>
+        </Link>
         <Link href="/routines" asChild>
           <Pressable style={styles.itemRow}>
             <Text style={styles.itemText}>השגרה שלי</Text>

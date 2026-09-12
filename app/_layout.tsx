@@ -110,6 +110,9 @@ export default function RootLayout() {
         <Stack.Screen name="thought-arcs/index" options={{ title: "בניית ARC Thought" }} />
         <Stack.Screen name="thought-arcs/[id]" options={{ title: "עריכת ARC Thought" }} />
         <Stack.Screen name="thought-arcs/live/[id]" options={{ title: "ARC Thought LIVE" }} />
+        <Stack.Screen name="presence-arcs/index" options={{ title: "בניית ARC Presence" }} />
+        <Stack.Screen name="presence-arcs/[id]" options={{ title: "עריכת ARC Presence" }} />
+        <Stack.Screen name="presence-arcs/live/[id]" options={{ title: "ARC Presence LIVE" }} />
         <Stack.Screen name="goals/index" options={{ title: "מטרות ARC Goal" }} />
         <Stack.Screen name="goals/[id]" options={{ title: "עריכת מטרה" }} />
         <Stack.Screen name="goals/live/[goalId]" options={{ title: "תוכנית ארבעת השבועות" }} />
