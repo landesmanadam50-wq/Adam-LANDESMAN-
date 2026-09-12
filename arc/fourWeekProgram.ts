@@ -1,4 +1,4 @@
-import { addCalendarDays, daysBetweenCalendarDates } from "../program/dateUtils.ts";
+import { addCalendarDays, daysBetweenCalendarDates, isValidCalendarDateString } from "../program/dateUtils.ts";
 import { generateArcGoalWeekPracticeRecordId } from "./types.ts";
 import type {
   ArcGoalFourWeekProgram,
@@ -153,6 +153,14 @@ function replaceWeek(program: ArcGoalFourWeekProgram, updated: ArcGoalProgramWee
  * while preserving manually edited dates where appropriate" (spec
  * section 2). Called after any edit that changes a week's own
  * plannedEndDate (a direct edit, or extending the current week).
+ *
+ * Defensive-validation fix: a trainee's Week N date field is a raw
+ * "YYYY-MM-DD" TextInput (no native picker/modal), so plannedStartDate/
+ * plannedEndDate can transiently hold a partial or malformed string
+ * while mid-typing. Every date read here is checked with
+ * isValidCalendarDateString BEFORE any arithmetic -- an invalid
+ * previous.plannedEndDate skips that week entirely (left untouched)
+ * instead of throwing and blanking the whole BUILD screen.
  */
 function cascadeFrom(program: ArcGoalFourWeekProgram, changedWeekNumber: FourWeekProgramWeekNumber): ArcGoalFourWeekProgram {
   let next = program;
@@ -161,8 +169,11 @@ function cascadeFrom(program: ArcGoalFourWeekProgram, changedWeekNumber: FourWee
     const week = resolveWeek(next, weekNumber);
     if (week.datesManuallyEdited) continue;
     const previous = resolveWeek(next, (weekNumber - 1) as FourWeekProgramWeekNumber);
-    if (!previous.plannedEndDate) continue;
-    const span = week.plannedStartDate && week.plannedEndDate ? daysBetweenCalendarDates(week.plannedStartDate, week.plannedEndDate) : WEEK_LENGTH_DAYS - 1;
+    if (!isValidCalendarDateString(previous.plannedEndDate)) continue;
+    const span =
+      isValidCalendarDateString(week.plannedStartDate) && isValidCalendarDateString(week.plannedEndDate)
+        ? daysBetweenCalendarDates(week.plannedStartDate, week.plannedEndDate)
+        : WEEK_LENGTH_DAYS - 1;
     const newStart = addCalendarDays(previous.plannedEndDate, 1);
     const newEnd = addCalendarDays(newStart, Math.max(span, 0));
     next = replaceWeek(next, { ...week, plannedStartDate: newStart, plannedEndDate: newEnd });
@@ -176,10 +187,24 @@ function cascadeFrom(program: ArcGoalFourWeekProgram, changedWeekNumber: FourWee
  * edited (so it's never silently overwritten by a later cascade from an
  * earlier week's own edit), then cascades every later, still-automatic
  * week forward so no overlapping/invalid range is ever produced.
+ *
+ * Defensive-validation fix: newStart comes straight from a raw TextInput
+ * (onChangeText fires per keystroke, with no native picker/modal), so it
+ * is very often a partial string mid-typing (e.g. "2025-01-1"). When
+ * it isn't yet a valid "YYYY-MM-DD" date, the raw text is still stored
+ * (so the field keeps showing exactly what the trainee typed) but NO
+ * date arithmetic or cascade runs -- never throw/blank the screen over
+ * a value that isn't finished yet.
  */
 export function setWeekStartDate(program: ArcGoalFourWeekProgram, weekNumber: FourWeekProgramWeekNumber, newStart: string): ArcGoalFourWeekProgram {
   const week = resolveWeek(program, weekNumber);
-  const span = week.plannedStartDate && week.plannedEndDate ? Math.max(daysBetweenCalendarDates(week.plannedStartDate, week.plannedEndDate), 0) : WEEK_LENGTH_DAYS - 1;
+  if (!isValidCalendarDateString(newStart)) {
+    return replaceWeek(program, { ...week, plannedStartDate: newStart, datesManuallyEdited: true });
+  }
+  const span =
+    isValidCalendarDateString(week.plannedStartDate) && isValidCalendarDateString(week.plannedEndDate)
+      ? Math.max(daysBetweenCalendarDates(week.plannedStartDate, week.plannedEndDate), 0)
+      : WEEK_LENGTH_DAYS - 1;
   const newEnd = addCalendarDays(newStart, span);
   const updated = replaceWeek(program, { ...week, plannedStartDate: newStart, plannedEndDate: newEnd, datesManuallyEdited: true });
   return cascadeFrom(updated, weekNumber);
@@ -190,10 +215,18 @@ export function setWeekStartDate(program: ArcGoalFourWeekProgram, weekNumber: Fo
  * fall before that week's own start (a week can never have a negative
  * or zero-day invalid range), marks it manually edited, then cascades
  * every later, still-automatic week forward from the new end date.
+ *
+ * Defensive-validation fix: same partial-input handling as
+ * setWeekStartDate above -- an invalid/incomplete newEnd is stored as
+ * typed with no arithmetic or cascade attempted.
  */
 export function setWeekEndDate(program: ArcGoalFourWeekProgram, weekNumber: FourWeekProgramWeekNumber, newEnd: string): ArcGoalFourWeekProgram {
   const week = resolveWeek(program, weekNumber);
-  const clampedEnd = week.plannedStartDate && daysBetweenCalendarDates(week.plannedStartDate, newEnd) < 0 ? week.plannedStartDate : newEnd;
+  if (!isValidCalendarDateString(newEnd)) {
+    return replaceWeek(program, { ...week, plannedEndDate: newEnd, datesManuallyEdited: true });
+  }
+  const clampedEnd =
+    isValidCalendarDateString(week.plannedStartDate) && daysBetweenCalendarDates(week.plannedStartDate, newEnd) < 0 ? week.plannedStartDate : newEnd;
   const updated = replaceWeek(program, { ...week, plannedEndDate: clampedEnd, datesManuallyEdited: true });
   return cascadeFrom(updated, weekNumber);
 }
@@ -233,9 +266,17 @@ export function resolveNextWeekOpeningDate(program: ArcGoalFourWeekProgram, week
   return resolveWeek(program, (weekNumber + 1) as FourWeekProgramWeekNumber).plannedStartDate;
 }
 
-/** True once "today" has reached (or passed) a week's own planned end date -- the LIVE dashboard's own signal to show the decision prompt, NEVER to advance anything by itself. */
+/**
+ * True once "today" has reached (or passed) a week's own planned end
+ * date -- the LIVE dashboard's own signal to show the decision prompt,
+ * NEVER to advance anything by itself. An invalid/incomplete stored
+ * plannedEndDate (mid-typing in BUILD, or missing) OR an invalid
+ * todayLocal safely reads as "not past yet" rather than throwing --
+ * there is no sound date to compare against, so no prompt is the only
+ * safe answer.
+ */
 export function isPastPlannedEndDate(week: ArcGoalProgramWeek, todayLocal: string): boolean {
-  if (!week.plannedEndDate) return false;
+  if (!isValidCalendarDateString(week.plannedEndDate) || !isValidCalendarDateString(todayLocal)) return false;
   return daysBetweenCalendarDates(week.plannedEndDate, todayLocal) >= 0;
 }
 

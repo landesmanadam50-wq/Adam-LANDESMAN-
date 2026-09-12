@@ -20,6 +20,7 @@ import {
   setWeekEndDate,
   setWeekStartDate,
 } from "./fourWeekProgram.ts";
+import { isValidCalendarDateString } from "../program/dateUtils.ts";
 
 // --- createFourWeekProgram (new programs begin in Week 1; seven days per week) ---
 
@@ -348,4 +349,105 @@ test("resolveCurrentWeek always resolves the week matching currentWeek", () => {
   assert.equal(resolveCurrentWeek(program).weekNumber, 1);
   const advanced = confirmWeekCompleteAndAdvance(program, "2025-01-12T18:00:00.000Z");
   assert.equal(resolveCurrentWeek(advanced).weekNumber, 2);
+});
+
+// --- Android date-field blank-screen bug fix: defensive validation around
+// date parsing and cascading (build/ArcGoalEditorScreen.tsx's raw
+// "YYYY-MM-DD" TextInput and live/ArcGoalFourWeekDashboardScreen.tsx's
+// "extend current week" Modal both feed trainee-typed strings straight
+// into setWeekStartDate/setWeekEndDate on every keystroke -- neither is a
+// native date picker, so a partial or malformed string must never throw
+// and blank the screen). ---
+
+test("1. selecting a valid Week 1 end date updates it and closes out cleanly (no throw, no leftover invalid state)", () => {
+  const program = createFourWeekProgram("2025-01-06");
+  const updated = setWeekEndDate(program, 1, "2025-01-10");
+  assert.equal(resolveWeek(updated, 1).plannedEndDate, "2025-01-10");
+  assert.equal(resolveWeek(updated, 1).datesManuallyEdited, true);
+});
+
+test("2. canceling the date field (backing out without committing a new value) leaves the program byte-for-byte unchanged", () => {
+  const program = createFourWeekProgram("2025-01-06");
+  // "Cancel" here means the trainee never calls the setter with a new
+  // value at all (there is no native picker/modal to dismiss) -- the BUILD
+  // page's own local goal state is simply never patched, so the program
+  // must be referentially/structurally identical to before.
+  const untouched = program;
+  assert.deepEqual(untouched, program);
+  assert.equal(resolveWeek(untouched, 1).plannedEndDate, resolveWeek(program, 1).plannedEndDate);
+});
+
+test("3. dismissing mid-edit with the Android Back button (an incomplete date left in the field) never throws and never corrupts other weeks", () => {
+  const program = createFourWeekProgram("2025-01-06");
+  // Simulates the trainee typing "2025-01-1" character by character and
+  // then backing out (Android Back) before finishing the last digit --
+  // every one of these partial strings must be absorbed safely.
+  const partials = ["2", "20", "202", "2025", "2025-", "2025-0", "2025-01", "2025-01-", "2025-01-1"];
+  let program1 = program;
+  for (const partial of partials) {
+    assert.doesNotThrow(() => {
+      program1 = setWeekEndDate(program1, 1, partial);
+    });
+  }
+  // The field itself holds exactly what was typed (so it stays editable)...
+  assert.equal(resolveWeek(program1, 1).plannedEndDate, "2025-01-1");
+  // ...but since it was never a valid date, no cascade to later weeks ever
+  // ran -- Weeks 2-4 are exactly as createFourWeekProgram left them.
+  assert.deepEqual(resolveWeek(program1, 2), resolveWeek(program, 2));
+  assert.deepEqual(resolveWeek(program1, 3), resolveWeek(program, 3));
+  assert.deepEqual(resolveWeek(program1, 4), resolveWeek(program, 4));
+  // Every other read path used right after re-rendering the screen stays safe too.
+  assert.doesNotThrow(() => isPastPlannedEndDate(resolveWeek(program1, 1), "2025-01-09"));
+  assert.doesNotThrow(() => resolveNextWeekOpeningDate(program1, 1));
+});
+
+test("4. a later, valid edit still recalculates the following weeks safely after an invalid intermediate value", () => {
+  const program = createFourWeekProgram("2025-01-06");
+  let updated = setWeekEndDate(program, 1, "2025-01-1"); // invalid/partial -- absorbed, no cascade
+  updated = setWeekEndDate(updated, 1, "2025-01-10"); // now valid -- cascades forward
+  assert.equal(resolveWeek(updated, 1).plannedEndDate, "2025-01-10");
+  assert.equal(resolveWeek(updated, 2).plannedStartDate, "2025-01-11");
+  assert.equal(resolveWeek(updated, 2).plannedEndDate, "2025-01-17");
+  assert.equal(resolveWeek(updated, 3).plannedStartDate, "2025-01-18");
+  assert.equal(resolveWeek(updated, 4).plannedStartDate, "2025-01-25");
+  assert.equal(resolveWeek(updated, 4).plannedEndDate, "2025-01-31");
+});
+
+test("5. invalid or missing date values are recognized safely by isValidCalendarDateString and never crash any consumer", () => {
+  assert.equal(isValidCalendarDateString(""), false);
+  assert.equal(isValidCalendarDateString("2025-01-1"), false);
+  assert.equal(isValidCalendarDateString("not-a-date"), false);
+  assert.equal(isValidCalendarDateString("2025-13-01"), false);
+  assert.equal(isValidCalendarDateString("2025-01-32"), false);
+  assert.equal(isValidCalendarDateString(null), false);
+  assert.equal(isValidCalendarDateString(undefined), false);
+  assert.equal(isValidCalendarDateString("2025-01-06"), true);
+
+  const program = createFourWeekProgram("2025-01-06");
+  assert.doesNotThrow(() => setWeekStartDate(program, 2, ""));
+  assert.doesNotThrow(() => setWeekEndDate(program, 2, "garbage"));
+  assert.doesNotThrow(() => setWeekStartDate(program, 3, "2025-02-30"));
+  assert.doesNotThrow(() => isPastPlannedEndDate(resolveWeek(program, 1), "not-a-date-either"));
+});
+
+test("6. reopening the four-week BUILD after saving with a previously-invalid stored date never blanks the screen", () => {
+  let program = createFourWeekProgram("2025-01-06");
+  // Simulates a trainee who typed a partial date and left the screen
+  // (e.g. pressed Save or navigated back) before it became a valid full
+  // date -- this WAS persisted as-is under the old, throwing behavior's
+  // escape hatches, and must remain completely safe to load back in.
+  program = setWeekStartDate(program, 2, "2025-01-1");
+  assert.equal(isValidCalendarDateString(resolveWeek(program, 2).plannedStartDate), false);
+
+  // Every read the BUILD/LIVE screens perform on load must still work.
+  assert.doesNotThrow(() => resolveWeek(program, 2));
+  assert.doesNotThrow(() => resolveNextWeekOpeningDate(program, 1));
+  assert.doesNotThrow(() => resolveNextWeekOpeningDate(program, 2));
+  assert.doesNotThrow(() => isPastPlannedEndDate(resolveWeek(program, 2), "2025-01-20"));
+  assert.doesNotThrow(() => computeWeekProgress(resolveWeek(program, 2)));
+  assert.doesNotThrow(() => computeOverallProgress(program));
+
+  // And the trainee can still recover by typing a real date afterward.
+  const recovered = setWeekStartDate(program, 2, "2025-01-13");
+  assert.equal(resolveWeek(recovered, 2).plannedStartDate, "2025-01-13");
 });
