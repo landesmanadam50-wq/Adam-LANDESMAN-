@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getUrgeArc, upsertUrgeArc } from "../data/storage.ts";
+import { getUrgeArc, loadMiniArcBuilds, upsertMiniArcBuild, upsertUrgeArc } from "../data/storage.ts";
 import {
   buildUrgeArcFromDraft,
   createEmptyUrgeArcDraft,
@@ -12,6 +12,14 @@ import {
 } from "../arc/urgeArcs.ts";
 import type { UrgeArcDraft } from "../arc/urgeArcs.ts";
 import { generateUrgeArcId } from "../arc/types.ts";
+import {
+  buildMiniArcFromDraft,
+  createLinkedMiniArcDraft,
+  generateMiniArcId,
+  isMiniArcDraftComplete,
+  linkMiniArcToParent,
+} from "../arc/miniArc.ts";
+import type { MiniArcBuild, MiniArcDraft } from "../arc/miniArc.ts";
 
 /**
  * build/UrgeArcEditorScreen.tsx (route: /urge-arcs/[id], id="new" to create)
@@ -37,6 +45,14 @@ export default function UrgeArcEditorScreen() {
   const [existingMeta, setExistingMeta] = useState<{ id: string; createdAt: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Build ARC Mini together with full ARC task (spec section 9): the
+  // linked Mini ARC for THIS UrgeArc, when one already exists -- null
+  // while none has been built yet. Loaded alongside the UrgeArc itself,
+  // never a separate navigation away from this page.
+  const [linkedMini, setLinkedMini] = useState<MiniArcBuild | null>(null);
+  const [miniDraft, setMiniDraft] = useState<MiniArcDraft | null>(null);
+  const [miniSaveError, setMiniSaveError] = useState<string | null>(null);
+
   useEffect(() => {
     if (isNew || !id) return;
     let cancelled = false;
@@ -50,10 +66,47 @@ export default function UrgeArcEditorScreen() {
       setExistingMeta({ id: existing.id, createdAt: existing.createdAt });
       setStatus("ready");
     });
+    loadMiniArcBuilds().then((builds) => {
+      if (cancelled) return;
+      const found = builds.find((b) => b.protocolKind === "urge" && b.parentArcBuildId === id) ?? null;
+      setLinkedMini(found);
+    });
     return () => {
       cancelled = true;
     };
   }, [id, isNew]);
+
+  function startBuildingLinkedMini() {
+    if (!existingMeta) return;
+    // Pre-fills from THIS UrgeArc's own compatible values (spec section
+    // 9: "may reuse compatible parent values... but must NOT copy the
+    // entire full protocol") -- the trainee still fills in presenceColor
+    // and reviews/edits the rest before saving.
+    setMiniDraft(createLinkedMiniArcDraft(draft.name, "", draft.regulationAnchor, "", draft.beneficialAlternativeAction));
+  }
+
+  async function handleSaveLinkedMini() {
+    if (!miniDraft || !existingMeta) return;
+    if (!isMiniArcDraftComplete(miniDraft)) {
+      setMiniSaveError("יש למלא שם, צבע נוכחות, עוגן ויסות, פעולת קידוד ופעולה מיטיבה לפני השמירה.");
+      return;
+    }
+    setMiniSaveError(null);
+    try {
+      const now = new Date().toISOString();
+      const built = buildMiniArcFromDraft(miniDraft, generateMiniArcId(), now, now);
+      const linked: MiniArcBuild = {
+        ...linkMiniArcToParent(built, existingMeta.id),
+        protocolKind: "urge",
+        preventiveStoppingAction: draft.stopCue.trim().length > 0 ? draft.stopCue : null,
+      };
+      await upsertMiniArcBuild(linked);
+      setLinkedMini(linked);
+      setMiniDraft(null);
+    } catch {
+      setMiniSaveError("אירעה שגיאה בשמירת ה-ARC Mini. נסה שוב.");
+    }
+  }
 
   async function handleSave() {
     if (!isUrgeArcDraftComplete(draft)) {
@@ -208,6 +261,98 @@ export default function UrgeArcEditorScreen() {
         >
           <Text style={styles.buttonText}>שמור</Text>
         </Pressable>
+
+        {/*
+          Build ARC Mini together with full ARC task (spec sections 9-10):
+          "בניית ARC Mini" lives on the SAME BUILD page as the full
+          protocol -- the trainee never leaves this screen to build the
+          linked Mini. Shown only for an already-saved Urge ARC (a new,
+          unsaved one has no id yet to link a Mini to). "בניית ARC Link"/
+          "בניית ARC Mini Link" sections are deferred infrastructure here
+          -- see this Phase's own report for what remains.
+        */}
+        {existingMeta && (
+          <>
+            <Text style={styles.sectionHeader}>בניית ARC Mini</Text>
+            <Text style={styles.helperText}>צור גרסה קצרה של הפרוטוקול לשימוש מהיר בזמן אמת.</Text>
+
+            {linkedMini && !miniDraft && (
+              <View style={styles.miniCard}>
+                <Text style={styles.miniCardTitle}>{linkedMini.name}</Text>
+                <Text style={styles.miniCardRow}>ה-ARC Mini הזה כבר מקושר ל-Urge ARC הזה.</Text>
+                <Pressable
+                  style={[styles.button, styles.secondaryButton, styles.fullWidthButton]}
+                  onPress={() => router.push({ pathname: "/mini-arc/[id]", params: { id: linkedMini.id } })}
+                >
+                  <Text style={styles.secondaryButtonText}>עריכת ה-ARC Mini המקושר</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {!linkedMini && !miniDraft && (
+              <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={startBuildingLinkedMini}>
+                <Text style={styles.secondaryButtonText}>+ בניית ARC Mini מקושר</Text>
+              </Pressable>
+            )}
+
+            {miniDraft && (
+              <View style={styles.miniCard}>
+                <Text style={styles.question}>שם ה-ARC Mini</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniDraft.name}
+                  onChangeText={(value) => setMiniDraft({ ...miniDraft, name: value })}
+                  textAlign="right"
+                />
+
+                <Text style={styles.question}>צבע נוכחות</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniDraft.presenceColor}
+                  onChangeText={(value) => setMiniDraft({ ...miniDraft, presenceColor: value })}
+                  textAlign="right"
+                  placeholder="לדוגמה: אדום"
+                />
+
+                <Text style={styles.question}>עוגן ויסות</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniDraft.regulationAnchor}
+                  onChangeText={(value) => setMiniDraft({ ...miniDraft, regulationAnchor: value })}
+                  textAlign="right"
+                  multiline
+                />
+
+                <Text style={styles.question}>פעולת קידוד קצרה</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniDraft.encodingAction}
+                  onChangeText={(value) => setMiniDraft({ ...miniDraft, encodingAction: value })}
+                  textAlign="right"
+                  multiline
+                />
+
+                <Text style={styles.question}>פעולה מיטיבה</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniDraft.beneficialAction}
+                  onChangeText={(value) => setMiniDraft({ ...miniDraft, beneficialAction: value })}
+                  textAlign="right"
+                  multiline
+                />
+
+                {miniSaveError && <Text style={styles.errorText}>{miniSaveError}</Text>}
+
+                <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleSaveLinkedMini}>
+                  <Text style={styles.buttonText}>שמירת ה-ARC Mini המקושר</Text>
+                </Pressable>
+                <Pressable style={styles.cancelButton} onPress={() => setMiniDraft(null)}>
+                  <Text style={styles.cancelButtonText}>ביטול</Text>
+                </Pressable>
+              </View>
+            )}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -232,4 +377,11 @@ const styles = StyleSheet.create({
   fullWidthButton: { marginTop: 20 },
   buttonDisabled: { opacity: 0.4 },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+  secondaryButton: { backgroundColor: "#3d8fa8" },
+  secondaryButtonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  miniCard: { backgroundColor: "#F7FAFC", borderRadius: 12, padding: 16, marginTop: 12 },
+  miniCardTitle: { fontSize: 16, fontWeight: "700", textAlign: "right", marginBottom: 6 },
+  miniCardRow: { fontSize: 14, textAlign: "right", color: "#555", marginBottom: 10 },
+  cancelButton: { marginTop: 10, alignItems: "center" },
+  cancelButtonText: { color: "#888", fontSize: 14 },
 });

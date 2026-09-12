@@ -12,6 +12,7 @@ import {
   markWeeklyActionCompletedToday,
   resolveArcLinkKind,
   resolveArcLinkPracticeModeDefault,
+  resolveArcLinkTargetType,
   resolveArcLinkTriggerCategory,
   resolveCurrentTriggerLevel,
   resolveLinkTimerStyle,
@@ -22,7 +23,7 @@ import {
   upsertWeeklyActionInList,
   upsertWeeklyTriggerLevel,
 } from "./routineLinks.ts";
-import type { ArcLink, RoutineTrigger, WeeklyAction, WeeklyTriggerLevel } from "./routineLinks.ts";
+import type { ArcLink, ArcLinkTargetType, RoutineTrigger, WeeklyAction, WeeklyTriggerLevel } from "./routineLinks.ts";
 
 function trigger(overrides: Partial<RoutineTrigger> = {}): RoutineTrigger {
   return { id: "trig-1", type: "time", text: "בשעה 10:00", time: "10:00", createdAt: "2026-01-01T00:00:00.000Z", ...overrides };
@@ -385,4 +386,33 @@ test("upsertWeeklyTriggerLevel updates the matching week in place, never touchin
   assert.equal(updated.find((l) => l.week === 2)!.level, 2);
   assert.equal(updated.length, 2);
   assert.equal(upsertWeeklyTriggerLevel(levels, { week: 5, level: 2 }).length, 3, "appends a new week when it doesn't exist yet");
+});
+
+// --- Phase 2 correction: Link target protocols (spec section 3) ---
+
+test("resolveArcLinkTargetType returns 'legacy_generic' for any ArcLink saved before targetType existed, never guessing a specific target", () => {
+  assert.equal(resolveArcLinkTargetType(arcLink()), "legacy_generic");
+  assert.equal(resolveArcLinkTargetType(arcLink({ targetType: undefined })), "legacy_generic");
+  assert.equal(resolveArcLinkTargetType(arcLink({ targetType: null })), "legacy_generic");
+});
+
+test("resolveArcLinkTargetType returns the exact stored target for every supported ArcLink target, including direct_action (no protocol)", () => {
+  const targets: ArcLinkTargetType[] = ["state", "urge", "thought", "presence", "belief", "direct_action"];
+  for (const target of targets) {
+    assert.equal(resolveArcLinkTargetType(arcLink({ targetType: target })), target);
+  }
+});
+
+test("a direct-action Link (targetType direct_action, no protocol) round-trips through JSON exactly like any other Link", () => {
+  const direct = arcLink({ targetType: "direct_action", targetRefId: null });
+  const roundTripped = JSON.parse(JSON.stringify(direct)) as ArcLink;
+  assert.equal(resolveArcLinkTargetType(roundTripped), "direct_action");
+});
+
+test("targetRefId is preserved for a Link whose target needs it (urge -> UrgeArc id) and stays optional for every other target", () => {
+  const urgeLink = arcLink({ targetType: "urge", targetRefId: "urge-arc-7" });
+  assert.equal(urgeLink.targetRefId, "urge-arc-7");
+  const stateLink = arcLink({ targetType: "state" });
+  assert.equal(resolveArcLinkTargetType(stateLink), "state");
+  assert.equal(stateLink.targetRefId, undefined);
 });

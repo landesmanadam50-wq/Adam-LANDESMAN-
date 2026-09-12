@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
 import { getArcGoal, getArcLink, getMiniArcBuild, loadRoutineTriggers, upsertArcGoal, upsertArcLink } from "../data/storage.ts";
-import { buildMiniArcLinkStartConfirmationStep, buildMiniArcLinkSteps } from "../arc/miniArcLink.ts";
+import { buildMiniArcLinkStartConfirmationStep, buildProtocolSpecificMiniArcLinkSteps } from "../arc/miniArcLink.ts";
 import type { MiniArcLinkStep } from "../arc/miniArcLink.ts";
 import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
 import { describeTrigger, resolveLinkTimerStyle, resolveRoutineTrigger } from "../arc/routineLinks.ts";
@@ -69,7 +69,12 @@ export default function MiniArcLinkScreen() {
           setStatus("noTrigger");
           return;
         }
-        setSteps(buildMiniArcLinkSteps(existing));
+        // ARC Mini for every protocol task: automatically uses the
+        // matching protocol-specific rehearsal when this Mini ARC has a
+        // protocolKind configured, and falls straight through to this
+        // exact original call for every generic/legacy Mini ARC -- see
+        // buildProtocolSpecificMiniArcLinkSteps' own doc.
+        setSteps(buildProtocolSpecificMiniArcLinkSteps(existing));
         setIndex(0);
         setStatus("ready");
         return;
@@ -85,7 +90,7 @@ export default function MiniArcLinkScreen() {
       const trigger = resolveRoutineTrigger(link.triggerId, triggers);
       const triggerText = describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger);
       const ctx = { triggerText, mode: link.mode };
-      const fullSteps = buildMiniArcLinkSteps(existing, ctx);
+      const fullSteps = buildProtocolSpecificMiniArcLinkSteps(existing, ctx);
       // Coherent-architecture task (#22/#24 "With ARCHI"): with_archi
       // mode ends right after imagining opening ARCHI and pressing
       // Start -- never the full Presence Color / naming / regulation /

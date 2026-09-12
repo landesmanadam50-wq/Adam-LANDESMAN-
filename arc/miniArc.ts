@@ -26,6 +26,7 @@
 
 import { bodyImageryFromCustomFields } from "./bodyImagery.ts";
 import type { ArcLinkSettings, BodyImagery } from "./bodyImagery.ts";
+import type { UrgeRepresentationPreference } from "./types.ts";
 
 /** Never renders "undefined"/"null"/"[object Object]" for a value that -- despite MiniArcBuild's type -- turns out missing or malformed after JSON.parse of a corrupted/legacy record. Always returns a plain, trimmed string (possibly empty). */
 export function safeText(value: unknown): string {
@@ -58,6 +59,146 @@ export interface MiniArcBuild {
   regulationBodyImagery?: BodyImagery | null;
   /** ARC Link task: optional custom body-imagery metadata for encodingAction -- used only by Mini ARC Link's encoding imagery step. */
   encodingBodyImagery?: BodyImagery | null;
+  /**
+   * ARC Mini for every protocol task (spec section 5): which independent
+   * full protocol this Mini ARC is the SHORT counterpart of -- "state"/
+   * "urge"/"thought"/"presence"/"belief". null/undefined (every
+   * MiniArcBuild saved before this field existed, and any Mini ARC the
+   * trainee built as a genuinely standalone/general one) means a plain,
+   * generic Mini ARC exactly as this app has always had -- never
+   * reinterpreted as belonging to one specific protocol. See
+   * resolveMiniArcProtocolKind.
+   */
+  protocolKind?: ArcMiniProtocolKind | null;
+  /**
+   * Build ARC Mini together with full ARC task (spec section 9): the id
+   * of the full protocol this Mini ARC was created FROM/linked to, when
+   * any -- a reference only, never a copy of its content (same
+   * "reference, never duplicate" convention as ArcLink.protocolId).
+   * Named for the common case (an ArcBuild id, the "State" full
+   * protocol), but a Mini ARC whose protocolKind is "urge" references a
+   * UrgeArc id here instead -- Urge's own full protocol has no
+   * ArcBuild-shaped BUILD entity of its own (arc/urgeArcs.ts). Callers
+   * resolve the id against the collection matching this Mini's own
+   * protocolKind. null/undefined means a standalone Mini ARC with no
+   * parent full protocol (either built before this relationship
+   * existed, or deliberately created independently) -- preserved
+   * exactly as-is, never invalidated, and may be linked to a parent
+   * later (see linkMiniArcToParent). Never silently inferred: only ever
+   * set by an explicit "בניית ARC Mini" action or an explicit later
+   * linking action.
+   */
+  parentArcBuildId?: string | null;
+  /**
+   * Protocol-specific ARC Mini Link rehearsal task (spec section 6):
+   * fields meaningful only for a matching protocolKind, reused across
+   * rehearsal content instead of the generic four fields above where no
+   * generic field fits (regulationAnchor/encodingAction/beneficialAction/
+   * presenceColor already double as each kind's own "one Regulation
+   * anchor"/"one Encoding action"/beneficial action/Presence cue -- see
+   * arc/miniArcLink.ts's per-kind builders for the exact mapping).
+   * Optional and ignored for "generic"/any non-matching kind; a
+   * protocolKind that needs one of these but doesn't have it configured
+   * falls back to safe generic wording, never "undefined".
+   */
+  /** Urge Mini (required by spec) / State Mini (only "if configured"): the preventive stopping/response action. */
+  preventiveStoppingAction?: string | null;
+  /** Urge Mini: BUILD-configured representation preference, reusing arc/types.ts's UrgeRepresentationPreference -- decides which representation-based Encoding line arc/miniArcLink.ts's Urge builder shows. */
+  representationPreference?: UrgeRepresentationPreference | null;
+  /** Thought Mini: the supportive replacement thought rehearsed after recognition. */
+  supportiveThought?: string | null;
+  /** Belief Mini: the supportive/replacement belief rehearsed after the Bridge Mantra. */
+  replacementBelief?: string | null;
+  /** Belief Mini: this Mini's own Bridge Mantra text, rehearsed right after recognizing the belief -- never replaces replacementBelief, exactly like the full protocol's own Bridge Mantra never replaces the new supportive belief (arc/mantras.ts's own doc). */
+  bridgeMantraText?: string | null;
+}
+
+/**
+ * ARC Mini for every protocol task (spec section 5): the five
+ * independent full protocols that may each have their own short Mini
+ * counterpart. Deliberately NOT a DevelopmentLayer (state/identity/
+ * habit, an ENCODING TARGET) and NOT a LiveProtocolKind member on its
+ * own naming -- this specifically tags a MiniArcBuild record, never an
+ * ArcLiveState/session.
+ */
+export type ArcMiniProtocolKind = "state" | "urge" | "thought" | "presence" | "belief";
+
+/** Safe resolver, mirroring arc/routineLinks.ts's resolveArcLinkKind-style pattern -- "generic" (this app's original, undifferentiated Mini ARC) for every record that predates protocolKind or was never given one. Never guesses a protocol from other fields. */
+export function resolveMiniArcProtocolKind(build: Pick<MiniArcBuild, "protocolKind">): ArcMiniProtocolKind | "generic" {
+  const kind = build.protocolKind;
+  return kind === "state" || kind === "urge" || kind === "thought" || kind === "presence" || kind === "belief" ? kind : "generic";
+}
+
+/**
+ * Build ARC Mini together with full ARC task: the safe resolver for
+ * parentArcBuildId -- null for every legacy/standalone Mini ARC, never
+ * throws, never assumes the referenced ArcBuild still exists (a caller
+ * that needs the actual parent record must still look it up and handle
+ * "not found" itself, exactly like ArcLink.protocolId's own callers
+ * already do).
+ */
+export function resolveMiniArcParentId(build: Pick<MiniArcBuild, "parentArcBuildId">): string | null {
+  return build.parentArcBuildId ?? null;
+}
+
+/**
+ * Build ARC Mini together with full ARC task: links a standalone (or
+ * already-linked) Mini ARC to a full ArcBuild -- "Allow it to be linked
+ * to a full ARC later" (spec section 11). Pure, never mutates the
+ * input; the caller persists the result. Never touches any other field
+ * -- linking never silently overwrites a customized regulationAnchor/
+ * encodingAction/etc.
+ */
+export function linkMiniArcToParent(build: MiniArcBuild, parentArcBuildId: string): MiniArcBuild {
+  return { ...build, parentArcBuildId };
+}
+
+/**
+ * Build ARC Mini together with full ARC task: a pre-filled MiniArcDraft
+ * for "בניית ARC Mini", seeded from whichever COMPATIBLE parent values
+ * the caller already resolved (name/regulation anchor/encoding action/
+ * beneficial action/presence color -- spec section 9's own list).
+ * Deliberately takes plain strings, not an ArcBuildProfile/UrgeArc,
+ * keeping this module independent of either type's own shape (arc/
+ * miniArc.ts stays "deliberately NOT built on ArcBuildProfile" -- see
+ * this file's own module doc); each protocol's own BUILD screen resolves
+ * which of ITS fields map to these positions. Never copies the entire
+ * parent protocol -- only these five short-form fields, and the
+ * trainee still edits/replaces any of them before saving (this is a
+ * starting point, never a forced value).
+ */
+export function createLinkedMiniArcDraft(
+  parentName: string,
+  presenceColor: string,
+  regulationAnchor: string,
+  encodingAction: string,
+  beneficialAction: string
+): MiniArcDraft {
+  const trimmedParentName = parentName.trim();
+  return {
+    ...createEmptyMiniArcDraft(),
+    name: trimmedParentName.length > 0 ? `${trimmedParentName} — גרסה קצרה` : "",
+    presenceColor: presenceColor.trim(),
+    regulationAnchor: regulationAnchor.trim(),
+    encodingAction: encodingAction.trim(),
+    beneficialAction: beneficialAction.trim(),
+  };
+}
+
+/**
+ * Inheritance and editing task (spec section 11): "Allow selected Mini
+ * fields to be refreshed from the parent" -- merges ONLY the fields the
+ * caller explicitly passes in `updates`, leaving every other field
+ * (including any the trainee has since customized) completely
+ * untouched. Never called automatically on a parent edit -- refreshing
+ * is always an explicit, selective trainee action, never a silent
+ * overwrite.
+ */
+export function refreshMiniArcFieldsFromParent(
+  build: MiniArcBuild,
+  updates: Partial<Pick<MiniArcBuild, "name" | "presenceColor" | "regulationAnchor" | "encodingAction" | "beneficialAction">>
+): MiniArcBuild {
+  return { ...build, ...updates };
 }
 
 /** Same stable-id-string pattern already used for ArcBuild (arc/types.ts's generateArcBuildId) -- unique per Mini ARC, independent of array position or any full ARC id. */

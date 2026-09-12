@@ -95,6 +95,7 @@ export default function RootLayout() {
         <Stack.Screen name="stats/index" options={{ title: "התקדמות שבועית" }} />
         <Stack.Screen name="focus-success" options={{ title: "התמקדות בהצלחה" }} />
         <Stack.Screen name="routines/index" options={{ title: "השגרה שלי" }} />
+        <Stack.Screen name="link-practice/index" options={{ title: "תרגול קישורים" }} />
         <Stack.Screen name="negative-action" options={{ title: "פעולה שלילית מוגבלת" }} />
         <Stack.Screen name="mini-arc/index" options={{ title: "בניית Mini ARC" }} />
         <Stack.Screen name="mini-arc/[id]" options={{ title: "עריכת Mini ARC" }} />

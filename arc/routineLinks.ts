@@ -65,6 +65,44 @@ export type ArcLinkPracticeMode = "short" | "full" | "fast";
 export type LinkTimerStyle = "guided" | "speed";
 
 /**
+ * Link target protocols task (spec section 3): which independent
+ * protocol/action this ArcLink rehearses toward -- Regular ARC Link and
+ * ARCHI ARC Link are no longer limited to the general state/identity/
+ * habit resolution (arc/arcLink.ts's resolveArcLinkTarget); a Link may
+ * now explicitly target one of the five independent LIVE entry
+ * categories, or a direct planned action with no protocol at all.
+ * "urge"/"thought"/"presence"/"belief" are always paired with the
+ * matching content the target's own BUILD configuration provides (e.g.
+ * "urge" reads the referenced UrgeArc via targetRefId); "state" and
+ * "direct_action" are resolved straight from the linked ArcBuild's own
+ * profile, exactly as every Link already did before this field existed.
+ */
+export type ArcLinkTargetType = "state" | "urge" | "thought" | "presence" | "belief" | "direct_action";
+
+/** ARC Mini for every protocol task (spec section 5): the subset of ArcLinkTargetType meaningful for an ArcLink whose protocolType is "mini_arc" -- Mini variants never target "direct_action" (a Mini ARC always ends in its own beneficial action, never a bare action-only Link). Reuses ArcLinkTargetType rather than a second, parallel union -- callers narrow at their own call sites. */
+export type ArcMiniLinkTargetType = Exclude<ArcLinkTargetType, "direct_action">;
+
+/**
+ * Link target protocols task: the safe resolver for a Link's own
+ * target -- "legacy_generic" (never invented, never one of the five
+ * specific types) for every ArcLink saved before targetType existed,
+ * or one that was never given an explicit target. Callers treat
+ * "legacy_generic" as "use this Link's existing, unmodified content
+ * resolution" (arc/arcLink.ts's resolveArcLinkTarget /
+ * arc/miniArcLink.ts's own generic content) -- this is the literal
+ * "Infer the legacy target only when it can be done safely. Otherwise
+ * use the existing generic ARC/Mini ARC behavior. Do not invalidate or
+ * hide the Link" requirement: an unset targetType is never silently
+ * reclassified as "state" or any other specific type.
+ */
+export function resolveArcLinkTargetType(link: Pick<ArcLink, "targetType">): ArcLinkTargetType | "legacy_generic" {
+  const type = link.targetType;
+  return type === "state" || type === "urge" || type === "thought" || type === "presence" || type === "belief" || type === "direct_action"
+    ? type
+    : "legacy_generic";
+}
+
+/**
  * Extended ARC Link trigger system: two orthogonal, independently
  * optional axes on ArcLink, both new.
  *
@@ -323,6 +361,24 @@ export interface ArcLink {
   timerDurationSeconds?: number | null;
   /** Link timers task: "guided" (no countdown pressure) vs "speed" (optional countdown, never auto-closing) -- see LinkTimerStyle's own doc. null/undefined means not yet configured; resolveLinkTimerStyle below is the one place this is safely defaulted. */
   timerStyle?: LinkTimerStyle | null;
+  /**
+   * Link target protocols task: which independent protocol/action this
+   * Link rehearses toward -- see ArcLinkTargetType's own doc.
+   * Optional/undefined on every ArcLink that predates this field; never
+   * inferred automatically -- resolveArcLinkTargetType is the one safe
+   * reader, returning "legacy_generic" rather than guessing.
+   */
+  targetType?: ArcLinkTargetType | null;
+  /**
+   * Link target protocols task: a reference to the SPECIFIC target
+   * entity, when targetType needs one beyond the linked ArcBuild itself
+   * -- currently only meaningful for targetType === "urge" (a UrgeArc
+   * id, never its content). "state"/"thought"/"presence"/"belief"/
+   * "direct_action" resolve straight from the linked ArcBuild's own
+   * profile and leave this null. null/undefined for every Link that
+   * predates this field, or whose targetType doesn't need it.
+   */
+  targetRefId?: string | null;
 }
 
 /**

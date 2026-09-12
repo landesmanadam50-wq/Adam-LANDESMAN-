@@ -129,6 +129,11 @@ export default function SelfDevelopmentDashboardScreen() {
             <Text style={styles.itemText}>השגרה שלי</Text>
           </Pressable>
         </Link>
+        <Link href="/link-practice" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>תרגול קישורים</Text>
+          </Pressable>
+        </Link>
         <Link href="/stats" asChild>
           <Pressable style={styles.itemRow}>
             <Text style={styles.itemText}>התקדמות שבועית</Text>

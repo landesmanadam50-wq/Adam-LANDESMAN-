@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildMiniArcFromDraft,
   createEmptyMiniArcDraft,
+  createLinkedMiniArcDraft,
   deleteMiniArcFromList,
   draftFromMiniArc,
   duplicateMiniArc,
@@ -12,7 +13,11 @@ import {
   getMiniArcStageCopy,
   getNextMiniArcStage,
   isMiniArcDraftComplete,
+  linkMiniArcToParent,
   MINI_ARC_STAGE_ORDER,
+  refreshMiniArcFieldsFromParent,
+  resolveMiniArcParentId,
+  resolveMiniArcProtocolKind,
   safeText,
   upsertMiniArcInList,
 } from "./miniArc.ts";
@@ -320,4 +325,82 @@ test("a defensively malformed/legacy Mini ARC record (fields genuinely missing a
     assert.ok(!text.includes("undefined"), `${stage}: "${text}"`);
     assert.ok(!text.includes("null"), `${stage}: "${text}"`);
   }
+});
+
+// --- Phase 2 correction: ARC Mini for every protocol (parent linkage + protocolKind) ---
+
+test("resolveMiniArcProtocolKind returns 'generic' for a legacy/undifferentiated Mini ARC that predates protocolKind", () => {
+  assert.equal(resolveMiniArcProtocolKind(build()), "generic");
+  assert.equal(resolveMiniArcProtocolKind({ protocolKind: undefined }), "generic");
+  assert.equal(resolveMiniArcProtocolKind({ protocolKind: null }), "generic");
+});
+
+test("resolveMiniArcProtocolKind returns the exact stored kind for each of the five differentiated protocol kinds", () => {
+  for (const kind of ["state", "urge", "thought", "presence", "belief"] as const) {
+    assert.equal(resolveMiniArcProtocolKind(build({ protocolKind: kind })), kind);
+  }
+});
+
+test("resolveMiniArcParentId is null for a standalone/legacy Mini ARC and never invents a parent", () => {
+  assert.equal(resolveMiniArcParentId(build()), null);
+  assert.equal(resolveMiniArcParentId(build({ parentArcBuildId: null })), null);
+});
+
+test("linkMiniArcToParent sets parentArcBuildId without mutating the original build or touching any other field", () => {
+  const original = build();
+  const linked = linkMiniArcToParent(original, "arcbuild-42");
+  assert.equal(linked.parentArcBuildId, "arcbuild-42");
+  assert.equal(resolveMiniArcParentId(original), null, "original build must be untouched");
+  assert.equal(linked.name, original.name);
+  assert.equal(linked.regulationAnchor, original.regulationAnchor);
+});
+
+test("a standalone legacy Mini ARC (no parentArcBuildId) still loads and renders every stage safely, and can be linked to a parent later", () => {
+  const legacy = build();
+  assert.equal(resolveMiniArcParentId(legacy), null);
+  for (const stage of MINI_ARC_STAGE_ORDER) {
+    assert.doesNotThrow(() => getMiniArcStageCopy(stage, legacy));
+  }
+  const linkedLater = linkMiniArcToParent(legacy, "arcbuild-99");
+  assert.equal(resolveMiniArcParentId(linkedLater), "arcbuild-99");
+});
+
+test("createLinkedMiniArcDraft pre-fills a new Mini ARC draft from caller-resolved parent values, naming it after the parent", () => {
+  const draft = createLinkedMiniArcDraft("דחף לעישון", "אדום", "נשימה עמוקה אחת", "ליישר את הכתפיים", "לשתות כוס מים");
+  assert.equal(draft.name, "דחף לעישון — גרסה קצרה");
+  assert.equal(draft.presenceColor, "אדום");
+  assert.equal(draft.regulationAnchor, "נשימה עמוקה אחת");
+  assert.equal(draft.encodingAction, "ליישר את הכתפיים");
+  assert.equal(draft.beneficialAction, "לשתות כוס מים");
+});
+
+test("createLinkedMiniArcDraft never crashes and produces an empty (not 'undefined') name when the parent name is blank", () => {
+  const draft = createLinkedMiniArcDraft("   ", "כחול", "עוגן", "פעולה", "פעולה מיטיבה");
+  assert.equal(draft.name, "");
+  assert.ok(!draft.name.includes("undefined"));
+});
+
+test("refreshMiniArcFieldsFromParent updates ONLY the explicitly-passed fields, never silently overwriting a trainee's own customized values", () => {
+  const customized = build({
+    name: "הגרסה שלי",
+    regulationAnchor: "העוגן שלי",
+    encodingAction: "הפעולה שלי",
+    beneficialAction: "הפעולה המיטיבה שלי",
+    presenceColor: "ירוק",
+  });
+  const refreshed = refreshMiniArcFieldsFromParent(customized, { regulationAnchor: "עוגן חדש מההורה" });
+  assert.equal(refreshed.regulationAnchor, "עוגן חדש מההורה");
+  // Every other field -- including the trainee's own customized ones -- must be untouched.
+  assert.equal(refreshed.name, "הגרסה שלי");
+  assert.equal(refreshed.encodingAction, "הפעולה שלי");
+  assert.equal(refreshed.beneficialAction, "הפעולה המיטיבה שלי");
+  assert.equal(refreshed.presenceColor, "ירוק");
+  // Original object must never be mutated.
+  assert.equal(customized.regulationAnchor, "העוגן שלי");
+});
+
+test("refreshMiniArcFieldsFromParent with an empty updates object changes nothing", () => {
+  const original = build({ name: "שלי" });
+  const refreshed = refreshMiniArcFieldsFromParent(original, {});
+  assert.deepEqual(refreshed, original);
 });
