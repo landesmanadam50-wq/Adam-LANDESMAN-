@@ -1038,6 +1038,136 @@ export interface ArcGoalFourWeekProgram {
   returnContext: ArcGoalSupportReturnContext | null;
 }
 
+/**
+ * Sub-goal execution task (Phase 5, the "later phase" ArcGoalFourWeekProgram.
+ * readyForSubGoalActivation was always meant to unlock): an ArcGoal's OWN
+ * phase, distinct from Life Manifest's SubGoal/Target (arc/lifeManifest.ts
+ * -- a MajorGoal's own plan, each piece of which MAY reference an ArcGoal
+ * via connectedArcGoalId). This is the inverse direction: once an ArcGoal's
+ * four-week identity-and-habit program finishes, the goal itself breaks
+ * into its OWN ordered execution sub-goals/targets. `null`/undefined for
+ * every ArcGoal saved before this field existed and for every ArcGoal that
+ * never enables a four-week program at all -- "For legacy ARC Goals
+ * without a four-week program, preserve their existing sub-goal behavior"
+ * means exactly this: no phase, no auto-activation, ArcGoal behaves
+ * exactly as it always has (see arc/arcGoals.ts's normalizeArcGoal).
+ * "four_week_program" is the implicit starting phase for any goal that
+ * HAS enabled a program (never stored as a literal value before execution
+ * starts -- see resolvePhase in arc/subGoalExecution.ts, which treats a
+ * null phase + an active fourWeekProgram as "four_week_program" without
+ * needing every existing/backfilled goal to carry the value explicitly).
+ */
+export type ArcGoalPhase = "four_week_program" | "execution" | "completed";
+
+export type ArcGoalSubGoalStatus = "locked" | "active" | "completed";
+
+/** Sub-goal execution task, spec section 7: the short reflection shown once all of a sub-goal's required targets are done, saved only on explicit confirmation (never auto-answered/auto-saved). */
+export interface ArcGoalSubGoalReflection {
+  whatHelped: string | null;
+  whatWasHard: string | null;
+  whatLearned: string | null;
+  answeredAt: string;
+}
+
+/**
+ * Sub-goal execution task, spec section 2: one ordered chunk of an
+ * ArcGoal's own execution phase. Nested on ArcGoal.subGoals (mirrors
+ * MajorGoal.subGoals' own nesting convention in arc/lifeManifest.ts) --
+ * `order` is the trainee-editable display/activation order (reordering in
+ * BUILD only ever touches this field, never the id any ArcGoalTarget
+ * references, so target links can never break -- see reorderSubGoals).
+ * Only one sub-goal is ever "active" at a time (resolveActiveSubGoal);
+ * every other is "locked" (not yet reached) or "completed".
+ */
+export interface ArcGoalSubGoal {
+  id: string;
+  arcGoalId: string;
+  name: string;
+  description: string | null;
+  order: number;
+  plannedStartDate: string | null;
+  plannedCompletionDate: string | null;
+  actualCompletionDate: string | null;
+  status: ArcGoalSubGoalStatus;
+  reflection: ArcGoalSubGoalReflection | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** "pending" covers every not-yet-done state for a ONE-TIME target (recurrenceDaysOfWeek === null); a RECURRING target's own status always stays "pending" -- its real completion record lives per-occurrence (ArcGoalTargetOccurrenceCompletion, data/storage.ts), never as a single status flag that would incorrectly complete the whole recurring series (spec section 9/14). */
+export type ArcGoalTargetStatus = "pending" | "completed";
+
+/**
+ * Sub-goal execution task, spec section 3: a concrete, schedulable
+ * real-world action inside a Sub-goal. Flat-stored (data/storage.ts's
+ * ArcGoalTarget CRUD), referencing its owner by id -- same "flat list +
+ * foreign key" convention arc/lifeManifest.ts's own Target already uses
+ * for the exact same reason (a Target can move/reorder without the
+ * storage shape itself needing to change).
+ *
+ * recurrenceDaysOfWeek null = one-time (plannedDate is THE date it's due,
+ * plannedCompletionDate an optional separate deadline for a longer task);
+ * non-null = recurs weekly on these weekdays (0=Sunday..6=Saturday, same
+ * indexing as ScheduledRoutine.recurrenceDays, data/storage.ts) at
+ * plannedTime, exactly mirroring ScheduledRoutine's own recurrence shape
+ * so arc/subGoalExecution.ts's occurrence-date math can reuse
+ * arc/routines.ts's already-tested primitives directly instead of a
+ * second recurrence engine.
+ *
+ * linkedScheduledRoutineId is a REFERENCE to an existing ScheduledRoutine
+ * (data/storage.ts) -- never a duplicated/disconnected copy of the same
+ * action (spec section 4's "avoid duplicating the routine action as a
+ * separate disconnected target when a link can be used"). null means this
+ * target has no routine counterpart at all.
+ */
+export interface ArcGoalTarget {
+  id: string;
+  arcGoalId: string;
+  subGoalId: string;
+  name: string;
+  actionDescription: string | null;
+  plannedDate: string | null;
+  plannedTime: string | null;
+  location: string | null;
+  durationMinutes: number | null;
+  recurrenceDaysOfWeek: number[] | null;
+  plannedCompletionDate: string | null;
+  actualCompletionDate: string | null;
+  status: ArcGoalTargetStatus;
+  remindersEnabled: boolean;
+  notificationId: string | null;
+  notificationScheduledFor: string | null;
+  linkedScheduledRoutineId: string | null;
+  /** REFERENCEs to ArcBuild(s) offered as this target's own optional support protocols -- same array-of-ids convention as arc/lifeManifest.ts's Target.connectedSupportiveProtocolIds. */
+  linkedSupportProtocolIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Sub-goal execution task, spec section 11 ("exact return context"): a
+ * SEPARATE typed context from ArcGoalSupportReturnContext above (which is
+ * scoped to the four-week program only) -- "Do not use one untyped global
+ * navigation string for all return routes." Saved onto ArcGoal.
+ * executionReturnContext right before leaving a target's own execution
+ * screen for optional ARCHI support, read back by that target screen (or,
+ * when the target itself no longer resolves, safely falls back to the
+ * active sub-goal dashboard -- spec section 11's own "handle deleted or
+ * missing targets" requirement) once the support flow finishes, is
+ * canceled, or is exited.
+ */
+export interface ArcGoalExecutionReturnContext {
+  sourceMode: "reach_your_goal";
+  arcGoalId: string;
+  phase: ArcGoalPhase;
+  week: FourWeekProgramWeekNumber | null;
+  subGoalId: string | null;
+  targetId: string | null;
+  linkedRoutineId: string | null;
+  originScreen: string;
+  savedAt: string;
+}
+
 export interface ArcGoal {
   id: string;
   name: string;
@@ -1073,6 +1203,22 @@ export interface ArcGoal {
    * unlinking it from its Sub-goal, never deletes the other side.
    */
   lifeManifestSubGoalId?: string | null;
+  /**
+   * Sub-goal execution task: null/undefined for every ArcGoal saved
+   * before this field existed and for every goal that hasn't reached
+   * execution yet -- see ArcGoalPhase's own doc for how a null phase is
+   * resolved (arc/subGoalExecution.ts's resolvePhase). Only ever set to
+   * "execution" by activateExecutionPhase (never merely because a
+   * planned date arrived), and to "completed" by
+   * completeActiveSubGoalAndAdvance once the last sub-goal finishes.
+   */
+  phase?: ArcGoalPhase | null;
+  /** Sub-goal execution task: this goal's own ordered execution sub-goals -- [] for every goal that hasn't configured any (the overwhelming majority, and every legacy goal). Never touched by anything in the four-week program itself. */
+  subGoals?: ArcGoalSubGoal[];
+  /** Sub-goal execution task, spec section 11: see ArcGoalExecutionReturnContext's own doc. null when no support flow is currently in flight from the execution phase. */
+  executionReturnContext?: ArcGoalExecutionReturnContext | null;
+  /** Sub-goal execution task, spec section 7: set the moment the LAST ordered sub-goal completes and the whole ArcGoal transitions to phase "completed" -- never cleared afterward. null while still in progress or for a goal with no sub-goal system at all. */
+  executionCompletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1095,6 +1241,16 @@ export function generateArcGoalUrgeMappingId(): string {
 /** Same id-pattern for a Four-Week Program practice/action record, scoped within its own week. */
 export function generateArcGoalWeekPracticeRecordId(): string {
   return `arcgoalweekpractice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Sub-goal execution task: same stable-id-string pattern for a new ArcGoalSubGoal. */
+export function generateArcGoalSubGoalId(): string {
+  return `arcgoalsubgoal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Sub-goal execution task: same stable-id-string pattern for a new ArcGoalTarget. */
+export function generateArcGoalTargetId(): string {
+  return `arcgoaltarget-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /** Same stable-id-string pattern as generateArcBuildId/generateMiniArcId. */

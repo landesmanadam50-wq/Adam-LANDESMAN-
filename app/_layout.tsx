@@ -6,6 +6,8 @@ import * as Notifications from "expo-notifications";
 
 import { cancelPendingReminder, resolveReminderRoute } from "../data/reminders.ts";
 import { reconcileRoutineNotifications } from "../data/routines.ts";
+import { reconcileArcGoalTargetNotification } from "../data/arcGoalTargetReminders.ts";
+import { getArcGoalTarget } from "../data/storage.ts";
 import type { ReminderKind } from "../data/storage.ts";
 
 /**
@@ -44,6 +46,27 @@ function handleReminderResponse(response: Notifications.NotificationResponse | n
     const routineId = typeof data.routineId === "string" ? data.routineId : null;
     reconcileRoutineNotifications();
     if (routineId) router.push({ pathname: "/live", params: { routineId } });
+    return;
+  }
+  // Sub-goal execution task: same "own independent notification per
+  // entity, never PendingReminder's one-per-kind model" treatment as
+  // "routine" above -- deep-links straight to the tapped target itself
+  // (spec section 9), then reconciles that SAME target's own next
+  // occurrence (fire-and-forget, mirrors reconcileRoutineNotifications'
+  // own lazy-reconcile-on-next-relevant-touch pattern).
+  if (kind === "arcGoalTarget") {
+    const targetId = typeof data.targetId === "string" ? data.targetId : null;
+    if (targetId) {
+      getArcGoalTarget(targetId).then((target) => {
+        if (target) reconcileArcGoalTargetNotification(target);
+      });
+      router.push({ pathname: "/goals/target/[targetId]", params: { targetId } });
+    }
+    return;
+  }
+  if (kind === "fourWeekProgramWeek") {
+    const goalId = typeof data.arcGoalId === "string" ? data.arcGoalId : null;
+    if (goalId) router.push({ pathname: "/goals/live/[goalId]", params: { goalId } });
     return;
   }
   cancelPendingReminder(kind);
@@ -85,6 +108,9 @@ export default function RootLayout() {
         <Stack.Screen name="goals/index" options={{ title: "מטרות ARC Goal" }} />
         <Stack.Screen name="goals/[id]" options={{ title: "עריכת מטרה" }} />
         <Stack.Screen name="goals/live/[goalId]" options={{ title: "תוכנית ארבעת השבועות" }} />
+        <Stack.Screen name="goals/execution/[goalId]" options={{ title: "ביצוע המטרה" }} />
+        <Stack.Screen name="goals/target/[targetId]" options={{ title: "יעד" }} />
+        <Stack.Screen name="calendar/index" options={{ title: "לוח שנה" }} />
         <Stack.Screen name="arc-goal/select" options={{ title: "מה תרצה לתרגל?" }} />
         <Stack.Screen name="arc-goal/live/[goalId]" options={{ title: "ARC Goal LIVE" }} />
         <Stack.Screen name="life-manifest/index" options={{ title: "מניפסט החיים שלי" }} />

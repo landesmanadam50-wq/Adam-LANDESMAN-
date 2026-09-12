@@ -19,6 +19,8 @@ import {
   setLinkedMiniArc,
   setReturnContext,
 } from "../arc/fourWeekProgram.ts";
+import { activateExecutionPhase } from "../arc/subGoalExecution.ts";
+import { reconcileFourWeekProgramWeekNotification } from "../data/fourWeekProgramReminders.ts";
 import type { ArcBuild, ArcGoal } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
@@ -115,6 +117,26 @@ export default function ArcGoalFourWeekDashboardScreen() {
       setIdentityBuild(loadedIdentityBuild);
       setMiniArcBuilds(allMiniArcs);
       setStatus("ready");
+
+      // Sub-goal execution task, spec section 9: brings the CURRENT
+      // week's own reminder toggle back in sync with a real scheduled
+      // notification on every screen focus -- same lazy, idempotent
+      // "reconcile on next relevant touch" pattern data/routines.ts's
+      // own reconcileRoutineNotifications already uses. Never touches
+      // week-progression fields; fire-and-forget (a failure here is a
+      // best-effort background nudge, never something to block on).
+      const program = loadedGoal.fourWeekProgram;
+      if (program) {
+        const currentWeek = program.weeks[program.currentWeek - 1];
+        reconcileFourWeekProgramWeekNotification(currentWeek, loadedGoal.id, FOUR_WEEK_META[currentWeek.weekNumber].title).then((reconciledWeek) => {
+          if (reconciledWeek.reminderNotificationId === currentWeek.reminderNotificationId && reconciledWeek.reminderScheduledFor === currentWeek.reminderScheduledFor) return;
+          const weeks = [...program.weeks] as typeof program.weeks;
+          weeks[currentWeek.weekNumber - 1] = reconciledWeek;
+          const reconciledGoal = { ...loadedGoal, fourWeekProgram: { ...program, weeks } };
+          setGoal(reconciledGoal);
+          upsertArcGoal(reconciledGoal);
+        });
+      }
     } catch (error) {
       console.warn("[ArcGoalFourWeekDashboardScreen] Failed to load -- showing the recovery state instead of hanging.", error);
       setStatus("notFound");
@@ -220,9 +242,10 @@ export default function ArcGoalFourWeekDashboardScreen() {
   function confirmReflectionAndAdvance() {
     if (!goal || !goal.fourWeekProgram) return;
     const now = new Date().toISOString();
+    const completingWeekNumber = goal.fourWeekProgram.currentWeek;
     let updatedProgram = saveWeekReflection(
       goal.fourWeekProgram,
-      goal.fourWeekProgram.currentWeek,
+      completingWeekNumber,
       {
         whatHelped: reflectionWhatHelped.trim().length > 0 ? reflectionWhatHelped.trim() : null,
         whatWasHard: reflectionWhatWasHard.trim().length > 0 ? reflectionWhatWasHard.trim() : null,
@@ -232,8 +255,23 @@ export default function ArcGoalFourWeekDashboardScreen() {
       now
     );
     updatedProgram = confirmWeekCompleteAndAdvance(updatedProgram, now);
-    persist({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
+    const updatedGoal = { ...goal, fourWeekProgram: updatedProgram, updatedAt: now };
     setReflectionOpen(false);
+
+    // Sub-goal execution task, spec section 1: Week 4's own confirmation
+    // is the ONLY moment that ever transitions the goal into execution
+    // (never merely because the planned date arrived) -- activateExecutionPhase
+    // itself re-checks readyForSubGoalActivation, so this is safe even if
+    // called on every week's confirm; it only ever actually does anything
+    // once, right after Week 4.
+    if (completingWeekNumber === 4) {
+      const withExecutionPhase = activateExecutionPhase(updatedGoal, now);
+      persist(withExecutionPhase);
+      router.replace({ pathname: "/goals/execution/[goalId]", params: { goalId: goal.id } });
+      return;
+    }
+
+    persist(updatedGoal);
   }
 
   function confirmExtend() {

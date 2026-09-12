@@ -12,12 +12,14 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { generateArcBuildId } from "../arc/types.ts";
-import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcProgramProgress, UrgeArc } from "../arc/types.ts";
+import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcGoalTarget, ArcProgramProgress, UrgeArc } from "../arc/types.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { deleteArcGoalFromList, normalizeArcGoal, upsertArcGoalInList } from "../arc/arcGoals.ts";
+import { deleteArcGoalTargetFromList, upsertArcGoalTargetInList } from "../arc/subGoalExecution.ts";
+import type { ArcGoalTargetOccurrenceCompletion } from "../arc/subGoalExecution.ts";
 import { deleteUrgeArcFromList, normalizeUrgeArc, upsertUrgeArcInList } from "../arc/urgeArcs.ts";
 import {
   deleteLifeManifestFromList,
@@ -274,6 +276,65 @@ export async function upsertArcGoal(goal: ArcGoal): Promise<void> {
 export async function deleteArcGoal(id: string): Promise<void> {
   const goals = await loadArcGoals();
   await saveArcGoals(deleteArcGoalFromList(goals, id));
+}
+
+/**
+ * Sub-goal execution task: a separate flat store for ArcGoalTarget
+ * (referenced by arcGoalId/subGoalId, never nested inside ArcGoal) --
+ * same "flat list + foreign key" convention as LIFE_MANIFEST_TARGETS_KEY
+ * above, and a completely independent collection from it (a Life
+ * Manifest Target and an ArcGoal execution Target are different entities
+ * that happen to share a similar shape). A missing/corrupt key always
+ * loads as an empty list, never a crash and never invented data.
+ */
+const ARC_GOAL_TARGETS_KEY = "archi.arcGoalTargets.v1";
+/** Sub-goal execution task: append-only, per-occurrence completion record for a RECURRING ArcGoalTarget -- exact mirror of RoutineOccurrenceCompletion's own shape/guarantees (see that interface's own doc): completing today's occurrence of target A never marks yesterday's, tomorrow's, or any other target's occurrence complete. */
+const ARC_GOAL_TARGET_OCCURRENCE_COMPLETIONS_KEY = "archi.arcGoalTargetOccurrenceCompletions.v1";
+
+export async function loadArcGoalTargets(): Promise<ArcGoalTarget[]> {
+  const raw = await AsyncStorage.getItem(ARC_GOAL_TARGETS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcGoalTarget[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcGoal Targets are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveLifeManifestTargets/saveArcGoals' own style. */
+export async function saveArcGoalTargets(targets: ArcGoalTarget[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_GOAL_TARGETS_KEY, JSON.stringify(targets));
+}
+
+export async function getArcGoalTarget(id: string): Promise<ArcGoalTarget | null> {
+  const targets = await loadArcGoalTargets();
+  return targets.find((target) => target.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/subGoalExecution.ts's upsertArcGoalTargetInList. */
+export async function upsertArcGoalTarget(target: ArcGoalTarget): Promise<void> {
+  const targets = await loadArcGoalTargets();
+  await saveArcGoalTargets(upsertArcGoalTargetInList(targets, target));
+}
+
+/** Removes exactly the one matching ArcGoalTarget (by id) -- see arc/subGoalExecution.ts's deleteArcGoalTargetFromList. A no-op if the id doesn't match any target. Callers are responsible for also cancelling its scheduled notification first (data/arcGoalTargetReminders.ts's cancelArcGoalTargetNotification) -- this function never does I/O beyond AsyncStorage itself. */
+export async function deleteArcGoalTarget(id: string): Promise<void> {
+  const targets = await loadArcGoalTargets();
+  await saveArcGoalTargets(deleteArcGoalTargetFromList(targets, id));
+}
+
+export async function loadArcGoalTargetOccurrenceCompletions(): Promise<ArcGoalTargetOccurrenceCompletion[]> {
+  const raw = await AsyncStorage.getItem(ARC_GOAL_TARGET_OCCURRENCE_COMPLETIONS_KEY);
+  return raw ? (JSON.parse(raw) as ArcGoalTargetOccurrenceCompletion[]) : [];
+}
+
+/** Records one occurrence as done -- never removes or rewrites any earlier entry, so completion history survives app restarts and one target's completion can never affect another's. */
+export async function appendArcGoalTargetOccurrenceCompletion(entry: ArcGoalTargetOccurrenceCompletion): Promise<void> {
+  const existing = await loadArcGoalTargetOccurrenceCompletions();
+  existing.push(entry);
+  await AsyncStorage.setItem(ARC_GOAL_TARGET_OCCURRENCE_COMPLETIONS_KEY, JSON.stringify(existing));
 }
 
 /**
@@ -658,7 +719,7 @@ export async function clearTimerRun(timerType: TimerType): Promise<void> {
  * play PendingReminder's role instead, one pair per entity -- see
  * data/lifeManifestReminders.ts.
  */
-export type ReminderKind = "focusSuccess" | "arc" | "routine" | "lifeManifestSubGoal" | "lifeManifestTarget";
+export type ReminderKind = "focusSuccess" | "arc" | "routine" | "lifeManifestSubGoal" | "lifeManifestTarget" | "arcGoalTarget" | "fourWeekProgramWeek";
 
 export interface PendingReminder {
   kind: ReminderKind;
@@ -732,6 +793,18 @@ export interface ScheduledRoutine {
   /** ISO timestamp this routine's currently-scheduled notification (if any) actually fires at -- lets reconciliation detect a stale schedule without re-deriving it from the notification itself. */
   nextOccurrenceScheduledFor: string | null;
   createdAt: string;
+  /**
+   * Sub-goal execution task: an optional REFERENCE back to the
+   * ArcGoalTarget that links to THIS routine (ArcGoalTarget.
+   * linkedScheduledRoutineId is the primary/forward link -- see that
+   * field's own doc) -- lets the routines page itself offer "open the
+   * linked target," satisfying "be opened from the routine" (spec
+   * section 4) without a second, disconnected lookup table. Undefined
+   * for every routine saved before this field existed or never linked;
+   * always read with `?? null`, since loadScheduledRoutines has no
+   * normalize step (see its own doc).
+   */
+  linkedArcGoalTargetId?: string | null;
 }
 
 /**
@@ -772,6 +845,12 @@ export async function loadScheduledRoutines(): Promise<ScheduledRoutine[]> {
 /** Always the FULL list -- callers read-modify-write (load, change one routine, save the whole array back) rather than a per-id upsert, matching loadSessionLog/appendSessionLogEntry's own simple whole-array persistence style for a list this small (a trainee's own handful of routines, not an unbounded log). */
 export async function saveScheduledRoutines(routines: ScheduledRoutine[]): Promise<void> {
   await AsyncStorage.setItem(SCHEDULED_ROUTINES_KEY, JSON.stringify(routines));
+}
+
+/** Sub-goal execution task: a single-routine lookup, read-modify-write against the same full list above -- reused by live/ArcGoalTargetScreen.tsx to show a linked routine's own title without loading the whole routines screen. */
+export async function getScheduledRoutine(id: string): Promise<ScheduledRoutine | null> {
+  const routines = await loadScheduledRoutines();
+  return routines.find((routine) => routine.id === id) ?? null;
 }
 
 export async function loadRoutineOccurrenceCompletions(): Promise<RoutineOccurrenceCompletion[]> {

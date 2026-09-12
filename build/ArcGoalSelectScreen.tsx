@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
 import { loadArcGoals } from "../data/storage.ts";
+import { resolvePhase } from "../arc/subGoalExecution.ts";
 import type { ArcGoal } from "../arc/types.ts";
 
 /**
@@ -70,19 +71,26 @@ export default function ArcGoalSelectScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>איזו מטרה תרצה לתרגל?</Text>
-        {goals.map((goal) => (
-          <Pressable
-            key={goal.id}
-            style={[styles.button, styles.fullWidthButton]}
-            onPress={() =>
-              goal.fourWeekProgram?.enabled
-                ? router.push({ pathname: "/goals/live/[goalId]", params: { goalId: goal.id } })
-                : router.push({ pathname: "/arc-goal/live/[goalId]", params: { goalId: goal.id } })
-            }
-          >
-            <Text style={styles.buttonText}>{goal.name}</Text>
-          </Pressable>
-        ))}
+        {goals.map((goal) => {
+          const phase = resolvePhase(goal);
+          return (
+            <Pressable
+              key={goal.id}
+              style={[styles.button, styles.fullWidthButton]}
+              onPress={() => {
+                if (phase === "execution" || phase === "completed") {
+                  router.push({ pathname: "/goals/execution/[goalId]", params: { goalId: goal.id } });
+                } else if (phase === "four_week_program") {
+                  router.push({ pathname: "/goals/live/[goalId]", params: { goalId: goal.id } });
+                } else {
+                  router.push({ pathname: "/arc-goal/live/[goalId]", params: { goalId: goal.id } });
+                }
+              }}
+            >
+              <Text style={styles.buttonText}>{goal.name}</Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
