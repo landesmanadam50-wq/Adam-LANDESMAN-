@@ -327,3 +327,23 @@ test("fast rehearsal of a full ARC Link differs from an ARC Mini Link -- the two
   assert.ok(!ids.includes("protocol_full" as MiniArcLinkStepId));
   assert.ok(!ids.includes("linking_mantra" as MiniArcLinkStepId));
 });
+
+// ---------------------------------------------------------------------------
+// Phase 4 (ARC Thought and ARC Mini Thought), spec section 24: "ARC Mini
+// Thought Link should rehearse... useful insight or supportive thought."
+// ---------------------------------------------------------------------------
+
+test("ctx.thoughtInsightOverride, when provided, is used as the encoding content for a Thought Mini Link, taking priority over build.supportiveThought", () => {
+  const b = build({ protocolKind: "thought", supportiveThought: "מחשבה תומכת מה-Mini" });
+  const steps = buildProtocolSpecificMiniArcLinkSteps(b, { thoughtInsightOverride: "תובנה שנשמרה מהפרוטוקול המלא" });
+  const encoding = steps.find((s) => s.id === "encoding")!;
+  assert.match(encoding.lines.join(" "), /תובנה שנשמרה מהפרוטוקול המלא/);
+  assert.ok(!encoding.lines.join(" ").includes("מחשבה תומכת מה-Mini"));
+});
+
+test("without a thoughtInsightOverride, a Thought Mini Link falls back to build.supportiveThought unchanged -- Phase 2 behavior preserved", () => {
+  const b = build({ protocolKind: "thought", supportiveThought: "מחשבה תומכת מה-Mini" });
+  const steps = buildProtocolSpecificMiniArcLinkSteps(b);
+  const encoding = steps.find((s) => s.id === "encoding")!;
+  assert.match(encoding.lines.join(" "), /מחשבה תומכת מה-Mini/);
+});

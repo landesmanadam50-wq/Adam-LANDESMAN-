@@ -1026,6 +1026,150 @@ export type UrgeRepresentation = "visual" | "bodily" | "both" | "unsure";
 /** BUILD-configured default for UrgeRepresentation, plus "decide_in_live" -- see UrgeArc.representationPreference's own doc. */
 export type UrgeRepresentationPreference = UrgeRepresentation | "decide_in_live";
 
+// ---------------------------------------------------------------------------
+// Phase 4 (ARC Thought and ARC Mini Thought): a NEW, independent entity --
+// mirrors UrgeArc's own shape/independence exactly (never built on
+// ArcBuildProfile, never a second copy of an existing target). ARC
+// Thought is deliberately distinct from ARC Belief (spec section 2):
+// "Thought -> a particular thought, image or internal sentence occurring
+// now. Belief -> a broader recurring belief about the self, others or
+// the world." -- ThoughtArc never represents a belief.
+//
+// Reuses the existing "replacement-thought" concept already established
+// by ArcBuildProfile.stateBalancedAlternativeInterpretation/
+// identityBalancedAlternativeInterpretation (a balanced alternative
+// shown after a Limiting Belief) and, literally, by
+// MiniArcBuild.supportiveThought (added in the Phase 2 correction
+// specifically for protocolKind "thought") -- supportiveThought below is
+// the SAME concept at the Full-protocol level, never a duplicated field.
+// ---------------------------------------------------------------------------
+
+/** Spec section 3: the opening decision -- work with a disturbing thought, or strengthen a supportive one. "decide_in_live" (every ThoughtArc saved before this field existed) means LIVE always asks fresh. */
+export type ThoughtRoute = "disturbing" | "supportive";
+export type ThoughtRoutePreference = ThoughtRoute | "decide_in_live";
+
+/** Spec section 4: how the thought appears -- "unsure" never forces a classification. Distinct from ThoughtModalityPreference (a BUILD-time default/suggestion, which additionally allows "decide_in_live"), mirroring UrgeRepresentation/UrgeRepresentationPreference's own split exactly. */
+export type ThoughtModality = "visual" | "auditory" | "both" | "unsure";
+export type ThoughtModalityPreference = ThoughtModality | "decide_in_live";
+
+/** Spec section 7: which time the thought mainly concerns -- decides which time-oriented supportive prompt LIVE uses when a new supportive thought must be created (spec section 15). "decide_in_live" (the default) means LIVE always asks fresh; unanswered LIVE falls back to the general prompt (spec section 7: "If the user is unsure, allow continuing with a general balanced prompt"). */
+export type ThoughtTimeOrientation = "past" | "present" | "future";
+export type ThoughtTimeOrientationPreference = ThoughtTimeOrientation | "decide_in_live";
+
+/**
+ * Phase 4: ARC Thought's own independent full-protocol entity -- an
+ * independent LIVE protocol (spec section 2), reusable later as a
+ * shared module inside ARC State/ARC Goal/other parent protocols (not
+ * built during this phase -- only the minimum shared context/return
+ * routing ARC Thought itself needs). Any number of these can exist at
+ * once, exactly like UrgeArc/MiniArcBuild/ArcBuild (data/storage.ts's
+ * loadThoughtArcs/upsertThoughtArc).
+ */
+export interface ThoughtArc {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Spec section 22 "Default route." null (legacy/unset) behaves like "decide_in_live" -- LIVE always asks fresh, per spec section 3. */
+  defaultRoute: ThoughtRoutePreference | null;
+  /** Spec section 22 "Default/current thought, where relevant" -- the disturbing thought itself, when prepared/known in advance. Recognition-only; LIVE never requires it (spec section 6: "Do not require every field"). null means not prepared in advance -- LIVE lets the trainee enter it fresh. */
+  currentThought: string | null;
+  modalityPreference: ThoughtModalityPreference | null;
+  timeOrientationPreference: ThoughtTimeOrientationPreference | null;
+  /** Spec section 22 "Situation/context." */
+  situationContext: string | null;
+  /** Spec section 22 "Associated emotion/feeling." */
+  associatedEmotion: string | null;
+  /** Spec sections 8-9: reuses the exact same MantraProfile-compatible shape UrgeArc's own stayMantra/acceptanceMantra already use -- see arc/mantras.ts's own doc; null means no mantra line for that stage. */
+  stayMantra: string | null;
+  acceptanceMantra: string | null;
+  /**
+   * Spec section 10-11 "Attention anchors": which current anchors the
+   * flexible-attention stages offer -- natural breathing and the
+   * object-color/wider-visual-field pair are always available (spec
+   * section 10 lists them unconditionally); externalSound is offered
+   * only when true, and only ever meaningful for an auditory/both
+   * modality (spec section 10: "For an auditory thought, also allow:
+   * Attention to one external sound"). null/every field missing (a
+   * legacy ThoughtArc) behaves like { externalSound: false } -- the two
+   * universal anchors are still always shown; nothing here can ever
+   * suppress them.
+   */
+  externalSoundAnchorEnabled: boolean | null;
+  /** Spec section 22 "Flexible-attention dwell duration" -- shared by both flexible-attention stages (spec sections 10-11). null falls back to arc/dwellTimes.ts's DEFAULT_DWELL_TIMES, exactly like Urge's own dwell handling (Phase 3). */
+  flexibleAttentionDwellSeconds: number | null;
+  /**
+   * Spec section 22's own required Hebrew label/helper text apply here
+   * verbatim (see build/ThoughtArcEditorScreen.tsx). The SAME concept as
+   * MiniArcBuild.supportiveThought (Phase 2) at the Full-protocol level
+   * -- Mini Thought's own field is never a duplicate, only inherited
+   * from this one at BUILD time (see arc/miniArc.ts's
+   * createLinkedMiniArcDraft). null (every ThoughtArc saved before a
+   * trainee filled this in, or one who simply never wrote it) means "no
+   * prepared fallback" -- spec section 14: "If skipped, continue with
+   * one attention/Encoding anchor. Do not invent a thought for the
+   * user."
+   */
+  supportiveThought: string | null;
+  /**
+   * Spec sections 13, 22: "Useful insight, if prepared or saved from a
+   * previous session" -- BUILD-preparable in advance, AND updated after
+   * a LIVE disturbing-thought session where the trainee found one (spec
+   * section 21's own "saved useful insight" for ARC Mini Thought reads
+   * THIS field, always the freshest value, never a stale BUILD-time
+   * snapshot). null means none saved yet -- Encoding falls through to
+   * supportiveThought next (spec section 16's own priority order).
+   */
+  usefulInsight: string | null;
+  /** Spec section 16 "Visual... A balanced alternative image / an adjusted version of the current image." null means no BUILD-configured image; Encoding falls back to describing the insight/supportive-thought text alone. */
+  visualSupportiveImage: string | null;
+  /** Spec section 16 "Auditory... hear the insight/supportive thought in their own supportive internal voice." null means no BUILD-configured voice instruction; Encoding uses a safe generic framing instead. */
+  auditorySupportiveVoiceInstruction: string | null;
+  /** Spec section 22 "Encoding anchor" -- the one anchor Encoding pairs with the gentle nod (spec section 16: "Use one selected Encoding anchor"). null falls back to a safe generic anchor line, never invented content. */
+  encodingAnchor: string | null;
+  /** Spec section 22 "Gentle-nod cue" -- optional wording for the gentle-nod gesture itself; null uses the standard generic instruction. */
+  gentleNodCue: string | null;
+  /** Spec section 17 "future insight" -- "בפעם הבאה אני אזכור ש..." null means not prepared in advance; LIVE lets the trainee complete it fresh (never required). */
+  futureInsight: string | null;
+  /** Spec section 17 "one short relevant action" -- "כאשר זה יקרה, אפעל כך..." null means not prepared in advance. */
+  shortAction: string | null;
+  /** Spec section 18 "Use a configurable dwell duration" for future imagery. null falls back to arc/dwellTimes.ts's DEFAULT_DWELL_TIMES.actionImageryDwellSeconds, exactly like Urge's own dwell handling. */
+  futureImageryDwellSeconds: number | null;
+}
+
+export function generateThoughtArcId(): string {
+  return `thoughtarc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** A fresh, empty ThoughtArc for a brand-new one -- every optional field null exactly like a trainee who hasn't configured anything yet, mirroring createEmptyUrgeArc's own shape. */
+export function createEmptyThoughtArc(id: string, name: string, now: string): ThoughtArc {
+  return {
+    id,
+    name,
+    createdAt: now,
+    updatedAt: now,
+    defaultRoute: null,
+    currentThought: null,
+    modalityPreference: null,
+    timeOrientationPreference: null,
+    situationContext: null,
+    associatedEmotion: null,
+    stayMantra: null,
+    acceptanceMantra: null,
+    externalSoundAnchorEnabled: null,
+    flexibleAttentionDwellSeconds: null,
+    supportiveThought: null,
+    usefulInsight: null,
+    visualSupportiveImage: null,
+    auditorySupportiveVoiceInstruction: null,
+    encodingAnchor: null,
+    gentleNodCue: null,
+    futureInsight: null,
+    shortAction: null,
+    futureImageryDwellSeconds: null,
+  };
+}
+
 /**
  * Modular ARC architecture task (LIVE entry categories, spec section 2):
  * tags which of the five independent LIVE entry points launched/owns a

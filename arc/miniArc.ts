@@ -113,24 +113,30 @@ export interface MiniArcBuild {
   bridgeMantraText?: string | null;
   /**
    * Phase 3 (Full + Mini ARC Urge representation encoding), spec
-   * section 19 ("ARC Mini Urge... Optional secondary Encoding action"):
-   * Urge Mini only -- this Mini's own quick-switch second Encoding
-   * action, meaningful only when representationPreference is "both".
-   * encodingAction (the shared generic field) doubles as the PRIMARY
-   * action for every Mini kind, including Urge -- this field is the one
-   * genuinely Urge-Mini-specific addition, never read by any other
-   * kind. null (every Mini saved before this phase) means no secondary
-   * action -- the "both" case simply uses the primary action alone.
+   * section 19 ("ARC Mini Urge... Optional secondary Encoding action"),
+   * later reused unchanged by Phase 4 for Thought Mini's own "gam vegam"
+   * quick-switch (spec section 21 "Both... optional quick switch to the
+   * secondary element"): this Mini's own quick-switch second Encoding
+   * action, meaningful only when the relevant representation/modality
+   * is "both". encodingAction (the shared generic field) doubles as the
+   * PRIMARY action for every Mini kind -- this field is the one shared
+   * secondary-action addition, read by whichever kind's own
+   * representation/modality is "both" (currently Urge and Thought).
+   * null (every Mini saved before this field existed) means no
+   * secondary action -- the "both" case simply uses the primary action
+   * alone.
    */
   secondaryEncodingAction?: string | null;
   /**
    * Phase 3, spec section 19 ("ARC Mini Urge... Optional
-   * beneficial-action duration"): reuses the exact same concept/shape
-   * as ArcBuildProfile.beneficialActionDurationMinutes (arc/types.ts) --
-   * never a second, parallel duration system. null (the default, and
-   * every Mini saved before this phase) means no configured duration;
-   * the beneficial-action step then behaves exactly as it always has
-   * for every other Mini kind (no optional timer offered).
+   * beneficial-action duration"), reused unchanged by Phase 4 for
+   * Thought Mini's own optional action duration: reuses the exact same
+   * concept/shape as ArcBuildProfile.beneficialActionDurationMinutes
+   * (arc/types.ts) -- never a second, parallel duration system. null
+   * (the default, and every Mini saved before this field existed) means
+   * no configured duration; the beneficial-action step then behaves
+   * exactly as it always has for every other Mini kind (no optional
+   * timer offered).
    */
   actionDurationMinutes?: number | null;
 }

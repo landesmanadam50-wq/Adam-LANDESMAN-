@@ -45,6 +45,18 @@ export interface MiniArcLinkStep {
 export interface MiniArcLinkRehearsalContext {
   triggerText?: string;
   mode?: ArcLinkMode;
+  /**
+   * Phase 4 (ARC Thought and ARC Mini Thought), spec section 24: "ARC
+   * Mini Thought Link should rehearse... useful insight or supportive
+   * thought." Thought Mini only -- the caller (live/MiniArcLinkScreen.tsx)
+   * resolves this via arc/thoughtLive.ts's own resolveMiniThoughtContent
+   * (build.parentArcBuildId's referenced ThoughtArc's usefulInsight,
+   * falling back to its supportiveThought) BEFORE calling this builder,
+   * so this file stays independent of ThoughtArc/data-loading. undefined
+   * (every other kind, or a Thought Mini with no useful insight/parent
+   * resolved) falls back unchanged to build.supportiveThought alone.
+   */
+  thoughtInsightOverride?: string | null;
 }
 
 /**
@@ -239,7 +251,7 @@ interface ProtocolMiniArcLinkPieces {
   encodingLines: string[];
 }
 
-function resolvePiecesForKind(kind: ArcMiniProtocolKind, build: MiniArcBuild): ProtocolMiniArcLinkPieces {
+function resolvePiecesForKind(kind: ArcMiniProtocolKind, build: MiniArcBuild, thoughtInsightOverride?: string | null): ProtocolMiniArcLinkPieces {
   const regulationText = safeText(build.regulationAnchor);
   const regulationImagery = getBodyImageryForText(regulationText, build.regulationBodyImagery ?? null);
   const preventive = safeText(build.preventiveStoppingAction);
@@ -283,7 +295,7 @@ function resolvePiecesForKind(kind: ArcMiniProtocolKind, build: MiniArcBuild): P
         regulationBodyImagery: regulationImagery,
         bridgeMantraLine: null,
         encodingTitle: "דמיין את המחשבה התומכת",
-        encodingLines: [safeText(build.supportiveThought) || "המחשבה התומכת שהגדרת"],
+        encodingLines: [safeText(thoughtInsightOverride) || safeText(build.supportiveThought) || "המחשבה התומכת שהגדרת"],
       };
     case "presence":
       return {
@@ -325,7 +337,7 @@ export function buildProtocolSpecificMiniArcLinkSteps(build: MiniArcBuild, ctx: 
   const trigger = (ctx.triggerText ?? safeTriggerText(build.linkSettings)).trim();
   const mode: ArcLinkMode = ctx.mode ?? "with_archi";
   const actionLabel = safeText(build.beneficialAction);
-  const pieces = resolvePiecesForKind(kind, build);
+  const pieces = resolvePiecesForKind(kind, build, ctx.thoughtInsightOverride);
 
   const steps: MiniArcLinkStep[] = [
     {

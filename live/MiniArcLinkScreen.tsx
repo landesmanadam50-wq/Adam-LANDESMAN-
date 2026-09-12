@@ -3,9 +3,10 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcGoal, getArcLink, getMiniArcBuild, loadRoutineTriggers, upsertArcGoal, upsertArcLink } from "../data/storage.ts";
+import { getArcGoal, getArcLink, getMiniArcBuild, getThoughtArc, loadRoutineTriggers, upsertArcGoal, upsertArcLink } from "../data/storage.ts";
 import { buildMiniArcLinkStartConfirmationStep, buildProtocolSpecificMiniArcLinkSteps } from "../arc/miniArcLink.ts";
 import type { MiniArcLinkStep } from "../arc/miniArcLink.ts";
+import { resolveMiniThoughtContent } from "../arc/thoughtLive.ts";
 import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
 import { describeTrigger, resolveLinkTimerStyle, resolveRoutineTrigger } from "../arc/routineLinks.ts";
 import type { ArcLink } from "../arc/routineLinks.ts";
@@ -63,6 +64,18 @@ export default function MiniArcLinkScreen() {
         return;
       }
 
+      // Phase 4 (ARC Thought and ARC Mini Thought), spec section 24:
+      // "ARC Mini Thought Link should rehearse... useful insight or
+      // supportive thought" -- resolved here (the parent ThoughtArc's
+      // own current usefulInsight, always the freshest value) rather
+      // than inside arc/miniArcLink.ts, which stays independent of
+      // ThoughtArc/data-loading. undefined for every non-Thought kind
+      // or a Thought Mini with no parent -- resolvePiecesForKind then
+      // falls back to build.supportiveThought alone, unchanged.
+      const parentThoughtArc = existing.protocolKind === "thought" && existing.parentArcBuildId ? await getThoughtArc(existing.parentArcBuildId) : null;
+      const thoughtInsightOverride = existing.protocolKind === "thought" ? resolveMiniThoughtContent(existing, parentThoughtArc).text || null : null;
+      if (cancelled) return;
+
       if (!linkId) {
         // Original entry point -- completely unchanged.
         if (!hasConfiguredTrigger(existing.linkSettings)) {
@@ -74,7 +87,7 @@ export default function MiniArcLinkScreen() {
         // protocolKind configured, and falls straight through to this
         // exact original call for every generic/legacy Mini ARC -- see
         // buildProtocolSpecificMiniArcLinkSteps' own doc.
-        setSteps(buildProtocolSpecificMiniArcLinkSteps(existing));
+        setSteps(buildProtocolSpecificMiniArcLinkSteps(existing, { thoughtInsightOverride }));
         setIndex(0);
         setStatus("ready");
         return;
@@ -89,7 +102,7 @@ export default function MiniArcLinkScreen() {
       setArcLink(link);
       const trigger = resolveRoutineTrigger(link.triggerId, triggers);
       const triggerText = describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger);
-      const ctx = { triggerText, mode: link.mode };
+      const ctx = { triggerText, mode: link.mode, thoughtInsightOverride };
       const fullSteps = buildProtocolSpecificMiniArcLinkSteps(existing, ctx);
       // Coherent-architecture task (#22/#24 "With ARCHI"): with_archi
       // mode ends right after imagining opening ARCHI and pressing

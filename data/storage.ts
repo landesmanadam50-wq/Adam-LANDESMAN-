@@ -12,7 +12,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { generateArcBuildId } from "../arc/types.ts";
-import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcGoalTarget, ArcProgramProgress, UrgeArc } from "../arc/types.ts";
+import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcGoalTarget, ArcProgramProgress, ThoughtArc, UrgeArc } from "../arc/types.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
@@ -21,6 +21,7 @@ import { deleteArcGoalFromList, normalizeArcGoal, upsertArcGoalInList } from "..
 import { deleteArcGoalTargetFromList, upsertArcGoalTargetInList } from "../arc/subGoalExecution.ts";
 import type { ArcGoalTargetOccurrenceCompletion } from "../arc/subGoalExecution.ts";
 import { deleteUrgeArcFromList, normalizeUrgeArc, upsertUrgeArcInList } from "../arc/urgeArcs.ts";
+import { deleteThoughtArcFromList, normalizeThoughtArc, upsertThoughtArcInList } from "../arc/thoughtArcs.ts";
 import {
   deleteLifeManifestFromList,
   deleteTargetFromList,
@@ -377,6 +378,49 @@ export async function upsertUrgeArc(urgeArc: UrgeArc): Promise<void> {
 export async function deleteUrgeArc(id: string): Promise<void> {
   const urgeArcs = await loadUrgeArcs();
   await saveUrgeArcs(deleteUrgeArcFromList(urgeArcs, id));
+}
+
+/**
+ * Phase 4 (ARC Thought and ARC Mini Thought): a brand-new, independent
+ * collection storing full ThoughtArc records -- mirrors
+ * ARC_URGE_ARCS_KEY exactly (a ThoughtArc IS the protocol, never a
+ * reference to one). No legacy migration: there is no prior data
+ * format, so an absent key simply means "no ARC Thoughts yet".
+ */
+const ARC_THOUGHT_ARCS_KEY = "archi.thoughtArcs.v1";
+
+export async function loadThoughtArcs(): Promise<ThoughtArc[]> {
+  const raw = await AsyncStorage.getItem(ARC_THOUGHT_ARCS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ThoughtArc[];
+    return Array.isArray(parsed) ? parsed.map(normalizeThoughtArc) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ARC Thoughts are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveUrgeArcs' own style. */
+export async function saveThoughtArcs(thoughtArcs: ThoughtArc[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_THOUGHT_ARCS_KEY, JSON.stringify(thoughtArcs));
+}
+
+export async function getThoughtArc(id: string): Promise<ThoughtArc | null> {
+  const thoughtArcs = await loadThoughtArcs();
+  return thoughtArcs.find((thoughtArc) => thoughtArc.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/thoughtArcs.ts's upsertThoughtArcInList. Updates the one matching ARC Thought in place, never touching any other's own fields, or appends it as new. */
+export async function upsertThoughtArc(thoughtArc: ThoughtArc): Promise<void> {
+  const thoughtArcs = await loadThoughtArcs();
+  await saveThoughtArcs(upsertThoughtArcInList(thoughtArcs, thoughtArc));
+}
+
+/** Removes exactly the one matching ARC Thought (by id) -- see arc/thoughtArcs.ts's deleteThoughtArcFromList. Every other ARC Thought is left completely untouched; a no-op if the id doesn't match any row. */
+export async function deleteThoughtArc(id: string): Promise<void> {
+  const thoughtArcs = await loadThoughtArcs();
+  await saveThoughtArcs(deleteThoughtArcFromList(thoughtArcs, id));
 }
 
 /**
