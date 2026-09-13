@@ -125,5 +125,9 @@ export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
     subGoals: goal.subGoals ?? [],
     executionReturnContext: goal.executionReturnContext ?? null,
     executionCompletedAt: goal.executionCompletedAt ?? null,
+    // ARC Goal four-week correction: every goal saved before Mini Identity
+    // existed backfills to null -- "derive live from the full identity,"
+    // never invented. See ArcGoal.miniIdentityConfig's own doc.
+    miniIdentityConfig: goal.miniIdentityConfig ?? null,
   };
 }

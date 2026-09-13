@@ -19,7 +19,11 @@ import {
   clearReturnContext,
   setWeekEndDate,
   setWeekStartDate,
+  getArcGoalInternalSupportKindOptions,
+  resolveArcGoalIdentityExtensionRoute,
+  resolveArcGoalInternalSupportRoute,
 } from "./fourWeekProgram.ts";
+import type { ArcGoalInternalSupportKind } from "./fourWeekProgram.ts";
 import { isValidCalendarDateString } from "../program/dateUtils.ts";
 
 // --- createFourWeekProgram (new programs begin in Week 1; seven days per week) ---
@@ -450,4 +454,65 @@ test("6. reopening the four-week BUILD after saving with a previously-invalid st
   // And the trainee can still recover by typing a real date afterward.
   const recovered = setWeekStartDate(program, 2, "2025-01-13");
   assert.equal(resolveWeek(recovered, 2).plannedStartDate, "2025-01-13");
+});
+
+// ---------------------------------------------------------------------------
+// ARC Goal four-week correction: Week 1's optional internal-support step
+// (required tests 1-9).
+// ---------------------------------------------------------------------------
+
+test("required test 1: Week 1 internal support is optional -- getArcGoalInternalSupportKindOptions never itself requires an answer, and 'no support' has no kind option (it's a separate, always-available choice for the driving screen)", () => {
+  const options = getArcGoalInternalSupportKindOptions();
+  assert.ok(options.length > 0);
+  assert.ok(!options.some((o) => (o.value as string) === "none"));
+});
+
+test("required tests 2-6: Week 1 can select State, Urge, Thought, Presence, or Belief as the internal-support kind", () => {
+  const values = getArcGoalInternalSupportKindOptions().map((o) => o.value);
+  assert.deepEqual(values.sort(), ["belief", "presence", "state", "thought", "urge"]);
+});
+
+test("required test 7: Week 1 can select no internal support -- resolveArcGoalIdentityExtensionRoute is reachable directly, independent of any kind route", () => {
+  const route = resolveArcGoalIdentityExtensionRoute("goal-1");
+  assert.equal(route.pathname, "/identity-extension/live");
+  assert.equal(route.params.track, "goal_achievement");
+  assert.equal(route.params.goalId, "goal-1");
+});
+
+test("required test 8: every Week 1 internal-support route is Full-only (mode: 'full' for the 4 standalone kinds; the general /live screen has no Mini concept at all) and every one is reachable", () => {
+  const kinds: ArcGoalInternalSupportKind[] = ["state", "urge", "thought", "presence", "belief"];
+  for (const kind of kinds) {
+    const route = resolveArcGoalInternalSupportRoute("goal-1", kind, "protocol-1");
+    assert.ok(route.pathname.length > 0);
+    if (kind !== "state") {
+      assert.equal(route.params.mode, "full");
+      assert.equal(route.params.goalId, "goal-1");
+    }
+  }
+});
+
+test("required test 8b: every Week 1 route continues to mandatory Identity Extension -- 'state' carries thenIdentityGoalId (LiveSessionScreen's own mandatory-continuation param), the other 4 kinds carry goalId (their own existing mandatory-continuation param, unchanged since Phase 8)", () => {
+  const stateRoute = resolveArcGoalInternalSupportRoute("goal-1", "state", "build-1");
+  assert.equal(stateRoute.pathname, "/live");
+  assert.equal(stateRoute.params.buildId, "build-1");
+  assert.equal(stateRoute.params.thenIdentityGoalId, "goal-1");
+
+  const urgeRoute = resolveArcGoalInternalSupportRoute("goal-1", "urge", "urge-1");
+  assert.equal(urgeRoute.pathname, "/urge-arcs/live/[id]");
+  assert.equal(urgeRoute.params.id, "urge-1");
+  assert.equal(urgeRoute.params.goalId, "goal-1");
+
+  const thoughtRoute = resolveArcGoalInternalSupportRoute("goal-1", "thought", "thought-1");
+  assert.equal(thoughtRoute.pathname, "/thought-arcs/live/[id]");
+
+  const presenceRoute = resolveArcGoalInternalSupportRoute("goal-1", "presence", "presence-1");
+  assert.equal(presenceRoute.pathname, "/presence-arcs/live/[id]");
+
+  const beliefRoute = resolveArcGoalInternalSupportRoute("goal-1", "belief", "belief-1");
+  assert.equal(beliefRoute.pathname, "/belief-arcs/live/[id]");
+});
+
+test("required test 9: ARC Goal never shows the identity-skip question -- resolveArcGoalIdentityExtensionRoute always routes track 'goal_achievement', never 'personal_development'", () => {
+  const route = resolveArcGoalIdentityExtensionRoute("goal-1");
+  assert.equal(route.params.track, "goal_achievement");
 });
