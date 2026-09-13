@@ -13,8 +13,8 @@
 
 import { getBodyImageryForText, safeTriggerText } from "./bodyImagery.ts";
 import type { BodyImagery } from "./bodyImagery.ts";
-import { safeText } from "./miniArc.ts";
-import type { MiniArcBuild } from "./miniArc.ts";
+import { resolveMiniArcProtocolKind, safeText } from "./miniArc.ts";
+import type { ArcMiniProtocolKind, MiniArcBuild } from "./miniArc.ts";
 import type { ArcLinkMode } from "./routineLinks.ts";
 
 export type MiniArcLinkStepId =
@@ -28,7 +28,11 @@ export type MiniArcLinkStepId =
   | "beneficial_action"
   | "reinforce"
   /** Coherent-architecture task (#22/#24 "With ARCHI"): the short ending used ONLY in "with_archi" mode -- see buildMiniArcLinkStartConfirmationStep's own doc. */
-  | "archi_start_confirmation";
+  | "archi_start_confirmation"
+  /** Protocol-specific ARC Mini Link rehearsal task (spec section 6): the "preventive or attention response" step -- Urge/State kinds' own preventive stopping/response action. */
+  | "preventive_response"
+  /** Protocol-specific ARC Mini Link rehearsal task: Belief Mini's own Bridge Mantra step, rehearsed right after recognizing the belief, before the replacement belief. */
+  | "bridge_mantra";
 
 export interface MiniArcLinkStep {
   id: MiniArcLinkStepId;
@@ -41,6 +45,18 @@ export interface MiniArcLinkStep {
 export interface MiniArcLinkRehearsalContext {
   triggerText?: string;
   mode?: ArcLinkMode;
+  /**
+   * Phase 4 (ARC Thought and ARC Mini Thought), spec section 24: "ARC
+   * Mini Thought Link should rehearse... useful insight or supportive
+   * thought." Thought Mini only -- the caller (live/MiniArcLinkScreen.tsx)
+   * resolves this via arc/thoughtLive.ts's own resolveMiniThoughtContent
+   * (build.parentArcBuildId's referenced ThoughtArc's usefulInsight,
+   * falling back to its supportiveThought) BEFORE calling this builder,
+   * so this file stays independent of ThoughtArc/data-loading. undefined
+   * (every other kind, or a Thought Mini with no useful insight/parent
+   * resolved) falls back unchanged to build.supportiveThought alone.
+   */
+  thoughtInsightOverride?: string | null;
 }
 
 /**
@@ -208,4 +224,183 @@ export function buildMiniArcLinkStartConfirmationStep(ctx: MiniArcLinkRehearsalC
     buttonLabel: "סיום Mini ARC Link",
     bodyImagery: null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Protocol-specific ARC Mini Link rehearsal (spec section 6): a separate,
+// SHORTER content builder per ArcMiniProtocolKind -- reuses the same
+// MiniArcLinkStep shape and the same intro/trigger/beneficial_action/
+// reinforce framing as buildMiniArcLinkSteps above, but never its middle
+// content (no presence_color/name_state/regulation/encoding sequence,
+// which is that function's own generic-Mini-ARC content). Never adds
+// full Stay/Acceptance/Presence rating/Success Focus/Gratitude -- every
+// builder below is exactly the "General rehearsal" template from spec
+// section 6, customized per kind.
+// ---------------------------------------------------------------------------
+
+interface ProtocolMiniArcLinkPieces {
+  /** The step shown for "imagine recognizing the trigger" -- kind-specific title/line. */
+  recognitionLine: string;
+  /** null when this kind has no preventive/attention response step (spec: only urge REQUIRES it; state has it "if configured"; thought/presence/belief never show this step at all). */
+  preventiveResponseLine: string | null;
+  regulationAnchorLabel: string;
+  regulationBodyImagery: BodyImagery | null;
+  /** null when this kind's own Bridge Mantra step doesn't apply (belief only). */
+  bridgeMantraLine: string | null;
+  encodingTitle: string;
+  encodingLines: string[];
+}
+
+function resolvePiecesForKind(kind: ArcMiniProtocolKind, build: MiniArcBuild, thoughtInsightOverride?: string | null): ProtocolMiniArcLinkPieces {
+  const regulationText = safeText(build.regulationAnchor);
+  const regulationImagery = getBodyImageryForText(regulationText, build.regulationBodyImagery ?? null);
+  const preventive = safeText(build.preventiveStoppingAction);
+
+  switch (kind) {
+    case "state":
+      return {
+        recognitionLine: "דמיין שאתה שם לב בקצרה למצב הפנימי שנמצא עכשיו.",
+        preventiveResponseLine: preventive.length > 0 ? preventive : null,
+        regulationAnchorLabel: regulationText,
+        regulationBodyImagery: regulationImagery,
+        bridgeMantraLine: null,
+        encodingTitle: "דמיין את רמז המצב הרצוי",
+        encodingLines: [safeText(build.encodingAction) || "רמז המצב הרצוי שהגדרת"],
+      };
+    case "urge": {
+      const representation = build.representationPreference ?? "decide_in_live";
+      const representationLine =
+        representation === "visual"
+          ? "דמיין התאמה קלה של הדימוי שכבר נמצא."
+          : representation === "bodily"
+            ? "אפשר לתחושה הרצויה להתפשט בהדרגה לצד התחושה שכבר קיימת."
+            : representation === "both"
+              ? "דמיין התאמה קלה של הדימוי, ואפשר לתחושה הרצויה להתפשט לצד התחושה שכבר קיימת."
+              : "דמיין את ההתאמה שמתאימה לך יותר -- בדימוי או בתחושת הגוף.";
+      return {
+        recognitionLine: "דמיין שאתה שם לב בקצרה לדחף שנמצא עכשיו, בלי להעצים אותו ובלי להילחם בו.",
+        preventiveResponseLine: preventive.length > 0 ? preventive : "דמיין פעולת עצירה קצרה שיוצרת מרחק מהדחף.",
+        regulationAnchorLabel: regulationText,
+        regulationBodyImagery: regulationImagery,
+        bridgeMantraLine: null,
+        encodingTitle: "דמיין את הקידוד המותאם לדחף",
+        encodingLines: [representationLine],
+      };
+    }
+    case "thought":
+      return {
+        recognitionLine: "דמיין שאתה שם לב בקצרה למחשבה שנמצאת עכשיו, בלי להתווכח איתה.",
+        preventiveResponseLine: null,
+        regulationAnchorLabel: regulationText,
+        regulationBodyImagery: regulationImagery,
+        bridgeMantraLine: null,
+        encodingTitle: "דמיין את המחשבה התומכת",
+        encodingLines: [safeText(thoughtInsightOverride) || safeText(build.supportiveThought) || "המחשבה התומכת שהגדרת"],
+      };
+    case "presence":
+      return {
+        recognitionLine: "דמיין שאתה שם לב לרגע הנוכחי, ומאפשר לנשימה להמשיך בחופשיות בלי לנסות לשנות אותה.",
+        preventiveResponseLine: null,
+        regulationAnchorLabel: regulationText,
+        regulationBodyImagery: regulationImagery,
+        bridgeMantraLine: null,
+        encodingTitle: "דמיין את צבע הנוכחות",
+        encodingLines: [safeText(build.presenceColor) || "צבע הנוכחות שבחרת"],
+      };
+    case "belief":
+      return {
+        recognitionLine: "דמיין שאתה מזהה בקצרה שיש בך כרגע את האמונה הזאת, בלי להתייחס אליה כאל אמת.",
+        preventiveResponseLine: null,
+        regulationAnchorLabel: regulationText,
+        regulationBodyImagery: regulationImagery,
+        bridgeMantraLine: safeText(build.bridgeMantraText) || null,
+        encodingTitle: "דמיין את האמונה התומכת",
+        encodingLines: [safeText(build.replacementBelief) || "האמונה התומכת שהגדרת"],
+      };
+  }
+}
+
+/**
+ * Protocol-specific ARC Mini Link rehearsal task (spec section 6): the
+ * kind-aware entry point -- reads resolveMiniArcProtocolKind(build) and
+ * builds the matching SHORT rehearsal ("General rehearsal" template,
+ * customized per kind). "generic" (every Mini ARC saved before
+ * protocolKind existed, or genuinely built as a standalone one) falls
+ * straight through to buildMiniArcLinkSteps above -- this function never
+ * changes that existing, unmodified behavior. Never adds full Stay/
+ * Acceptance/Presence rating/Success Focus/Gratitude for any kind.
+ */
+export function buildProtocolSpecificMiniArcLinkSteps(build: MiniArcBuild, ctx: MiniArcLinkRehearsalContext = {}): MiniArcLinkStep[] {
+  const kind = resolveMiniArcProtocolKind(build);
+  if (kind === "generic") return buildMiniArcLinkSteps(build, ctx);
+
+  const trigger = (ctx.triggerText ?? safeTriggerText(build.linkSettings)).trim();
+  const mode: ArcLinkMode = ctx.mode ?? "with_archi";
+  const actionLabel = safeText(build.beneficialAction);
+  const pieces = resolvePiecesForKind(kind, build, ctx.thoughtInsightOverride);
+
+  const steps: MiniArcLinkStep[] = [
+    {
+      id: "intro",
+      title: "Mini ARC Link",
+      lines: ["בתרגול הקצר הזה תחזק את הקישור בין הטריגר שלך לבין התגובה המיועדת שלך."],
+      buttonLabel: "התחלת התרגול",
+      bodyImagery: null,
+    },
+    {
+      id: "trigger",
+      title: "דמיין את הטריגר",
+      lines: [trigger || "הטריגר שהגדרת"],
+      buttonLabel: "דמיינתי את הטריגר",
+      bodyImagery: null,
+    },
+  ];
+
+  if (mode === "with_archi") {
+    steps.push({
+      id: "enter_archi",
+      title: "דמיין את הכניסה ל-ARCHI",
+      lines: ["דמיין שאתה פותח את ARCHI ובוחר את ה-Mini ARC שלך."],
+      buttonLabel: "נכנסתי ל-ARCHI בדמיון",
+      bodyImagery: null,
+    });
+  }
+
+  steps.push({ id: "name_state", title: "זיהוי קצר", lines: [pieces.recognitionLine], buttonLabel: "המשך", bodyImagery: null });
+
+  if (pieces.preventiveResponseLine) {
+    steps.push({ id: "preventive_response", title: "תגובת עצירה", lines: [pieces.preventiveResponseLine], buttonLabel: "המשך", bodyImagery: null });
+  }
+
+  steps.push({
+    id: "regulation",
+    title: "דמיין את הוויסות",
+    lines: [],
+    buttonLabel: "המשך",
+    bodyImagery: { anchorLabel: pieces.regulationAnchorLabel, imagery: pieces.regulationBodyImagery ?? getBodyImageryForText(pieces.regulationAnchorLabel, null) },
+  });
+
+  if (pieces.bridgeMantraLine) {
+    steps.push({ id: "bridge_mantra", title: "גשר המנטרה", lines: [pieces.bridgeMantraLine], buttonLabel: "המשך", bodyImagery: null });
+  }
+
+  steps.push({ id: "encoding", title: pieces.encodingTitle, lines: pieces.encodingLines, buttonLabel: "המשך", bodyImagery: null });
+
+  steps.push({
+    id: "beneficial_action",
+    title: "דמיין את הפעולה",
+    lines: [`דמיין שאתה מתחיל מיד ב${actionLabel || "הפעולה המיועדת שלך"}.`],
+    buttonLabel: "המשך",
+    bodyImagery: null,
+  });
+
+  steps.push({
+    id: "reinforce",
+    title: "חיזוק הקישור",
+    lines: [`כש${trigger || "הטריגר שלך"}, אני מתחיל מיד ב${actionLabel || "הפעולה המיועדת שלי"}.`],
+    buttonLabel: "סיום Mini ARC Link",
+    bodyImagery: null,
+  });
+
+  return steps;
 }

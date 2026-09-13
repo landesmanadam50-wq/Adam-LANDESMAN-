@@ -66,7 +66,11 @@ export type ArcLinkStepId =
   | "beneficial_action"
   | "reinforce"
   /** Coherent-architecture task (#22 "With ARCHI"): the short ending used ONLY in "with_archi" mode -- see buildArcLinkStartConfirmationStep's own doc. */
-  | "archi_start_confirmation";
+  | "archi_start_confirmation"
+  /** Link practice-mode task: קישור קצר's own single "first intended response" step -- see buildArcLinkShortSteps' own doc. */
+  | "short_response"
+  /** Link practice-mode task: תרגול מהיר's own single combined step, shown alongside the Link rehearsal timer -- see buildArcLinkFastSteps' own doc. */
+  | "fast_response";
 
 export interface ArcLinkStep {
   id: ArcLinkStepId;
@@ -677,5 +681,94 @@ export function buildArcLinkStartConfirmationStep(ctx: ArcLinkRehearsalContext):
     buttonLabel: "סיום ARC Link",
     bodyImagery: null,
   };
+}
+
+/**
+ * Link practice-mode task (spec section 8.1, "קישור קצר"): a Regular
+ * ARC Link / ARCHI ARC Link rehearsal that stays a QUICK ASSOCIATION --
+ * never requires imagining the entire linked protocol. Rehearses only:
+ * time/place (via the same trigger imagery every mode uses),
+ * the Linking Mantra when configured (reusing the target's own resolved
+ * Encoding mantra -- there is no separate "Linking Mantra" field in
+ * this app; never invented when unset), the first intended response
+ * (the target's own resolved action label), and opening ARCHI /
+ * beginning the action. Never Stay/Acceptance/Presence/Regulation/
+ * Encoding/Success-Focus/Gratitude -- those belong only to "full" mode
+ * (buildArcLinkProtocolSteps).
+ */
+export function buildArcLinkShortSteps(profile: ArcBuildProfile, ctx: ArcLinkRehearsalContext): ArcLinkStep[] {
+  const trigger = ctx.triggerText.trim();
+  const target = resolveArcLinkTarget(profile);
+  const actionLabel = target ? resolveActionLabel(profile, target) : safe(profile.beneficialAction);
+  const mantra = target ? resolveMantra(profile, target) : "";
+  const triggerCategory = ctx.triggerCategory ?? "scheduled";
+  const triggerContent = buildTriggerImageryContent(trigger, triggerCategory, "");
+
+  const steps: ArcLinkStep[] = [
+    {
+      id: "intro",
+      title: "ARC Link — קישור קצר",
+      lines: [
+        "בתרגול הזה תחזק קישור מהיר בין הטריגר שלך לבין התגובה המיועדת שלך -- בלי לעבור על כל ה-ARC.",
+        `${trigger || "הטריגר שלך"} ← ${actionLabel || "התגובה המיועדת"}.`,
+      ],
+      buttonLabel: "התחלת התרגול",
+      bodyImagery: null,
+    },
+    {
+      id: "trigger",
+      title: "דמיין את הטריגר",
+      lines: triggerContent.lines,
+      buttonLabel: triggerContent.buttonLabel,
+      bodyImagery: null,
+    },
+    {
+      id: "short_response",
+      title: "התגובה הראשונה שלך",
+      lines: [
+        ...(mantra ? [`אמור לעצמך בשקט: "${mantra}".`] : []),
+        `דמיין שאתה מתחיל מיד ב${actionLabel || "התגובה המיועדת שלך"}.`,
+      ],
+      buttonLabel: "המשך",
+      bodyImagery: null,
+    },
+  ];
+
+  if (ctx.mode === "with_archi") {
+    steps.push(buildArcLinkStartConfirmationStep(ctx));
+  } else {
+    steps.push({
+      id: "reinforce",
+      title: "התחלת הפעולה",
+      lines: [`כש${trigger || "הטריגר שלך"}, אני מתחיל מיד ב${actionLabel || "הפעולה המיטיבה שלי"}.`],
+      buttonLabel: "סיום ARC Link",
+      bodyImagery: null,
+    });
+  }
+
+  return steps;
+}
+
+/**
+ * Link practice-mode task (spec section 8.3, "תרגול מהיר"): the
+ * learned response rehearsed as ONE short sequence -- no long
+ * explanations, never forces the trainee through every full ARC
+ * screen. Deliberately a SINGLE step (the caller pairs it with a
+ * live Link rehearsal timer, arc/linkTimer.ts) rather than a multi-step
+ * wizard, matching "one short timed sequence" literally.
+ */
+export function buildArcLinkFastSteps(profile: ArcBuildProfile, ctx: ArcLinkRehearsalContext): ArcLinkStep[] {
+  const trigger = ctx.triggerText.trim();
+  const target = resolveArcLinkTarget(profile);
+  const actionLabel = target ? resolveActionLabel(profile, target) : safe(profile.beneficialAction);
+  return [
+    {
+      id: "fast_response",
+      title: "תרגול מהיר",
+      lines: [`כש${trigger || "הטריגר שלך"}, אני מתחיל מיד ב${actionLabel || "התגובה המיועדת שלי"}.`, "דמיין את הרצף הזה פעם אחת, בקצב הטבעי שלך."],
+      buttonLabel: "סיום ARC Link",
+      bodyImagery: null,
+    },
+  ];
 }
 

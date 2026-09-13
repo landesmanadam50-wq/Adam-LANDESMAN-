@@ -12,7 +12,19 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { generateArcBuildId } from "../arc/types.ts";
-import type { ArcBuild, ArcBuildProfile, ArcGoal, ArcGoalTarget, ArcProgramProgress, UrgeArc } from "../arc/types.ts";
+import type {
+  ArcBuild,
+  ArcBuildProfile,
+  ArcGoal,
+  ArcGoalTarget,
+  ArcProgramProgress,
+  BeliefArc,
+  PersonalDevelopmentFourWeekProgram,
+  PresenceArc,
+  ThoughtArc,
+  UrgeArc,
+} from "../arc/types.ts";
+import { deletePersonalDevelopmentProgramFromList, normalizePersonalDevelopmentProgram, upsertPersonalDevelopmentProgramInList } from "../arc/personalDevelopmentProgram.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
@@ -21,6 +33,9 @@ import { deleteArcGoalFromList, normalizeArcGoal, upsertArcGoalInList } from "..
 import { deleteArcGoalTargetFromList, upsertArcGoalTargetInList } from "../arc/subGoalExecution.ts";
 import type { ArcGoalTargetOccurrenceCompletion } from "../arc/subGoalExecution.ts";
 import { deleteUrgeArcFromList, normalizeUrgeArc, upsertUrgeArcInList } from "../arc/urgeArcs.ts";
+import { deleteThoughtArcFromList, normalizeThoughtArc, upsertThoughtArcInList } from "../arc/thoughtArcs.ts";
+import { deleteBeliefArcFromList, normalizeBeliefArc, upsertBeliefArcInList } from "../arc/beliefArcs.ts";
+import { deletePresenceArcFromList, normalizePresenceArc, upsertPresenceArcInList } from "../arc/presenceArcs.ts";
 import {
   deleteLifeManifestFromList,
   deleteTargetFromList,
@@ -290,6 +305,8 @@ export async function deleteArcGoal(id: string): Promise<void> {
 const ARC_GOAL_TARGETS_KEY = "archi.arcGoalTargets.v1";
 /** Sub-goal execution task: append-only, per-occurrence completion record for a RECURRING ArcGoalTarget -- exact mirror of RoutineOccurrenceCompletion's own shape/guarantees (see that interface's own doc): completing today's occurrence of target A never marks yesterday's, tomorrow's, or any other target's occurrence complete. */
 const ARC_GOAL_TARGET_OCCURRENCE_COMPLETIONS_KEY = "archi.arcGoalTargetOccurrenceCompletions.v1";
+/** Phase 9: Personal Development's own four-week programs -- see arc/personalDevelopmentProgram.ts's own module doc. */
+const PERSONAL_DEVELOPMENT_PROGRAMS_KEY = "archi.personalDevelopmentPrograms.v1";
 
 export async function loadArcGoalTargets(): Promise<ArcGoalTarget[]> {
   const raw = await AsyncStorage.getItem(ARC_GOAL_TARGETS_KEY);
@@ -338,6 +355,50 @@ export async function appendArcGoalTargetOccurrenceCompletion(entry: ArcGoalTarg
 }
 
 /**
+ * Phase 9: Personal Development's own four-week programs -- a brand-new,
+ * independent collection, entirely separate from ARC_GOALS_KEY (never
+ * read/written by it, and vice versa -- see
+ * arc/personalDevelopmentProgram.ts's own module doc on why this is a
+ * new top-level entity rather than nested onto ArcGoal or any of the
+ * five protocol record types). No legacy migration: there is no prior
+ * data format for this, so an absent key simply means "no Personal
+ * Development programs yet".
+ */
+export async function loadPersonalDevelopmentPrograms(): Promise<PersonalDevelopmentFourWeekProgram[]> {
+  const raw = await AsyncStorage.getItem(PERSONAL_DEVELOPMENT_PROGRAMS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PersonalDevelopmentFourWeekProgram[];
+    return Array.isArray(parsed) ? parsed.map(normalizePersonalDevelopmentProgram) : [];
+  } catch (error) {
+    console.warn("[storage] Stored Personal Development programs are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveArcGoals' own style. */
+export async function savePersonalDevelopmentPrograms(programs: PersonalDevelopmentFourWeekProgram[]): Promise<void> {
+  await AsyncStorage.setItem(PERSONAL_DEVELOPMENT_PROGRAMS_KEY, JSON.stringify(programs));
+}
+
+export async function getPersonalDevelopmentProgram(id: string): Promise<PersonalDevelopmentFourWeekProgram | null> {
+  const programs = await loadPersonalDevelopmentPrograms();
+  return programs.find((program) => program.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/personalDevelopmentProgram.ts's upsertPersonalDevelopmentProgramInList. Updates the one matching program in place, never touching any other program's own fields, or appends it as new. */
+export async function upsertPersonalDevelopmentProgram(program: PersonalDevelopmentFourWeekProgram): Promise<void> {
+  const programs = await loadPersonalDevelopmentPrograms();
+  await savePersonalDevelopmentPrograms(upsertPersonalDevelopmentProgramInList(programs, program));
+}
+
+/** Removes exactly the one matching program (by id) -- a no-op if the id doesn't match any program. Never touches the underlying protocol record this program merely referenced. */
+export async function deletePersonalDevelopmentProgram(id: string): Promise<void> {
+  const programs = await loadPersonalDevelopmentPrograms();
+  await savePersonalDevelopmentPrograms(deletePersonalDevelopmentProgramFromList(programs, id));
+}
+
+/**
  * Urge route task: a brand-new, independent collection, storing full
  * UrgeArc records (mirrors ARC_BUILDS_KEY, not MINI_ARC_BUILDS_KEY's
  * reference-only ArcGoal collection -- a UrgeArc IS the protocol, not a
@@ -377,6 +438,134 @@ export async function upsertUrgeArc(urgeArc: UrgeArc): Promise<void> {
 export async function deleteUrgeArc(id: string): Promise<void> {
   const urgeArcs = await loadUrgeArcs();
   await saveUrgeArcs(deleteUrgeArcFromList(urgeArcs, id));
+}
+
+/**
+ * Phase 4 (ARC Thought and ARC Mini Thought): a brand-new, independent
+ * collection storing full ThoughtArc records -- mirrors
+ * ARC_URGE_ARCS_KEY exactly (a ThoughtArc IS the protocol, never a
+ * reference to one). No legacy migration: there is no prior data
+ * format, so an absent key simply means "no ARC Thoughts yet".
+ */
+const ARC_THOUGHT_ARCS_KEY = "archi.thoughtArcs.v1";
+
+export async function loadThoughtArcs(): Promise<ThoughtArc[]> {
+  const raw = await AsyncStorage.getItem(ARC_THOUGHT_ARCS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ThoughtArc[];
+    return Array.isArray(parsed) ? parsed.map(normalizeThoughtArc) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ARC Thoughts are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveUrgeArcs' own style. */
+export async function saveThoughtArcs(thoughtArcs: ThoughtArc[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_THOUGHT_ARCS_KEY, JSON.stringify(thoughtArcs));
+}
+
+export async function getThoughtArc(id: string): Promise<ThoughtArc | null> {
+  const thoughtArcs = await loadThoughtArcs();
+  return thoughtArcs.find((thoughtArc) => thoughtArc.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/thoughtArcs.ts's upsertThoughtArcInList. Updates the one matching ARC Thought in place, never touching any other's own fields, or appends it as new. */
+export async function upsertThoughtArc(thoughtArc: ThoughtArc): Promise<void> {
+  const thoughtArcs = await loadThoughtArcs();
+  await saveThoughtArcs(upsertThoughtArcInList(thoughtArcs, thoughtArc));
+}
+
+/** Removes exactly the one matching ARC Thought (by id) -- see arc/thoughtArcs.ts's deleteThoughtArcFromList. Every other ARC Thought is left completely untouched; a no-op if the id doesn't match any row. */
+export async function deleteThoughtArc(id: string): Promise<void> {
+  const thoughtArcs = await loadThoughtArcs();
+  await saveThoughtArcs(deleteThoughtArcFromList(thoughtArcs, id));
+}
+
+/**
+ * Phase 6 (ARC Belief and ARC Mini Belief): a brand-new, independent
+ * collection storing full BeliefArc records -- mirrors
+ * ARC_THOUGHT_ARCS_KEY exactly. No legacy migration: there is no prior
+ * data format, so an absent key simply means "no ARC Beliefs yet".
+ */
+const ARC_BELIEF_ARCS_KEY = "archi.beliefArcs.v1";
+
+export async function loadBeliefArcs(): Promise<BeliefArc[]> {
+  const raw = await AsyncStorage.getItem(ARC_BELIEF_ARCS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as BeliefArc[];
+    return Array.isArray(parsed) ? parsed.map(normalizeBeliefArc) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ARC Beliefs are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveThoughtArcs' own style. */
+export async function saveBeliefArcs(beliefArcs: BeliefArc[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_BELIEF_ARCS_KEY, JSON.stringify(beliefArcs));
+}
+
+export async function getBeliefArc(id: string): Promise<BeliefArc | null> {
+  const beliefArcs = await loadBeliefArcs();
+  return beliefArcs.find((beliefArc) => beliefArc.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/beliefArcs.ts's upsertBeliefArcInList. */
+export async function upsertBeliefArc(beliefArc: BeliefArc): Promise<void> {
+  const beliefArcs = await loadBeliefArcs();
+  await saveBeliefArcs(upsertBeliefArcInList(beliefArcs, beliefArc));
+}
+
+/** Removes exactly the one matching ARC Belief (by id) -- see arc/beliefArcs.ts's deleteBeliefArcFromList. */
+export async function deleteBeliefArc(id: string): Promise<void> {
+  const beliefArcs = await loadBeliefArcs();
+  await saveBeliefArcs(deleteBeliefArcFromList(beliefArcs, id));
+}
+
+/**
+ * Phase 5 (ARC Presence and ARC Mini Presence): a brand-new, independent
+ * collection storing full PresenceArc records -- mirrors
+ * ARC_THOUGHT_ARCS_KEY/ARC_URGE_ARCS_KEY exactly. No legacy migration:
+ * there is no prior data format, so an absent key simply means "no ARC
+ * Presences yet".
+ */
+const ARC_PRESENCE_ARCS_KEY = "archi.presenceArcs.v1";
+
+export async function loadPresenceArcs(): Promise<PresenceArc[]> {
+  const raw = await AsyncStorage.getItem(ARC_PRESENCE_ARCS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PresenceArc[];
+    return Array.isArray(parsed) ? parsed.map(normalizePresenceArc) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ARC Presences are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveThoughtArcs' own style. */
+export async function savePresenceArcs(presenceArcs: PresenceArc[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_PRESENCE_ARCS_KEY, JSON.stringify(presenceArcs));
+}
+
+export async function getPresenceArc(id: string): Promise<PresenceArc | null> {
+  const presenceArcs = await loadPresenceArcs();
+  return presenceArcs.find((presenceArc) => presenceArc.id === id) ?? null;
+}
+
+/** Upserts by id -- see arc/presenceArcs.ts's upsertPresenceArcInList. */
+export async function upsertPresenceArc(presenceArc: PresenceArc): Promise<void> {
+  const presenceArcs = await loadPresenceArcs();
+  await savePresenceArcs(upsertPresenceArcInList(presenceArcs, presenceArc));
+}
+
+/** Removes exactly the one matching ARC Presence (by id) -- see arc/presenceArcs.ts's deletePresenceArcFromList. */
+export async function deletePresenceArc(id: string): Promise<void> {
+  const presenceArcs = await loadPresenceArcs();
+  await savePresenceArcs(deletePresenceArcFromList(presenceArcs, id));
 }
 
 /**
@@ -736,7 +925,15 @@ export async function clearTimerRun(timerType: TimerType): Promise<void> {
  * play PendingReminder's role instead, one pair per entity -- see
  * data/lifeManifestReminders.ts.
  */
-export type ReminderKind = "focusSuccess" | "arc" | "routine" | "lifeManifestSubGoal" | "lifeManifestTarget" | "arcGoalTarget" | "fourWeekProgramWeek";
+export type ReminderKind =
+  | "focusSuccess"
+  | "arc"
+  | "routine"
+  | "lifeManifestSubGoal"
+  | "lifeManifestTarget"
+  | "arcGoalTarget"
+  | "fourWeekProgramWeek"
+  | "personalDevelopmentProgramWeek";
 
 export interface PendingReminder {
   kind: ReminderKind;

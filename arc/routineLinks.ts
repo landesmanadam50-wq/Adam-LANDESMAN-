@@ -41,6 +41,68 @@ export type RoutineProtocolType = "arc" | "mini_arc" | "arc_goal";
 export type ArcLinkMode = "with_archi" | "without_archi";
 
 /**
+ * Link practice-mode task (spec section 8): the trainee's own "איזה סוג
+ * תרגול תרצה לבצע?" choice, shown before a Regular ARC Link or ARCHI ARC
+ * Link rehearsal -- a DIFFERENT, orthogonal axis from ArcLinkMode above
+ * (with_archi/without_archi decides whether ARCHI guides the rehearsal
+ * or the trainee does it from memory; ArcLinkPracticeMode decides HOW
+ * MUCH of the linked protocol gets rehearsed either way). "short" =
+ * קישור קצר (time/place/trigger/Linking Mantra/first response only,
+ * never full-protocol visualization); "full" = תרגול מלא (the complete
+ * linked-protocol rehearsal); "fast" = תרגול מהיר (one short timed
+ * sequence, no long explanations). Never applies to Mini ARC Link,
+ * which has its own fixed short structure regardless (spec section 7.3).
+ */
+export type ArcLinkPracticeMode = "short" | "full" | "fast";
+
+/**
+ * Link timers task (spec section 9): "guided" = no countdown pressure,
+ * optional count-up-only display, focused on learning the correct
+ * sequence; "speed" = an optional countdown the trainee may continue
+ * past once it reaches zero -- never auto-closes/auto-completes the
+ * session, and reaching zero is never itself labeled success/failure.
+ */
+export type LinkTimerStyle = "guided" | "speed";
+
+/**
+ * Link target protocols task (spec section 3): which independent
+ * protocol/action this ArcLink rehearses toward -- Regular ARC Link and
+ * ARCHI ARC Link are no longer limited to the general state/identity/
+ * habit resolution (arc/arcLink.ts's resolveArcLinkTarget); a Link may
+ * now explicitly target one of the five independent LIVE entry
+ * categories, or a direct planned action with no protocol at all.
+ * "urge"/"thought"/"presence"/"belief" are always paired with the
+ * matching content the target's own BUILD configuration provides (e.g.
+ * "urge" reads the referenced UrgeArc via targetRefId); "state" and
+ * "direct_action" are resolved straight from the linked ArcBuild's own
+ * profile, exactly as every Link already did before this field existed.
+ */
+export type ArcLinkTargetType = "state" | "urge" | "thought" | "presence" | "belief" | "direct_action";
+
+/** ARC Mini for every protocol task (spec section 5): the subset of ArcLinkTargetType meaningful for an ArcLink whose protocolType is "mini_arc" -- Mini variants never target "direct_action" (a Mini ARC always ends in its own beneficial action, never a bare action-only Link). Reuses ArcLinkTargetType rather than a second, parallel union -- callers narrow at their own call sites. */
+export type ArcMiniLinkTargetType = Exclude<ArcLinkTargetType, "direct_action">;
+
+/**
+ * Link target protocols task: the safe resolver for a Link's own
+ * target -- "legacy_generic" (never invented, never one of the five
+ * specific types) for every ArcLink saved before targetType existed,
+ * or one that was never given an explicit target. Callers treat
+ * "legacy_generic" as "use this Link's existing, unmodified content
+ * resolution" (arc/arcLink.ts's resolveArcLinkTarget /
+ * arc/miniArcLink.ts's own generic content) -- this is the literal
+ * "Infer the legacy target only when it can be done safely. Otherwise
+ * use the existing generic ARC/Mini ARC behavior. Do not invalidate or
+ * hide the Link" requirement: an unset targetType is never silently
+ * reclassified as "state" or any other specific type.
+ */
+export function resolveArcLinkTargetType(link: Pick<ArcLink, "targetType">): ArcLinkTargetType | "legacy_generic" {
+  const type = link.targetType;
+  return type === "state" || type === "urge" || type === "thought" || type === "presence" || type === "belief" || type === "direct_action"
+    ? type
+    : "legacy_generic";
+}
+
+/**
  * Extended ARC Link trigger system: two orthogonal, independently
  * optional axes on ArcLink, both new.
  *
@@ -275,6 +337,68 @@ export interface ArcLink {
    * futureMantraOverride instead, since it references two ARCs.
    */
   futureMantraOverride?: string | null;
+  /**
+   * Link practice-mode task: this Link's own BUILD-configured default
+   * practice mode (spec section 15.2, "Default Link practice mode") --
+   * pre-selects an answer on the "איזה סוג תרגול תרצה לבצע?" chooser
+   * without removing the choice itself (spec section 8.2: "it must
+   * remain a choice"). Optional/undefined on every ArcLink that
+   * predates this field (or was never configured) -- see
+   * resolveArcLinkPracticeModeDefault below for the safe fallback.
+   * Meaningless for a Mini ARC Link (kind implied by protocolType ===
+   * "mini_arc"), which never shows this chooser at all.
+   */
+  defaultPracticeMode?: ArcLinkPracticeMode | null;
+  /**
+   * Link timers task: whether THIS Link's own rehearsal timer (distinct
+   * from the real Action/Success-Focus/Negative-Action timers -- see
+   * data/storage.ts's TimerType, never extended by this field) is
+   * offered at all. Optional/undefined (treated as false/disabled) on
+   * every ArcLink that predates this task.
+   */
+  timerEnabled?: boolean;
+  /** Link timers task: this Link's own configured target duration in seconds, meaningful only when timerEnabled and timerStyle === "speed" (a "guided" timer never counts down to a target). null/undefined means no duration configured yet -- the trainee picks one immediately before rehearsal instead (spec section 9.2, "Duration selected in BUILD or immediately before rehearsal"). */
+  timerDurationSeconds?: number | null;
+  /** Link timers task: "guided" (no countdown pressure) vs "speed" (optional countdown, never auto-closing) -- see LinkTimerStyle's own doc. null/undefined means not yet configured; resolveLinkTimerStyle below is the one place this is safely defaulted. */
+  timerStyle?: LinkTimerStyle | null;
+  /**
+   * Link target protocols task: which independent protocol/action this
+   * Link rehearses toward -- see ArcLinkTargetType's own doc.
+   * Optional/undefined on every ArcLink that predates this field; never
+   * inferred automatically -- resolveArcLinkTargetType is the one safe
+   * reader, returning "legacy_generic" rather than guessing.
+   */
+  targetType?: ArcLinkTargetType | null;
+  /**
+   * Link target protocols task: a reference to the SPECIFIC target
+   * entity, when targetType needs one beyond the linked ArcBuild itself
+   * -- currently only meaningful for targetType === "urge" (a UrgeArc
+   * id, never its content). "state"/"thought"/"presence"/"belief"/
+   * "direct_action" resolve straight from the linked ArcBuild's own
+   * profile and leave this null. null/undefined for every Link that
+   * predates this field, or whose targetType doesn't need it.
+   */
+  targetRefId?: string | null;
+}
+
+/**
+ * Link practice-mode task: the safe default when `defaultPracticeMode`
+ * is missing/null -- "full" reproduces this app's ORIGINAL, pre-this-task
+ * behavior (buildArcLinkSteps/buildArcLinkProtocolSteps in without_archi
+ * mode already rehearsed the complete linked protocol unconditionally),
+ * so an existing ArcLink that never configured this field keeps
+ * defaulting to exactly what it already did -- the mode CHOOSER (spec
+ * section 8) still lets the trainee pick a different mode for any given
+ * session; this only decides what's pre-selected/suggested.
+ */
+export function resolveArcLinkPracticeModeDefault(link: Pick<ArcLink, "defaultPracticeMode">): ArcLinkPracticeMode {
+  const mode = link.defaultPracticeMode;
+  return mode === "short" || mode === "fast" ? mode : "full";
+}
+
+/** Link timers task: the safe default when `timerStyle` is missing/null -- "guided" (no countdown pressure) matches this app's existing behavior before Link timers existed at all (no timer of any kind was ever shown). */
+export function resolveLinkTimerStyle(link: Pick<ArcLink, "timerStyle">): LinkTimerStyle {
+  return link.timerStyle === "speed" ? "speed" : "guided";
 }
 
 // ---------------------------------------------------------------------------

@@ -69,6 +69,11 @@ function handleReminderResponse(response: Notifications.NotificationResponse | n
     if (goalId) router.push({ pathname: "/goals/live/[goalId]", params: { goalId } });
     return;
   }
+  if (kind === "personalDevelopmentProgramWeek") {
+    const programId = typeof data.personalDevelopmentProgramId === "string" ? data.personalDevelopmentProgramId : null;
+    if (programId) router.push({ pathname: "/personal-development-program/live/[id]", params: { id: programId } });
+    return;
+  }
   cancelPendingReminder(kind);
   router.push(resolveReminderRoute(kind));
 }
@@ -91,10 +96,12 @@ export default function RootLayout() {
         <Stack.Screen name="reach-your-goal/index" options={{ title: "השגת מטרה" }} />
         <Stack.Screen name="build/index" options={{ title: "ARC Builds" }} />
         <Stack.Screen name="build/[id]" options={{ title: "עריכת ARC Build" }} />
+        <Stack.Screen name="arc-state-composition/[id]" options={{ title: "הרכבת ARC State" }} />
         <Stack.Screen name="live/index" options={{ title: "ARCHI LIVE" }} />
         <Stack.Screen name="stats/index" options={{ title: "התקדמות שבועית" }} />
         <Stack.Screen name="focus-success" options={{ title: "התמקדות בהצלחה" }} />
         <Stack.Screen name="routines/index" options={{ title: "השגרה שלי" }} />
+        <Stack.Screen name="link-practice/index" options={{ title: "תרגול קישורים" }} />
         <Stack.Screen name="negative-action" options={{ title: "פעולה שלילית מוגבלת" }} />
         <Stack.Screen name="mini-arc/index" options={{ title: "בניית Mini ARC" }} />
         <Stack.Screen name="mini-arc/[id]" options={{ title: "עריכת Mini ARC" }} />
@@ -105,6 +112,20 @@ export default function RootLayout() {
         <Stack.Screen name="mini-arc-link/[id]" options={{ title: "Mini ARC Link" }} />
         <Stack.Screen name="urge-arcs/index" options={{ title: "בניית Urge ARC" }} />
         <Stack.Screen name="urge-arcs/[id]" options={{ title: "עריכת Urge ARC" }} />
+        <Stack.Screen name="urge-arcs/live/[id]" options={{ title: "Urge ARC LIVE" }} />
+        <Stack.Screen name="thought-arcs/index" options={{ title: "בניית ARC Thought" }} />
+        <Stack.Screen name="thought-arcs/[id]" options={{ title: "עריכת ARC Thought" }} />
+        <Stack.Screen name="thought-arcs/live/[id]" options={{ title: "ARC Thought LIVE" }} />
+        <Stack.Screen name="presence-arcs/index" options={{ title: "בניית ARC Presence" }} />
+        <Stack.Screen name="presence-arcs/[id]" options={{ title: "עריכת ARC Presence" }} />
+        <Stack.Screen name="presence-arcs/live/[id]" options={{ title: "ARC Presence LIVE" }} />
+        <Stack.Screen name="belief-arcs/index" options={{ title: "בניית ARC Belief" }} />
+        <Stack.Screen name="belief-arcs/[id]" options={{ title: "עריכת ARC Belief" }} />
+        <Stack.Screen name="belief-arcs/live/[id]" options={{ title: "ARC Belief LIVE" }} />
+        <Stack.Screen name="identity-extension/offer" options={{ title: "המשך לבניית הזהות" }} />
+        <Stack.Screen name="identity-extension/live" options={{ title: "בניית הזהות והפעולה" }} />
+        <Stack.Screen name="personal-development-program/index" options={{ title: "תוכניות התפתחות אישית" }} />
+        <Stack.Screen name="personal-development-program/live/[id]" options={{ title: "תוכנית התפתחות אישית" }} />
         <Stack.Screen name="goals/index" options={{ title: "מטרות ARC Goal" }} />
         <Stack.Screen name="goals/[id]" options={{ title: "עריכת מטרה" }} />
         <Stack.Screen name="goals/live/[goalId]" options={{ title: "תוכנית ארבעת השבועות" }} />

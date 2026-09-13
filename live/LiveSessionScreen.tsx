@@ -41,13 +41,13 @@
  */
 
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import type { ArcBuild, ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
-import { deriveActiveLayersForArcBuild, getFirstArcStage, resolveEncodingTarget } from "../arc/arcEngine.ts";
+import { deriveActiveLayersForArcBuild, getAvailableLiveTriggers, getFirstArcStage, resolveEncodingTarget, resolveTargetLimitingBelief } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
 import { buildEvidenceIndex, buildSessionEvidenceContext } from "../arc/evidence.ts";
 import type { EvidenceRecord } from "../arc/evidence.ts";
@@ -63,8 +63,11 @@ import {
   appendRoutineOccurrenceCompletion,
   getArcGoal,
   upsertArcGoal,
+  getPersonalDevelopmentProgram,
+  upsertPersonalDevelopmentProgram,
 } from "../data/storage.ts";
 import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
+import { addPracticeRecord as addPdPracticeRecord, clearReturnContext as clearPdReturnContext } from "../arc/personalDevelopmentProgram.ts";
 import type { ScheduledRoutine, TimerRun } from "../data/storage.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
@@ -94,9 +97,7 @@ import {
   hasValidAlternativeAction,
   resolveSensationLocation,
 } from "./liveEventAdapter.ts";
-import { getAvailableLiveTriggers, resolveTargetLimitingBelief } from "../arc/arcEngine.ts";
 import { DEFERRAL_OPTIONS, scheduleFutureSuccessFocus } from "../data/reminders.ts";
-import type { DeferralOption } from "../data/reminders.ts";
 import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
 import { ActionScreen, SuccessFocusScreen } from "./screens.tsx";
 
@@ -108,9 +109,29 @@ export default function LiveSessionScreen() {
     buildId: buildIdParam,
     fourWeekGoalId: fourWeekGoalIdParam,
     fourWeekWeek: fourWeekWeekParam,
-  } = useLocalSearchParams<{ routineId?: string; buildId?: string; fourWeekGoalId?: string; fourWeekWeek?: string }>();
+    pdProgramId: pdProgramIdParam,
+    pdWeek: pdWeekParam,
+  } = useLocalSearchParams<{
+    routineId?: string;
+    buildId?: string;
+    fourWeekGoalId?: string;
+    fourWeekWeek?: string;
+    pdProgramId?: string;
+    pdWeek?: string;
+  }>();
   const routineId = typeof routineIdParam === "string" ? routineIdParam : null;
   const buildId = typeof buildIdParam === "string" ? buildIdParam : null;
+  /**
+   * Phase 9 (four-week program integration): set only by the new
+   * Personal Development four-week dashboard's own "full" task for a
+   * "state" protocol -- mirrors fourWeekGoalId/fourWeekWeek immediately
+   * below exactly, kept as its own separate pair (never merged with the
+   * ArcGoal one, even where both could theoretically be present) since
+   * the two four-week systems stay completely independent (see
+   * arc/personalDevelopmentProgram.ts's own module doc).
+   */
+  const pdProgramId = typeof pdProgramIdParam === "string" ? pdProgramIdParam : null;
+  const pdWeek = typeof pdWeekParam === "string" ? pdWeekParam : null;
   /**
    * Four-Week Program task (spec section 10, "Optional support and
    * return context"): set only by live/ArcGoalFourWeekDashboardScreen.tsx's
@@ -580,6 +601,40 @@ export default function LiveSessionScreen() {
     });
   };
 
+  /**
+   * Phase 9 (four-week program integration): the pdProgramId-aware
+   * counterpart to returnToFourWeekProgram above -- identical shape and
+   * reasoning, logging onto a PersonalDevelopmentFourWeekProgram (a
+   * "full" practice record, since this is the "state" protocol kind's
+   * own Full ARC run) instead of an ArcGoal's own ArcGoalFourWeekProgram.
+   */
+  const returnToPersonalDevelopmentProgram = () => {
+    const trimmedGratitude = gratitudeText.trim();
+    const trimmedMemoryDetail = gratitudeMemoryDetailText.trim();
+    const trimmedProgressEvidence = progressEvidenceText.trim();
+    const trimmedImprovement = improvementText.trim();
+    const fullReflectionCreditEarned =
+      trimmedImprovement.length > 0 && session.completedActionImageryFinished && session.improvedActionImageryFinished;
+    updateLastSessionLogEntryGratitude(
+      trimmedGratitude.length > 0 ? trimmedGratitude : null,
+      trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
+      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null,
+      trimmedImprovement.length > 0 ? trimmedImprovement : null,
+      fullReflectionCreditEarned
+    ).finally(async () => {
+      if (pdProgramId) {
+        const program = await getPersonalDevelopmentProgram(pdProgramId);
+        if (program) {
+          const now = new Date().toISOString();
+          const week = (Number(pdWeek) || program.currentWeek) as FourWeekProgramWeekNumber;
+          const updatedProgram = clearPdReturnContext(addPdPracticeRecord(program, week, "full", "ARC מלא", now));
+          await upsertPersonalDevelopmentProgram({ ...updatedProgram, updatedAt: now });
+        }
+        router.replace({ pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId } });
+      }
+    });
+  };
+
   // ARC Builds task: several ArcBuilds exist and none was resolved (no
   // buildId route param matched one) -- ask which one to run before
   // starting anything. Picking one updates the route's own buildId
@@ -872,9 +927,36 @@ export default function LiveSessionScreen() {
           onGratitudeAndLearningContinue={() => commitAdvance(session)}
           onCompletedActionImageryContinue={() => commitAdvance(applyCompletedActionImageryFinished(session))}
           onImprovedActionImageryContinue={() => commitAdvance(applyImprovedActionImageryFinished(session))}
-          restartLabel={routine ? "המשך להתמקדות בהצלחה" : fourWeekGoalId ? "לחזור לתוכנית ארבעת השבועות" : undefined}
-          onRestart={fourWeekGoalId && !routine ? returnToFourWeekProgram : restart}
+          restartLabel={routine ? "המשך להתמקדות בהצלחה" : fourWeekGoalId ? "לחזור לתוכנית ארבעת השבועות" : pdProgramId ? "לחזור לתוכנית ההתפתחות האישית" : undefined}
+          onRestart={fourWeekGoalId && !routine ? returnToFourWeekProgram : pdProgramId && !routine ? returnToPersonalDevelopmentProgram : restart}
         />
+        {/*
+          Phase 8 Part 2 (Identity Extension), Personal Development
+          track: an OPTIONAL, purely additive continuation offered
+          alongside (never instead of) the existing CompleteScreen's own
+          "סשן חדש"/routine/four-week-program button above -- declining
+          (or never tapping it) changes nothing about this session's own
+          completion, which has already been recorded via finalizeSession.
+          Never shown for a routine-launched or four-week-program-launched
+          session, matching every other special-case branch this screen
+          already reserves for those two contexts. Phase 9: also shown
+          (with a pdProgramId-aware returnTo) for a Personal Development
+          four-week-program-launched session -- that track's own identity
+          continuation stays optional, unlike ArcGoal's mandatory one.
+        */}
+        {stage === "complete" && !routine && !fourWeekGoalId && (
+          <Pressable
+            style={[styles.pickerButton, styles.identityExtensionOfferButton]}
+            onPress={() =>
+              router.push({
+                pathname: "/identity-extension/offer",
+                params: { returnTo: pdProgramId ? `/personal-development-program/live/${pdProgramId}` : "/self-development" },
+              })
+            }
+          >
+            <Text style={styles.pickerButtonText}>להמשיך לבניית הזהות ולפעולה</Text>
+          </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -917,5 +999,8 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 16,
+  },
+  identityExtensionOfferButton: {
+    marginTop: 12,
   },
 });

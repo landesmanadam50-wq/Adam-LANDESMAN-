@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildArcLinkFastSteps,
   buildArcLinkIntroSteps,
   buildArcLinkProtocolSteps,
+  buildArcLinkShortSteps,
   buildArcLinkStartConfirmationStep,
   buildArcLinkSteps,
   resolveArcLinkRouteOptions,
@@ -644,4 +646,55 @@ test("neither buildArcLinkSteps nor buildArcLinkProtocolSteps ever renders 'unde
   assert.ok(!protocolText.includes("undefined"));
   assert.ok(!protocolText.includes("null"));
   assert.ok(!protocolText.includes("[object Object]"));
+});
+
+// ---------------------------------------------------------------------------
+// Link practice-mode task: buildArcLinkShortSteps / buildArcLinkFastSteps
+// ---------------------------------------------------------------------------
+
+test("buildArcLinkShortSteps (required test #1: Regular ARC Link Short mode does not open full visualization) never includes any full-protocol stage", () => {
+  const p = profile({ internalAction: "סריקת גוף", interferingState: "פחד", stateEncoding: { target: "פחד", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים רפויות", mantra: "אני בטוח" } });
+  const ids = buildArcLinkShortSteps(p, { triggerText: "בשעה 10:00", mode: "without_archi" }).map((s) => s.id);
+  const forbidden: ArcLinkStepId[] = ["route_intro", "awareness", "sensation", "acceptance", "presence", "regulation", "updated_sensation", "encoding"];
+  for (const id of forbidden) {
+    assert.ok(!ids.includes(id), `short mode must never include "${id}"`);
+  }
+  assert.deepEqual(ids, ["intro", "trigger", "short_response", "reinforce"]);
+});
+
+test("buildArcLinkShortSteps in with_archi mode ends with archi_start_confirmation, never the full protocol rehearsal", () => {
+  const p = profile({ beneficialAction: "לצאת להליכה" });
+  const ids = buildArcLinkShortSteps(p, { triggerText: "טריגר", mode: "with_archi" }).map((s) => s.id);
+  assert.deepEqual(ids, ["intro", "trigger", "short_response", "archi_start_confirmation"]);
+});
+
+test("buildArcLinkShortSteps includes the Linking Mantra (the target's own resolved Encoding mantra) only when configured, never invented", () => {
+  const withMantra = profile({ internalAction: "סריקת גוף", stateEncoding: { target: "x", bodySensationCue: null, breathCue: null, bodyLanguageCue: null, mantra: "אני רגוע" } });
+  const stepsWith = buildArcLinkShortSteps(withMantra, { triggerText: "טריגר", mode: "without_archi" });
+  const responseWith = stepsWith.find((s) => s.id === "short_response");
+  assert.ok(responseWith?.lines.some((line) => line.includes("אני רגוע")));
+
+  const withoutMantra = profile({ internalAction: "סריקת גוף" });
+  const stepsWithout = buildArcLinkShortSteps(withoutMantra, { triggerText: "טריגר", mode: "without_archi" });
+  const responseWithout = stepsWithout.find((s) => s.id === "short_response");
+  assert.ok(!responseWithout?.lines.some((line) => line.includes("undefined") || line.includes("null")));
+});
+
+test("buildArcLinkFastSteps produces exactly one step, never the full protocol screens, and never long explanations", () => {
+  const p = profile({ beneficialAction: "לצאת להליכה" });
+  const steps = buildArcLinkFastSteps(p, { triggerText: "בשעה 10:00", mode: "without_archi" });
+  assert.equal(steps.length, 1, "must be one short sequence, not a multi-screen wizard");
+  assert.equal(steps[0].id, "fast_response");
+  assert.ok(steps[0].lines.length <= 2, "no long explanations");
+});
+
+test("buildArcLinkShortSteps/buildArcLinkFastSteps never render 'undefined'/'null'/'[object Object]' for a completely empty profile", () => {
+  const empty = profile();
+  const ctx = { triggerText: "", mode: "with_archi" as const };
+  for (const steps of [buildArcLinkShortSteps(empty, ctx), buildArcLinkFastSteps(empty, ctx)]) {
+    const text = steps.map((s) => `${s.title} ${s.lines.join(" ")}`).join(" ");
+    assert.ok(!text.includes("undefined"));
+    assert.ok(!text.includes("null"));
+    assert.ok(!text.includes("[object Object]"));
+  }
 });

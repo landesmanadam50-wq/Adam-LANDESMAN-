@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getUrgeArc, upsertUrgeArc } from "../data/storage.ts";
+import { getUrgeArc, loadMiniArcBuilds, upsertMiniArcBuild, upsertUrgeArc } from "../data/storage.ts";
 import {
   buildUrgeArcFromDraft,
   createEmptyUrgeArcDraft,
@@ -12,6 +12,14 @@ import {
 } from "../arc/urgeArcs.ts";
 import type { UrgeArcDraft } from "../arc/urgeArcs.ts";
 import { generateUrgeArcId } from "../arc/types.ts";
+import {
+  buildMiniArcFromDraft,
+  createLinkedMiniArcDraft,
+  generateMiniArcId,
+  isMiniArcDraftComplete,
+  linkMiniArcToParent,
+} from "../arc/miniArc.ts";
+import type { MiniArcBuild, MiniArcDraft } from "../arc/miniArc.ts";
 
 /**
  * build/UrgeArcEditorScreen.tsx (route: /urge-arcs/[id], id="new" to create)
@@ -37,6 +45,28 @@ export default function UrgeArcEditorScreen() {
   const [existingMeta, setExistingMeta] = useState<{ id: string; createdAt: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Build ARC Mini together with full ARC task (spec section 9): the
+  // linked Mini ARC for THIS UrgeArc, when one already exists -- null
+  // while none has been built yet. Loaded alongside the UrgeArc itself,
+  // never a separate navigation away from this page.
+  const [linkedMini, setLinkedMini] = useState<MiniArcBuild | null>(null);
+  const [miniDraft, setMiniDraft] = useState<MiniArcDraft | null>(null);
+  const [miniSaveError, setMiniSaveError] = useState<string | null>(null);
+  // Phase 3 (Full + Mini ARC Urge representation encoding), spec section
+  // 19 ("ARC Mini Urge... Optional secondary Encoding action... Optional
+  // beneficial-action duration") -- these two fields have no home on the
+  // shared 5-field MiniArcDraft (every other Mini kind never uses them),
+  // so they're held here, alongside miniDraft, exactly like protocolKind/
+  // preventiveStoppingAction already are in handleSaveLinkedMini below.
+  const [miniSecondaryEncodingAction, setMiniSecondaryEncodingAction] = useState("");
+  const [miniActionDurationMinutes, setMiniActionDurationMinutes] = useState("");
+  // Phase 8 (universal post-action completion retrofit): the Mini's own
+  // compact post-action tail fields -- reuses the SAME generic
+  // MiniArcBuild fields Belief Mini already established (Phase 6), never
+  // a second field name.
+  const [miniGratitudePrompt, setMiniGratitudePrompt] = useState("");
+  const [miniActionImageryDwellSecondsText, setMiniActionImageryDwellSecondsText] = useState("");
+
   useEffect(() => {
     if (isNew || !id) return;
     let cancelled = false;
@@ -50,10 +80,73 @@ export default function UrgeArcEditorScreen() {
       setExistingMeta({ id: existing.id, createdAt: existing.createdAt });
       setStatus("ready");
     });
+    loadMiniArcBuilds().then((builds) => {
+      if (cancelled) return;
+      const found = builds.find((b) => b.protocolKind === "urge" && b.parentArcBuildId === id) ?? null;
+      setLinkedMini(found);
+    });
     return () => {
       cancelled = true;
     };
   }, [id, isNew]);
+
+  function startBuildingLinkedMini() {
+    if (!existingMeta) return;
+    // Pre-fills from THIS UrgeArc's own compatible values (spec section
+    // 9: "may reuse compatible parent values... but must NOT copy the
+    // entire full protocol") -- the trainee still fills in presenceColor
+    // and reviews/edits the rest before saving. Phase 3: the Mini's own
+    // primary Encoding action pre-fills from the parent's own
+    // primaryMiniArcEncodingAction (not the Full protocol's own
+    // visual/bodily Encoding pair, which stays Full-only).
+    setMiniDraft(
+      createLinkedMiniArcDraft(draft.name, "", draft.regulationAnchor, draft.primaryMiniArcEncodingAction, draft.beneficialAlternativeAction)
+    );
+    setMiniSecondaryEncodingAction(draft.secondaryMiniArcEncodingAction);
+    setMiniActionDurationMinutes("");
+    setMiniGratitudePrompt("");
+    setMiniActionImageryDwellSecondsText("");
+  }
+
+  async function handleSaveLinkedMini() {
+    if (!miniDraft || !existingMeta) return;
+    if (!isMiniArcDraftComplete(miniDraft)) {
+      setMiniSaveError("יש למלא שם, צבע נוכחות, עוגן ויסות, פעולת קידוד ופעולה מיטיבה לפני השמירה.");
+      return;
+    }
+    setMiniSaveError(null);
+    try {
+      const now = new Date().toISOString();
+      const built = buildMiniArcFromDraft(miniDraft, generateMiniArcId(), now, now);
+      const secondaryTrimmed = miniSecondaryEncodingAction.trim();
+      const parsedDuration = Number(miniActionDurationMinutes);
+      const gratitudeTrimmed = miniGratitudePrompt.trim();
+      const parsedImageryDwell = Number(miniActionImageryDwellSecondsText);
+      const linked: MiniArcBuild = {
+        ...linkMiniArcToParent(built, existingMeta.id),
+        protocolKind: "urge",
+        preventiveStoppingAction: draft.stopCue.trim().length > 0 ? draft.stopCue : null,
+        // Phase 3: inherits the Full protocol's own BUILD-configured
+        // representation preference unless the trainee wants LIVE to
+        // decide fresh each session -- never copies the Full protocol's
+        // own visual/bodily Encoding pair, only this one preference.
+        representationPreference: draft.representationPreference !== "decide_in_live" ? draft.representationPreference : null,
+        secondaryEncodingAction: secondaryTrimmed.length > 0 ? secondaryTrimmed : null,
+        actionDurationMinutes: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : null,
+        miniGratitudePrompt: gratitudeTrimmed.length > 0 ? gratitudeTrimmed : null,
+        miniActionImageryDwellSeconds: Number.isFinite(parsedImageryDwell) && parsedImageryDwell > 0 ? parsedImageryDwell : null,
+      };
+      await upsertMiniArcBuild(linked);
+      setLinkedMini(linked);
+      setMiniDraft(null);
+      setMiniSecondaryEncodingAction("");
+      setMiniActionDurationMinutes("");
+      setMiniGratitudePrompt("");
+      setMiniActionImageryDwellSecondsText("");
+    } catch {
+      setMiniSaveError("אירעה שגיאה בשמירת ה-ARC Mini. נסה שוב.");
+    }
+  }
 
   async function handleSave() {
     if (!isUrgeArcDraftComplete(draft)) {
@@ -179,6 +272,138 @@ export default function UrgeArcEditorScreen() {
           multiline
         />
 
+        {/*
+          Phase 3 (Full + Mini ARC Urge representation encoding), spec
+          section 19: the full "Urge representation preference" block --
+          every field here is optional/backward-compatible (a legacy
+          UrgeArc simply has all of these as null, falling back to
+          "decide in LIVE"/generic Encoding, per arc/urgeLive.ts).
+        */}
+        <Text style={styles.sectionHeader}>אופן הופעת הדחף וקידוד מותאם</Text>
+        <Text style={styles.helperText}>
+          כיצד הדחף הזה בדרך כלל מופיע אצלך -- דימוי, תחושה בגוף, שניהם, או שתרצה להחליט בזמן אמת בכל תרגול.
+        </Text>
+        <View style={styles.chipRow}>
+          {(
+            [
+              { value: "visual", label: "דימוי" },
+              { value: "bodily", label: "תחושה בגוף" },
+              { value: "both", label: "גם וגם" },
+              { value: "decide_in_live", label: "להחליט בזמן אמת" },
+            ] as const
+          ).map((option) => (
+            <Pressable
+              key={option.value}
+              style={[styles.chip, draft.representationPreference === option.value && styles.chipSelected]}
+              onPress={() => setDraft({ ...draft, representationPreference: option.value })}
+            >
+              <Text style={styles.chipText}>{option.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={styles.question}>פעולת קידוד לדימוי (רשות)</Text>
+        <Text style={styles.helperText}>לדוגמה: להקטין ולהרחיק את התמונה, להפחית בהירות, להאט תנועה.</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.visualEncodingAction}
+          onChangeText={(value) => setDraft({ ...draft, visualEncodingAction: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.question}>תמונה חלופית רצויה (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.alternativeDesiredImage}
+          onChangeText={(value) => setDraft({ ...draft, alternativeDesiredImage: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.question}>פעולת קידוד לתחושת גוף (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.bodilyEncodingAction}
+          onChangeText={(value) => setDraft({ ...draft, bodilyEncodingAction: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.question}>תחושת גוף רצויה (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.desiredBodilySensation}
+          onChangeText={(value) => setDraft({ ...draft, desiredBodilySensation: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Pressable
+          style={styles.toggleRow}
+          onPress={() => setDraft({ ...draft, allowBothEncodingActions: !draft.allowBothEncodingActions })}
+        >
+          <Text style={styles.question}>{draft.allowBothEncodingActions ? "☑" : "☐"} לאפשר ביצוע שתי פעולות הקידוד יחד כש"גם וגם" נבחר</Text>
+        </Pressable>
+
+        <Text style={styles.question}>פעולת קידוד קבועה כשהתשובה "לא בטוח" (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.standardFallbackEncodingAction}
+          onChangeText={(value) => setDraft({ ...draft, standardFallbackEncodingAction: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.question}>פעולת קידוד ראשית ל-ARC Mini Urge (רשות)</Text>
+        <Text style={styles.helperText}>ערך ברירת מחדל שממנו ARC Mini Urge המקושר יתחיל -- ניתן לערוך לאחר מכן בנפרד.</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.primaryMiniArcEncodingAction}
+          onChangeText={(value) => setDraft({ ...draft, primaryMiniArcEncodingAction: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.question}>פעולת קידוד משנית ל-ARC Mini Urge (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.secondaryMiniArcEncodingAction}
+          onChangeText={(value) => setDraft({ ...draft, secondaryMiniArcEncodingAction: value })}
+          textAlign="right"
+          multiline
+        />
+
+        <Text style={styles.sectionHeader}>מנטרות (רשות)</Text>
+        <Text style={styles.question}>מנטרת שהייה</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.stayMantra}
+          onChangeText={(value) => setDraft({ ...draft, stayMantra: value })}
+          textAlign="right"
+        />
+        <Text style={styles.question}>מנטרת קבלה</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.acceptanceMantra}
+          onChangeText={(value) => setDraft({ ...draft, acceptanceMantra: value })}
+          textAlign="right"
+        />
+        <Text style={styles.question}>מנטרת ויסות</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.regulationMantra}
+          onChangeText={(value) => setDraft({ ...draft, regulationMantra: value })}
+          textAlign="right"
+        />
+        <Text style={styles.question}>מנטרת גשר (בסוף הוויסות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.bridgeMantra}
+          onChangeText={(value) => setDraft({ ...draft, bridgeMantra: value })}
+          textAlign="right"
+        />
+
         <Text style={styles.question}>הערות לקבלה של הדחף, בלי להילחם בו (רשות)</Text>
         <TextInput
           style={styles.textInput}
@@ -198,6 +423,25 @@ export default function UrgeArcEditorScreen() {
           multiline
         />
 
+        <Text style={styles.sectionHeader}>לאחר הפעולה (רשות)</Text>
+        <Text style={styles.question}>שאלת תודה מותאמת (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.gratitudePrompt}
+          onChangeText={(value) => setDraft({ ...draft, gratitudePrompt: value })}
+          textAlign="right"
+          placeholder="על מה אתה מודה לעצמך בעקבות הפעולה?"
+          multiline
+        />
+        <Text style={styles.question}>משך דמיון הפעולה בשניות (רשות)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={draft.postActionImageryDwellSeconds}
+          onChangeText={(value) => setDraft({ ...draft, postActionImageryDwellSeconds: value })}
+          textAlign="right"
+          keyboardType="numeric"
+        />
+
         {!complete && <Text style={styles.errorText}>יש למלא שם, פעולה מפריעה, עוגן ויסות ופעולה מיטיבה חלופית לפני השמירה.</Text>}
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}
 
@@ -208,6 +452,137 @@ export default function UrgeArcEditorScreen() {
         >
           <Text style={styles.buttonText}>שמור</Text>
         </Pressable>
+
+        {/*
+          Build ARC Mini together with full ARC task (spec sections 9-10):
+          "בניית ARC Mini" lives on the SAME BUILD page as the full
+          protocol -- the trainee never leaves this screen to build the
+          linked Mini. Shown only for an already-saved Urge ARC (a new,
+          unsaved one has no id yet to link a Mini to). "בניית ARC Link"/
+          "בניית ARC Mini Link" sections are deferred infrastructure here
+          -- see this Phase's own report for what remains.
+        */}
+        {existingMeta && (
+          <>
+            <Text style={styles.sectionHeader}>בניית ARC Mini</Text>
+            <Text style={styles.helperText}>צור גרסה קצרה של הפרוטוקול לשימוש מהיר בזמן אמת.</Text>
+
+            {linkedMini && !miniDraft && (
+              <View style={styles.miniCard}>
+                <Text style={styles.miniCardTitle}>{linkedMini.name}</Text>
+                <Text style={styles.miniCardRow}>ה-ARC Mini הזה כבר מקושר ל-Urge ARC הזה.</Text>
+                <Pressable
+                  style={[styles.button, styles.secondaryButton, styles.fullWidthButton]}
+                  onPress={() => router.push({ pathname: "/mini-arc/[id]", params: { id: linkedMini.id } })}
+                >
+                  <Text style={styles.secondaryButtonText}>עריכת ה-ARC Mini המקושר</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {!linkedMini && !miniDraft && (
+              <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={startBuildingLinkedMini}>
+                <Text style={styles.secondaryButtonText}>+ בניית ARC Mini מקושר</Text>
+              </Pressable>
+            )}
+
+            {miniDraft && (
+              <View style={styles.miniCard}>
+                <Text style={styles.question}>שם ה-ARC Mini</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniDraft.name}
+                  onChangeText={(value) => setMiniDraft({ ...miniDraft, name: value })}
+                  textAlign="right"
+                />
+
+                <Text style={styles.question}>צבע נוכחות</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniDraft.presenceColor}
+                  onChangeText={(value) => setMiniDraft({ ...miniDraft, presenceColor: value })}
+                  textAlign="right"
+                  placeholder="לדוגמה: אדום"
+                />
+
+                <Text style={styles.question}>עוגן ויסות</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniDraft.regulationAnchor}
+                  onChangeText={(value) => setMiniDraft({ ...miniDraft, regulationAnchor: value })}
+                  textAlign="right"
+                  multiline
+                />
+
+                <Text style={styles.question}>פעולת קידוד קצרה</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniDraft.encodingAction}
+                  onChangeText={(value) => setMiniDraft({ ...miniDraft, encodingAction: value })}
+                  textAlign="right"
+                  multiline
+                />
+
+                <Text style={styles.question}>פעולה מיטיבה</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniDraft.beneficialAction}
+                  onChangeText={(value) => setMiniDraft({ ...miniDraft, beneficialAction: value })}
+                  textAlign="right"
+                  multiline
+                />
+
+                <Text style={styles.question}>פעולת קידוד משנית (רשות)</Text>
+                <Text style={styles.helperText}>מעבר מהיר בין הפעולה הראשית לפעולה המשנית, רק כשאופן הופעת הדחף הוא "גם וגם" -- אף פעם לא חובה.</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniSecondaryEncodingAction}
+                  onChangeText={setMiniSecondaryEncodingAction}
+                  textAlign="right"
+                  multiline
+                />
+
+                <Text style={styles.question}>משך פעולה מיטיבה בדקות (רשות)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniActionDurationMinutes}
+                  onChangeText={setMiniActionDurationMinutes}
+                  textAlign="right"
+                  keyboardType="numeric"
+                  placeholder="לדוגמה: 2"
+                />
+
+                <Text style={styles.question}>שאלת תודה קצרה (רשות)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniGratitudePrompt}
+                  onChangeText={setMiniGratitudePrompt}
+                  textAlign="right"
+                  placeholder="על מה אתה מודה לעצמך בעקבות הפעולה?"
+                  multiline
+                />
+
+                <Text style={styles.question}>משך דמיון הפעולה בשניות (רשות)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={miniActionImageryDwellSecondsText}
+                  onChangeText={setMiniActionImageryDwellSecondsText}
+                  textAlign="right"
+                  keyboardType="numeric"
+                />
+
+                {miniSaveError && <Text style={styles.errorText}>{miniSaveError}</Text>}
+
+                <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleSaveLinkedMini}>
+                  <Text style={styles.buttonText}>שמירת ה-ARC Mini המקושר</Text>
+                </Pressable>
+                <Pressable style={styles.cancelButton} onPress={() => setMiniDraft(null)}>
+                  <Text style={styles.cancelButtonText}>ביטול</Text>
+                </Pressable>
+              </View>
+            )}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -232,4 +607,16 @@ const styles = StyleSheet.create({
   fullWidthButton: { marginTop: 20 },
   buttonDisabled: { opacity: 0.4 },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+  secondaryButton: { backgroundColor: "#3d8fa8" },
+  secondaryButtonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  miniCard: { backgroundColor: "#F7FAFC", borderRadius: 12, padding: 16, marginTop: 12 },
+  miniCardTitle: { fontSize: 16, fontWeight: "700", textAlign: "right", marginBottom: 6 },
+  miniCardRow: { fontSize: 14, textAlign: "right", color: "#555", marginBottom: 10 },
+  cancelButton: { marginTop: 10, alignItems: "center" },
+  cancelButtonText: { color: "#888", fontSize: 14 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginTop: 4, marginBottom: 8 },
+  chip: { backgroundColor: "#E6F4FE", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+  chipSelected: { backgroundColor: "#0a7ea4" },
+  chipText: { color: "#0a7ea4", fontSize: 14 },
+  toggleRow: { marginTop: 4, marginBottom: 8, alignItems: "flex-end" },
 });

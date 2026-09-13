@@ -119,14 +119,39 @@ export default function SelfDevelopmentDashboardScreen() {
         </Pressable>
 
         <Text style={styles.sectionTitle}>כלים נוספים</Text>
+        <Link href="/personal-development-program" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>תוכנית ארבעת השבועות -- התפתחות אישית</Text>
+          </Pressable>
+        </Link>
         <Link href="/urge-arcs" asChild>
           <Pressable style={styles.itemRow}>
             <Text style={styles.itemText}>Urge ARC</Text>
           </Pressable>
         </Link>
+        <Link href="/thought-arcs" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>ARC Thought</Text>
+          </Pressable>
+        </Link>
+        <Link href="/presence-arcs" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>ARC Presence</Text>
+          </Pressable>
+        </Link>
+        <Link href="/belief-arcs" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>ARC Belief</Text>
+          </Pressable>
+        </Link>
         <Link href="/routines" asChild>
           <Pressable style={styles.itemRow}>
             <Text style={styles.itemText}>השגרה שלי</Text>
+          </Pressable>
+        </Link>
+        <Link href="/link-practice" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>תרגול קישורים</Text>
           </Pressable>
         </Link>
         <Link href="/stats" asChild>

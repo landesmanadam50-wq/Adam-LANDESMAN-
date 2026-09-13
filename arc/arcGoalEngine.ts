@@ -96,6 +96,7 @@ import type {
   ArcStage,
   ExecutionMode,
   UrgeArc,
+  UrgeRepresentation,
 } from "./types.ts";
 import { createEmptyArcBuildProfile, createEmptyLiveState, IDENTIFIED_NEED_UNKNOWN } from "./types.ts";
 import type { ArcStageCopy } from "./stageCopy.ts";
@@ -103,6 +104,9 @@ import type { InstructionSegment } from "./instructionTiming.ts";
 import { INSTRUCTION_TIMING } from "./instructionTiming.ts";
 import { resolveDwellSecondsFor, withTrailingDwellSegment } from "./dwellTimes.ts";
 import { getFreeBreathingLine } from "./naturalBreathing.ts";
+import { getUrgeLiveStageCopy, getUrgeRepresentationOptions } from "./urgeLive.ts";
+import type { UrgeLiveStageCopy } from "./urgeLive.ts";
+import { createEmptyPostActionCompletionState } from "./postActionCompletion.ts";
 
 export type ArcGoalUiStage =
   | "state_clarification_decision"
@@ -119,7 +123,27 @@ export type ArcGoalUiStage =
   | "mini_arc_embedded"
   | "urge_action_confirm"
   | "supportive_action_confirm"
-  | "goal_action_confirm";
+  | "goal_action_confirm"
+  /**
+   * Phase 3 (Full + Mini ARC Urge representation encoding), spec
+   * section 4: "כיצד הדחף מופיע אצלך עכשיו?" -- reached ONLY on the urge
+   * route, immediately after the inner run's own "sensation_check"
+   * (Recognition) resolves, via shouldInterceptInnerAfterSensationCheck
+   * below. Never reached on the supportive-state route (which has no
+   * representation concept at all).
+   */
+  | "urge_representation"
+  /**
+   * Phase 3, spec section 9: the representation-routed Encoding screen
+   * -- reached ONLY on the urge route, immediately after the inner
+   * run's own "regulate" resolves (which would otherwise render the
+   * generic habit "encode" stage), via
+   * shouldInterceptInnerAfterRegulate below. Reuses
+   * arc/urgeLive.ts's own getUrgeLiveStageCopy("encode", ...) for its
+   * content -- never a second, duplicated Encoding-routing
+   * implementation.
+   */
+  | "urge_encoding";
 
 export type ReassessmentChoice = "urge" | "supportive" | "direct";
 
@@ -153,6 +177,25 @@ export interface ArcGoalLiveState {
   executionMode: ExecutionMode | null;
   /** Which of the embedded Mini ARC's two reused steps is showing, or null when mini_arc_embedded isn't active. */
   miniArcStage: "regulation" | "encoding" | null;
+
+  /**
+   * Phase 3, spec section 4: the LIVE-answered urge representation --
+   * entirely session-local (never written back to the saved UrgeArc,
+   * "without overwriting the BUILD preference unless the user
+   * explicitly saves the change"). null until urge_representation is
+   * answered; reset to null at the start of every new urge-route pass
+   * (see resolveAfterReassessment/selectUrgeMapping) so a retry never
+   * carries over a stale answer from an earlier bridge.
+   */
+  urgeRepresentation: UrgeRepresentation | null;
+  /**
+   * Phase 3: where to resume the urge inner run once the
+   * urge_representation/urge_stop_action/urge_encoding detour finishes
+   * -- the ArcStage the inner run's own (already-computed) transition
+   * wanted to reach before this file intercepted it. null whenever no
+   * detour is currently pending.
+   */
+  pendingInnerResumeStage: ArcStage | null;
 }
 
 export function createEmptyArcGoalLiveState(): ArcGoalLiveState {
@@ -167,6 +210,8 @@ export function createEmptyArcGoalLiveState(): ArcGoalLiveState {
     selectedUrgeMappingId: null,
     executionMode: null,
     miniArcStage: null,
+    urgeRepresentation: null,
+    pendingInnerResumeStage: null,
   };
 }
 
@@ -325,32 +370,20 @@ export function needsReassessmentDetour(goal: ArcGoal, goalState: ArcGoalLiveSta
 }
 
 /**
- * ARC Urge Stop Action/Encoding task: routes into the new explicit Stop
- * Action screen when the selected urge mapping's own referenced UrgeArc
- * has a configured stopCue, else straight to "inner" ("Awareness of
- * what is already present," sensation_check) -- "remain optional for
- * legacy programs" and "allow safe continuation when no Stop Action
- * exists." Shared by both places an urge mapping gets selected
- * (resolveAfterReassessment's auto-select branch and selectUrgeMapping).
- */
-function resolveUrgeEntryUiStage(mapping: ArcGoalUrgeMapping, urgeArcsById: Record<string, UrgeArc>): ArcGoalUiStage {
-  const urgeArc = urgeArcsById[mapping.urgeArcId];
-  return urgeArc?.stopCue && urgeArc.stopCue.trim().length > 0 ? "urge_stop_action" : "inner";
-}
-
-/**
  * reassessment's own 3-way answer (spec section 7). "direct" resumes
  * the outer run immediately, with no urge/supportive work at all --
  * never assumes the original emotion/urge is still present, exactly
  * matching spec's own "did not assume" requirement. "urge"/"supportive"
  * with exactly one configured mapping auto-selects it (mirrors
  * arc/arcEngine.ts's needsReactiveStateSelection precedent: no picker
- * shown for a single option) and goes straight to "inner" (or, for the
- * urge route, first to "urge_stop_action" when this urge has one
- * configured -- see resolveUrgeEntryUiStage) -- the mapping's OWN
- * execution mode (full/mini/choose) is resolved later, only once the
- * inner run reaches its own "act" (see shouldInterceptInnerAtAct/
- * resolveExecutionMode below), never here.
+ * shown for a single option) and goes straight to "inner" -- the urge
+ * route's own Recognition -> representation -> preventive-stopping-
+ * action sequence (Phase 3, spec section 2) now happens INSIDE the
+ * inner run itself, intercepted right after "sensation_check"
+ * resolves (see shouldInterceptInnerAfterSensationCheck), never before
+ * it starts -- the mapping's OWN execution mode (full/mini/choose) is
+ * resolved later, only once the inner run reaches its own "act" (see
+ * shouldInterceptInnerAtAct/resolveExecutionMode below), never here.
  */
 export function resolveAfterReassessment(
   choice: ReassessmentChoice,
@@ -358,12 +391,18 @@ export function resolveAfterReassessment(
   goalState: ArcGoalLiveState,
   urgeArcsById: Record<string, UrgeArc>
 ): { uiStage: ArcGoalUiStage; goalState: ArcGoalLiveState } {
-  const resolved: ArcGoalLiveState = { ...goalState, reassessmentChoice: choice, reassessmentResolved: true };
+  void urgeArcsById; // kept for call-site compatibility; no longer needed to resolve the entry stage (Phase 3).
+  const resolved: ArcGoalLiveState = {
+    ...goalState,
+    reassessmentChoice: choice,
+    reassessmentResolved: true,
+    urgeRepresentation: null,
+    pendingInnerResumeStage: null,
+  };
   if (choice === "direct") return { uiStage: "outer", goalState: resolved };
   if (choice === "urge") {
     if (goal.urgeMappings.length === 1) {
-      const mapping = goal.urgeMappings[0];
-      return { uiStage: resolveUrgeEntryUiStage(mapping, urgeArcsById), goalState: { ...resolved, selectedUrgeMappingId: mapping.id } };
+      return { uiStage: "inner", goalState: { ...resolved, selectedUrgeMappingId: goal.urgeMappings[0].id } };
     }
     return { uiStage: "urge_select", goalState: resolved };
   }
@@ -373,21 +412,75 @@ export function resolveAfterReassessment(
   return { uiStage: "supportive_state_select", goalState: resolved };
 }
 
-/** urge_select's own answer -- see resolveUrgeEntryUiStage's own doc for the Stop Action routing. */
+/** urge_select's own answer -- always goes straight to "inner"; see resolveAfterReassessment's own doc for why the Stop Action no longer fires at selection time. */
 export function selectUrgeMapping(
   goalState: ArcGoalLiveState,
   urgeMappingId: string,
   goal: ArcGoal,
   urgeArcsById: Record<string, UrgeArc>
 ): ArcGoalLiveState {
-  const mapping = goal.urgeMappings.find((candidate) => candidate.id === urgeMappingId);
-  const uiStage = mapping ? resolveUrgeEntryUiStage(mapping, urgeArcsById) : "inner";
-  return { ...goalState, selectedUrgeMappingId: urgeMappingId, uiStage };
+  void urgeArcsById; // kept for call-site compatibility (Phase 3).
+  return { ...goalState, selectedUrgeMappingId: urgeMappingId, uiStage: "inner", urgeRepresentation: null, pendingInnerResumeStage: null };
 }
 
-/** urge_stop_action's own "ביצעתי את פעולת העצירה" -- moves into the inner run's own first stage (sensation_check, "Awareness of what is already present"), unchanged. */
+/**
+ * Phase 3, spec sections 2-5: whether the urge inner run's own
+ * transition FROM "sensation_check" (Recognition) should be
+ * intercepted -- reached the moment sensation_check resolves (its
+ * intensity answer is in), before the inner run is allowed to continue
+ * toward Stay. Never fires for the supportive-state route (no
+ * representation/preventive-stopping-action concept there) or once
+ * this detour has already run for the current pass (tracked by
+ * pendingInnerResumeStage/urgeRepresentation both being reset at the
+ * start of the next urge pass, never mid-pass).
+ */
+export function shouldInterceptInnerAfterSensationCheck(route: "urge" | "supportive", innerCurrentStage: ArcStage): boolean {
+  return route === "urge" && innerCurrentStage === "sensation_check";
+}
+
+/** urge_representation's own answer (spec section 4) -- routes to the (repositioned) Stop Action screen when this urge has one configured, else resumes the inner run immediately at its own already-computed next stage. Never overwrites the saved UrgeArc's own BUILD preference -- urgeRepresentation is session-only state. */
+export function resolveAfterUrgeRepresentation(
+  goalState: ArcGoalLiveState,
+  representation: UrgeRepresentation,
+  urgeArc: UrgeArc | null
+): { uiStage: ArcGoalUiStage; goalState: ArcGoalLiveState } {
+  const resolved: ArcGoalLiveState = { ...goalState, urgeRepresentation: representation };
+  const hasStopCue = Boolean(urgeArc?.stopCue && urgeArc.stopCue.trim().length > 0);
+  return { uiStage: hasStopCue ? "urge_stop_action" : "inner", goalState: resolved };
+}
+
+/** urge_stop_action's own "ביצעתי את פעולת העצירה" -- resumes the inner run at whatever stage sensation_check's own transition had already computed (Stay, or an Awareness/Belief detour when configured), never restarting at sensation_check itself. */
 export function resolveAfterUrgeStopAction(goalState: ArcGoalLiveState): ArcGoalLiveState {
   return { ...goalState, uiStage: "inner" };
+}
+
+/**
+ * Phase 3, spec section 9: whether the urge inner run's own transition
+ * FROM "regulate" (which would otherwise render the generic habit
+ * "encode" stage) should be intercepted into the representation-routed
+ * Encoding screen instead. Urge-route only, mirroring
+ * shouldInterceptInnerAfterSensationCheck's own gating.
+ */
+export function shouldInterceptInnerAfterRegulate(route: "urge" | "supportive", innerCurrentStage: ArcStage): boolean {
+  return route === "urge" && innerCurrentStage === "regulate";
+}
+
+/** urge_encoding's own Continue -- resumes the inner run directly at "act" (encode's own transition is always unconditionally "act" anyway, so nothing about the inner run's own stage machinery needs to run for the skipped "encode" hop). */
+export function resolveAfterUrgeEncoding(goalState: ArcGoalLiveState): ArcGoalLiveState {
+  return { ...goalState, uiStage: "inner" };
+}
+
+/** Reuses arc/urgeLive.ts's own getUrgeLiveStageCopy("encode", ...) content builder -- never a second, duplicated representation-routing implementation for the Goal-Achievement bridge. */
+export function getUrgeEncodingCopy(urgeArc: UrgeArc, representation: UrgeRepresentation): UrgeLiveStageCopy {
+  return getUrgeLiveStageCopy("encode", urgeArc, { representation, recheckChoice: null, recheckIntensity: null, recheckLoopCount: 0, postAction: createEmptyPostActionCompletionState() });
+}
+
+export const URGE_REPRESENTATION_QUESTION_TITLE = "אופן הופעת הדחף";
+export const URGE_REPRESENTATION_QUESTION_BODY = "כיצד הדחף מופיע אצלך עכשיו?";
+
+/** urge_representation's own options -- reuses arc/urgeLive.ts's exact same 4-option list, never a second, drifted copy. */
+export function getUrgeRepresentationChoices(): { value: UrgeRepresentation; label: string }[] {
+  return getUrgeRepresentationOptions();
 }
 
 /** supportive_state_select's own answer. */

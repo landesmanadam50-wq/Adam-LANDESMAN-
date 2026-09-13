@@ -724,6 +724,26 @@ export interface ArcBuildProfile {
   identitySuccessfulPerformanceCustomQuality?: string | null;
   identitySuccessfulPerformanceResult?: string | null;
   identitySuccessMantra?: string | null;
+
+  /**
+   * Phase 7 (ARC State composition): which additional components
+   * (Urge/Thought/Belief, alongside the state layer's own always-
+   * implicit "emotion" recognition) this ArcBuild's ARC State session
+   * may combine, and which of those are selected by default -- see
+   * arc/arcStateComposer.ts's own module doc for the full architecture.
+   * Only meaningful when this ArcBuild targets the "state" layer
+   * (needsState); ignored otherwise. null/undefined (every ArcBuild
+   * saved before this field existed, and any "state" build the trainee
+   * never configured for composition) means the existing, unmodified
+   * single-component route -- arc/arcStateComposer.ts's own
+   * resolveEffectiveArcStateComponents treats this identically to an
+   * explicit { available: ["emotion"], defaultSelected: ["emotion"] }.
+   */
+  stateComposition?: ArcStateComposition | null;
+  /** Phase 7: which saved UrgeArc/ThoughtArc/BeliefArc this ArcBuild's ARC State reuses for its "urge"/"thought"/"belief" embedded components -- a reference only, never a duplicate of that record's own content (same "reference, never duplicate" convention as ArcGoal's own interferingMappings). null means that component, even if selected in stateComposition, has no linked record to pull recognition/Encoding content from yet (arc/arcStateComposer.ts's embedded resolvers fall back to a safe anchor-only default, never inventing content, never crashing). */
+  linkedUrgeArcId?: string | null;
+  linkedThoughtArcId?: string | null;
+  linkedBeliefArcId?: string | null;
 }
 
 /**
@@ -801,7 +821,41 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     identitySuccessfulPerformanceCustomQuality: null,
     identitySuccessfulPerformanceResult: null,
     identitySuccessMantra: null,
+    stateComposition: null,
+    linkedUrgeArcId: null,
+    linkedThoughtArcId: null,
+    linkedBeliefArcId: null,
   };
+}
+
+/**
+ * Phase 7 (ARC State composition): the four components a combined ARC
+ * State session may recognize/encode -- "emotion" is the state layer's
+ * own always-present recognition (the existing, unmodified sensation/
+ * state Awareness+Encoding this app has always had), never itself
+ * optional/deselectable; "urge"/"thought"/"belief" are the OPTIONAL
+ * additional components a trainee (or coach) may choose to combine in.
+ * Presence is deliberately NOT a member here -- per the saved spec,
+ * "Presence is the shared Awareness/Stay/Acceptance/Regulation support
+ * layer rather than another full protocol," i.e. it's what the SHARED
+ * blocks below already use (arc/arcEngine.ts's existing presence_check/
+ * arc_thought_* stages), never a selectable fourth component.
+ */
+export type ArcStateComponentKind = "emotion" | "urge" | "thought" | "belief";
+
+/**
+ * BUILD-configured composition for one "state"-target ArcBuild: which
+ * components MAY be combined this program (offered as LIVE's "מה
+ * מעורב במצב הזה כרגע?" multi-select), and which are pre-selected by
+ * default. "emotion" is always implicitly available/selected even if a
+ * trainee never explicitly adds it (arc/arcStateComposer.ts's own
+ * resolveEffectiveArcStateComponents guarantees this), so it is never
+ * required to appear in either array for correctness -- BUILD screens
+ * may still show it as an always-on chip for clarity.
+ */
+export interface ArcStateComposition {
+  available: ArcStateComponentKind[];
+  defaultSelected: ArcStateComponentKind[];
 }
 
 /** Same stable-id-string pattern already used for ScheduledRoutine (arc/routines.ts's generateRoutineId) -- unique per build, never derived from array position, so an ArcBuild's identity survives reordering/deletion of any other build. */
@@ -946,6 +1000,488 @@ export interface UrgeArc {
   encodingMantra: string | null;
   /** The bridge action shown once this urge's own Full protocol run reaches (but does not itself perform) "act" -- see urge_action_confirm, arc/arcGoalEngine.ts. */
   beneficialAlternativeAction: string;
+  /**
+   * Representation-based Urge Encoding task: how this urge typically
+   * appears to the trainee -- configured once in BUILD, read live to
+   * pick which representation-specific Encoding line(s) to show (see
+   * arc/stageCopy.ts's urge Encoding case, added alongside this field).
+   * "decide_in_live" (distinct from the LIVE-only "unsure"/"לא בטוח"
+   * recognition answer) means the trainee prefers to answer this fresh
+   * each session rather than commit to one representation in BUILD --
+   * LIVE always still asks Recognition's own representation question
+   * regardless of this preference; this field only supplies which
+   * answer is PRESELECTED/suggested. null (every UrgeArc saved before
+   * this field existed) behaves exactly like "decide_in_live" -- no
+   * BUILD-configured default, ask fresh every time.
+   */
+  representationPreference: UrgeRepresentationPreference | null;
+  /** Visual representation Encoding: how to adjust the image already present (e.g. "להקטין ולהרחיק את התמונה") -- shown only when Recognition resolves to "visual" or "both". null means no BUILD-configured adjustment; the Encoding stage falls back to its own generic representation-based line. */
+  visualEncodingAction: string | null;
+  /** Visual representation Encoding: an alternative/supportive image connected to the Desired State or beneficial action, offered alongside (never instead of) adjusting the original image. null means none configured. */
+  alternativeDesiredImage: string | null;
+  /** Bodily/sensory representation Encoding: how to work with the sensation already present. null means no BUILD-configured action; falls back to the generic representation-based line. */
+  bodilyEncodingAction: string | null;
+  /** Bodily/sensory representation Encoding: the configured desired bodily sensation introduced alongside (never forcibly replacing) the existing one -- see the exact required phrasing in arc/stageCopy.ts's urge Encoding case. null means none configured. */
+  desiredBodilySensation: string | null;
+  /** Mini ARC Urge's own single, pre-selected Encoding action for its one short Encoding step (never the full visual+bodily pair above -- Mini ARC Urge uses exactly one). Resolved from representationPreference/visualEncodingAction/bodilyEncodingAction when unset -- see arc/miniArc.ts's urge-aware Encoding resolution, added alongside this field. null means no override; the resolver falls back to the Full ARC Urge fields above. */
+  primaryMiniArcEncodingAction: string | null;
+  /** Mini ARC Urge's optional quick-switch secondary Encoding action, only meaningful when representationPreference is "both" -- lets the trainee switch to the other representation's action without leaving the short Encoding step. null means no secondary action configured (the common case). */
+  secondaryMiniArcEncodingAction: string | null;
+  /**
+   * Phase 3 (Full + Mini ARC Urge representation encoding), spec
+   * section 9.3: when representationPreference is "both" and both
+   * visualEncodingAction/bodilyEncodingAction are configured, whether
+   * LIVE lets the trainee perform BOTH configured Encoding actions in
+   * sequence (true) or offers a single-session choice of which one to
+   * perform (false/null, the default) -- "If a primary action was
+   * configured in BUILD, show it first" either way. Meaningless for any
+   * other representation; never forces classification.
+   */
+  allowBothEncodingActions: boolean | null;
+  /**
+   * Phase 3, spec section 9.4 ("Unsure"): the configured fallback
+   * Encoding action shown when Recognition's representation answer is
+   * "unsure" (never a forced visual/bodily classification). null means
+   * no BUILD-configured fallback -- LIVE falls back to the existing
+   * generic habit Encoding line (regulationAnchor/bodyLanguageCue),
+   * exactly as before this phase.
+   */
+  standardFallbackEncodingAction: string | null;
+  /**
+   * Phase 3, spec sections 6-8 ("Preserve: Existing Stay Mantra... the
+   * saved Acceptance Mantra... Regulation Mantra... Bridge Mantra at the
+   * end of Regulation"). Structurally compatible with arc/mantras.ts's
+   * MantraProfile (same field names/shapes as ArcBuildProfile's own
+   * stayMantra/acceptanceMantra/regulationMantra/bridgeMantra) so the
+   * EXACT SAME getStayMantraLine/getAcceptanceMantraLine/
+   * getRegulationMantraLine/getBridgeMantraLine functions apply here
+   * unchanged -- never a second, parallel mantra system. null (every
+   * UrgeArc, including every one saved before this phase) means no
+   * mantra line for that stage, exactly like an unconfigured
+   * ArcBuildProfile mantra.
+   */
+  stayMantra: string | null;
+  acceptanceMantra: string | null;
+  regulationMantra: string | null;
+  bridgeMantra: string | null;
+  /**
+   * Phase 8 (universal post-action completion retrofit): how long the
+   * "imagine the action as it actually happened"/"imagine the improved
+   * action" stages dwell -- same shared-naming convention as
+   * BeliefArc.postActionImageryDwellSeconds (arc/beliefLive.ts, Phase
+   * 6), reused here rather than inventing a second field name. null
+   * falls back to arc/dwellTimes.ts's own default.
+   */
+  postActionImageryDwellSeconds: number | null;
+  /** Phase 8: optional override for the post-action Gratitude prompt; null uses arc/postActionCompletion.ts's own standard default line. */
+  gratitudePrompt: string | null;
+}
+
+/**
+ * Representation-based Urge Encoding task: how an urge appears to the
+ * trainee, as answered LIVE on Recognition's own question ("כיצד הדחף
+ * מופיע אצלך עכשיו?") -- "unsure" means Recognition continues with the
+ * standard Regulation/Encoding route without forcing classification
+ * (never a representation-specific Encoding line). Distinct from
+ * UrgeRepresentationPreference below (a BUILD-time default/suggestion,
+ * which additionally allows "decide_in_live").
+ */
+export type UrgeRepresentation = "visual" | "bodily" | "both" | "unsure";
+
+/** BUILD-configured default for UrgeRepresentation, plus "decide_in_live" -- see UrgeArc.representationPreference's own doc. */
+export type UrgeRepresentationPreference = UrgeRepresentation | "decide_in_live";
+
+// ---------------------------------------------------------------------------
+// Phase 4 (ARC Thought and ARC Mini Thought): a NEW, independent entity --
+// mirrors UrgeArc's own shape/independence exactly (never built on
+// ArcBuildProfile, never a second copy of an existing target). ARC
+// Thought is deliberately distinct from ARC Belief (spec section 2):
+// "Thought -> a particular thought, image or internal sentence occurring
+// now. Belief -> a broader recurring belief about the self, others or
+// the world." -- ThoughtArc never represents a belief.
+//
+// Reuses the existing "replacement-thought" concept already established
+// by ArcBuildProfile.stateBalancedAlternativeInterpretation/
+// identityBalancedAlternativeInterpretation (a balanced alternative
+// shown after a Limiting Belief) and, literally, by
+// MiniArcBuild.supportiveThought (added in the Phase 2 correction
+// specifically for protocolKind "thought") -- supportiveThought below is
+// the SAME concept at the Full-protocol level, never a duplicated field.
+// ---------------------------------------------------------------------------
+
+/** Spec section 3: the opening decision -- work with a disturbing thought, or strengthen a supportive one. "decide_in_live" (every ThoughtArc saved before this field existed) means LIVE always asks fresh. */
+export type ThoughtRoute = "disturbing" | "supportive";
+export type ThoughtRoutePreference = ThoughtRoute | "decide_in_live";
+
+/** Spec section 4: how the thought appears -- "unsure" never forces a classification. Distinct from ThoughtModalityPreference (a BUILD-time default/suggestion, which additionally allows "decide_in_live"), mirroring UrgeRepresentation/UrgeRepresentationPreference's own split exactly. */
+export type ThoughtModality = "visual" | "auditory" | "both" | "unsure";
+export type ThoughtModalityPreference = ThoughtModality | "decide_in_live";
+
+/** Spec section 7: which time the thought mainly concerns -- decides which time-oriented supportive prompt LIVE uses when a new supportive thought must be created (spec section 15). "decide_in_live" (the default) means LIVE always asks fresh; unanswered LIVE falls back to the general prompt (spec section 7: "If the user is unsure, allow continuing with a general balanced prompt"). */
+export type ThoughtTimeOrientation = "past" | "present" | "future";
+export type ThoughtTimeOrientationPreference = ThoughtTimeOrientation | "decide_in_live";
+
+/**
+ * Phase 4: ARC Thought's own independent full-protocol entity -- an
+ * independent LIVE protocol (spec section 2), reusable later as a
+ * shared module inside ARC State/ARC Goal/other parent protocols (not
+ * built during this phase -- only the minimum shared context/return
+ * routing ARC Thought itself needs). Any number of these can exist at
+ * once, exactly like UrgeArc/MiniArcBuild/ArcBuild (data/storage.ts's
+ * loadThoughtArcs/upsertThoughtArc).
+ */
+export interface ThoughtArc {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Spec section 22 "Default route." null (legacy/unset) behaves like "decide_in_live" -- LIVE always asks fresh, per spec section 3. */
+  defaultRoute: ThoughtRoutePreference | null;
+  /** Spec section 22 "Default/current thought, where relevant" -- the disturbing thought itself, when prepared/known in advance. Recognition-only; LIVE never requires it (spec section 6: "Do not require every field"). null means not prepared in advance -- LIVE lets the trainee enter it fresh. */
+  currentThought: string | null;
+  modalityPreference: ThoughtModalityPreference | null;
+  timeOrientationPreference: ThoughtTimeOrientationPreference | null;
+  /** Spec section 22 "Situation/context." */
+  situationContext: string | null;
+  /** Spec section 22 "Associated emotion/feeling." */
+  associatedEmotion: string | null;
+  /** Spec sections 8-9: reuses the exact same MantraProfile-compatible shape UrgeArc's own stayMantra/acceptanceMantra already use -- see arc/mantras.ts's own doc; null means no mantra line for that stage. */
+  stayMantra: string | null;
+  acceptanceMantra: string | null;
+  /**
+   * Spec section 10-11 "Attention anchors": which current anchors the
+   * flexible-attention stages offer -- natural breathing and the
+   * object-color/wider-visual-field pair are always available (spec
+   * section 10 lists them unconditionally); externalSound is offered
+   * only when true, and only ever meaningful for an auditory/both
+   * modality (spec section 10: "For an auditory thought, also allow:
+   * Attention to one external sound"). null/every field missing (a
+   * legacy ThoughtArc) behaves like { externalSound: false } -- the two
+   * universal anchors are still always shown; nothing here can ever
+   * suppress them.
+   */
+  externalSoundAnchorEnabled: boolean | null;
+  /** Spec section 22 "Flexible-attention dwell duration" -- shared by both flexible-attention stages (spec sections 10-11). null falls back to arc/dwellTimes.ts's DEFAULT_DWELL_TIMES, exactly like Urge's own dwell handling (Phase 3). */
+  flexibleAttentionDwellSeconds: number | null;
+  /**
+   * Spec section 22's own required Hebrew label/helper text apply here
+   * verbatim (see build/ThoughtArcEditorScreen.tsx). The SAME concept as
+   * MiniArcBuild.supportiveThought (Phase 2) at the Full-protocol level
+   * -- Mini Thought's own field is never a duplicate, only inherited
+   * from this one at BUILD time (see arc/miniArc.ts's
+   * createLinkedMiniArcDraft). null (every ThoughtArc saved before a
+   * trainee filled this in, or one who simply never wrote it) means "no
+   * prepared fallback" -- spec section 14: "If skipped, continue with
+   * one attention/Encoding anchor. Do not invent a thought for the
+   * user."
+   */
+  supportiveThought: string | null;
+  /**
+   * Spec sections 13, 22: "Useful insight, if prepared or saved from a
+   * previous session" -- BUILD-preparable in advance, AND updated after
+   * a LIVE disturbing-thought session where the trainee found one (spec
+   * section 21's own "saved useful insight" for ARC Mini Thought reads
+   * THIS field, always the freshest value, never a stale BUILD-time
+   * snapshot). null means none saved yet -- Encoding falls through to
+   * supportiveThought next (spec section 16's own priority order).
+   */
+  usefulInsight: string | null;
+  /** Spec section 16 "Visual... A balanced alternative image / an adjusted version of the current image." null means no BUILD-configured image; Encoding falls back to describing the insight/supportive-thought text alone. */
+  visualSupportiveImage: string | null;
+  /** Spec section 16 "Auditory... hear the insight/supportive thought in their own supportive internal voice." null means no BUILD-configured voice instruction; Encoding uses a safe generic framing instead. */
+  auditorySupportiveVoiceInstruction: string | null;
+  /** Spec section 22 "Encoding anchor" -- the one anchor Encoding pairs with the gentle nod (spec section 16: "Use one selected Encoding anchor"). null falls back to a safe generic anchor line, never invented content. */
+  encodingAnchor: string | null;
+  /** Spec section 22 "Gentle-nod cue" -- optional wording for the gentle-nod gesture itself; null uses the standard generic instruction. */
+  gentleNodCue: string | null;
+  /** Spec section 17 "future insight" -- "בפעם הבאה אני אזכור ש..." null means not prepared in advance; LIVE lets the trainee complete it fresh (never required). */
+  futureInsight: string | null;
+  /** Spec section 17 "one short relevant action" -- "כאשר זה יקרה, אפעל כך..." null means not prepared in advance. */
+  shortAction: string | null;
+  /** Spec section 18 "Use a configurable dwell duration" for future imagery. null falls back to arc/dwellTimes.ts's DEFAULT_DWELL_TIMES.actionImageryDwellSeconds, exactly like Urge's own dwell handling. */
+  futureImageryDwellSeconds: number | null;
+  /**
+   * Phase 8 (universal post-action completion retrofit): Full ARC
+   * Thought gains a genuine "perform shortAction now" action stage
+   * (previously shortAction was only ever referenced inside the
+   * imagined future_imagery instruction text, never actually
+   * performed) followed by this shared tail. Same shared-naming
+   * convention as BeliefArc/UrgeArc's own postActionImageryDwellSeconds
+   * -- null falls back to arc/dwellTimes.ts's own default.
+   */
+  postActionImageryDwellSeconds: number | null;
+  /** Phase 8: optional override for the post-action Gratitude prompt; null uses arc/postActionCompletion.ts's own standard default line. */
+  gratitudePrompt: string | null;
+}
+
+export function generateThoughtArcId(): string {
+  return `thoughtarc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** A fresh, empty ThoughtArc for a brand-new one -- every optional field null exactly like a trainee who hasn't configured anything yet, mirroring createEmptyUrgeArc's own shape. */
+export function createEmptyThoughtArc(id: string, name: string, now: string): ThoughtArc {
+  return {
+    id,
+    name,
+    createdAt: now,
+    updatedAt: now,
+    defaultRoute: null,
+    currentThought: null,
+    modalityPreference: null,
+    timeOrientationPreference: null,
+    situationContext: null,
+    associatedEmotion: null,
+    stayMantra: null,
+    acceptanceMantra: null,
+    externalSoundAnchorEnabled: null,
+    flexibleAttentionDwellSeconds: null,
+    supportiveThought: null,
+    usefulInsight: null,
+    visualSupportiveImage: null,
+    auditorySupportiveVoiceInstruction: null,
+    encodingAnchor: null,
+    gentleNodCue: null,
+    futureInsight: null,
+    shortAction: null,
+    futureImageryDwellSeconds: null,
+    postActionImageryDwellSeconds: null,
+    gratitudePrompt: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 (ARC Presence and ARC Mini Presence): unlike ThoughtArc/UrgeArc,
+// this does NOT get its own independent pure engine -- per explicit
+// instruction, Full ARC Presence REUSES the existing, already-working
+// Presence implementation verbatim (arc/arcEngine.ts's presence_check/
+// presence_grounding/arc_thought_awareness/arc_thought_combined_attention/
+// arc_thought_expand_presence/arc_thought_presence_recheck stages,
+// arc/stageCopy.ts's own copy for them, live/ArcLiveRenderer.tsx's own
+// rendering) via a synthetic ArcBuildProfile adapter (arc/presenceLive.ts's
+// presenceArcToProfile), exactly mirroring arc/arcGoalEngine.ts's own
+// urgeArcToProfile pattern. This is what makes it "reusable later inside
+// ARC State and other parent protocols" (spec): a later phase's ARC State
+// composition can drive the SAME session past the point this phase stops
+// it, through the exact same already-tested engine, with zero duplicated
+// Presence logic anywhere.
+// ---------------------------------------------------------------------------
+
+/**
+ * Phase 5: ARC Presence's own independent full-protocol entity -- only
+ * the two fields the existing Presence implementation actually reads
+ * per-target (presenceColor/dwell), since every other piece of "its own
+ * stages, rating-based routing, natural-breathing instruction, current
+ * anchors" is the EXISTING arc/arcEngine.ts implementation, reused
+ * as-is, never reconfigured per-PresenceArc beyond these two.
+ */
+export interface PresenceArc {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  /** "Energy Color in the Body" -- the exact same concept/field arc/presenceColor.ts's getEnergyColorLine already reads from ArcBuildProfile.presenceColor; presenceArcToProfile assigns this value onto that same field. null (never configured) means no Energy Color line renders, exactly like an ArcBuild whose trainee left it blank. */
+  presenceColor: string | null;
+  /** Optional override for the existing configurable Presence dwell (arc/dwellTimes.ts's resolvePresenceDwellSeconds/DEFAULT_DWELL_TIMES.presenceDwellSeconds). null (the default, and every PresenceArc saved before this field existed) uses the exact same default dwell every other target already falls back to -- never a different/new default. */
+  presenceDwellSeconds: number | null;
+  /**
+   * Phase 8 (universal post-action completion retrofit): Full ARC
+   * Presence gains a genuine action stage (previously Presence stopped
+   * right at its own Presence/Regulation hand-off point, per Phase 5's
+   * own explicit scope -- "reusable later inside ARC State and other
+   * parent protocols" is exactly this later phase) followed by the
+   * shared post-action tail. null (every PresenceArc saved before this
+   * field existed) means no action configured -- the LIVE screen skips
+   * straight to completion, exactly as it did before this phase,
+   * because there is nothing to perform yet.
+   */
+  beneficialAction: string | null;
+  /** Same shared-naming convention as BeliefArc/UrgeArc/ThoughtArc's own postActionImageryDwellSeconds -- null falls back to arc/dwellTimes.ts's own default. */
+  postActionImageryDwellSeconds: number | null;
+  /** Optional override for the post-action Gratitude prompt; null uses arc/postActionCompletion.ts's own standard default line. */
+  gratitudePrompt: string | null;
+}
+
+export function generatePresenceArcId(): string {
+  return `presencearc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** A fresh, empty PresenceArc -- mirrors createEmptyUrgeArc/createEmptyThoughtArc's own shape. */
+export function createEmptyPresenceArc(id: string, name: string, now: string): PresenceArc {
+  return {
+    id,
+    name,
+    createdAt: now,
+    updatedAt: now,
+    presenceColor: null,
+    presenceDwellSeconds: null,
+    beneficialAction: null,
+    postActionImageryDwellSeconds: null,
+    gratitudePrompt: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 (ARC Belief and ARC Mini Belief): like UrgeArc/ThoughtArc (and
+// unlike PresenceArc), Full ARC Belief gets its OWN independent pure
+// engine (arc/beliefLive.ts) -- self-contained, mirroring
+// arc/urgeLive.ts/arc/thoughtLive.ts's own "regulate"/mantra-line
+// pattern exactly (stayMantra/acceptanceMantra/regulationMantra/
+// bridgeMantra are structurally MantraProfile-compatible, see
+// arc/mantras.ts). ARC Belief is distinct from ARC Thought (spec
+// section 2): a broader RECURRING belief about self/others/the world,
+// never a single current thought/image.
+//
+// Existing belief-related scaffolding this phase reuses rather than
+// duplicates: ArcBuildProfile.identityLimitingBelief/
+// identityBridgeBelief/stateLimitingBelief/stateBridgeBelief (the
+// regular ARC State/Identity Awareness step's own "Limiting Belief" and
+// its empowering reframe) and MiniArcBuild.replacementBelief/
+// bridgeMantraText (already wired into Mini ARC Link's own "belief"
+// case in arc/miniArcLink.ts, since Phase 1/2). See
+// arc/beliefArcs.ts's own resolveBeliefFallback* functions for the
+// documented fallback order between these fields and BeliefArc's own.
+// ---------------------------------------------------------------------------
+
+export interface BeliefArc {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  /** The limiting belief itself (spec section 3/5) -- recognition-only, never required in LIVE (a saved belief can also be selected, or a session-only one entered fresh without saving). */
+  limitingBelief: string | null;
+  situationContext: string | null;
+  associatedEmotion: string | null;
+  /** MantraProfile-compatible, exactly like UrgeArc/ThoughtArc's own equivalents. */
+  stayMantra: string | null;
+  acceptanceMantra: string | null;
+  regulationMantra: string | null;
+  /** The single free-text Regulation anchor, mirroring UrgeArc.regulationAnchor exactly (spec section 8: "existing Regulation anchors" -- kept as one configurable anchor, same precedent every other independent protocol already uses; the fixed feet/shoulders/wider-visual-field cues are rendered as standard instructional text alongside it, not a second configurable field). */
+  regulationAnchor: string | null;
+  /** Shown once, at the end of Regulation and before the replacement belief (spec section 9) -- never re-shown during Encoding. Falls back to a linked MiniArcBuild's own bridgeMantraText when unset (see arc/beliefArcs.ts). */
+  bridgeMantra: string | null;
+  /** The balanced, credible supportive/replacement belief (spec section 10). Falls back to a linked MiniArcBuild's own replacementBelief, then to ArcBuildProfile.identityBridgeBelief/stateBridgeBelief (spec section 26) -- see arc/beliefArcs.ts. null with nothing entered in LIVE either means the anchor-only fallback (spec section 10: "Do not crash or block completion"). */
+  replacementBelief: string | null;
+  encodingAnchor: string | null;
+  gentleNodCue: string | null;
+  supportiveImage: string | null;
+  supportiveVoiceInstruction: string | null;
+  futureInsight: string | null;
+  /** "Future way of acting" (spec section 13) -- distinct from shortAction below, which is the immediate belief-consistent action this session performs. */
+  futureAction: string | null;
+  shortAction: string | null;
+  futureImageryDwellSeconds: number | null;
+  /** Post-action reinforcement (spec section 16, and the saved global post-action-completion requirement): how long the "imagine the action as it actually happened" and "imagine the improved action" stages dwell. Shared by both -- neither spec asks for two separate durations. */
+  postActionImageryDwellSeconds: number | null;
+  /** Optional override for the Gratitude prompt; null uses the standard default line. */
+  gratitudePrompt: string | null;
+}
+
+export function generateBeliefArcId(): string {
+  return `beliefarc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** A fresh, empty BeliefArc -- mirrors createEmptyThoughtArc/createEmptyUrgeArc's own shape. */
+export function createEmptyBeliefArc(id: string, name: string, now: string): BeliefArc {
+  return {
+    id,
+    name,
+    createdAt: now,
+    updatedAt: now,
+    limitingBelief: null,
+    situationContext: null,
+    associatedEmotion: null,
+    stayMantra: null,
+    acceptanceMantra: null,
+    regulationMantra: null,
+    regulationAnchor: null,
+    bridgeMantra: null,
+    replacementBelief: null,
+    encodingAnchor: null,
+    gentleNodCue: null,
+    supportiveImage: null,
+    supportiveVoiceInstruction: null,
+    futureInsight: null,
+    futureAction: null,
+    shortAction: null,
+    futureImageryDwellSeconds: null,
+    postActionImageryDwellSeconds: null,
+    gratitudePrompt: null,
+  };
+}
+
+/**
+ * Modular ARC architecture task (LIVE entry categories, spec section 2):
+ * tags which of the five independent LIVE entry points launched/owns a
+ * session -- distinct from DevelopmentLayer ("state"/"identity"/"habit",
+ * an ENCODING TARGET a session resolves onto), and distinct from
+ * TriggerType (reactive_emotion/reactive_urge/proactive, how a session
+ * was entered). "state" here means the ARC State PARENT PROTOCOL (a
+ * LIVE entry that may embed Presence/Thought/Belief/Urge modules) --
+ * never confused with the "state" DevelopmentLayer, which a session of
+ * ANY LiveProtocolKind may still resolve onto for its own Encoding/
+ * Action. Purely a tag for navigation/context-carrying purposes (see
+ * ProtocolReturnContext below); adding it here does not change any
+ * existing routing -- no existing code constructs or reads it yet.
+ */
+export type LiveProtocolKind = "state" | "urge" | "presence" | "thought" | "belief";
+
+/**
+ * Personal Development vs. Goal Achievement task (spec section 5):
+ * which track a session belongs to -- decides whether the shortened
+ * Identity Extension after an internal protocol is OPTIONAL
+ * (personal_development, asked via a Yes/No screen) or MANDATORY
+ * (goal_achievement, entered automatically, tied to the current ArcGoal
+ * and active sub-goal). Purely a tag; no existing code constructs or
+ * reads it yet -- see ProtocolReturnContext below.
+ */
+export type IdentityExtensionTrack = "personal_development" | "goal_achievement";
+
+/**
+ * Modular ARC architecture task (spec section 2, "Possible inherited
+ * context"): the context a shared/embedded module (Presence/Thought/
+ * Belief/Urge, or the shortened Identity Extension) needs from its
+ * PARENT protocol, so it can render correctly and return to the right
+ * place afterward -- e.g. ARC State embedding ARC Thought must hand the
+ * Thought module the parent's situation description and get routed back
+ * into ARC State's own next selected module, not into ARC State's start.
+ *
+ * Every field is optional/nullable by construction (a module opened
+ * completely standalone, e.g. independent ARC Presence from the Home
+ * screen, has none of this) and this type is not yet constructed or
+ * read anywhere in the app -- it is forward-looking scaffolding for the
+ * later modular-composition phases (ARC State, Identity Extension),
+ * added now so those phases share one consistent shape rather than each
+ * inventing its own ad-hoc context object. Session-only, exactly like
+ * ArcLiveState's own session-specific fields -- never persisted, never
+ * written onto ArcBuildProfile/ArcGoal.
+ */
+export interface ProtocolReturnContext {
+  /** Which LIVE entry category is the ultimate parent of this session (e.g. "state" when ARC Thought is embedded inside ARC State). null when this module was opened standalone, with no parent. */
+  parentProtocol: LiveProtocolKind | null;
+  /** Personal Development vs. Goal Achievement -- decides Identity Extension's optional/mandatory gating once the embedded/parent work completes. null when not yet resolved (e.g. a standalone independent-protocol session with no Identity Extension offer at all). */
+  track: IdentityExtensionTrack | null;
+  /** The parent ARC State session's selected/identified emotional or internal state, carried into an embedded module (e.g. so ARC Thought's own copy can reference it) without re-asking. null when not applicable/not yet identified. */
+  selectedEmotionalState: string | null;
+  /** The id of the UrgeArc selected/active in the parent session, when the embedded module needs it (e.g. Urge embedded inside ARC State). null when not applicable. */
+  selectedUrgeId: string | null;
+  /** The parent session's current disturbing/supportive thought text, carried into an embedded ARC Thought module. null when not applicable. */
+  currentThought: string | null;
+  /** The parent session's selected limiting belief (a saved belief's id, or free text for a newly-entered one), carried into an embedded ARC Belief module. null when not applicable. */
+  selectedLimitingBelief: string | null;
+  /** The parent session's own situation/context description, reused by an embedded module rather than re-asked. null when not applicable. */
+  situationDescription: string | null;
+  /** The current ArcGoal id this session is working within, when track is "goal_achievement". null for Personal Development or when not yet resolved. */
+  currentArcGoalId: string | null;
+  /** The active sub-goal id (see arc/subGoalExecution.ts's resolveActiveSubGoal) this session is working within. null when not applicable. */
+  activeSubGoalId: string | null;
+  /** The identity this session's Identity Extension should use -- an existing identity's id/reference for Goal Achievement (resolved from the ArcGoal), or the trainee's Personal-Development choice. null when not yet resolved. */
+  linkedIdentityId: string | null;
+  /** The habit/action linked to this session's Identity Extension -- resolved from the current ArcGoal/active sub-goal for Goal Achievement, or the trainee's own choice for Personal Development. null when not yet resolved. */
+  linkedHabitOrActionId: string | null;
+  /** Which module (or "identity_extension") the parent protocol still requires next, once the current embedded module finishes -- read by the parent's own routing to decide whether to continue into another selected module or into Desired State Encoding/Identity Extension. null once nothing remains. */
+  requiredNextModule: LiveProtocolKind | "identity_extension" | null;
+  /** Where to return control once this module (and any Identity Extension) finishes -- e.g. back to the parent ARC State session, or to an ArcGoal session's own outer/inner run. null when there is no parent to return to (a genuinely standalone session). */
+  returnDestination: string | null;
 }
 
 /**
@@ -1097,6 +1633,114 @@ export interface ArcGoalFourWeekProgram {
   completedAt: string | null;
   readyForSubGoalActivation: boolean;
   returnContext: ArcGoalSupportReturnContext | null;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 9: Personal Development's own four-week program -- deliberately
+// NOT nested on ArcGoal (that stays exactly as it is above, untouched)
+// and deliberately NOT nested on ArcBuild/UrgeArc/ThoughtArc/PresenceArc/
+// BeliefArc either (would mean touching five unrelated record types for
+// one feature). Its own independent, top-level entity instead
+// (data/storage.ts's own CRUD list), referencing whichever ONE saved
+// protocol record it tracks via protocolKind+protocolId -- never a
+// second/duplicated copy of that record's own content. Reuses
+// FourWeekProgramWeekNumber/FourWeekProgramWeekStatus verbatim (already
+// fully generic, no ArcGoal-specific meaning) but deliberately does NOT
+// reuse ArcGoalProgramWeek/ArcGoalWeekPracticeRecord/
+// ArcGoalSupportReturnContext (those carry ArcGoal-specific
+// practice-kind vocabulary and fields like dateExtensions/reflection
+// this simpler program never needs -- see
+// arc/personalDevelopmentProgram.ts's own module doc for the full
+// reasoning).
+// ---------------------------------------------------------------------------
+
+/** Which real, already-existing protocol record this program tracks -- never a duplicated copy of it. */
+export type PersonalDevelopmentProtocolKind = "state" | "urge" | "thought" | "presence" | "belief";
+
+/**
+ * Full/Mini/Link practice kinds this program tracks, deliberately
+ * distinct from ArcGoalWeekPracticeRecord.kind's own vocabulary (this
+ * program is never confused with an ArcGoal one, even where both exist
+ * for the same trainee): "full" (the real Full protocol), "mini" (the
+ * real ARC Mini), "archi_link" (the guided ARCHI Link rehearsal --
+ * Week 1's own with_archi rehearsal of the full response), "mini_link"
+ * (ARC Mini Link rehearsal, guided in Week 1-2 or speed/fluency in
+ * Week 3-4 -- see arc/personalDevelopmentProgram.ts's own doc on why
+ * this is a copy/tracking distinction only, never a second rehearsal
+ * mechanism), "action" (the direct "I performed the real action"
+ * confirmation, Week 4's own independent-performance record).
+ */
+export interface PersonalDevelopmentWeekPracticeRecord {
+  id: string;
+  kind: "full" | "mini" | "archi_link" | "mini_link" | "action";
+  label: string;
+  occurredAt: string;
+}
+
+/**
+ * One week's own schedule/progress -- deliberately simpler than
+ * ArcGoalProgramWeek (no manual date-cascade editing, no dateExtensions,
+ * no weekly reflection): the PD spec never asks for either, and adding
+ * them would be scope this program doesn't need. Reuses
+ * FourWeekProgramWeekStatus/FourWeekProgramWeekNumber verbatim.
+ */
+export interface PersonalDevelopmentProgramWeek {
+  weekNumber: FourWeekProgramWeekNumber;
+  plannedStartDate: string | null;
+  plannedEndDate: string | null;
+  remindersEnabled: boolean;
+  reminderNotificationId: string | null;
+  reminderScheduledFor: string | null;
+  status: FourWeekProgramWeekStatus;
+  actualCompletedAt: string | null;
+  practiceRecords: PersonalDevelopmentWeekPracticeRecord[];
+}
+
+/** Saved right before leaving the LIVE dashboard for a support flow (Full/Mini/Link) -- mirrors ArcGoalSupportReturnContext's own reasoning, kept as its own separate type (never conflated with the ArcGoal one, even though both can exist for the same trainee at once). */
+export interface PersonalDevelopmentSupportReturnContext {
+  week: FourWeekProgramWeekNumber;
+  actionLabel: string;
+  savedAt: string;
+}
+
+/**
+ * One trainee-created four-week program tracking ONE real, already-saved
+ * protocol record (protocolKind+protocolId) -- never a duplicate of that
+ * record's own content. linkedMiniArcId is this program's own resolved
+ * ARC Mini reference (a MiniArcBuild whose own protocolKind/
+ * parentArcBuildId already matches protocolKind/protocolId) -- resolved
+ * once at creation/refresh time, never a second, independently-editable
+ * copy of that relationship (see arc/personalDevelopmentProgram.ts's
+ * resolveLinkedMiniArc). null means no compatible ARC Mini exists yet --
+ * the spec's own "offer a clear path to create/configure the ARC Mini,
+ * never invent Mini content" case.
+ */
+export interface PersonalDevelopmentFourWeekProgram {
+  id: string;
+  protocolKind: PersonalDevelopmentProtocolKind;
+  protocolId: string;
+  name: string;
+  linkedMiniArcId: string | null;
+  /**
+   * Phase 9 correction: an optional, existing saved ArcLink (routineLinks.ts,
+   * protocolType "arc") this program's own "archi_link" task should reuse
+   * for its configured trigger/mode -- resolved via
+   * resolveCompatibleArcLinksForProtocol, never invented. null (the
+   * default, and every program saved before this field existed --
+   * normalizePersonalDevelopmentProgram backfills it) falls back to the
+   * screen's own generic/legacy trigger content, exactly as before this
+   * field existed.
+   */
+  arcLinkId: string | null;
+  /** Same as arcLinkId above, for this program's own "mini_link" task -- an existing saved ArcLink with protocolType "mini_arc" whose protocolId matches linkedMiniArcId. null falls back to the existing generic Mini Link content. */
+  miniArcLinkId: string | null;
+  currentWeek: FourWeekProgramWeekNumber;
+  weeks: [PersonalDevelopmentProgramWeek, PersonalDevelopmentProgramWeek, PersonalDevelopmentProgramWeek, PersonalDevelopmentProgramWeek];
+  startedAt: string | null;
+  completedAt: string | null;
+  returnContext: PersonalDevelopmentSupportReturnContext | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -1304,6 +1948,16 @@ export function generateArcGoalWeekPracticeRecordId(): string {
   return `arcgoalweekpractice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Phase 9: same stable-id-string pattern for a new PersonalDevelopmentFourWeekProgram. */
+export function generatePersonalDevelopmentProgramId(): string {
+  return `pdprogram-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Phase 9: same id-pattern for a Personal Development week's own practice record, scoped within its own week -- a distinct prefix from generateArcGoalWeekPracticeRecordId so the two are never confused. */
+export function generatePersonalDevelopmentWeekPracticeRecordId(): string {
+  return `pdweekpractice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** Sub-goal execution task: same stable-id-string pattern for a new ArcGoalSubGoal. */
 export function generateArcGoalSubGoalId(): string {
   return `arcgoalsubgoal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -1353,6 +2007,21 @@ export function createEmptyUrgeArc(id: string, name: string, now: string): UrgeA
     bodyLanguageCue: null,
     encodingMantra: null,
     beneficialAlternativeAction: "",
+    representationPreference: null,
+    visualEncodingAction: null,
+    alternativeDesiredImage: null,
+    bodilyEncodingAction: null,
+    desiredBodilySensation: null,
+    primaryMiniArcEncodingAction: null,
+    secondaryMiniArcEncodingAction: null,
+    allowBothEncodingActions: null,
+    standardFallbackEncodingAction: null,
+    stayMantra: null,
+    acceptanceMantra: null,
+    regulationMantra: null,
+    bridgeMantra: null,
+    postActionImageryDwellSeconds: null,
+    gratitudePrompt: null,
   };
 }
 

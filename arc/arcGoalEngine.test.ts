@@ -13,7 +13,9 @@ import {
   getThirdPersonImageryCopy,
   getTriggerIdentificationCopy,
   getUrgeActionConfirmCopy,
+  getUrgeEncodingCopy,
   getUrgeNeedIdentificationCopy,
+  getUrgeRepresentationChoices,
   getUrgeStopActionCopy,
   needsReassessmentDetour,
   needsTriggerPrefixDetour,
@@ -24,7 +26,9 @@ import {
   resolveAfterStateClarificationDecision,
   resolveAfterThirdPersonImagery,
   resolveAfterTriggerIdentification,
+  resolveAfterUrgeEncoding,
   resolveAfterUrgeNeedIdentification,
+  resolveAfterUrgeRepresentation,
   resolveAfterUrgeStopAction,
   resolveBridgeEntryUiStage,
   resolveExecutionMode,
@@ -32,6 +36,8 @@ import {
   resolveSelectedUrgeMapping,
   selectSupportiveMapping,
   selectUrgeMapping,
+  shouldInterceptInnerAfterRegulate,
+  shouldInterceptInnerAfterSensationCheck,
   shouldInterceptInnerAtAct,
   STATE_CLARIFICATION_DECISION_TITLE,
   TRIGGER_DESCRIPTION_UNSPECIFIED,
@@ -199,6 +205,8 @@ test("resolveAfterStateClarificationDecision('לא') resets every temporary stat
     selectedUrgeMappingId: "um-old",
     executionMode: "mini",
     miniArcStage: "encoding",
+    urgeRepresentation: "visual",
+    pendingInnerResumeStage: "stay",
   };
   const result = resolveAfterStateClarificationDecision(false, dirty);
   assert.equal(result.triggerDescription, null);
@@ -208,6 +216,8 @@ test("resolveAfterStateClarificationDecision('לא') resets every temporary stat
   assert.equal(result.selectedUrgeMappingId, null);
   assert.equal(result.executionMode, null);
   assert.equal(result.miniArcStage, null);
+  assert.equal(result.urgeRepresentation, null);
+  assert.equal(result.pendingInnerResumeStage, null);
 });
 
 // --- needsTriggerPrefixDetour
@@ -339,12 +349,14 @@ test("selectUrgeMapping records the chosen id and moves straight to inner when t
   assert.equal(result.uiStage, "inner");
 });
 
-test("selectUrgeMapping routes to urge_stop_action when the selected urge has a Stop Action configured", () => {
+test("Phase 3: selectUrgeMapping ALWAYS moves straight to 'inner' now, even when the selected urge has a Stop Action configured -- the Stop Action fires later, after Recognition + representation, not at selection time", () => {
   const g = goal({ urgeMappings: [urgeMapping({ id: "um-2", urgeArcId: "urge-2" })] });
   const urgeArcsById = { "urge-2": urgeArc({ id: "urge-2", stopCue: "להניח את הטלפון" }) };
   const result = selectUrgeMapping(createEmptyArcGoalLiveState(), "um-2", g, urgeArcsById);
   assert.equal(result.selectedUrgeMappingId, "um-2");
-  assert.equal(result.uiStage, "urge_stop_action");
+  assert.equal(result.uiStage, "inner");
+  assert.equal(result.urgeRepresentation, null, "reset at the start of every new urge pass");
+  assert.equal(result.pendingInnerResumeStage, null);
 });
 
 test("selectUrgeMapping falls back to inner when the mapped id doesn't resolve to any urge mapping on the goal", () => {
@@ -938,11 +950,11 @@ test("resolveAfterUrgeStopAction moves straight into the inner run's own first s
   assert.equal(result.uiStage, "inner");
 });
 
-test("resolveAfterReassessment (urge, single mapping) routes to urge_stop_action when the resolved UrgeArc has a configured Stop Action", () => {
+test("Phase 3: resolveAfterReassessment (urge, single mapping) ALWAYS auto-selects straight to 'inner', even when the resolved UrgeArc has a configured Stop Action -- the Stop Action now fires later, after Recognition + representation", () => {
   const u = urgeArc({ id: "urge-1", stopCue: "להניח את הטלפון" });
   const g = goal({ urgeMappings: [urgeMapping({ id: "only-urge", urgeArcId: "urge-1" })] });
   const result = resolveAfterReassessment("urge", g, createEmptyArcGoalLiveState(), { "urge-1": u });
-  assert.equal(result.uiStage, "urge_stop_action");
+  assert.equal(result.uiStage, "inner");
   assert.equal(result.goalState.selectedUrgeMappingId, "only-urge");
 });
 
@@ -959,11 +971,11 @@ test("resolveAfterReassessment (urge, single mapping) goes straight to inner whe
   assert.equal(result.uiStage, "inner");
 });
 
-test("selectUrgeMapping routes to urge_stop_action when the picked urge has a configured Stop Action", () => {
+test("Phase 3: selectUrgeMapping goes straight to 'inner' even when the picked urge has a configured Stop Action -- it fires later, post-representation", () => {
   const u = urgeArc({ id: "urge-2", stopCue: "לעצור לרגע במקום" });
   const g = goal({ urgeMappings: [urgeMapping({ id: "um-a" }), urgeMapping({ id: "um-b", urgeArcId: "urge-2" })] });
   const result = selectUrgeMapping(createEmptyArcGoalLiveState(), "um-b", g, { "urge-2": u });
-  assert.equal(result.uiStage, "urge_stop_action");
+  assert.equal(result.uiStage, "inner");
   assert.equal(result.selectedUrgeMappingId, "um-b");
 });
 
@@ -995,4 +1007,85 @@ test("urgeArcToProfile builds habitEncoding when only ONE of bodyLanguageCue/enc
   assert.notEqual(profile.habitEncoding, null);
   assert.equal(profile.habitEncoding?.bodyLanguageCue, "מבט קדימה");
   assert.equal(profile.habitEncoding?.mantra, null);
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 (Full + Mini ARC Urge representation encoding): the Goal-
+// Achievement bridge's reordered urge route -- shouldInterceptInnerAfterSensationCheck/
+// shouldInterceptInnerAfterRegulate + their resolvers.
+// ---------------------------------------------------------------------------
+
+test("shouldInterceptInnerAfterSensationCheck is true only for the urge route at 'sensation_check', never the supportive route or any other stage", () => {
+  assert.equal(shouldInterceptInnerAfterSensationCheck("urge", "sensation_check"), true);
+  assert.equal(shouldInterceptInnerAfterSensationCheck("supportive", "sensation_check"), false);
+  assert.equal(shouldInterceptInnerAfterSensationCheck("urge", "stay"), false);
+  assert.equal(shouldInterceptInnerAfterSensationCheck("urge", "regulate"), false);
+});
+
+test("shouldInterceptInnerAfterRegulate is true only for the urge route at 'regulate', never the supportive route or any other stage", () => {
+  assert.equal(shouldInterceptInnerAfterRegulate("urge", "regulate"), true);
+  assert.equal(shouldInterceptInnerAfterRegulate("supportive", "regulate"), false);
+  assert.equal(shouldInterceptInnerAfterRegulate("urge", "sensation_check"), false);
+  assert.equal(shouldInterceptInnerAfterRegulate("urge", "encode"), false);
+});
+
+test("resolveAfterUrgeRepresentation routes to 'urge_stop_action' when the urge has a configured Stop Action, recording the LIVE representation answer", () => {
+  const u = urgeArc({ stopCue: "להניח את הטלפון" });
+  const result = resolveAfterUrgeRepresentation(createEmptyArcGoalLiveState(), "visual", u);
+  assert.equal(result.uiStage, "urge_stop_action");
+  assert.equal(result.goalState.urgeRepresentation, "visual");
+});
+
+test("resolveAfterUrgeRepresentation goes straight to 'inner' when no Stop Action is configured -- 'allow safe continuation when no Stop Action exists'", () => {
+  const u = urgeArc({ stopCue: null });
+  const result = resolveAfterUrgeRepresentation(createEmptyArcGoalLiveState(), "bodily", u);
+  assert.equal(result.uiStage, "inner");
+  assert.equal(result.goalState.urgeRepresentation, "bodily");
+});
+
+test("resolveAfterUrgeRepresentation is safe (goes to 'inner') when the referenced UrgeArc is null (deleted reference)", () => {
+  const result = resolveAfterUrgeRepresentation(createEmptyArcGoalLiveState(), "unsure", null);
+  assert.equal(result.uiStage, "inner");
+});
+
+test("resolveAfterUrgeRepresentation never overwrites the saved UrgeArc's own BUILD preference -- only ever returns session state, never a mutated UrgeArc", () => {
+  const u = urgeArc({ representationPreference: "bodily" });
+  const before = { ...u };
+  resolveAfterUrgeRepresentation(createEmptyArcGoalLiveState(), "visual", u);
+  assert.deepEqual(u, before, "the UrgeArc object itself must be completely untouched");
+});
+
+test("resolveAfterUrgeStopAction/resolveAfterUrgeEncoding both resolve to 'inner', leaving the caller to apply the already-computed pendingInnerResumeStage", () => {
+  const withPending: ArcGoalLiveState = { ...createEmptyArcGoalLiveState(), pendingInnerResumeStage: "stay" };
+  assert.equal(resolveAfterUrgeStopAction(withPending).uiStage, "inner");
+  assert.equal(resolveAfterUrgeEncoding(withPending).uiStage, "inner");
+});
+
+test("getUrgeEncodingCopy reuses arc/urgeLive.ts's own representation-routed content, never a second drifted implementation", () => {
+  const u = urgeArc({ visualEncodingAction: "להקטין ולהרחיק" });
+  const copy = getUrgeEncodingCopy(u, "visual");
+  assert.match(copy.body, /להקטין ולהרחיק/);
+});
+
+test("getUrgeRepresentationChoices returns the exact same 4 options arc/urgeLive.ts's own getUrgeRepresentationOptions does", () => {
+  const choices = getUrgeRepresentationChoices();
+  assert.deepEqual(
+    choices.map((c) => c.value),
+    ["visual", "bodily", "both", "unsure"]
+  );
+});
+
+test("Phase 3 full ordering: driving a real urge inner run through sensation_check confirms it resolves past sensation_check BEFORE reaching stay -- confirming the interception point exists exactly where the reordering requires it", () => {
+  const u = urgeArc();
+  const profile = urgeArcToProfile(u);
+  const session = createArcGoalUrgeInnerInitialSession();
+  const withIntensity = { ...session, sensationLocation: "חזה", sensationIntensity: 9 };
+  const hop = advanceLiveSession("sensation_check", withIntensity, profile, ["habit"]);
+  // The habit layer's synthetic profile never configures a Limiting
+  // Belief, so resolveBeforeStay resolves straight to "stay" -- exactly
+  // the stage shouldInterceptInnerAfterSensationCheck must catch BEFORE
+  // the trainee ever sees it, inserting urge_representation/
+  // urge_stop_action first.
+  assert.equal(hop.stage, "stay");
+  assert.equal(shouldInterceptInnerAfterSensationCheck("urge", "sensation_check"), true);
 });

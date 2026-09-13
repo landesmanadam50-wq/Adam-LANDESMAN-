@@ -3,16 +3,23 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { getArcGoal, getArcLink, getMiniArcBuild, loadRoutineTriggers, upsertArcGoal, upsertArcLink } from "../data/storage.ts";
-import { buildMiniArcLinkStartConfirmationStep, buildMiniArcLinkSteps } from "../arc/miniArcLink.ts";
+import { getArcGoal, getArcLink, getMiniArcBuild, getPersonalDevelopmentProgram, getThoughtArc, loadRoutineTriggers, upsertArcGoal, upsertArcLink, upsertPersonalDevelopmentProgram } from "../data/storage.ts";
+import { buildMiniArcLinkStartConfirmationStep, buildProtocolSpecificMiniArcLinkSteps } from "../arc/miniArcLink.ts";
 import type { MiniArcLinkStep } from "../arc/miniArcLink.ts";
+import { resolveMiniThoughtContent } from "../arc/thoughtLive.ts";
 import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
-import { describeTrigger, resolveRoutineTrigger } from "../arc/routineLinks.ts";
+import { describeTrigger, resolveLinkTimerStyle, resolveRoutineTrigger } from "../arc/routineLinks.ts";
 import type { ArcLink } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import { addPracticeRecord, clearReturnContext } from "../arc/fourWeekProgram.ts";
+import {
+  addPracticeRecord as addPdPracticeRecord,
+  clearReturnContext as clearPdReturnContext,
+  isSpeedFluencyWeek,
+} from "../arc/personalDevelopmentProgram.ts";
 import type { ArcGoalWeekPracticeRecord, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import BodyImageryStep from "./BodyImageryStep.tsx";
+import { LinkTimerDisplay } from "./LinkTimerDisplay.tsx";
 
 /**
  * live/MiniArcLinkScreen.tsx (route: /mini-arc-link/[id], optionally ?linkId=...)
@@ -38,14 +45,27 @@ import BodyImageryStep from "./BodyImageryStep.tsx";
  * fourWeekKind defaults to this screen's own original "mini_arc_link"
  * semantic. Absent fourWeekGoalId entirely, completePractice is
  * completely unchanged.
+ *
+ * Phase 9 (four-week program integration): optional pdProgramId/pdWeek
+ * -- set only by the new Personal Development four-week dashboard's own
+ * "mini_link" task, for any of the 5 protocol kinds (this screen already
+ * supports all of them via getMiniArcBuild's own protocolKind
+ * branching). Unlike the ArcGoal fourWeekKind distinction above, PD
+ * tracks a single "mini_link" kind regardless of week -- "guided"
+ * (Weeks 1-2) vs "speed/fluency" (Weeks 3-4) framing is a label-only
+ * distinction (isSpeedFluencyWeek), never a second practice-record kind
+ * or a second rehearsal mechanism (see arc/personalDevelopmentProgram.ts's
+ * own module doc).
  */
 export default function MiniArcLinkScreen() {
-  const { id, linkId, fourWeekGoalId, fourWeekWeek, fourWeekKind } = useLocalSearchParams<{
+  const { id, linkId, fourWeekGoalId, fourWeekWeek, fourWeekKind, pdProgramId, pdWeek } = useLocalSearchParams<{
     id: string;
     linkId?: string;
     fourWeekGoalId?: string;
     fourWeekWeek?: string;
     fourWeekKind?: string;
+    pdProgramId?: string;
+    pdWeek?: string;
   }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "noTrigger" | "ready">("loading");
   const [steps, setSteps] = useState<MiniArcLinkStep[]>([]);
@@ -62,13 +82,30 @@ export default function MiniArcLinkScreen() {
         return;
       }
 
+      // Phase 4 (ARC Thought and ARC Mini Thought), spec section 24:
+      // "ARC Mini Thought Link should rehearse... useful insight or
+      // supportive thought" -- resolved here (the parent ThoughtArc's
+      // own current usefulInsight, always the freshest value) rather
+      // than inside arc/miniArcLink.ts, which stays independent of
+      // ThoughtArc/data-loading. undefined for every non-Thought kind
+      // or a Thought Mini with no parent -- resolvePiecesForKind then
+      // falls back to build.supportiveThought alone, unchanged.
+      const parentThoughtArc = existing.protocolKind === "thought" && existing.parentArcBuildId ? await getThoughtArc(existing.parentArcBuildId) : null;
+      const thoughtInsightOverride = existing.protocolKind === "thought" ? resolveMiniThoughtContent(existing, parentThoughtArc).text || null : null;
+      if (cancelled) return;
+
       if (!linkId) {
         // Original entry point -- completely unchanged.
         if (!hasConfiguredTrigger(existing.linkSettings)) {
           setStatus("noTrigger");
           return;
         }
-        setSteps(buildMiniArcLinkSteps(existing));
+        // ARC Mini for every protocol task: automatically uses the
+        // matching protocol-specific rehearsal when this Mini ARC has a
+        // protocolKind configured, and falls straight through to this
+        // exact original call for every generic/legacy Mini ARC -- see
+        // buildProtocolSpecificMiniArcLinkSteps' own doc.
+        setSteps(buildProtocolSpecificMiniArcLinkSteps(existing, { thoughtInsightOverride }));
         setIndex(0);
         setStatus("ready");
         return;
@@ -83,8 +120,8 @@ export default function MiniArcLinkScreen() {
       setArcLink(link);
       const trigger = resolveRoutineTrigger(link.triggerId, triggers);
       const triggerText = describeTrigger(trigger) === "לא הוגדר טריגר" ? "" : describeTrigger(trigger);
-      const ctx = { triggerText, mode: link.mode };
-      const fullSteps = buildMiniArcLinkSteps(existing, ctx);
+      const ctx = { triggerText, mode: link.mode, thoughtInsightOverride };
+      const fullSteps = buildProtocolSpecificMiniArcLinkSteps(existing, ctx);
       // Coherent-architecture task (#22/#24 "With ARCHI"): with_archi
       // mode ends right after imagining opening ARCHI and pressing
       // Start -- never the full Presence Color / naming / regulation /
@@ -129,6 +166,18 @@ export default function MiniArcLinkScreen() {
         await upsertArcGoal({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
       }
       router.replace({ pathname: "/goals/live/[goalId]", params: { goalId: fourWeekGoalId } });
+      return;
+    }
+    if (typeof pdProgramId === "string") {
+      const program = await getPersonalDevelopmentProgram(pdProgramId);
+      if (program) {
+        const now = new Date().toISOString();
+        const week = (Number(pdWeek) || program.currentWeek) as FourWeekProgramWeekNumber;
+        const label = isSpeedFluencyWeek(week) ? "Mini ARC Link (שטף)" : "Mini ARC Link (מונחה)";
+        const updatedProgram = clearPdReturnContext(addPdPracticeRecord(program, week, "mini_link", label, now));
+        await upsertPersonalDevelopmentProgram({ ...updatedProgram, updatedAt: now });
+      }
+      router.replace({ pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId } });
       return;
     }
     router.back();
@@ -176,6 +225,17 @@ export default function MiniArcLinkScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Link timers task: one continuous rehearsal timer for the
+            WHOLE Mini ARC Link session, when its own ArcLink has one
+            configured -- rendered at this stable tree position (never
+            gated per step id) so the same LinkTimerDisplay instance
+            stays mounted (and its own elapsed clock keeps running)
+            across every step transition, rather than resetting each
+            time. Never the same concept as the real Beneficial Action
+            timer inside Mini ARC itself. */}
+        {linkId && arcLink?.timerEnabled && (
+          <LinkTimerDisplay style={resolveLinkTimerStyle(arcLink)} targetDurationSeconds={arcLink.timerDurationSeconds ?? null} />
+        )}
         {(step.id === "regulation" || step.id === "encoding") && step.bodyImagery ? (
           <BodyImageryStep
             title={step.title}

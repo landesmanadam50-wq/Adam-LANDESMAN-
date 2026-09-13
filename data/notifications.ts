@@ -186,6 +186,8 @@ export interface ScheduleReminderNotificationInput {
   targetId?: string;
   /** Sub-goal execution task: only meaningful for kind "fourWeekProgramWeek" -- which ArcGoal's own four-week dashboard to open. Omitted for every other kind. */
   arcGoalId?: string;
+  /** Phase 9: only meaningful for kind "personalDevelopmentProgramWeek" -- which Personal Development program's own four-week dashboard to open. Omitted for every other kind. */
+  personalDevelopmentProgramId?: string;
 }
 
 /**
@@ -222,6 +224,7 @@ export async function scheduleReminderNotification(input: ScheduleReminderNotifi
           ...(input.routineId !== undefined ? { routineId: input.routineId } : {}),
           ...(input.targetId !== undefined ? { targetId: input.targetId } : {}),
           ...(input.arcGoalId !== undefined ? { arcGoalId: input.arcGoalId } : {}),
+          ...(input.personalDevelopmentProgramId !== undefined ? { personalDevelopmentProgramId: input.personalDevelopmentProgramId } : {}),
         },
       },
       trigger: {
