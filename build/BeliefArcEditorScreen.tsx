@@ -10,6 +10,7 @@ import { generateBeliefArcId } from "../arc/types.ts";
 import type { ArcBuildProfile } from "../arc/types.ts";
 import { buildMiniArcFromDraft, createLinkedMiniArcDraft, generateMiniArcId, isMiniArcDraftComplete, linkMiniArcToParent } from "../arc/miniArc.ts";
 import type { MiniArcBuild, MiniArcDraft } from "../arc/miniArc.ts";
+import { IdentityContinuationOffer } from "./IdentityContinuationOffer.tsx";
 
 /**
  * build/BeliefArcEditorScreen.tsx (route: /belief-arcs/[id], id="new" to create)
@@ -48,6 +49,7 @@ export default function BeliefArcEditorScreen() {
   const [miniActionDurationMinutes, setMiniActionDurationMinutes] = useState("");
   const [miniActionImageryDwellSeconds, setMiniActionImageryDwellSeconds] = useState("");
   const [miniGratitudePrompt, setMiniGratitudePrompt] = useState("");
+  const [showIdentityOffer, setShowIdentityOffer] = useState(false);
 
   useEffect(() => {
     if (isNew || !id) return;
@@ -144,8 +146,13 @@ export default function BeliefArcEditorScreen() {
     setSaveError(null);
     try {
       const now = new Date().toISOString();
+      const wasNew = isNew;
       const beliefArc = buildBeliefArcFromDraft(draft, existingMeta?.id ?? generateBeliefArcId(), existingMeta?.createdAt ?? now, now);
       await upsertBeliefArc(beliefArc);
+      if (wasNew) {
+        setShowIdentityOffer(true);
+        return;
+      }
       router.back();
     } catch {
       setSaveError("אירעה שגיאה בשמירת ה-ARC Belief. נסה שוב.");
@@ -169,6 +176,17 @@ export default function BeliefArcEditorScreen() {
             <Text style={styles.buttonText}>חזרה לרשימת ה-ARC Belief</Text>
           </Pressable>
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (showIdentityOffer) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <IdentityContinuationOffer
+          onYes={() => router.replace({ pathname: "/identity-extension/offer", params: { returnTo: "/belief-arcs" } })}
+          onNo={() => router.replace("/belief-arcs")}
+        />
       </SafeAreaView>
     );
   }
