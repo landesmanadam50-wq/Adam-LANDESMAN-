@@ -41,13 +41,13 @@
  */
 
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Stack, router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import type { ArcBuild, ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, FourWeekProgramWeekNumber } from "../arc/types.ts";
 import { createEmptyLiveState } from "../arc/types.ts";
-import { deriveActiveLayersForArcBuild, getFirstArcStage, resolveEncodingTarget } from "../arc/arcEngine.ts";
+import { deriveActiveLayersForArcBuild, getAvailableLiveTriggers, getFirstArcStage, resolveEncodingTarget, resolveTargetLimitingBelief } from "../arc/arcEngine.ts";
 import { getStageCopy } from "../arc/stageCopy.ts";
 import { buildEvidenceIndex, buildSessionEvidenceContext } from "../arc/evidence.ts";
 import type { EvidenceRecord } from "../arc/evidence.ts";
@@ -97,9 +97,7 @@ import {
   hasValidAlternativeAction,
   resolveSensationLocation,
 } from "./liveEventAdapter.ts";
-import { getAvailableLiveTriggers, resolveTargetLimitingBelief } from "../arc/arcEngine.ts";
 import { DEFERRAL_OPTIONS, scheduleFutureSuccessFocus } from "../data/reminders.ts";
-import type { DeferralOption } from "../data/reminders.ts";
 import { ArcLiveRenderer } from "./ArcLiveRenderer.tsx";
 import { ActionScreen, SuccessFocusScreen } from "./screens.tsx";
 

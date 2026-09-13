@@ -14,8 +14,7 @@ import {
   upsertPersonalDevelopmentProgram,
 } from "../data/storage.ts";
 import { createPersonalDevelopmentProgram, findProgramsForProtocol, resolveCompatibleMiniArc } from "../arc/personalDevelopmentProgram.ts";
-import type { PersonalDevelopmentFourWeekProgram } from "../arc/types.ts";
-import type { PersonalDevelopmentProtocolKind } from "../arc/types.ts";
+import type { PersonalDevelopmentFourWeekProgram, PersonalDevelopmentProtocolKind } from "../arc/types.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 
 interface ProtocolOption {
