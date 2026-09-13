@@ -387,3 +387,71 @@ export function resolveWeekReminderFireAt(week: ArcGoalProgramWeek, now: Date = 
   fireAt.setHours(WEEK_REMINDER_HOUR, 0, 0, 0);
   return fireAt.getTime() > now.getTime() ? fireAt : null;
 }
+
+// ---------------------------------------------------------------------------
+// ARC Goal four-week correction: Week 1's own OPTIONAL internal-support
+// step (spec section 2, "ask whether internal support is currently
+// needed"), inserted BEFORE the mandatory full Identity Extension. Pure
+// routing logic only -- never converts/duplicates an UrgeArc/ThoughtArc/
+// PresenceArc/BeliefArc into a fake ArcBuild; each of the 4 non-state
+// kinds routes to its OWN real standalone LIVE screen (already mandatory-
+// routes into Identity Extension via its own `goalId` param, see each
+// screen's own Phase 8 doc), with `mode: "full"` -- Week 1 is explicitly
+// FULL-only, never Mini. "state" is the one kind still routed through
+// the general-purpose /live screen (LiveSessionScreen.tsx), which gained
+// its own `thenIdentityGoalId` param for exactly this purpose -- see that
+// screen's own doc for why this is a SEPARATE param from fourWeekGoalId
+// (whose existing "return straight to the dashboard" behavior for the
+// goal's own identity build is completely unchanged by this correction).
+// ---------------------------------------------------------------------------
+
+export type ArcGoalInternalSupportKind = "state" | "urge" | "thought" | "presence" | "belief";
+
+export const ARC_GOAL_WEEK1_SUPPORT_QUESTION = "האם יש כרגע מצב פנימי, דחף, מחשבה או אמונה שצריך לעבוד עליהם לפני הפעולה?";
+
+export interface ArcGoalInternalSupportKindOption {
+  value: ArcGoalInternalSupportKind;
+  label: string;
+}
+
+/** The 5 Week-1 internal-support choices -- "no internal support currently needed" is offered as its own separate button by the driving screen, never a 6th value here (there is nothing to route to for "none"). */
+export function getArcGoalInternalSupportKindOptions(): ArcGoalInternalSupportKindOption[] {
+  return [
+    { value: "state", label: "מצב פנימי (ARC State)" },
+    { value: "urge", label: "דחף (ARC Urge)" },
+    { value: "thought", label: "מחשבה (ARC Thought)" },
+    { value: "presence", label: "נוכחות (ARC Presence)" },
+    { value: "belief", label: "אמונה (ARC Belief)" },
+  ];
+}
+
+export interface ArcGoalWeek1SupportRoute {
+  pathname: string;
+  params: Record<string, string>;
+}
+
+const ARC_GOAL_INTERNAL_SUPPORT_LIVE_ROUTES: Record<Exclude<ArcGoalInternalSupportKind, "state">, string> = {
+  urge: "/urge-arcs/live/[id]",
+  thought: "/thought-arcs/live/[id]",
+  presence: "/presence-arcs/live/[id]",
+  belief: "/belief-arcs/live/[id]",
+};
+
+/**
+ * Resolves the route for Week 1's chosen internal-support protocol --
+ * always the FULL version (spec: "optional selected Full ARC support
+ * protocol"), always continuing mandatorily into Identity Extension on
+ * completion, never a direct return to the dashboard (the trainee must
+ * still complete the mandatory identity step).
+ */
+export function resolveArcGoalInternalSupportRoute(goalId: string, kind: ArcGoalInternalSupportKind, protocolId: string): ArcGoalWeek1SupportRoute {
+  if (kind === "state") {
+    return { pathname: "/live", params: { buildId: protocolId, thenIdentityGoalId: goalId } };
+  }
+  return { pathname: ARC_GOAL_INTERNAL_SUPPORT_LIVE_ROUTES[kind], params: { id: protocolId, goalId, mode: "full" } };
+}
+
+/** Week 1's own "no internal support needed" answer (or the automatic continuation once a chosen support protocol finishes) -- always the mandatory full Identity Extension, never skipped, never the Personal Development identity-skip question. */
+export function resolveArcGoalIdentityExtensionRoute(goalId: string): ArcGoalWeek1SupportRoute {
+  return { pathname: "/identity-extension/live", params: { track: "goal_achievement", goalId } };
+}

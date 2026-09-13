@@ -111,6 +111,7 @@ export default function LiveSessionScreen() {
     fourWeekWeek: fourWeekWeekParam,
     pdProgramId: pdProgramIdParam,
     pdWeek: pdWeekParam,
+    thenIdentityGoalId: thenIdentityGoalIdParam,
   } = useLocalSearchParams<{
     routineId?: string;
     buildId?: string;
@@ -118,6 +119,7 @@ export default function LiveSessionScreen() {
     fourWeekWeek?: string;
     pdProgramId?: string;
     pdWeek?: string;
+    thenIdentityGoalId?: string;
   }>();
   const routineId = typeof routineIdParam === "string" ? routineIdParam : null;
   const buildId = typeof buildIdParam === "string" ? buildIdParam : null;
@@ -144,6 +146,26 @@ export default function LiveSessionScreen() {
    */
   const fourWeekGoalId = typeof fourWeekGoalIdParam === "string" ? fourWeekGoalIdParam : null;
   const fourWeekWeek = typeof fourWeekWeekParam === "string" ? fourWeekWeekParam : null;
+  /**
+   * ARC Goal four-week correction: set ONLY by
+   * live/ArcGoalFourWeekDashboardScreen.tsx's own Week 1 OPTIONAL
+   * internal-support launch, when the trainee picked "state" as their
+   * current need -- a DIFFERENT ArcBuild from the goal's own
+   * identityProtocolId (never the same run fourWeekGoalId above already
+   * covers). Deliberately its own separate param, never reusing/
+   * repurposing fourWeekGoalId (whose existing "return straight to the
+   * dashboard" behavior -- Week 1's own direct identity run, Week 2's
+   * "אני צריך עזרה נוספת" fallback, and the always-available "אני צריך
+   * עזרה מ-ARCHI" button -- is preserved completely unchanged). On
+   * completion, mandatorily continues into the shared Identity Extension
+   * engine (arc/identityExtension.ts, track "goal_achievement") exactly
+   * like the standalone Urge/Thought/Presence/Belief LIVE screens
+   * already do for their own `goalId` param -- never the optional
+   * Personal Development offer, and never a return to the dashboard
+   * directly (Identity Extension's own returnAfterExit already routes
+   * back there once it finishes).
+   */
+  const thenIdentityGoalId = typeof thenIdentityGoalIdParam === "string" ? thenIdentityGoalIdParam : null;
   /**
    * ARC Builds task: LIVE now selects and runs any saved ArcBuild --
    * resolved from the buildId route param when present, auto-picked
@@ -927,8 +949,26 @@ export default function LiveSessionScreen() {
           onGratitudeAndLearningContinue={() => commitAdvance(session)}
           onCompletedActionImageryContinue={() => commitAdvance(applyCompletedActionImageryFinished(session))}
           onImprovedActionImageryContinue={() => commitAdvance(applyImprovedActionImageryFinished(session))}
-          restartLabel={routine ? "המשך להתמקדות בהצלחה" : fourWeekGoalId ? "לחזור לתוכנית ארבעת השבועות" : pdProgramId ? "לחזור לתוכנית ההתפתחות האישית" : undefined}
-          onRestart={fourWeekGoalId && !routine ? returnToFourWeekProgram : pdProgramId && !routine ? returnToPersonalDevelopmentProgram : restart}
+          restartLabel={
+            routine
+              ? "המשך להתמקדות בהצלחה"
+              : thenIdentityGoalId
+                ? "המשך לבניית הזהות ולפעולה"
+                : fourWeekGoalId
+                  ? "לחזור לתוכנית ארבעת השבועות"
+                  : pdProgramId
+                    ? "לחזור לתוכנית ההתפתחות האישית"
+                    : undefined
+          }
+          onRestart={
+            thenIdentityGoalId && !routine
+              ? () => router.replace({ pathname: "/identity-extension/live", params: { track: "goal_achievement", goalId: thenIdentityGoalId } })
+              : fourWeekGoalId && !routine
+                ? returnToFourWeekProgram
+                : pdProgramId && !routine
+                  ? returnToPersonalDevelopmentProgram
+                  : restart
+          }
         />
         {/*
           Phase 8 Part 2 (Identity Extension), Personal Development
@@ -944,7 +984,7 @@ export default function LiveSessionScreen() {
           four-week-program-launched session -- that track's own identity
           continuation stays optional, unlike ArcGoal's mandatory one.
         */}
-        {stage === "complete" && !routine && !fourWeekGoalId && (
+        {stage === "complete" && !routine && !fourWeekGoalId && !thenIdentityGoalId && (
           <Pressable
             style={[styles.pickerButton, styles.identityExtensionOfferButton]}
             onPress={() =>

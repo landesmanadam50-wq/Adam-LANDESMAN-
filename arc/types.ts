@@ -1546,7 +1546,21 @@ export interface ArcGoalWeekDateExtension {
  */
 export interface ArcGoalWeekPracticeRecord {
   id: string;
-  kind: "full_arc" | "arc_link" | "mini_arc" | "mini_archi_link" | "mini_arc_link" | "identity_recall" | "action" | "archi_support";
+  kind:
+    | "full_arc"
+    | "arc_link"
+    | "mini_arc"
+    | "mini_archi_link"
+    | "mini_arc_link"
+    | "identity_recall"
+    | "action"
+    | "archi_support"
+    /** ARC Goal four-week correction: Week 1's optional internal-support protocol (State/Urge/Thought/Presence/Belief) completed, before Identity Extension -- distinct from "full_arc" (which always meant the goal's OWN identity build). */
+    | "internal_support"
+    /** ARC Goal four-week correction: the mandatory full Identity Extension (arc/identityExtension.ts) reaching a REAL completion (never scheduled-only -- see live/IdentityExtensionScreen.tsx's own doc). */
+    | "identity_extension"
+    /** ARC Goal four-week correction: Weeks 2-3's own short Mini Identity sequence (arc/miniIdentity.ts) reaching a REAL completion. */
+    | "mini_identity";
   label: string;
   occurredAt: string;
 }
@@ -1924,8 +1938,45 @@ export interface ArcGoal {
   executionReturnContext?: ArcGoalExecutionReturnContext | null;
   /** Sub-goal execution task, spec section 7: set the moment the LAST ordered sub-goal completes and the whole ArcGoal transitions to phase "completed" -- never cleared afterward. null while still in progress or for a goal with no sub-goal system at all. */
   executionCompletedAt?: string | null;
+  /**
+   * ARC Goal four-week correction: optional, additive BUILD configuration
+   * for "Mini Identity" (arc/miniIdentity.ts) -- the short, learned
+   * identity sequence used inside Weeks 2-3 of the four-week program,
+   * distinct from the full shared Identity Extension (arc/identityExtension.ts).
+   * null/undefined (every goal saved before this field existed, and every
+   * new goal until the trainee explicitly customizes it) means Mini
+   * Identity derives every one of its own lines live from the SAME linked
+   * identity build (goal.identityProtocolId's own profile.identityEncoding/
+   * identityFutureOrientedMantra/identityAction) that the full Identity
+   * Extension already reads -- never a duplicated or invented identity.
+   * Each field here is an independent OVERRIDE only: setting one never
+   * requires or implies the others, and editing the full identity build
+   * afterward never silently overwrites a value the trainee explicitly
+   * set here (see arc/miniIdentity.ts's own resolveMiniIdentityContent).
+   */
+  miniIdentityConfig?: ArcGoalMiniIdentityConfig | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * ARC Goal four-week correction: see ArcGoal.miniIdentityConfig's own
+ * doc. Every field is an independent, optional override -- null means
+ * "inherit live from the full identity build," exactly like every other
+ * override-with-live-fallback field already in this codebase
+ * (ArcLink.futureMantraOverride, etc.).
+ */
+export interface ArcGoalMiniIdentityConfig {
+  /** Overrides identityEncoding.mantra (the Identity Mantra) for Mini Identity's own short recall step. */
+  identityMantraOverride: string | null;
+  /** The "one primary identity Encoding cue" (spec section 13) -- a short anchor phrase/action, distinct from the body-language cue below. Falls back to identityEncoding.bodySensationCue, then identityEncoding.breathCue, then "" when unset. */
+  encodingCueOverride: string | null;
+  /** Overrides identityEncoding.bodyLanguageCue for Mini Identity's own short body-language step. */
+  bodyLanguageCueOverride: string | null;
+  /** Overrides identityFutureOrientedMantra for Mini Identity's own Future Mantra step -- null falls back to the full identity's own Future Mantra field; when NEITHER is set, Mini Identity's Future Mantra step is skipped entirely (never re-shows the Identity Mantra under this heading -- see arc/miniIdentity.ts's own resolveGenuineFutureMantra). */
+  futureMantraOverride: string | null;
+  /** Short action-imagery duration (seconds) for Mini Identity's own "imagine beginning the action" step -- null uses arc/miniIdentity.ts's own safe default. */
+  actionImageryDurationSeconds: number | null;
 }
 
 /** Same stable-id-string pattern as generateArcBuildId. */
