@@ -1721,6 +1721,19 @@ export interface PersonalDevelopmentFourWeekProgram {
   protocolId: string;
   name: string;
   linkedMiniArcId: string | null;
+  /**
+   * Phase 9 correction: an optional, existing saved ArcLink (routineLinks.ts,
+   * protocolType "arc") this program's own "archi_link" task should reuse
+   * for its configured trigger/mode -- resolved via
+   * resolveCompatibleArcLinksForProtocol, never invented. null (the
+   * default, and every program saved before this field existed --
+   * normalizePersonalDevelopmentProgram backfills it) falls back to the
+   * screen's own generic/legacy trigger content, exactly as before this
+   * field existed.
+   */
+  arcLinkId: string | null;
+  /** Same as arcLinkId above, for this program's own "mini_link" task -- an existing saved ArcLink with protocolType "mini_arc" whose protocolId matches linkedMiniArcId. null falls back to the existing generic Mini Link content. */
+  miniArcLinkId: string | null;
   currentWeek: FourWeekProgramWeekNumber;
   weeks: [PersonalDevelopmentProgramWeek, PersonalDevelopmentProgramWeek, PersonalDevelopmentProgramWeek, PersonalDevelopmentProgramWeek];
   startedAt: string | null;

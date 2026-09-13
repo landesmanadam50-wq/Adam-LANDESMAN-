@@ -341,6 +341,18 @@ export default function ArcLinkScreen() {
     });
   }
 
+  /**
+   * Phase 9 correction: when this run was launched from the Personal
+   * Development dashboard's own "archi_link" task with a specific
+   * linked ArcLink (program.arcLinkId -- see
+   * arc/personalDevelopmentProgram.ts's resolvePersonalDevelopmentTaskRoute),
+   * pdProgramId/pdWeek arrive alongside linkId -- logs the SAME
+   * kind:"archi_link" practice finishLegacy below logs for the no-linkId
+   * path, then returns to the dashboard instead of router.back(). Never
+   * applies to the Routine-page Practice area's own plain use of this
+   * path (no pdProgramId there), and never touches the ArcLink's own
+   * completedPracticeDates tracking above, which stays exactly as it was.
+   */
   async function completePractice() {
     if (arcLink) {
       const today = todayLocalDateString();
@@ -352,6 +364,17 @@ export default function ArcLinkScreen() {
         updatedAt: new Date().toISOString(),
       };
       await upsertArcLink(updated);
+    }
+    if (typeof pdProgramId === "string") {
+      const program = await getPersonalDevelopmentProgram(pdProgramId);
+      if (program) {
+        const now = new Date().toISOString();
+        const week = (Number(pdWeek) || program.currentWeek) as FourWeekProgramWeekNumber;
+        const updatedProgram = clearPdReturnContext(addPdPracticeRecord(program, week, "archi_link", "ARCHI ARC Link", now));
+        await upsertPersonalDevelopmentProgram({ ...updatedProgram, updatedAt: now });
+      }
+      router.replace({ pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId } });
+      return;
     }
     router.back();
   }

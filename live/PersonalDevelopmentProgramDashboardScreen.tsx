@@ -3,22 +3,27 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 
-import { getPersonalDevelopmentProgram, loadMiniArcBuilds, upsertPersonalDevelopmentProgram } from "../data/storage.ts";
+import { getPersonalDevelopmentProgram, loadArcLinks, loadMiniArcBuilds, upsertPersonalDevelopmentProgram } from "../data/storage.ts";
 import {
   addPracticeRecord,
   isPastPlannedEndDate,
   isSpeedFluencyWeek,
   PERSONAL_DEVELOPMENT_WEEK_META,
   confirmWeekCompleteAndAdvance,
+  resolveCompatibleArcLinksForProtocol,
   resolveCurrentWeek,
+  resolvePersonalDevelopmentTaskRoute,
   resolvePersonalDevelopmentWeekPlan,
+  setArcLinkId,
   setLinkedMiniArc,
+  setMiniArcLinkId,
   setReturnContext,
 } from "../arc/personalDevelopmentProgram.ts";
 import type { PersonalDevelopmentTaskKind } from "../arc/personalDevelopmentProgram.ts";
 import { reconcilePersonalDevelopmentProgramWeekNotification } from "../data/personalDevelopmentProgramReminders.ts";
 import type { PersonalDevelopmentFourWeekProgram, PersonalDevelopmentProtocolKind } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
+import type { ArcLink } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 
 /**
@@ -57,6 +62,7 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
   const [status, setStatus] = useState<"loading" | "notFound" | "ready">("loading");
   const [program, setProgram] = useState<PersonalDevelopmentFourWeekProgram | null>(null);
   const [miniArcs, setMiniArcs] = useState<MiniArcBuild[]>([]);
+  const [arcLinks, setArcLinks] = useState<ArcLink[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [decisionOpen, setDecisionOpen] = useState(false);
   const [actionConfirmOpen, setActionConfirmOpen] = useState(false);
@@ -67,13 +73,14 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
       return;
     }
     try {
-      const [loadedProgram, allMiniArcs] = await Promise.all([getPersonalDevelopmentProgram(id), loadMiniArcBuilds()]);
+      const [loadedProgram, allMiniArcs, allArcLinks] = await Promise.all([getPersonalDevelopmentProgram(id), loadMiniArcBuilds(), loadArcLinks()]);
       if (!loadedProgram) {
         setStatus("notFound");
         return;
       }
       setProgram(loadedProgram);
       setMiniArcs(allMiniArcs);
+      setArcLinks(allArcLinks);
       setStatus("ready");
 
       const currentWeek = resolveCurrentWeek(loadedProgram);
@@ -135,6 +142,17 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
   const plan = resolvePersonalDevelopmentWeekPlan(currentWeek.weekNumber, program.protocolKind, hasMini);
   const speedFluency = isSpeedFluencyWeek(currentWeek.weekNumber);
 
+  // Requirement 2/7: existing saved ArcLink candidates for this exact
+  // protocol/Mini -- offered as a picker (never invented) so "archi_link"/
+  // "mini_link" can reuse a real configured trigger/mode instead of the
+  // generic fallback content; a missing candidate list is always a safe
+  // no-op (the existing generic Link content still works).
+  const linkedArcLink = program.arcLinkId ? arcLinks.find((l) => l.id === program.arcLinkId) ?? null : null;
+  const compatibleUnlinkedArcLinks =
+    program.protocolKind === "state" && !linkedArcLink ? resolveCompatibleArcLinksForProtocol("arc", program.protocolId, arcLinks) : [];
+  const linkedMiniArcLink = program.miniArcLinkId ? arcLinks.find((l) => l.id === program.miniArcLinkId) ?? null : null;
+  const compatibleUnlinkedMiniArcLinks = linkedMini && !linkedMiniArcLink ? resolveCompatibleArcLinksForProtocol("mini_arc", linkedMini.id, arcLinks) : [];
+
   function recordAndPersist(kind: "action", label: string) {
     if (!program) return;
     const now = new Date().toISOString();
@@ -143,44 +161,25 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
   }
 
   /**
-   * Resolves the launching route for one recommended/available task,
-   * saves the return context, and navigates -- the destination screen's
-   * own Phase 9 completion logic logs the correctly-kinded practice
-   * record and returns here (see this screen's own module doc).
+   * Resolves the launching route for one recommended/available task via
+   * arc/personalDevelopmentProgram.ts's own pure resolvePersonalDevelopmentTaskRoute
+   * (the single place that knows how each protocol kind's Full/Mini/Link
+   * task actually routes -- see that function's own doc), saves the
+   * return context, and navigates. A null result means nothing real
+   * exists yet to route to (e.g. "mini" with no linked Mini) -- handled
+   * safely by never navigating, never crashing (requirement 7); the
+   * dashboard's own "no Mini yet" card above is the setup path for that
+   * case. The destination screen's own Phase 9 completion logic logs the
+   * correctly-kinded practice record and returns here.
    */
   function launchTask(kind: PersonalDevelopmentTaskKind) {
     if (!program) return;
+    const route = resolvePersonalDevelopmentTaskRoute(program, kind, program.linkedMiniArcId);
+    if (!route) return;
     const now = new Date().toISOString();
     const label = TASK_LABELS[kind](speedFluency);
-    const updatedProgram = setReturnContext(program, program.currentWeek, label, now);
-    persist(updatedProgram);
-    const pdParams = { pdProgramId: program.id, pdWeek: String(program.currentWeek) };
-    const protocolId = program.protocolId;
-
-    if (kind === "full") {
-      if (program.protocolKind === "state") {
-        router.push({ pathname: "/live", params: { buildId: protocolId, ...pdParams } });
-      } else {
-        router.push({ pathname: PROTOCOL_LIVE_ROUTES[program.protocolKind], params: { id: protocolId, mode: "full", ...pdParams } });
-      }
-      return;
-    }
-    if (kind === "mini") {
-      if (program.protocolKind === "state" && linkedMini) {
-        router.push({ pathname: "/mini-arc/live/[id]", params: { id: linkedMini.id, ...pdParams } });
-      } else if (program.protocolKind !== "state") {
-        router.push({ pathname: PROTOCOL_LIVE_ROUTES[program.protocolKind], params: { id: protocolId, mode: "mini", ...pdParams } });
-      }
-      return;
-    }
-    if (kind === "archi_link" && program.protocolKind === "state") {
-      router.push({ pathname: "/arc-link/[id]", params: { id: protocolId, ...pdParams } });
-      return;
-    }
-    if (kind === "mini_link" && linkedMini) {
-      router.push({ pathname: "/mini-arc-link/[id]", params: { id: linkedMini.id, ...pdParams } });
-      return;
-    }
+    persist(setReturnContext(program, program.currentWeek, label, now));
+    router.push(route as Parameters<typeof router.push>[0]);
   }
 
   function confirmWeekComplete() {
@@ -245,6 +244,46 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
             <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.push("/mini-arc")}>
               <Text style={styles.secondaryButtonText}>+ יצירת ARC Mini חדש</Text>
             </Pressable>
+          </View>
+        )}
+
+        {compatibleUnlinkedArcLinks.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.hint}>יש ARC Link שמור עבור פרוטוקול זה -- אפשר לקשר אותו כדי לתרגל עם הטריגר וההגדרות השמורות שלו.</Text>
+            <View style={styles.chipColumn}>
+              {compatibleUnlinkedArcLinks.map((link) => (
+                <Pressable
+                  key={link.id}
+                  style={styles.chip}
+                  onPress={() => {
+                    if (!program) return;
+                    persist({ ...setArcLinkId(program, link.id), updatedAt: new Date().toISOString() });
+                  }}
+                >
+                  <Text style={styles.chipText}>{`ARC Link (${link.id})`}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {compatibleUnlinkedMiniArcLinks.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.hint}>יש Mini ARC Link שמור עבור ה-Mini המקושר -- אפשר לקשר אותו כדי לתרגל עם הטריגר וההגדרות השמורות שלו.</Text>
+            <View style={styles.chipColumn}>
+              {compatibleUnlinkedMiniArcLinks.map((link) => (
+                <Pressable
+                  key={link.id}
+                  style={styles.chip}
+                  onPress={() => {
+                    if (!program) return;
+                    persist({ ...setMiniArcLinkId(program, link.id), updatedAt: new Date().toISOString() });
+                  }}
+                >
+                  <Text style={styles.chipText}>{`Mini ARC Link (${link.id})`}</Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
         )}
 
@@ -332,14 +371,6 @@ const PROTOCOL_KIND_LABELS: Record<PersonalDevelopmentProtocolKind, string> = {
   thought: "ARC Thought",
   presence: "ARC Presence",
   belief: "ARC Belief",
-};
-
-/** "state" resolves its own routes inline (launchTask above) -- this map only ever serves the other 4 kinds, whose combined LIVE screens share this exact path shape. */
-const PROTOCOL_LIVE_ROUTES: Record<Exclude<PersonalDevelopmentProtocolKind, "state">, "/urge-arcs/live/[id]" | "/thought-arcs/live/[id]" | "/presence-arcs/live/[id]" | "/belief-arcs/live/[id]"> = {
-  urge: "/urge-arcs/live/[id]",
-  thought: "/thought-arcs/live/[id]",
-  presence: "/presence-arcs/live/[id]",
-  belief: "/belief-arcs/live/[id]",
 };
 
 const TASK_LABELS: Record<PersonalDevelopmentTaskKind, (speedFluency: boolean) => string> = {

@@ -10,19 +10,49 @@ import {
   findProgramsForProtocol,
   isPastPlannedEndDate,
   isSpeedFluencyWeek,
+  normalizePersonalDevelopmentProgram,
   PERSONAL_DEVELOPMENT_WEEK_META,
   PERSONAL_DEVELOPMENT_WEEK_NUMBERS,
+  resolveArcGoalWeeklyProtocolReference,
+  resolveCompatibleArcLinksForProtocol,
   resolveCompatibleMiniArc,
   resolveCurrentWeek,
+  resolvePersonalDevelopmentTaskRoute,
   resolvePersonalDevelopmentWeekPlan,
+  resolvePersonalDevelopmentWeeklyProtocolReference,
   resolveWeek,
   resolveWeekReminderFireAt,
+  setArcLinkId,
   setLinkedMiniArc,
+  setMiniArcLinkId,
   setReturnContext,
   upsertPersonalDevelopmentProgramInList,
 } from "./personalDevelopmentProgram.ts";
-import type { FourWeekProgramWeekNumber, PersonalDevelopmentProtocolKind } from "./types.ts";
+import { createFourWeekProgram } from "./fourWeekProgram.ts";
+import { createEmptyArcGoal } from "./types.ts";
+import { createEmptyArcGoalSubGoal } from "./subGoalExecution.ts";
+import type { ArcGoal, FourWeekProgramWeekNumber, PersonalDevelopmentProtocolKind } from "./types.ts";
 import type { MiniArcBuild } from "./miniArc.ts";
+import type { ArcLink } from "./routineLinks.ts";
+
+function arcLink(overrides: Partial<ArcLink> = {}): ArcLink {
+  return {
+    id: "link-1",
+    protocolId: "protocol-1",
+    protocolType: "arc",
+    weeklyActionId: "weekly-1",
+    triggerId: "trigger-1",
+    mode: "with_archi",
+    practiceDays: [],
+    practiceTime: null,
+    weeklyTarget: null,
+    completedPracticeDates: [],
+    enabled: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
 
 function miniArc(overrides: Partial<MiniArcBuild> = {}): MiniArcBuild {
   return {
@@ -340,3 +370,227 @@ test("confirming Week 4 marks the whole program completedAt, and currentWeek sta
 // this module intentionally builds no second copy of that logic, so no
 // second copy of those tests belongs here either.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Phase 9 correction (requirement 8): resolvePersonalDevelopmentTaskRoute
+// proves, for every one of the 5 protocol kinds, that "full"/"mini"/
+// Link tasks open the correct real screen -- never a fake/converted
+// ArcBuild for Urge/Thought/Presence/Belief (each of those 4 keeps
+// loading its OWN real record type directly via its own combined LIVE
+// screen's `id` param, exactly as it already does outside this program).
+// ---------------------------------------------------------------------------
+
+test("resolvePersonalDevelopmentTaskRoute: 'full' opens the correct real screen for every protocol kind", () => {
+  const cases: [PersonalDevelopmentProtocolKind, string][] = [
+    ["state", "/live"],
+    ["urge", "/urge-arcs/live/[id]"],
+    ["thought", "/thought-arcs/live/[id]"],
+    ["presence", "/presence-arcs/live/[id]"],
+    ["belief", "/belief-arcs/live/[id]"],
+  ];
+  for (const [kind, expectedPathname] of cases) {
+    const program = createPersonalDevelopmentProgram(kind, `${kind}-1`, kind, "2026-01-05", null, "2026-01-01T00:00:00.000Z");
+    const route = resolvePersonalDevelopmentTaskRoute(program, "full", null);
+    assert.ok(route, `expected a route for kind ${kind}`);
+    assert.equal(route!.pathname, expectedPathname);
+    if (kind === "state") {
+      assert.equal(route!.params.buildId, `${kind}-1`);
+    } else {
+      assert.equal(route!.params.id, `${kind}-1`);
+      assert.equal(route!.params.mode, "full");
+    }
+    assert.equal(route!.params.pdProgramId, program.id);
+    assert.equal(route!.params.pdWeek, "1");
+  }
+});
+
+test("resolvePersonalDevelopmentTaskRoute: 'mini' opens the correct real screen for every protocol kind, using the linked Mini's id for 'state' and the protocol's own id + mode='mini' for the other 4", () => {
+  const cases: [PersonalDevelopmentProtocolKind, string][] = [
+    ["state", "/mini-arc/live/[id]"],
+    ["urge", "/urge-arcs/live/[id]"],
+    ["thought", "/thought-arcs/live/[id]"],
+    ["presence", "/presence-arcs/live/[id]"],
+    ["belief", "/belief-arcs/live/[id]"],
+  ];
+  for (const [kind, expectedPathname] of cases) {
+    const program = createPersonalDevelopmentProgram(kind, `${kind}-1`, kind, "2026-01-05", "mini-1", "2026-01-01T00:00:00.000Z");
+    const route = resolvePersonalDevelopmentTaskRoute(program, "mini", "mini-1");
+    assert.ok(route, `expected a route for kind ${kind}`);
+    assert.equal(route!.pathname, expectedPathname);
+    if (kind === "state") {
+      assert.equal(route!.params.id, "mini-1");
+    } else {
+      assert.equal(route!.params.id, `${kind}-1`);
+      assert.equal(route!.params.mode, "mini");
+    }
+  }
+});
+
+test("resolvePersonalDevelopmentTaskRoute: 'mini' is safely null (never a crash, never invented) when no Mini is linked, for every protocol kind", () => {
+  const kinds: PersonalDevelopmentProtocolKind[] = ["state", "urge", "thought", "presence", "belief"];
+  for (const kind of kinds) {
+    const program = createPersonalDevelopmentProgram(kind, `${kind}-1`, kind, "2026-01-05", null, "2026-01-01T00:00:00.000Z");
+    assert.equal(resolvePersonalDevelopmentTaskRoute(program, "mini", null), null);
+  }
+});
+
+test("resolvePersonalDevelopmentTaskRoute: 'archi_link' opens /arc-link/[id] for 'state' and is safely null for the other 4 kinds", () => {
+  const stateProgram = createPersonalDevelopmentProgram("state", "state-1", "מצב", "2026-01-05", null, "2026-01-01T00:00:00.000Z");
+  const stateRoute = resolvePersonalDevelopmentTaskRoute(stateProgram, "archi_link", null);
+  assert.ok(stateRoute);
+  assert.equal(stateRoute!.pathname, "/arc-link/[id]");
+  assert.equal(stateRoute!.params.id, "state-1");
+
+  const nonStateKinds: PersonalDevelopmentProtocolKind[] = ["urge", "thought", "presence", "belief"];
+  for (const kind of nonStateKinds) {
+    const program = createPersonalDevelopmentProgram(kind, `${kind}-1`, kind, "2026-01-05", null, "2026-01-01T00:00:00.000Z");
+    assert.equal(resolvePersonalDevelopmentTaskRoute(program, "archi_link", null), null);
+  }
+});
+
+test("resolvePersonalDevelopmentTaskRoute: 'archi_link' includes linkId only when arcLinkId is set", () => {
+  let program = createPersonalDevelopmentProgram("state", "state-1", "מצב", "2026-01-05", null, "2026-01-01T00:00:00.000Z");
+  assert.equal(resolvePersonalDevelopmentTaskRoute(program, "archi_link", null)!.params.linkId, undefined);
+  program = setArcLinkId(program, "arclink-1");
+  assert.equal(resolvePersonalDevelopmentTaskRoute(program, "archi_link", null)!.params.linkId, "arclink-1");
+});
+
+test("resolvePersonalDevelopmentTaskRoute: 'mini_link' opens /mini-arc-link/[id] with the linked Mini's own id, for every protocol kind, and is safely null with no linked Mini", () => {
+  const kinds: PersonalDevelopmentProtocolKind[] = ["state", "urge", "thought", "presence", "belief"];
+  for (const kind of kinds) {
+    let program = createPersonalDevelopmentProgram(kind, `${kind}-1`, kind, "2026-01-05", "mini-1", "2026-01-01T00:00:00.000Z");
+    const route = resolvePersonalDevelopmentTaskRoute(program, "mini_link", "mini-1");
+    assert.ok(route, `expected a mini_link route for kind ${kind}`);
+    assert.equal(route!.pathname, "/mini-arc-link/[id]");
+    assert.equal(route!.params.id, "mini-1");
+    assert.equal(route!.params.linkId, undefined);
+
+    program = setMiniArcLinkId(program, "minilink-1");
+    assert.equal(resolvePersonalDevelopmentTaskRoute(program, "mini_link", "mini-1")!.params.linkId, "minilink-1");
+
+    const noMiniProgram = createPersonalDevelopmentProgram(kind, `${kind}-2`, kind, "2026-01-05", null, "2026-01-01T00:00:00.000Z");
+    assert.equal(resolvePersonalDevelopmentTaskRoute(noMiniProgram, "mini_link", null), null);
+  }
+});
+
+test("resolvePersonalDevelopmentTaskRoute: 'action_independent' is never a route", () => {
+  const program = createPersonalDevelopmentProgram("belief", "belief-1", "אמונה", "2026-01-05", null, "2026-01-01T00:00:00.000Z");
+  assert.equal(resolvePersonalDevelopmentTaskRoute(program, "action_independent", null), null);
+});
+
+// ---------------------------------------------------------------------------
+// Backward compatibility (requirement 6): a program saved before
+// arcLinkId/miniArcLinkId existed normalizes safely, without touching any
+// other field (dates, reminders, completion, practice records).
+// ---------------------------------------------------------------------------
+
+test("normalizePersonalDevelopmentProgram backfills arcLinkId/miniArcLinkId to null for a legacy program missing those keys, and never touches any other field", () => {
+  const program = createPersonalDevelopmentProgram("presence", "presence-1", "נוכחות", "2026-01-05", "mini-1", "2026-01-01T00:00:00.000Z");
+  const legacyRaw = { ...program } as Record<string, unknown>;
+  delete legacyRaw.arcLinkId;
+  delete legacyRaw.miniArcLinkId;
+  const normalized = normalizePersonalDevelopmentProgram(legacyRaw as unknown as typeof program);
+  assert.equal(normalized.arcLinkId, null);
+  assert.equal(normalized.miniArcLinkId, null);
+  assert.equal(normalized.protocolId, program.protocolId);
+  assert.equal(normalized.linkedMiniArcId, program.linkedMiniArcId);
+  assert.deepEqual(normalized.weeks, program.weeks);
+});
+
+test("normalizePersonalDevelopmentProgram preserves an already-present arcLinkId/miniArcLinkId unchanged", () => {
+  let program = createPersonalDevelopmentProgram("presence", "presence-1", "נוכחות", "2026-01-05", "mini-1", "2026-01-01T00:00:00.000Z");
+  program = setArcLinkId(program, "arclink-9");
+  program = setMiniArcLinkId(program, "minilink-9");
+  const normalized = normalizePersonalDevelopmentProgram(program);
+  assert.equal(normalized.arcLinkId, "arclink-9");
+  assert.equal(normalized.miniArcLinkId, "minilink-9");
+});
+
+// ---------------------------------------------------------------------------
+// Existing ArcLink linking (requirement 2/7): surfaces real candidates,
+// never invents one.
+// ---------------------------------------------------------------------------
+
+test("resolveCompatibleArcLinksForProtocol finds only ArcLinks matching both protocolType and protocolId", () => {
+  const links = [
+    arcLink({ id: "a", protocolType: "arc", protocolId: "state-1" }),
+    arcLink({ id: "b", protocolType: "mini_arc", protocolId: "mini-1" }),
+    arcLink({ id: "c", protocolType: "arc", protocolId: "state-2" }),
+  ];
+  assert.deepEqual(resolveCompatibleArcLinksForProtocol("arc", "state-1", links).map((l) => l.id), ["a"]);
+  assert.deepEqual(resolveCompatibleArcLinksForProtocol("mini_arc", "mini-1", links).map((l) => l.id), ["b"]);
+  assert.deepEqual(resolveCompatibleArcLinksForProtocol("arc", "no-such-id", links), []);
+});
+
+test("setArcLinkId/setMiniArcLinkId update only their own field", () => {
+  const program = createPersonalDevelopmentProgram("state", "state-1", "מצב", "2026-01-05", null, "2026-01-01T00:00:00.000Z");
+  const withArcLink = setArcLinkId(program, "arclink-1");
+  assert.equal(withArcLink.arcLinkId, "arclink-1");
+  assert.equal(withArcLink.miniArcLinkId, null);
+  const withBoth = setMiniArcLinkId(withArcLink, "minilink-1");
+  assert.equal(withBoth.arcLinkId, "arclink-1");
+  assert.equal(withBoth.miniArcLinkId, "minilink-1");
+});
+
+// ---------------------------------------------------------------------------
+// Normalized weekly protocol reference (requirement 2): the same shape
+// for both tracks, without ArcGoal's own four-week program ever being
+// modified or duplicated -- resolveArcGoalWeeklyProtocolReference only
+// ever READS goal.fourWeekProgram/goal.subGoals.
+// ---------------------------------------------------------------------------
+
+test("resolvePersonalDevelopmentWeeklyProtocolReference projects a PD program correctly, with track 'personal_development' and no ArcGoal fields", () => {
+  let program = createPersonalDevelopmentProgram("urge", "urge-1", "הדחף שלי", "2026-01-05", "mini-1", "2026-01-01T00:00:00.000Z");
+  program = setArcLinkId(program, "arclink-1");
+  program = setMiniArcLinkId(program, "minilink-1");
+  const ref = resolvePersonalDevelopmentWeeklyProtocolReference(program);
+  assert.equal(ref.track, "personal_development");
+  assert.equal(ref.protocolKind, "urge");
+  assert.equal(ref.protocolId, "urge-1");
+  assert.equal(ref.linkedMiniArcId, "mini-1");
+  assert.equal(ref.arcLinkId, "arclink-1");
+  assert.equal(ref.miniArcLinkId, "minilink-1");
+  assert.equal(ref.arcGoalId, null);
+  assert.equal(ref.activeSubGoalId, null);
+  assert.equal(ref.name, "הדחף שלי");
+  assert.equal(ref.currentWeek, 1);
+  assert.equal(ref.weekStatus, "active");
+  assert.equal(ref.completedAt, null);
+});
+
+function goalWithFourWeekProgram(): ArcGoal {
+  const goal = createEmptyArcGoal("goal-1", "המטרה שלי", "2026-01-01T00:00:00.000Z");
+  goal.identityProtocolId = "identity-build-1";
+  goal.fourWeekProgram = { ...createFourWeekProgram("2026-01-05"), enabled: true };
+  const subGoal = createEmptyArcGoalSubGoal("goal-1", 0, "2026-01-01T00:00:00.000Z");
+  subGoal.status = "active";
+  goal.subGoals = [subGoal];
+  return goal;
+}
+
+test("resolveArcGoalWeeklyProtocolReference projects an ArcGoal's own four-week program correctly, with track 'goal_achievement', protocolKind 'state', and the active sub-goal id -- never touching arc/fourWeekProgram.ts's own logic", () => {
+  const goal = goalWithFourWeekProgram();
+  const ref = resolveArcGoalWeeklyProtocolReference(goal);
+  assert.ok(ref);
+  assert.equal(ref!.track, "goal_achievement");
+  assert.equal(ref!.protocolKind, "state");
+  assert.equal(ref!.protocolId, "identity-build-1");
+  assert.equal(ref!.arcGoalId, "goal-1");
+  assert.equal(ref!.activeSubGoalId, goal.subGoals![0].id);
+  assert.equal(ref!.name, "המטרה שלי");
+  assert.equal(ref!.currentWeek, 1);
+  assert.equal(ref!.weekStatus, "active");
+});
+
+test("resolveArcGoalWeeklyProtocolReference returns null when the goal has no enabled four-week program or no identityProtocolId", () => {
+  const bare = createEmptyArcGoal("goal-2", "מטרה ריקה", "2026-01-01T00:00:00.000Z");
+  assert.equal(resolveArcGoalWeeklyProtocolReference(bare), null);
+
+  const disabled = goalWithFourWeekProgram();
+  disabled.fourWeekProgram = { ...disabled.fourWeekProgram!, enabled: false };
+  assert.equal(resolveArcGoalWeeklyProtocolReference(disabled), null);
+
+  const noIdentity = goalWithFourWeekProgram();
+  noIdentity.identityProtocolId = null;
+  assert.equal(resolveArcGoalWeeklyProtocolReference(noIdentity), null);
+});

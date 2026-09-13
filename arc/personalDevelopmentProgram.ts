@@ -1,7 +1,9 @@
 import { addCalendarDays, isValidCalendarDateString } from "../program/dateUtils.ts";
 import { generatePersonalDevelopmentProgramId, generatePersonalDevelopmentWeekPracticeRecordId } from "./types.ts";
 import type {
+  ArcGoal,
   FourWeekProgramWeekNumber,
+  FourWeekProgramWeekStatus,
   PersonalDevelopmentFourWeekProgram,
   PersonalDevelopmentProgramWeek,
   PersonalDevelopmentProtocolKind,
@@ -9,6 +11,8 @@ import type {
   PersonalDevelopmentWeekPracticeRecord,
 } from "./types.ts";
 import type { MiniArcBuild } from "./miniArc.ts";
+import type { ArcLink } from "./routineLinks.ts";
+import { resolveActiveSubGoal } from "./subGoalExecution.ts";
 
 /**
  * arc/personalDevelopmentProgram.ts
@@ -110,6 +114,8 @@ export function createPersonalDevelopmentProgram(
     protocolId,
     name,
     linkedMiniArcId,
+    arcLinkId: null,
+    miniArcLinkId: null,
     currentWeek: 1,
     weeks: [
       createProgramWeek(1, week1StartDate, week1End),
@@ -146,6 +152,52 @@ export function resolveCompatibleMiniArc(protocolKind: PersonalDevelopmentProtoc
 
 export function setLinkedMiniArc(program: PersonalDevelopmentFourWeekProgram, miniArcId: string | null): PersonalDevelopmentFourWeekProgram {
   return { ...program, linkedMiniArcId: miniArcId };
+}
+
+/**
+ * Phase 9 correction: backfills a program loaded from storage that
+ * predates arcLinkId/miniArcLinkId (both default to null, meaning "use
+ * the existing generic trigger content" -- exactly this program's own
+ * behavior before those fields existed). Object-spread order matters:
+ * defaults first, then the loaded program's own fields override them,
+ * so an ALREADY-present value (including one explicitly set to null) is
+ * never clobbered -- only a genuinely missing key falls back to the
+ * default. Called once by data/storage.ts's loadPersonalDevelopmentPrograms
+ * on every parsed entry; never touches dates, reminders, week status, or
+ * practice records, which every prior program already had in full.
+ */
+export function normalizePersonalDevelopmentProgram(program: PersonalDevelopmentFourWeekProgram): PersonalDevelopmentFourWeekProgram {
+  // `program` may be a legacy JSON object parsed before these two fields
+  // existed -- accessed as `unknown` first so a genuinely-missing key
+  // (not merely `null`) still safely defaults, without TypeScript
+  // treating this as a same-field-twice mistake (both fields are
+  // declared required on the type, so a plain object-spread default
+  // would never type-check even though it's exactly correct at runtime).
+  const raw = program as unknown as Partial<PersonalDevelopmentFourWeekProgram>;
+  return { ...program, arcLinkId: raw.arcLinkId ?? null, miniArcLinkId: raw.miniArcLinkId ?? null };
+}
+
+export function setArcLinkId(program: PersonalDevelopmentFourWeekProgram, arcLinkId: string | null): PersonalDevelopmentFourWeekProgram {
+  return { ...program, arcLinkId };
+}
+
+export function setMiniArcLinkId(program: PersonalDevelopmentFourWeekProgram, miniArcLinkId: string | null): PersonalDevelopmentFourWeekProgram {
+  return { ...program, miniArcLinkId };
+}
+
+/**
+ * Every existing saved ArcLink (routineLinks.ts) matching this exact
+ * protocolType+protocolId -- a driving screen offers these as a
+ * link-existing-ArcLink picker (mirroring resolveCompatibleMiniArc's own
+ * "surface real candidates, invent nothing" shape) for arcLinkId/
+ * miniArcLinkId above. protocolType "arc" targets an ArcBuild/UrgeArc/
+ * ThoughtArc/PresenceArc/BeliefArc id directly (the "archi_link" task,
+ * state-only); "mini_arc" targets a MiniArcBuild id (the "mini_link"
+ * task, every protocol kind). Never filters by ArcLink.protocolId
+ * meaning anything else -- see ArcLink's own doc in arc/routineLinks.ts.
+ */
+export function resolveCompatibleArcLinksForProtocol(protocolType: "arc" | "mini_arc", protocolId: string, allLinks: ArcLink[]): ArcLink[] {
+  return allLinks.filter((link) => link.protocolType === protocolType && link.protocolId === protocolId);
 }
 
 export function addPracticeRecord(
@@ -303,6 +355,164 @@ export function resolvePersonalDevelopmentWeekPlan(
  */
 export function isSpeedFluencyWeek(weekNumber: FourWeekProgramWeekNumber): boolean {
   return weekNumber >= 3;
+}
+
+// ---------------------------------------------------------------------------
+// Task-kind routing (Phase 9 correction, spec requirement 3/8): the ONE
+// place that decides which real, existing screen a weekly task opens for
+// EVERY protocol kind -- moved out of live/PersonalDevelopmentProgramDashboardScreen.tsx
+// into this pure, storage/React-free module so it can be unit-tested
+// directly (a React Native screen component cannot be exercised by this
+// repo's node --test suite -- see arc/miniArcLink.ts/arc/arcLink.ts for
+// the same "routing decision lives in a pure module, the screen is a
+// thin renderer" precedent already used everywhere else in this app).
+// Never converts/duplicates an UrgeArc/ThoughtArc/PresenceArc/BeliefArc
+// into a fake ArcBuild -- each of the 4 non-state kinds' own combined
+// LIVE screen (live/UrgeArcLiveScreen.tsx etc.) already loads its OWN
+// real record type directly via its own `id` route param.
+// ---------------------------------------------------------------------------
+
+/** The 4 non-state kinds' own combined Full/Mini LIVE screen route -- "state" resolves its own routes inline below (a different shape: /live and /mini-arc/live/[id], never this map). */
+const PROTOCOL_LIVE_ROUTE_PATHS: Record<Exclude<PersonalDevelopmentProtocolKind, "state">, string> = {
+  urge: "/urge-arcs/live/[id]",
+  thought: "/thought-arcs/live/[id]",
+  presence: "/presence-arcs/live/[id]",
+  belief: "/belief-arcs/live/[id]",
+};
+
+export interface PersonalDevelopmentTaskRoute {
+  pathname: string;
+  params: Record<string, string>;
+}
+
+/**
+ * Resolves the real screen+params a weekly task should open, for EVERY
+ * protocol kind -- returns null (never a crash, never invented content)
+ * when the task has nothing real to route to yet: "mini"/"mini_link"
+ * with no linked Mini, "archi_link" for a non-state kind (see
+ * resolvePersonalDevelopmentWeekPlan's own doc on why -- unchanged by
+ * this correction), or "action_independent" (never a route -- answered
+ * locally by the dashboard's own confirmation, exactly as before).
+ * Callers must treat null as "show the safe setup path instead of
+ * navigating" (spec requirement 7), never as an error.
+ */
+export function resolvePersonalDevelopmentTaskRoute(
+  program: PersonalDevelopmentFourWeekProgram,
+  kind: PersonalDevelopmentTaskKind,
+  linkedMiniArcId: string | null
+): PersonalDevelopmentTaskRoute | null {
+  const pdParams = { pdProgramId: program.id, pdWeek: String(program.currentWeek) };
+  const protocolId = program.protocolId;
+
+  if (kind === "full") {
+    if (program.protocolKind === "state") {
+      return { pathname: "/live", params: { buildId: protocolId, ...pdParams } };
+    }
+    return { pathname: PROTOCOL_LIVE_ROUTE_PATHS[program.protocolKind], params: { id: protocolId, mode: "full", ...pdParams } };
+  }
+
+  if (kind === "mini") {
+    if (!linkedMiniArcId) return null;
+    if (program.protocolKind === "state") {
+      return { pathname: "/mini-arc/live/[id]", params: { id: linkedMiniArcId, ...pdParams } };
+    }
+    return { pathname: PROTOCOL_LIVE_ROUTE_PATHS[program.protocolKind], params: { id: protocolId, mode: "mini", ...pdParams } };
+  }
+
+  if (kind === "archi_link") {
+    if (program.protocolKind !== "state") return null;
+    return { pathname: "/arc-link/[id]", params: { id: protocolId, ...pdParams, ...(program.arcLinkId ? { linkId: program.arcLinkId } : {}) } };
+  }
+
+  if (kind === "mini_link") {
+    if (!linkedMiniArcId) return null;
+    return { pathname: "/mini-arc-link/[id]", params: { id: linkedMiniArcId, ...pdParams, ...(program.miniArcLinkId ? { linkId: program.miniArcLinkId } : {}) } };
+  }
+
+  // kind === "action_independent" -- never a route.
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Normalized weekly protocol reference -- a single, reusable read-model
+// describing "what protocol/Mini/Link this week's card is about" for
+// EITHER track, so a future generic weekly-card renderer never needs to
+// know the internal shape of PersonalDevelopmentFourWeekProgram vs.
+// ArcGoal.fourWeekProgram to display or route one. Purely additive: the
+// ArcGoal-side resolver below only READS ArcGoal/ArcGoalFourWeekProgram/
+// resolveActiveSubGoal (arc/subGoalExecution.ts) -- it never imports
+// from, writes to, or duplicates arc/fourWeekProgram.ts's own logic, so
+// ArcGoal's own four-week progression stays completely unchanged.
+// ---------------------------------------------------------------------------
+
+export type PersonalDevelopmentTrack = "personal_development" | "goal_achievement";
+
+export interface PersonalDevelopmentWeeklyProtocolReference {
+  track: PersonalDevelopmentTrack;
+  protocolKind: PersonalDevelopmentProtocolKind;
+  /** The full protocol's own saved id (an ArcBuild/UrgeArc/ThoughtArc/PresenceArc/BeliefArc id). */
+  protocolId: string;
+  /** The linked ARC Mini's id, when one exists. null when none is linked yet. */
+  linkedMiniArcId: string | null;
+  /** An existing saved ArcLink (protocolType "arc") this reference's own Full Link task should reuse. null when none is linked -- see resolveCompatibleArcLinksForProtocol. */
+  arcLinkId: string | null;
+  /** An existing saved ArcLink (protocolType "mini_arc") this reference's own Mini Link task should reuse. null when none is linked. */
+  miniArcLinkId: string | null;
+  /** The owning ArcGoal's id, only for track "goal_achievement". null for Personal Development. */
+  arcGoalId: string | null;
+  /** The ArcGoal's currently active sub-goal id (resolveActiveSubGoal), only for track "goal_achievement" once sub-goals exist. null otherwise. */
+  activeSubGoalId: string | null;
+  /** The saved program/goal's own display name. */
+  name: string;
+  currentWeek: FourWeekProgramWeekNumber;
+  weekStatus: FourWeekProgramWeekStatus;
+  completedAt: string | null;
+}
+
+/** Projects a PersonalDevelopmentFourWeekProgram into the normalized shape above. Pure, read-only. */
+export function resolvePersonalDevelopmentWeeklyProtocolReference(program: PersonalDevelopmentFourWeekProgram): PersonalDevelopmentWeeklyProtocolReference {
+  return {
+    track: "personal_development",
+    protocolKind: program.protocolKind,
+    protocolId: program.protocolId,
+    linkedMiniArcId: program.linkedMiniArcId,
+    arcLinkId: program.arcLinkId,
+    miniArcLinkId: program.miniArcLinkId,
+    arcGoalId: null,
+    activeSubGoalId: null,
+    name: program.name,
+    currentWeek: program.currentWeek,
+    weekStatus: resolveCurrentWeek(program).status,
+    completedAt: program.completedAt,
+  };
+}
+
+/**
+ * Projects an ArcGoal's own fourWeekProgram into the SAME normalized
+ * shape -- Goal Achievement is always protocolKind "state" (ArcGoal's
+ * four-week program only ever targets goal.identityProtocolId, an
+ * ArcBuild -- unchanged by this correction). Returns null when the goal
+ * has no enabled four-week program, exactly like every other
+ * "nothing to show yet" case in this module (never invented).
+ */
+export function resolveArcGoalWeeklyProtocolReference(goal: ArcGoal): PersonalDevelopmentWeeklyProtocolReference | null {
+  const program = goal.fourWeekProgram;
+  if (!program || !program.enabled || !goal.identityProtocolId) return null;
+  const currentWeek = program.weeks[program.currentWeek - 1];
+  return {
+    track: "goal_achievement",
+    protocolKind: "state",
+    protocolId: goal.identityProtocolId,
+    linkedMiniArcId: program.linkedMiniArcId,
+    arcLinkId: null,
+    miniArcLinkId: null,
+    arcGoalId: goal.id,
+    activeSubGoalId: resolveActiveSubGoal(goal)?.id ?? null,
+    name: goal.name,
+    currentWeek: program.currentWeek,
+    weekStatus: currentWeek.status,
+    completedAt: program.completedAt,
+  };
 }
 
 // ---------------------------------------------------------------------------

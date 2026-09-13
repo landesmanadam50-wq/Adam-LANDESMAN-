@@ -24,7 +24,7 @@ import type {
   ThoughtArc,
   UrgeArc,
 } from "../arc/types.ts";
-import { deletePersonalDevelopmentProgramFromList, upsertPersonalDevelopmentProgramInList } from "../arc/personalDevelopmentProgram.ts";
+import { deletePersonalDevelopmentProgramFromList, normalizePersonalDevelopmentProgram, upsertPersonalDevelopmentProgramInList } from "../arc/personalDevelopmentProgram.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
@@ -369,7 +369,7 @@ export async function loadPersonalDevelopmentPrograms(): Promise<PersonalDevelop
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as PersonalDevelopmentFourWeekProgram[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(normalizePersonalDevelopmentProgram) : [];
   } catch (error) {
     console.warn("[storage] Stored Personal Development programs are not valid JSON -- returning an empty list rather than crashing.", error);
     return [];
