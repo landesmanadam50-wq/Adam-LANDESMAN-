@@ -20,6 +20,7 @@ import {
   linkMiniArcToParent,
 } from "../arc/miniArc.ts";
 import type { MiniArcBuild, MiniArcDraft } from "../arc/miniArc.ts";
+import { IdentityContinuationOffer } from "./IdentityContinuationOffer.tsx";
 
 /**
  * build/UrgeArcEditorScreen.tsx (route: /urge-arcs/[id], id="new" to create)
@@ -66,6 +67,11 @@ export default function UrgeArcEditorScreen() {
   // a second field name.
   const [miniGratitudePrompt, setMiniGratitudePrompt] = useState("");
   const [miniActionImageryDwellSecondsText, setMiniActionImageryDwellSecondsText] = useState("");
+
+  // ARCHI entry-flow correction, spec section 3: shown once, right after
+  // a brand-new Urge ARC is first saved -- never on every re-save of an
+  // already-existing one. See build/IdentityContinuationOffer.tsx's own doc.
+  const [showIdentityOffer, setShowIdentityOffer] = useState(false);
 
   useEffect(() => {
     if (isNew || !id) return;
@@ -156,8 +162,13 @@ export default function UrgeArcEditorScreen() {
     setSaveError(null);
     try {
       const now = new Date().toISOString();
+      const wasNew = isNew;
       const urgeArc = buildUrgeArcFromDraft(draft, existingMeta?.id ?? generateUrgeArcId(), existingMeta?.createdAt ?? now, now);
       await upsertUrgeArc(urgeArc);
+      if (wasNew) {
+        setShowIdentityOffer(true);
+        return;
+      }
       router.back();
     } catch {
       setSaveError("אירעה שגיאה בשמירת ה-Urge ARC. נסה שוב.");
@@ -181,6 +192,17 @@ export default function UrgeArcEditorScreen() {
             <Text style={styles.buttonText}>חזרה לרשימת ה-Urge ARC</Text>
           </Pressable>
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (showIdentityOffer) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <IdentityContinuationOffer
+          onYes={() => router.replace({ pathname: "/identity-extension/offer", params: { returnTo: "/urge-arcs" } })}
+          onNo={() => router.replace("/urge-arcs")}
+        />
       </SafeAreaView>
     );
   }

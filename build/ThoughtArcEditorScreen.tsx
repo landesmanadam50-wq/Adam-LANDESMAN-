@@ -10,6 +10,7 @@ import { generateThoughtArcId } from "../arc/types.ts";
 import type { ThoughtModalityPreference, ThoughtRoutePreference, ThoughtTimeOrientationPreference } from "../arc/types.ts";
 import { buildMiniArcFromDraft, createLinkedMiniArcDraft, generateMiniArcId, isMiniArcDraftComplete, linkMiniArcToParent } from "../arc/miniArc.ts";
 import type { MiniArcBuild, MiniArcDraft } from "../arc/miniArc.ts";
+import { IdentityContinuationOffer } from "./IdentityContinuationOffer.tsx";
 
 /**
  * build/ThoughtArcEditorScreen.tsx (route: /thought-arcs/[id], id="new" to create)
@@ -41,6 +42,7 @@ export default function ThoughtArcEditorScreen() {
   const [miniActionDurationMinutes, setMiniActionDurationMinutes] = useState("");
   const [miniGratitudePrompt, setMiniGratitudePrompt] = useState("");
   const [miniActionImageryDwellSecondsText, setMiniActionImageryDwellSecondsText] = useState("");
+  const [showIdentityOffer, setShowIdentityOffer] = useState(false);
 
   useEffect(() => {
     if (isNew || !id) return;
@@ -117,8 +119,13 @@ export default function ThoughtArcEditorScreen() {
     setSaveError(null);
     try {
       const now = new Date().toISOString();
+      const wasNew = isNew;
       const thoughtArc = buildThoughtArcFromDraft(draft, existingMeta?.id ?? generateThoughtArcId(), existingMeta?.createdAt ?? now, now);
       await upsertThoughtArc(thoughtArc);
+      if (wasNew) {
+        setShowIdentityOffer(true);
+        return;
+      }
       router.back();
     } catch {
       setSaveError("אירעה שגיאה בשמירת ה-ARC Thought. נסה שוב.");
@@ -142,6 +149,17 @@ export default function ThoughtArcEditorScreen() {
             <Text style={styles.buttonText}>חזרה לרשימת ה-ARC Thought</Text>
           </Pressable>
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (showIdentityOffer) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <IdentityContinuationOffer
+          onYes={() => router.replace({ pathname: "/identity-extension/offer", params: { returnTo: "/thought-arcs" } })}
+          onNo={() => router.replace("/thought-arcs")}
+        />
       </SafeAreaView>
     );
   }

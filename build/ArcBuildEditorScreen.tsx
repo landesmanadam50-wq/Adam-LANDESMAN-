@@ -10,6 +10,7 @@ import { createEmptyDraft, draftFromProfileAndSelection, type ProfileDraft } fro
 import { buildArcBuildProfileForSave, draftForTarget, inferTarget, isTargetDraftComplete, type Target } from "./arcBuildSave.ts";
 import { ArcBuildProfileForm } from "./ArcBuildProfileForm.tsx";
 import type { ArcBuild } from "../arc/types.ts";
+import { IdentityContinuationOffer } from "./IdentityContinuationOffer.tsx";
 
 /**
  * Single-page BUILD task (spec section 3): ONE screen editing ONE,
@@ -29,15 +30,34 @@ import type { ArcBuild } from "../arc/types.ts";
  * build/arcBuildSave.ts's buildArcBuildProfileForSave as the one place a
  * draft becomes a real ArcBuildProfile, and the route itself
  * (/build/[id]) is completely preserved.
+ *
+ * ARCHI entry-flow correction: an optional `target` route param
+ * ("state" | "identity" | "habit") lets a caller that already knows what
+ * this build is for (build/SelfDevelopmentBuildScreen.tsx's own new
+ * protocol chooser, routing "מצב רגשי" straight to the State target)
+ * skip the choosingTarget picker entirely -- applied ONLY when this
+ * build's own profile has no inferred target yet (a brand-new, empty
+ * build), never overriding an already-configured build. Every existing
+ * caller (build/ArcBuildListScreen.tsx's own "+ הוסף ARC Build", which
+ * never passes this param) sees the exact same choosingTarget picker as
+ * before -- fully backward compatible, additive only.
  */
 export default function ArcBuildEditorScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, target: targetParam } = useLocalSearchParams<{ id: string; target?: string }>();
   const [status, setStatus] = useState<"loading" | "notFound" | "choosingTarget" | "editing">("loading");
   const [build, setBuild] = useState<ArcBuild | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
   const [draft, setDraft] = useState<ProfileDraft>(createEmptyDraft());
   const [saveError, setSaveError] = useState<string | null>(null);
   const [evidenceIndex, setEvidenceIndex] = useState<EvidenceRecord[]>([]);
+  // ARCHI entry-flow correction, spec section 3: true only for a build
+  // that had no inferred target yet when this screen loaded (i.e. its
+  // FIRST real save, whether reached via choosingTarget or the new
+  // `target` preset param) -- mirrors the other 4 protocol editors' own
+  // `isNew` ("id === 'new'") signal for "show the identity-continuation
+  // offer once, never on every re-save of an already-built protocol."
+  const [isFreshBuild, setIsFreshBuild] = useState(false);
+  const [showIdentityOffer, setShowIdentityOffer] = useState(false);
 
   useEffect(() => {
     loadSessionLog().then((log) => setEvidenceIndex(buildEvidenceIndex(log)));
@@ -46,6 +66,7 @@ export default function ArcBuildEditorScreen() {
   useEffect(() => {
     let cancelled = false;
     if (!id) return;
+    const presetTarget: Target | null = targetParam === "state" || targetParam === "identity" || targetParam === "habit" ? targetParam : null;
     getArcBuild(id).then((existing) => {
       if (cancelled) return;
       if (!existing) {
@@ -54,6 +75,7 @@ export default function ArcBuildEditorScreen() {
       }
       setBuild(existing);
       const inferredTarget = inferTarget(existing.profile);
+      setIsFreshBuild(!inferredTarget);
       const loadedDraft = draftFromProfileAndSelection(existing.profile, {
         needsState: existing.needsState,
         needsIdentity: existing.needsIdentity,
@@ -65,6 +87,10 @@ export default function ArcBuildEditorScreen() {
         setTarget(inferredTarget);
         setDraft(draftForTarget(inferredTarget, loadedDraft));
         setStatus("editing");
+      } else if (presetTarget) {
+        setTarget(presetTarget);
+        setDraft(draftForTarget(presetTarget, loadedDraft));
+        setStatus("editing");
       } else {
         setDraft(loadedDraft);
         setStatus("choosingTarget");
@@ -73,7 +99,7 @@ export default function ArcBuildEditorScreen() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, targetParam]);
 
   function chooseTarget(chosen: Target) {
     setTarget(chosen);
@@ -100,6 +126,14 @@ export default function ArcBuildEditorScreen() {
         updatedAt: new Date().toISOString(),
       };
       await upsertArcBuild(updated);
+      // Only "state" is one of the five protocols the BUILD-time
+      // identity-continuation offer applies to (spec section 3) --
+      // identity/habit builds are themselves not "State/Urge/Thought/
+      // Presence/Belief," so no offer after saving those.
+      if (isFreshBuild && target === "state") {
+        setShowIdentityOffer(true);
+        return;
+      }
       router.back();
     } catch {
       setSaveError("אירעה שגיאה בשמירת ה-ARC Build. נסה שוב.");
@@ -143,6 +177,17 @@ export default function ArcBuildEditorScreen() {
             <Text style={styles.buttonText}>הרגל רצוי (פעולה מיטיבה)</Text>
           </Pressable>
         </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (showIdentityOffer) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <IdentityContinuationOffer
+          onYes={() => router.replace({ pathname: "/identity-extension/offer", params: { returnTo: "/build" } })}
+          onNo={() => router.replace("/build")}
+        />
       </SafeAreaView>
     );
   }
