@@ -129,6 +129,7 @@ export default function RootLayout() {
         <Stack.Screen name="goals/index" options={{ title: "מטרות ARC Goal" }} />
         <Stack.Screen name="goals/[id]" options={{ title: "עריכת מטרה" }} />
         <Stack.Screen name="goals/live/[goalId]" options={{ title: "תוכנית ארבעת השבועות" }} />
+        <Stack.Screen name="goals/mini-identity/[goalId]" options={{ title: "זהות קצרה לפעולה" }} />
         <Stack.Screen name="goals/execution/[goalId]" options={{ title: "ביצוע המטרה" }} />
         <Stack.Screen name="goals/target/[targetId]" options={{ title: "יעד" }} />
         <Stack.Screen name="calendar/index" options={{ title: "לוח שנה" }} />

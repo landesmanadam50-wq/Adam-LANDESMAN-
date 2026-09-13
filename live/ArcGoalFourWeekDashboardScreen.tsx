@@ -3,15 +3,19 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 
-import { getArcBuild, getArcGoal, loadMiniArcBuilds, upsertArcGoal } from "../data/storage.ts";
+import { getArcBuild, getArcGoal, loadArcBuilds, loadBeliefArcs, loadMiniArcBuilds, loadPresenceArcs, loadThoughtArcs, loadUrgeArcs, upsertArcGoal } from "../data/storage.ts";
 import {
   addPracticeRecord,
+  ARC_GOAL_WEEK1_SUPPORT_QUESTION,
   computeOverallProgress,
   computeWeekProgress,
   confirmWeekCompleteAndAdvance,
   extendCurrentWeek,
   FOUR_WEEK_META,
+  getArcGoalInternalSupportKindOptions,
   isPastPlannedEndDate,
+  resolveArcGoalIdentityExtensionRoute,
+  resolveArcGoalInternalSupportRoute,
   resolveCurrentWeek,
   resolveNextWeekOpeningDate,
   resolveWeek,
@@ -19,9 +23,10 @@ import {
   setLinkedMiniArc,
   setReturnContext,
 } from "../arc/fourWeekProgram.ts";
+import type { ArcGoalInternalSupportKind } from "../arc/fourWeekProgram.ts";
 import { activateExecutionPhase } from "../arc/subGoalExecution.ts";
 import { reconcileFourWeekProgramWeekNotification } from "../data/fourWeekProgramReminders.ts";
-import type { ArcBuild, ArcGoal } from "../arc/types.ts";
+import type { ArcBuild, ArcGoal, BeliefArc, PresenceArc, ThoughtArc, UrgeArc } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 
@@ -98,6 +103,23 @@ export default function ArcGoalFourWeekDashboardScreen() {
   const [identityRecallOpen, setIdentityRecallOpen] = useState(false);
   const [actionConfirmOpen, setActionConfirmOpen] = useState(false);
 
+  /**
+   * ARC Goal four-week correction: Week 1's own optional internal-support
+   * chooser -- candidate saved records for each of the 5 kinds, loaded
+   * once alongside everything else this screen already loads. Never
+   * pre-filtered/pre-mapped (no BUILD-time configuration required,
+   * unlike the older outer/inner engine's interferingMappings/
+   * urgeMappings) -- "optional and based on the user's current need"
+   * means a fresh, real-time pick every time.
+   */
+  const [urgeArcs, setUrgeArcs] = useState<UrgeArc[]>([]);
+  const [thoughtArcs, setThoughtArcs] = useState<ThoughtArc[]>([]);
+  const [presenceArcs, setPresenceArcs] = useState<PresenceArc[]>([]);
+  const [beliefArcs, setBeliefArcs] = useState<BeliefArc[]>([]);
+  const [supportCandidateBuilds, setSupportCandidateBuilds] = useState<ArcBuild[]>([]);
+  /** null = not yet asked; "asking" = kind chooser revealed (trainee answered "כן"); otherwise the chosen kind, revealing that kind's own saved-record picker. */
+  const [week1SupportStep, setWeek1SupportStep] = useState<"asking" | ArcGoalInternalSupportKind | null>(null);
+
   const reload = useCallback(async () => {
     if (!goalId) {
       setStatus("notFound");
@@ -110,12 +132,27 @@ export default function ArcGoalFourWeekDashboardScreen() {
         return;
       }
       setGoal(loadedGoal);
-      const [loadedIdentityBuild, allMiniArcs] = await Promise.all([
+      const [loadedIdentityBuild, allMiniArcs, allArcBuilds, allUrgeArcs, allThoughtArcs, allPresenceArcs, allBeliefArcs] = await Promise.all([
         loadedGoal.identityProtocolId ? getArcBuild(loadedGoal.identityProtocolId) : Promise.resolve(null),
         loadMiniArcBuilds(),
+        loadArcBuilds(),
+        loadUrgeArcs(),
+        loadThoughtArcs(),
+        loadPresenceArcs(),
+        loadBeliefArcs(),
       ]);
       setIdentityBuild(loadedIdentityBuild);
       setMiniArcBuilds(allMiniArcs);
+      // Week 1's own "state" internal-support candidates -- every saved
+      // ArcBuild EXCEPT the goal's own identity build (a different role:
+      // the mandatory Identity Extension target, never itself "optional
+      // internal support").
+      setSupportCandidateBuilds(allArcBuilds.filter((b) => b.id !== loadedGoal.identityProtocolId));
+      setUrgeArcs(allUrgeArcs);
+      setThoughtArcs(allThoughtArcs);
+      setPresenceArcs(allPresenceArcs);
+      setBeliefArcs(allBeliefArcs);
+      setWeek1SupportStep(null);
       setStatus("ready");
 
       // Sub-goal execution task, spec section 9: brings the CURRENT
@@ -183,7 +220,7 @@ export default function ArcGoalFourWeekDashboardScreen() {
   const pastEndDate = currentWeek.status === "active" && isPastPlannedEndDate(currentWeek, today);
   const linkedMiniArc = program.linkedMiniArcId ? miniArcBuilds.find((m) => m.id === program.linkedMiniArcId) ?? null : null;
 
-  function recordAndPersist(kind: "identity_recall" | "action" | "archi_support", label: string) {
+  function recordAndPersist(kind: "identity_recall" | "action" | "archi_support" | "internal_support" | "identity_extension" | "mini_identity", label: string) {
     if (!goal || !goal.fourWeekProgram) return;
     const now = new Date().toISOString();
     const updatedProgram = addPracticeRecord(goal.fourWeekProgram, goal.fourWeekProgram.currentWeek, kind, label, now);
@@ -223,6 +260,60 @@ export default function ArcGoalFourWeekDashboardScreen() {
     } else if (target === "miniArcLink" && updatedProgram.linkedMiniArcId) {
       router.push({ pathname: "/mini-arc-link/[id]", params: { id: updatedProgram.linkedMiniArcId, fourWeekKind: kind, ...fourWeekParams } });
     }
+  }
+
+  /**
+   * ARC Goal four-week correction, Week 1 route: internal support is
+   * OPTIONAL and freely chosen from whatever the trainee has saved for
+   * the picked kind (never a pre-configured BUILD-time mapping) --
+   * continuing mandatorily into Identity Extension once the chosen
+   * support protocol (or "no support needed") is done. This function
+   * only navigates to the chosen support protocol; it never itself
+   * routes onward to Identity Extension -- resolveArcGoalInternalSupportRoute
+   * already threads goalId/thenIdentityGoalId through so each support
+   * screen continues there automatically on its own completion.
+   */
+  function startWeek1InternalSupport(kind: ArcGoalInternalSupportKind, protocolId: string, label: string) {
+    if (!goal) return;
+    recordAndPersist("internal_support", label);
+    setWeek1SupportStep(null);
+    const route = resolveArcGoalInternalSupportRoute(goal.id, kind, protocolId);
+    router.push({ pathname: route.pathname, params: route.params } as never);
+  }
+
+  /** Week 1's "no internal support needed right now" answer -- skips straight to the mandatory Identity Extension, never the Personal Development identity-skip question. */
+  function goToWeek1IdentityExtension() {
+    if (!goal) return;
+    setWeek1SupportStep(null);
+    const route = resolveArcGoalIdentityExtensionRoute(goal.id);
+    router.push({ pathname: route.pathname, params: route.params } as never);
+  }
+
+  /**
+   * ARC Goal four-week correction, Weeks 2-3: the real combined "ARC
+   * Mini Goal" route -- corresponding ARC Mini support (already
+   * available separately above via the existing Mini ARC/Mini ARCHI
+   * Link/Mini ARC Link buttons) -> Mini Identity -> real goal action ->
+   * full post-action completion, all inside live/ArcGoalMiniIdentityScreen.tsx.
+   * Distinct from a Link's own rehearsal (never marks real completion) --
+   * this is the REAL route, always logging its own "mini_identity"
+   * practice record only once the action itself is actually performed.
+   */
+  function startArcGoalMiniIdentity() {
+    if (!goal || !goal.fourWeekProgram) return;
+    const now = new Date().toISOString();
+    const updatedProgram = setReturnContext(goal.fourWeekProgram, goal.fourWeekProgram.currentWeek, "ARC Mini Goal (זהות קצרה + פעולה)", now);
+    persist({ ...goal, fourWeekProgram: updatedProgram, updatedAt: now });
+    router.push({ pathname: "/goals/mini-identity/[goalId]", params: { goalId: goal.id, fourWeekWeek: String(updatedProgram.currentWeek) } });
+  }
+
+  /** The saved records available for a chosen Week-1 support kind, by id. Returns [] for a kind with nothing saved yet -- the picker then shows a "no saved <kind> protocols yet" hint instead of an empty chip row. */
+  function week1SupportCandidates(kind: ArcGoalInternalSupportKind): Array<{ id: string; label: string }> {
+    if (kind === "state") return supportCandidateBuilds.map((b) => ({ id: b.id, label: b.name }));
+    if (kind === "urge") return urgeArcs.map((a) => ({ id: a.id, label: a.name }));
+    if (kind === "thought") return thoughtArcs.map((a) => ({ id: a.id, label: a.name }));
+    if (kind === "presence") return presenceArcs.map((a) => ({ id: a.id, label: a.name }));
+    return beliefArcs.map((a) => ({ id: a.id, label: a.name }));
   }
 
   function openDecisionOrExtend(confirmComplete: boolean) {
@@ -325,17 +416,68 @@ export default function ArcGoalFourWeekDashboardScreen() {
 
         {currentWeek.weekNumber === 1 && (
           <View>
-            {goal.identityProtocolId && (
-              <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => startSupportFlow("arcLink", "arc_link", "ARCHI ARC Link")}>
-                <Text style={styles.buttonText}>תרגול ARCHI ARC Link</Text>
-              </Pressable>
+            {/*
+             * ARC Goal four-week correction, Week 1 route: ask whether
+             * internal support is currently needed -> optional selected
+             * Full ARC support protocol -> mandatory Identity Extension ->
+             * goal action -> completion. week1SupportStep === null shows
+             * the question itself; "asking" reveals the kind chooser;
+             * a specific kind reveals that kind's own saved-record
+             * picker. Never the Personal Development identity-skip
+             * question -- Identity Extension is reached automatically
+             * and unconditionally from here.
+             */}
+            {week1SupportStep === null && (
+              <View style={styles.card}>
+                <Text style={styles.body}>{ARC_GOAL_WEEK1_SUPPORT_QUESTION}</Text>
+                <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setWeek1SupportStep("asking")}>
+                  <Text style={styles.buttonText}>כן</Text>
+                </Pressable>
+                <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={goToWeek1IdentityExtension}>
+                  <Text style={styles.secondaryButtonText}>לא, אין צורך כרגע -- להמשך לזהות</Text>
+                </Pressable>
+              </View>
             )}
-            <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("fullArc", "full_arc", "ARC מלא")}>
-              <Text style={styles.secondaryButtonText}>התחל ARC מלא</Text>
-            </Pressable>
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setActionConfirmOpen(true)}>
-              <Text style={styles.buttonText}>בצע את הפעולה</Text>
-            </Pressable>
+
+            {week1SupportStep === "asking" && (
+              <View style={styles.card}>
+                <Text style={styles.hint}>איזה סוג תמיכה פנימית רלוונטי כרגע?</Text>
+                <View style={styles.chipColumn}>
+                  {getArcGoalInternalSupportKindOptions().map((option) => (
+                    <Pressable key={option.value} style={styles.chip} onPress={() => setWeek1SupportStep(option.value)}>
+                      <Text style={styles.chipText}>{option.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => setWeek1SupportStep(null)}>
+                  <Text style={styles.secondaryButtonText}>חזרה</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {week1SupportStep !== null && week1SupportStep !== "asking" && (
+              <View style={styles.card}>
+                <Text style={styles.hint}>בחר/י פרוטוקול שמור להפעלה:</Text>
+                {week1SupportCandidates(week1SupportStep).length === 0 ? (
+                  <Text style={styles.hint}>אין עדיין פרוטוקול שמור מהסוג הזה.</Text>
+                ) : (
+                  <View style={styles.chipColumn}>
+                    {week1SupportCandidates(week1SupportStep).map((candidate) => (
+                      <Pressable
+                        key={candidate.id}
+                        style={styles.chip}
+                        onPress={() => startWeek1InternalSupport(week1SupportStep, candidate.id, candidate.label)}
+                      >
+                        <Text style={styles.chipText}>{candidate.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+                <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => setWeek1SupportStep("asking")}>
+                  <Text style={styles.secondaryButtonText}>חזרה</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         )}
 
@@ -368,10 +510,10 @@ export default function ArcGoalFourWeekDashboardScreen() {
                   <Text style={styles.buttonText}>תרגול Mini ARCHI Link</Text>
                 </Pressable>
                 <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArc", "mini_arc", "Mini ARC")}>
-                  <Text style={styles.secondaryButtonText}>התחל Mini ARC</Text>
+                  <Text style={styles.secondaryButtonText}>תמיכת ARC Mini (לפי הצורך)</Text>
                 </Pressable>
-                <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setActionConfirmOpen(true)}>
-                  <Text style={styles.buttonText}>בצע את הפעולה</Text>
+                <Pressable style={[styles.button, styles.fullWidthButton]} onPress={startArcGoalMiniIdentity}>
+                  <Text style={styles.buttonText}>ARC Mini Goal -- זהות קצרה ופעולה</Text>
                 </Pressable>
                 <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("fullArc", "full_arc", "ARC מלא -- תמיכה נוספת")}>
                   <Text style={styles.secondaryButtonText}>אני צריך עזרה נוספת</Text>
@@ -408,11 +550,11 @@ export default function ArcGoalFourWeekDashboardScreen() {
             )}
             {linkedMiniArc && (
               <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArc", "mini_arc", "Mini ARC")}>
-                <Text style={styles.secondaryButtonText}>Mini ARC (בהנחיה)</Text>
+                <Text style={styles.secondaryButtonText}>Mini ARC (בהנחיה, לפי הצורך)</Text>
               </Pressable>
             )}
-            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setActionConfirmOpen(true)}>
-              <Text style={styles.buttonText}>בצע את הפעולה</Text>
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={startArcGoalMiniIdentity}>
+              <Text style={styles.buttonText}>ARC Mini Goal -- זהות קצרה ופעולה</Text>
             </Pressable>
           </View>
         )}
@@ -420,7 +562,10 @@ export default function ArcGoalFourWeekDashboardScreen() {
         {currentWeek.weekNumber === 4 && (
           <View>
             <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => setActionConfirmOpen(true)}>
-              <Text style={styles.buttonText}>בצע את הפעולה</Text>
+              <Text style={styles.buttonText}>בצע את הפעולה באופן עצמאי</Text>
+            </Pressable>
+            <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={startArcGoalMiniIdentity}>
+              <Text style={styles.secondaryButtonText}>ARC Mini Goal (זמין תמיד, לא חובה)</Text>
             </Pressable>
           </View>
         )}
