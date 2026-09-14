@@ -64,6 +64,8 @@ import { normalizeIdentityProfile, upsertIdentityProfileInList } from "../arc/id
 import type { IdentityProfile } from "../arc/identityProfile.ts";
 import { normalizeInterferenceItem, upsertInterferenceItemInList } from "../arc/interferenceItem.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
+import { normalizeCombinedInterferenceSelection, upsertCombinedInterferenceSelectionInList } from "../arc/combinedInterferenceSelection.ts";
+import type { CombinedInterferenceSelection } from "../arc/combinedInterferenceSelection.ts";
 import {
   archiveLibraryItem,
   disableLibraryItem,
@@ -96,6 +98,8 @@ const STATE_PROFILES_KEY = "archi.stateProfiles.v1";
 const IDENTITY_PROFILES_KEY = "archi.identityProfiles.v1";
 /** Adaptive ARC architecture task, Phase 3: a brand-new, independent collection of InterferenceItem records (arc/interferenceItem.ts) -- storing only REFERENCES to StateProfile/IdentityProfile (never their content), same "reference, never duplicate" convention as ARC_GOALS_KEY. Legacy UrgeArc/ThoughtArc/BeliefArc records are never migrated into this key -- they remain readable at their own existing keys and are only ever projected into this shape at read time (arc/legacyDerivativeAdapter.ts's adaptUrgeArcToInterferenceItem/adaptThoughtArcToInterferenceItem/adaptBeliefArcToInterferenceItem), never written back here. */
 const INTERFERENCE_ITEMS_KEY = "archi.interferenceItems.v1";
+/** Adaptive ARC architecture task, Phase 12: a brand-new, independent collection of CombinedInterferenceSelection records (arc/combinedInterferenceSelection.ts) -- storing only a REFERENCE to one StateProfile plus REFERENCES to InterferenceItem ids (never their content), same "reference, never duplicate" convention as INTERFERENCE_ITEMS_KEY. No legacy migration: there is no prior data format for this, so an absent key simply means "no combined selections configured yet". Never read/written by any other key above, including STATE_PROFILES_KEY/INTERFERENCE_ITEMS_KEY themselves (both stay completely untouched by this phase). */
+const COMBINED_INTERFERENCE_SELECTIONS_KEY = "archi.combinedInterferenceSelections.v1";
 /** Adaptive ARC architecture task, Phase 8 (progression persistence): a brand-new key storing the whole MappingProgressionStore (arc/reactiveProactiveProgression.ts) as one plain JSON object map, keyed by the mapping-key strings arc/progressionSessionBridge.ts's own resolveProgressionMappingKey produces -- never a flat array like every other key above. No legacy migration: there is no prior data format for per-mapping progression, so an absent key simply means "no progression recorded yet". Never read/written by any other key above. */
 const PROGRESSION_MAPPING_STORE_KEY = "archi.progressionMappingStore.v1";
 
@@ -760,6 +764,64 @@ export async function restoreInterferenceItem(id: string, now: string): Promise<
 export async function resolveEnabledInterferenceItemsForProgram(programId: string): Promise<InterferenceItem[]> {
   const items = await loadInterferenceItems();
   return resolveEnabledLibraryItemsForProgram(items, programId);
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, Phase 12: CRUD for CombinedInterferenceSelection
+// (arc/combinedInterferenceSelection.ts) -- mirrors loadStateProfiles/
+// loadInterferenceItems' own defensive-parse + normalize pattern exactly.
+// Same "avoid destructive deletion APIs" rule as StateProfile/InterferenceItem:
+// only disable/archive (non-destructive) and restore, never a delete*
+// function.
+// ---------------------------------------------------------------------------
+
+export async function loadCombinedInterferenceSelections(): Promise<CombinedInterferenceSelection[]> {
+  const raw = await AsyncStorage.getItem(COMBINED_INTERFERENCE_SELECTIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as CombinedInterferenceSelection[];
+    return Array.isArray(parsed) ? parsed.map(normalizeCombinedInterferenceSelection) : [];
+  } catch (error) {
+    console.warn("[storage] Stored Combined Interference Selections are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveStateProfiles/saveInterferenceItems' own style. */
+export async function saveCombinedInterferenceSelections(selections: CombinedInterferenceSelection[]): Promise<void> {
+  await AsyncStorage.setItem(COMBINED_INTERFERENCE_SELECTIONS_KEY, JSON.stringify(selections));
+}
+
+export async function getCombinedInterferenceSelection(id: string): Promise<CombinedInterferenceSelection | null> {
+  const selections = await loadCombinedInterferenceSelections();
+  return selections.find((selection) => selection.id === id) ?? null;
+}
+
+/** Create or update -- upserts by id, see arc/combinedInterferenceSelection.ts's upsertCombinedInterferenceSelectionInList. For the sanctioned "one per StateProfile" write path, see that module's own applyConfiguredSelectionForState instead -- this function alone does not enforce that invariant. */
+export async function upsertCombinedInterferenceSelection(selection: CombinedInterferenceSelection): Promise<void> {
+  const selections = await loadCombinedInterferenceSelections();
+  await saveCombinedInterferenceSelections(upsertCombinedInterferenceSelectionInList(selections, selection));
+}
+
+export async function disableCombinedInterferenceSelection(id: string, now: string): Promise<void> {
+  const selections = await loadCombinedInterferenceSelections();
+  const target = selections.find((selection) => selection.id === id);
+  if (!target) return;
+  await saveCombinedInterferenceSelections(upsertCombinedInterferenceSelectionInList(selections, disableLibraryItem(target, now)));
+}
+
+export async function archiveCombinedInterferenceSelection(id: string, now: string): Promise<void> {
+  const selections = await loadCombinedInterferenceSelections();
+  const target = selections.find((selection) => selection.id === id);
+  if (!target) return;
+  await saveCombinedInterferenceSelections(upsertCombinedInterferenceSelectionInList(selections, archiveLibraryItem(target, now)));
+}
+
+export async function restoreCombinedInterferenceSelection(id: string, now: string): Promise<void> {
+  const selections = await loadCombinedInterferenceSelections();
+  const target = selections.find((selection) => selection.id === id);
+  if (!target) return;
+  await saveCombinedInterferenceSelections(upsertCombinedInterferenceSelectionInList(selections, restoreLibraryItem(target, now)));
 }
 
 /**
