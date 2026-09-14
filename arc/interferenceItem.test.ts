@@ -7,6 +7,7 @@ import {
   createEmptyThoughtInterferenceItem,
   createEmptyUrgeInterferenceItem,
   generateInterferenceItemId,
+  isInterferenceItemLinkedToState,
   isInterferenceItemSaveable,
   normalizeInterferenceItem,
   upsertInterferenceItemInList,
@@ -321,6 +322,28 @@ test("archive never deletes a record -- it stays in the list, recoverable via re
   const restored = restoreLibraryItem(list[0], LATER);
   assert.equal(restored.status, "enabled");
   assert.equal(restored.id, "i1", "restore never changes the id");
+});
+
+// --- isInterferenceItemLinkedToState (Phase 13) ---
+
+test("isInterferenceItemLinkedToState matches via primaryStateProfileId", () => {
+  const item = { ...createEmptyThoughtInterferenceItem("i1", "x", null, NOW), primaryStateProfileId: "state-1" };
+  assert.equal(isInterferenceItemLinkedToState(item, "state-1"), true);
+});
+
+test("isInterferenceItemLinkedToState matches via alternativeStateProfileIds", () => {
+  const item = { ...createEmptyBeliefInterferenceItem("i1", "x", null, NOW), alternativeStateProfileIds: ["state-2", "state-3"] };
+  assert.equal(isInterferenceItemLinkedToState(item, "state-3"), true);
+});
+
+test("isInterferenceItemLinkedToState is false for an unrelated State", () => {
+  const item = { ...createEmptyUrgeInterferenceItem("i1", "x", null, NOW), primaryStateProfileId: "state-1", alternativeStateProfileIds: ["state-2"] };
+  assert.equal(isInterferenceItemLinkedToState(item, "state-9"), false);
+});
+
+test("isInterferenceItemLinkedToState never consults item.status -- relationship only", () => {
+  const disabled = disableLibraryItem({ ...createEmptyEmotionInterferenceItem("i1", "x", null, NOW), primaryStateProfileId: "state-1" }, NOW);
+  assert.equal(isInterferenceItemLinkedToState(disabled, "state-1"), true, "still linked, regardless of status -- combining with isLibraryItemEnabled is the caller's job");
 });
 
 // --- Existing records remain loadable across every category ---

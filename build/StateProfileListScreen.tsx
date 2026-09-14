@@ -108,6 +108,21 @@ export default function StateProfileListScreen() {
               </Pressable>
               {profile.status === "enabled" && (
                 <>
+                  {/*
+                    Adaptive ARC architecture task, Phase 13: shown only
+                    for an enabled StateProfile -- a disabled/archived
+                    State can never have its combined configuration
+                    edited as though it were active (see
+                    build/CombinedInterferenceSelectionScreen.tsx's own
+                    "stateNotEnabled" read-only handling for anyone who
+                    still reaches that route directly, e.g. an old link).
+                  */}
+                  <Pressable
+                    style={styles.actionButton}
+                    onPress={() => router.push({ pathname: "/combined-selection/[stateProfileId]", params: { stateProfileId: profile.id } })}
+                  >
+                    <Text style={styles.actionButtonText}>הגדרת גורמים מפריעים</Text>
+                  </Pressable>
                   <Pressable style={styles.actionButton} onPress={() => handleDisable(profile.id)}>
                     <Text style={styles.actionButtonText}>השבת</Text>
                   </Pressable>
