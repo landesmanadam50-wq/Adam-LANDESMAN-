@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  SAVE_BLOCKED_REASON_LABELS,
   UNAVAILABLE_REASON_LABELS,
   buildCombinedSelectionSaveDraft,
   classifyConfiguredItem,
@@ -22,6 +23,8 @@ import type { InterferenceItem } from "./interferenceItem.ts";
 import { archiveLibraryItem, disableLibraryItem } from "./libraryItemStatus.ts";
 import { createEmptyCombinedInterferenceSelection } from "./combinedInterferenceSelection.ts";
 import type { CombinedInterferenceSelection } from "./combinedInterferenceSelection.ts";
+import { resolveFullPresenceAvailability } from "./combinedPresenceLink.ts";
+import type { PresenceArc } from "./types.ts";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 const LATER = "2026-01-02T00:00:00.000Z";
@@ -217,6 +220,61 @@ test("resolveSaveEligibility: a mix of one available and one unavailable selecte
   assert.equal(result.allowed, true);
 });
 
+// --- Phase 14A: Presence-link save eligibility ---
+
+function presenceArc(id: string, name: string): PresenceArc {
+  return {
+    id,
+    name,
+    createdAt: NOW,
+    updatedAt: NOW,
+    presenceColor: null,
+    presenceDwellSeconds: null,
+    beneficialAction: null,
+    postActionImageryDwellSeconds: null,
+    gratitudePrompt: null,
+  };
+}
+
+test("resolveSaveEligibility: omitting fullPresenceAvailability entirely behaves exactly as before -- an old call site that never heard of Presence linking still works unchanged", () => {
+  const classified = classifyConfiguredItems(["t1"], [thought("t1")], STATE_ID);
+  const result = resolveSaveEligibility("enabled", ["t1"], classified);
+  assert.equal(result.allowed, true);
+  assert.equal(result.blockedReason, null);
+});
+
+test("resolveSaveEligibility: a newly edited Presence-enabled configuration with no valid link (not_linked) is not saveable", () => {
+  const classified = classifyConfiguredItems(["t1"], [thought("t1")], STATE_ID);
+  const availability = resolveFullPresenceAvailability(true, null, []);
+  const result = resolveSaveEligibility("enabled", ["t1"], classified, availability);
+  assert.equal(result.allowed, false);
+  assert.equal(result.blockedReason, "presence_requires_link");
+  assert.equal(SAVE_BLOCKED_REASON_LABELS.presence_requires_link, "כדי להשתמש בתרגול נוכחות מלא במסלול המשולב, יש לבחור פרוטוקול נוכחות.");
+});
+
+test("resolveSaveEligibility: a Presence-enabled configuration whose linked PresenceArc no longer exists (linked_not_found) is not saveable", () => {
+  const classified = classifyConfiguredItems(["t1"], [thought("t1")], STATE_ID);
+  const availability = resolveFullPresenceAvailability(true, "missing-id", []);
+  const result = resolveSaveEligibility("enabled", ["t1"], classified, availability);
+  assert.equal(result.allowed, false);
+  assert.equal(result.blockedReason, "presence_requires_link");
+});
+
+test("resolveSaveEligibility: a Presence-enabled configuration with a valid linked PresenceArc (available) is saveable", () => {
+  const classified = classifyConfiguredItems(["t1"], [thought("t1")], STATE_ID);
+  const availability = resolveFullPresenceAvailability(true, "presence-1", [presenceArc("presence-1", "פרוטוקול")]);
+  const result = resolveSaveEligibility("enabled", ["t1"], classified, availability);
+  assert.equal(result.allowed, true);
+  assert.equal(result.blockedReason, null);
+});
+
+test("resolveSaveEligibility: a Presence-disabled configuration is saveable without any link at all", () => {
+  const classified = classifyConfiguredItems(["t1"], [thought("t1")], STATE_ID);
+  const availability = resolveFullPresenceAvailability(false, null, []);
+  const result = resolveSaveEligibility("enabled", ["t1"], classified, availability);
+  assert.equal(result.allowed, true);
+});
+
 // ---------------------------------------------------------------------------
 // One-per-State resolution + save draft (status-agnostic)
 // ---------------------------------------------------------------------------
@@ -285,6 +343,53 @@ test("buildCombinedSelectionSaveDraft never mutates the existing record it was g
   const existingCopy = JSON.parse(JSON.stringify(existing));
   buildCombinedSelectionSaveDraft(existing, STATE_ID, "prog1", ["t1", "b1"], true, LATER);
   assert.deepEqual(existing, existingCopy);
+});
+
+// --- Phase 14A: linkedPresenceArcId, via the new backward-compatible optional final parameter ---
+
+test("buildCombinedSelectionSaveDraft: a fresh draft defaults linkedPresenceArcId to null when omitted", () => {
+  const draft = buildCombinedSelectionSaveDraft(null, STATE_ID, "prog1", ["t1"], false, NOW, () => "new-id");
+  assert.equal(draft.linkedPresenceArcId, null);
+});
+
+test("buildCombinedSelectionSaveDraft: an old call (no linkedPresenceArcId argument) on an EXISTING record preserves whatever link it already had", () => {
+  const existing = selection({ configuredItemIds: ["t1"], linkedPresenceArcId: "presence-1" });
+  const draft = buildCombinedSelectionSaveDraft(existing, STATE_ID, "prog1", ["t1", "b1"], true, LATER, () => "should-not-be-used");
+  assert.equal(draft.linkedPresenceArcId, "presence-1", "preserved even though this call never mentions the field");
+  assert.equal(draft.id, "sel1");
+  assert.equal(draft.createdAt, NOW);
+});
+
+test("buildCombinedSelectionSaveDraft: passing a different linkedPresenceArcId updates only that reference, leaving configuredItemIds/id/createdAt untouched", () => {
+  const existing = selection({ configuredItemIds: ["t1"], linkedPresenceArcId: "presence-1" });
+  const draft = buildCombinedSelectionSaveDraft(existing, STATE_ID, "prog1", ["t1"], true, LATER, undefined, "presence-2");
+  assert.equal(draft.linkedPresenceArcId, "presence-2");
+  assert.equal(draft.id, "sel1");
+  assert.equal(draft.createdAt, NOW);
+  assert.deepEqual(draft.configuredItemIds, ["t1"]);
+});
+
+test("buildCombinedSelectionSaveDraft: disabling presenceEnabled while still passing the linkedPresenceArcId preserves it -- disabling Presence never deletes the saved PresenceArc reference", () => {
+  const existing = selection({ linkedPresenceArcId: "presence-1", presenceEnabled: true });
+  const draft = buildCombinedSelectionSaveDraft(existing, STATE_ID, "prog1", ["t1"], false, LATER, undefined, "presence-1");
+  assert.equal(draft.presenceEnabled, false);
+  assert.equal(draft.linkedPresenceArcId, "presence-1", "the reference itself is untouched by turning Presence off");
+});
+
+test("buildCombinedSelectionSaveDraft: passing null explicitly clears an existing link", () => {
+  const existing = selection({ linkedPresenceArcId: "presence-1" });
+  const draft = buildCombinedSelectionSaveDraft(existing, STATE_ID, "prog1", ["t1"], false, LATER, undefined, null);
+  assert.equal(draft.linkedPresenceArcId, null);
+});
+
+test("an old configuration with presenceEnabled true and no linkedPresenceArcId loads without crashing and resolves as not_linked, never guessing a link", () => {
+  const oldStyleExisting = selection({ configuredItemIds: ["t1"], presenceEnabled: true, linkedPresenceArcId: null });
+  const availability = resolveFullPresenceAvailability(oldStyleExisting.presenceEnabled, oldStyleExisting.linkedPresenceArcId, [presenceArc("presence-1", "פרוטוקול אחר")]);
+  assert.deepEqual(availability, { kind: "not_linked" });
+  const classified = classifyConfiguredItems(oldStyleExisting.configuredItemIds, [thought("t1")], STATE_ID);
+  const eligibility = resolveSaveEligibility("enabled", oldStyleExisting.configuredItemIds, classified, availability);
+  assert.equal(eligibility.allowed, false, "saveable only once the trainee picks a PresenceArc or turns Presence off -- merely reopening it never auto-fixes or auto-saves anything");
+  assert.equal(eligibility.blockedReason, "presence_requires_link");
 });
 
 // ---------------------------------------------------------------------------

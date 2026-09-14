@@ -35,6 +35,24 @@ test("createEmptyCombinedInterferenceSelection produces an empty configuredItemI
   assert.equal(s.updatedAt, NOW);
 });
 
+// --- Phase 14A: linkedPresenceArcId ---
+
+test("createEmptyCombinedInterferenceSelection defaults linkedPresenceArcId to null", () => {
+  const s = createEmptyCombinedInterferenceSelection("sel1", "state1", "prog1", NOW);
+  assert.equal(s.linkedPresenceArcId, null);
+});
+
+test("normalizeCombinedInterferenceSelection backfills a missing linkedPresenceArcId (an old, pre-Phase-14A record) to null", () => {
+  const { linkedPresenceArcId, ...legacyShape } = selection();
+  const normalized = normalizeCombinedInterferenceSelection(legacyShape as CombinedInterferenceSelection);
+  assert.equal(normalized.linkedPresenceArcId, null);
+});
+
+test("normalizeCombinedInterferenceSelection preserves an already-set linkedPresenceArcId", () => {
+  const normalized = normalizeCombinedInterferenceSelection(selection({ linkedPresenceArcId: "presence-1" }));
+  assert.equal(normalized.linkedPresenceArcId, "presence-1");
+});
+
 test("generateCombinedInterferenceSelectionId produces distinct ids", () => {
   assert.notEqual(generateCombinedInterferenceSelectionId(), generateCombinedInterferenceSelectionId());
 });
@@ -116,6 +134,35 @@ test("applyConfiguredSelectionForState never mutates the input list", () => {
   const originalCopy = JSON.parse(JSON.stringify(original));
   applyConfiguredSelectionForState(original, "state1", ["item9"], true, "prog1", LATER);
   assert.deepEqual(original, originalCopy);
+});
+
+// --- Phase 14A: linkedPresenceArcId, via the new backward-compatible optional final parameter ---
+
+test("applyConfiguredSelectionForState: an old call using the pre-Phase-14A signature (no linkedPresenceArcId argument) still compiles and behaves exactly as before -- a new record gets linkedPresenceArcId null", () => {
+  const result = applyConfiguredSelectionForState([], "state1", ["item1"], true, "prog1", NOW, () => "generated-id");
+  assert.equal(result[0].linkedPresenceArcId, null);
+});
+
+test("applyConfiguredSelectionForState: omitting the new final argument on an EXISTING record preserves whatever link it already had -- an old caller can never silently clear it", () => {
+  const existing = selection({ linkedPresenceArcId: "presence-1" });
+  const result = applyConfiguredSelectionForState([existing], "state1", ["item1", "item2"], true, "prog1", LATER, () => "should-not-be-used");
+  assert.equal(result[0].linkedPresenceArcId, "presence-1", "preserved even though this call never mentions the field");
+  assert.equal(result[0].id, "sel1", "id preserved");
+  assert.equal(result[0].status, "enabled", "status preserved -- ordinary editing is not a status transition");
+});
+
+test("applyConfiguredSelectionForState: passing linkedPresenceArcId explicitly sets/replaces it, updating only that reference", () => {
+  const existing = selection({ configuredItemIds: ["item1"], linkedPresenceArcId: "presence-1" });
+  const result = applyConfiguredSelectionForState([existing], "state1", ["item1"], true, "prog1", LATER, undefined, "presence-2");
+  assert.equal(result[0].linkedPresenceArcId, "presence-2");
+  assert.equal(result[0].id, "sel1");
+  assert.deepEqual(result[0].configuredItemIds, ["item1"], "unrelated fields are untouched by changing only the link");
+});
+
+test("applyConfiguredSelectionForState: passing linkedPresenceArcId explicitly as null clears an existing link (disabling Presence never deletes the saved PresenceArc itself, only this reference)", () => {
+  const existing = selection({ linkedPresenceArcId: "presence-1" });
+  const result = applyConfiguredSelectionForState([existing], "state1", ["item1"], false, "prog1", LATER, undefined, null);
+  assert.equal(result[0].linkedPresenceArcId, null);
 });
 
 // --- Status transitions (via the shared generic policy) ---
