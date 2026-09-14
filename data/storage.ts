@@ -70,6 +70,7 @@ import {
   restoreLibraryItem,
   resolveEnabledLibraryItemsForProgram,
 } from "../arc/libraryItemStatus.ts";
+import type { MappingProgressionStore } from "../arc/reactiveProactiveProgression.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
 const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
@@ -95,6 +96,8 @@ const STATE_PROFILES_KEY = "archi.stateProfiles.v1";
 const IDENTITY_PROFILES_KEY = "archi.identityProfiles.v1";
 /** Adaptive ARC architecture task, Phase 3: a brand-new, independent collection of InterferenceItem records (arc/interferenceItem.ts) -- storing only REFERENCES to StateProfile/IdentityProfile (never their content), same "reference, never duplicate" convention as ARC_GOALS_KEY. Legacy UrgeArc/ThoughtArc/BeliefArc records are never migrated into this key -- they remain readable at their own existing keys and are only ever projected into this shape at read time (arc/legacyDerivativeAdapter.ts's adaptUrgeArcToInterferenceItem/adaptThoughtArcToInterferenceItem/adaptBeliefArcToInterferenceItem), never written back here. */
 const INTERFERENCE_ITEMS_KEY = "archi.interferenceItems.v1";
+/** Adaptive ARC architecture task, Phase 8 (progression persistence): a brand-new key storing the whole MappingProgressionStore (arc/reactiveProactiveProgression.ts) as one plain JSON object map, keyed by the mapping-key strings arc/progressionSessionBridge.ts's own resolveProgressionMappingKey produces -- never a flat array like every other key above. No legacy migration: there is no prior data format for per-mapping progression, so an absent key simply means "no progression recorded yet". Never read/written by any other key above. */
+const PROGRESSION_MAPPING_STORE_KEY = "archi.progressionMappingStore.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -1365,4 +1368,32 @@ export async function upsertArcLink(link: ArcLink): Promise<void> {
 export async function deleteArcLink(id: string): Promise<void> {
   const links = await loadArcLinks();
   await saveArcLinks(deleteArcLinkFromList(links, id));
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, Phase 8 (progression persistence): the
+// whole MappingProgressionStore (arc/reactiveProactiveProgression.ts) is
+// stored as ONE plain JSON object map under PROGRESSION_MAPPING_STORE_KEY
+// -- unlike every array-shaped collection above, so the defensive parse
+// below validates "a plain object, not an array/null/primitive" rather
+// than Array.isArray. Mirrors every loadX function's own "never throw,
+// fall back to a safe empty default" guarantee exactly.
+// ---------------------------------------------------------------------------
+
+export async function loadProgressionMappingStore(): Promise<MappingProgressionStore> {
+  const raw = await AsyncStorage.getItem(PROGRESSION_MAPPING_STORE_KEY);
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const isPlainObject = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+    return isPlainObject ? (parsed as MappingProgressionStore) : {};
+  } catch (error) {
+    console.warn("[storage] Stored progression mapping store is not valid JSON -- returning an empty store rather than crashing.", error);
+    return {};
+  }
+}
+
+/** Always the FULL store -- callers read-modify-write, matching every other saveX function's own style. Never catches its own AsyncStorage.setItem failure -- a genuine write failure propagates to the caller exactly like every other saveX function here, never silently swallowed. */
+export async function saveProgressionMappingStore(store: MappingProgressionStore): Promise<void> {
+  await AsyncStorage.setItem(PROGRESSION_MAPPING_STORE_KEY, JSON.stringify(store));
 }
