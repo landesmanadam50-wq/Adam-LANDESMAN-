@@ -28,6 +28,8 @@
  */
 
 import type { BeliefArc, PresenceArc, ThoughtArc, UrgeArc } from "./types.ts";
+import type { BeliefInterferenceItem, InterferenceItem, InterferenceUrgeRepresentation, ThoughtInterferenceItem, UrgeInterferenceItem } from "./interferenceItem.ts";
+import type { LibraryValidationResult } from "./libraryRelationships.ts";
 
 export type LegacyInterferenceCategory = "urge" | "thought" | "belief";
 
@@ -149,4 +151,176 @@ export function adaptPresenceArc(presenceArc: PresenceArc): AdaptedPresenceSourc
     action: presenceArc.beneficialAction,
     legacySourceId: presenceArc.id,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, Phase 3 (data-layer foundations), spec
+// section 8 ("Legacy derivative adapter"): forward-compatible
+// InterferenceItem projections of the SAME legacy records adapted above
+// -- built directly from adaptUrgeArc/adaptThoughtArc/adaptBeliefArc's
+// own output (never a second, divergent read of the source record), so a
+// caller that already expects "an InterferenceItem" (Phase 3's own new
+// library shape) can consume a legacy record without every call site
+// having to know about AdaptedInterferenceSource separately.
+//
+// "Do not mutate the input. Do not write adapted data back to storage."
+// -- every function below is a pure read, exactly like the adapters
+// above; nothing here performs I/O.
+// "Preserve existing identifiers where safe" -- the legacy record's own
+// id is reused verbatim as the projected item's id (never a fresh
+// generated id), matching adaptUrgeArc/adaptThoughtArc/adaptBeliefArc's
+// own existing convention.
+// "A marker indicating that a legacy fallback was used" -- every result
+// below carries legacyFallbackUsed: true (a literal type, never false),
+// plus legacySourceKind/legacySourceId for traceability back to the
+// original record.
+// "Presence legacy records must remain readable, but Presence must not
+// become an InterferenceItem" -- deliberately no
+// adaptPresenceArcToInterferenceItem function exists; adaptPresenceArc
+// above (a structurally separate AdaptedPresenceSource, never a member
+// of InterferenceItem) remains the only Presence adapter.
+// ---------------------------------------------------------------------------
+
+/**
+ * The result of projecting one legacy standalone record into an
+ * InterferenceItem shape. `item.primaryStateProfileId` is always null
+ * here (never invented): a legacy record's own equivalent State content
+ * lives in `item`'s category-specific fields directly (mirroring
+ * AdaptedInterferenceSource.selfContainedState above), never as a
+ * reference to a separate StateProfile that doesn't exist for it.
+ */
+export interface LegacyInterferenceCompatibilityResult {
+  item: InterferenceItem;
+  legacyFallbackUsed: true;
+  legacySourceKind: "UrgeArc" | "ThoughtArc" | "BeliefArc";
+  legacySourceId: string;
+}
+
+/**
+ * UrgeArc.representationPreference (arc/types.ts's UrgeRepresentationPreference
+ * = "visual" | "bodily" | "both" | "unsure" | "decide_in_live") uses a
+ * different vocabulary than InterferenceUrgeRepresentation ("sensory"
+ * instead of "bodily", no "unsure" member): "bodily" maps onto
+ * "sensory" (the same concept, this library's own naming), and "unsure"
+ * -- like "decide_in_live" -- means no BUILD-time commitment, so both
+ * fold onto "decide_in_live" here. Never a lossy guess: every legacy
+ * value maps onto its closest equivalent, never an invented one.
+ */
+function mapLegacyUrgeRepresentation(preference: UrgeArc["representationPreference"]): InterferenceUrgeRepresentation {
+  switch (preference) {
+    case "visual":
+      return "visual";
+    case "bodily":
+      return "sensory";
+    case "both":
+      return "both";
+    case "unsure":
+    case "decide_in_live":
+    case null:
+    default:
+      return "decide_in_live";
+  }
+}
+
+/** ownerProgramId is always null for a legacy-adapted item -- these records predate the Self Development program-ownership concept entirely (see arc/stateProfile.ts's own doc on why a StateProfile's ownerProgramId is nullable for the identical reason); never guessed from context. */
+export function adaptUrgeArcToInterferenceItem(urgeArc: UrgeArc): LegacyInterferenceCompatibilityResult {
+  const item: UrgeInterferenceItem = {
+    id: urgeArc.id,
+    ownerProgramId: null,
+    category: "urge",
+    name: urgeArc.name,
+    description: null,
+    situationContext: null,
+    triggerInfo: urgeArc.mappedTriggers.length > 0 ? urgeArc.mappedTriggers.join(", ") : null,
+    primaryStateProfileId: null,
+    alternativeStateProfileIds: [],
+    identityProfileIdOverride: null,
+    miniOverride: null,
+    status: "enabled",
+    schemaVersion: 1,
+    createdAt: urgeArc.createdAt,
+    updatedAt: urgeArc.updatedAt,
+    urgeName: urgeArc.interferingAction || null,
+    preventiveStoppingAction: urgeArc.stopCue,
+    representationPreference: mapLegacyUrgeRepresentation(urgeArc.representationPreference),
+    visualEncodingConfig: urgeArc.visualEncodingAction,
+    sensoryEncodingConfig: urgeArc.bodilyEncodingAction,
+    regulationAnchor: urgeArc.regulationAnchor || null,
+    recheckEnabled: false,
+    recheckPrompt: null,
+  };
+  return { item, legacyFallbackUsed: true, legacySourceKind: "UrgeArc", legacySourceId: urgeArc.id };
+}
+
+export function adaptThoughtArcToInterferenceItem(thoughtArc: ThoughtArc): LegacyInterferenceCompatibilityResult {
+  const item: ThoughtInterferenceItem = {
+    id: thoughtArc.id,
+    ownerProgramId: null,
+    category: "thought",
+    name: thoughtArc.name,
+    description: null,
+    situationContext: thoughtArc.situationContext,
+    triggerInfo: null,
+    primaryStateProfileId: null,
+    alternativeStateProfileIds: [],
+    identityProfileIdOverride: null,
+    miniOverride: null,
+    status: "enabled",
+    schemaVersion: 1,
+    createdAt: thoughtArc.createdAt,
+    updatedAt: thoughtArc.updatedAt,
+    thoughtText: thoughtArc.currentThought,
+    acceptanceMantra: thoughtArc.acceptanceMantra,
+    // Spec section 8: an incomplete legacy record still returns a safe,
+    // typed compatibility result rather than crashing -- a
+    // disturbing-thought ThoughtArc carries this as usefulInsight, a
+    // supportive-thought one as supportiveThought; neither is required.
+    alternativeInterpretation: thoughtArc.usefulInsight ?? thoughtArc.supportiveThought ?? null,
+    regulationCue: thoughtArc.encodingAnchor,
+    existingNodCue: thoughtArc.gentleNodCue,
+  };
+  return { item, legacyFallbackUsed: true, legacySourceKind: "ThoughtArc", legacySourceId: thoughtArc.id };
+}
+
+export function adaptBeliefArcToInterferenceItem(beliefArc: BeliefArc): LegacyInterferenceCompatibilityResult {
+  const item: BeliefInterferenceItem = {
+    id: beliefArc.id,
+    ownerProgramId: null,
+    category: "belief",
+    name: beliefArc.name,
+    description: null,
+    situationContext: beliefArc.situationContext,
+    triggerInfo: null,
+    primaryStateProfileId: null,
+    alternativeStateProfileIds: [],
+    identityProfileIdOverride: null,
+    miniOverride: null,
+    status: "enabled",
+    schemaVersion: 1,
+    createdAt: beliefArc.createdAt,
+    updatedAt: beliefArc.updatedAt,
+    beliefText: beliefArc.limitingBelief,
+    supportiveBelief: beliefArc.replacementBelief,
+    regulationCue: beliefArc.regulationAnchor,
+  };
+  return { item, legacyFallbackUsed: true, legacySourceKind: "BeliefArc", legacySourceId: beliefArc.id };
+}
+
+/**
+ * Spec section 5/9: "Missing State in a legacy record returns safe
+ * compatibility status" -- a legacy-adapted item is never checked
+ * against arc/libraryRelationships.ts's validateInterferenceItemPrimaryState
+ * (which requires a real StateProfile reference); instead its own
+ * embedded selfContainedState content (from adaptUrgeArc/adaptThoughtArc/
+ * adaptBeliefArc above) is what "counts" as its State. This function
+ * returns a typed, non-throwing result either way -- valid when the
+ * legacy record actually has SOME usable self-contained content
+ * (a regulation anchor or an action), a safe "incomplete" result
+ * (never a crash) when it has neither.
+ */
+export function describeLegacyInterferenceCompatibility(source: AdaptedInterferenceSource): LibraryValidationResult {
+  const hasContent = source.selfContainedState.regulationAnchor !== null || source.selfContainedState.action !== null;
+  return hasContent
+    ? { valid: true, source: "legacy", reason: null }
+    : { valid: false, source: "legacy", reason: "legacy_self_contained_state_empty" };
 }
