@@ -227,6 +227,31 @@ export function upsertInterferenceItemInList(items: InterferenceItem[], item: In
 }
 
 /**
+ * Adaptive ARC architecture task, Phase 11 (InterferenceItem BUILD): the
+ * minimum bar for PERSISTING an InterferenceItem at all -- mirrors
+ * arc/stateProfile.ts's own isStateProfileSaveable exactly. `name` is
+ * the one field every createEmptyXInterferenceItem caller must already
+ * supply; every other field on InterferenceItemBase and on every
+ * concrete category (ThoughtInterferenceItem/BeliefInterferenceItem/
+ * UrgeInterferenceItem/EmotionInterferenceItem) is already optional
+ * (`string | null`, or a defaulted enum like UrgeInterferenceItem's own
+ * representationPreference) per this file's own type definitions -- so
+ * there is no additional required field to enforce beyond what the
+ * existing type already implies, and this function works uniformly
+ * across every category via the shared InterferenceItemBase.name field
+ * alone.
+ *
+ * Deliberately not "complete" or "ready for LIVE practice" -- no such
+ * stronger validator exists yet, and this phase does not invent one; a
+ * name-only item of any category is saveable for incremental editing.
+ *
+ * Pure and read-only: never mutates `item`.
+ */
+export function isInterferenceItemSaveable(item: InterferenceItem): boolean {
+  return item.name.trim().length > 0;
+}
+
+/**
  * Defensive backfill for an InterferenceItem parsed from storage --
  * mirrors arc/stateProfile.ts's own normalizeStateProfile, but only for
  * the fields common to every category (a malformed category-specific

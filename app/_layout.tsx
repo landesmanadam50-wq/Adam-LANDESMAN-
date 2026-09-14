@@ -131,6 +131,8 @@ export default function RootLayout() {
         <Stack.Screen name="belief-arcs/live/[id]" options={{ title: "ARC Belief LIVE" }} />
         <Stack.Screen name="state-profiles/index" options={{ title: "המצבים הרצויים שלי" }} />
         <Stack.Screen name="state-profiles/[id]" options={{ title: "עריכת מצב רצוי" }} />
+        <Stack.Screen name="interference-items/index" options={{ title: "פריטי הפרעה" }} />
+        <Stack.Screen name="interference-items/[id]" options={{ title: "עריכת פריט הפרעה" }} />
         <Stack.Screen name="identity-extension/offer" options={{ title: "המשך לבניית הזהות" }} />
         <Stack.Screen name="identity-extension/live" options={{ title: "בניית הזהות והפעולה" }} />
         <Stack.Screen name="personal-development-program/index" options={{ title: "תוכניות התפתחות אישית" }} />
