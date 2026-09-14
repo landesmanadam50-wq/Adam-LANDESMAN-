@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createEmptyStateProfile, generateStateProfileId, normalizeStateProfile, upsertStateProfileInList } from "./stateProfile.ts";
+import { createEmptyStateProfile, generateStateProfileId, isStateProfileSaveable, normalizeStateProfile, upsertStateProfileInList } from "./stateProfile.ts";
 import type { StateProfile } from "./stateProfile.ts";
 import { archiveLibraryItem, disableLibraryItem, restoreLibraryItem, resolveEnabledLibraryItemsForProgram } from "./libraryItemStatus.ts";
 
@@ -148,6 +148,43 @@ test("a StateProfile's primaryIdentityProfileId is preserved unchanged through u
   assert.equal(normalized.primaryIdentityProfileId, "identity-1");
   const list = upsertStateProfileInList([], normalized);
   assert.equal(list[0].primaryIdentityProfileId, "identity-1");
+});
+
+// --- isStateProfileSaveable (Phase 10) ---
+
+test("isStateProfileSaveable accepts a name-only profile -- every other field left null, exactly like createEmptyStateProfile's own output", () => {
+  assert.equal(isStateProfileSaveable(stateProfile()), true);
+});
+
+test("isStateProfileSaveable rejects a blank name", () => {
+  assert.equal(isStateProfileSaveable(stateProfile({ name: "" })), false);
+});
+
+test("isStateProfileSaveable rejects a whitespace-only name", () => {
+  assert.equal(isStateProfileSaveable(stateProfile({ name: "   " })), false);
+});
+
+test("isStateProfileSaveable accepts a null actionTimerConfig and a null durationMinutes", () => {
+  assert.equal(isStateProfileSaveable(stateProfile({ actionTimerConfig: null })), true);
+  assert.equal(isStateProfileSaveable(stateProfile({ actionTimerConfig: { durationMinutes: null } })), true);
+});
+
+test("isStateProfileSaveable accepts a positive, finite durationMinutes", () => {
+  assert.equal(isStateProfileSaveable(stateProfile({ actionTimerConfig: { durationMinutes: 5 } })), true);
+});
+
+test("isStateProfileSaveable rejects a zero, negative, or non-finite durationMinutes", () => {
+  assert.equal(isStateProfileSaveable(stateProfile({ actionTimerConfig: { durationMinutes: 0 } })), false);
+  assert.equal(isStateProfileSaveable(stateProfile({ actionTimerConfig: { durationMinutes: -5 } })), false);
+  assert.equal(isStateProfileSaveable(stateProfile({ actionTimerConfig: { durationMinutes: Number.NaN } })), false);
+  assert.equal(isStateProfileSaveable(stateProfile({ actionTimerConfig: { durationMinutes: Number.POSITIVE_INFINITY } })), false);
+});
+
+test("isStateProfileSaveable never mutates the profile it validates", () => {
+  const profile = stateProfile({ actionTimerConfig: { durationMinutes: 5 } });
+  const before = JSON.parse(JSON.stringify(profile));
+  isStateProfileSaveable(profile);
+  assert.deepEqual(profile, before);
 });
 
 // --- Serialization round trip ---

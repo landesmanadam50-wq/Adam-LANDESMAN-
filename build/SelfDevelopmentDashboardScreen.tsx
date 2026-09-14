@@ -119,6 +119,21 @@ export default function SelfDevelopmentDashboardScreen() {
         </Pressable>
 
         <Text style={styles.sectionTitle}>כלים נוספים</Text>
+        {/*
+          Adaptive ARC architecture task, Phase 10: a clearly separate
+          entry point for the new StateProfile library -- deliberately
+          not merged into "+ בניית תוכנית חדשה" above, which still
+          creates only the legacy "מצב רגשי" ArcBuild, untouched by this
+          phase. Wording is product-facing (never "StateProfile") to
+          keep the new desired-State library distinct from the legacy
+          emotional-state ARC builder for the trainee.
+        */}
+        <Link href="/state-profiles" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>המצבים הרצויים שלי</Text>
+            <Text style={styles.itemSubtext}>יצירה וניהול של מצבים פנימיים שתרצה לחזק ולתרגל.</Text>
+          </Pressable>
+        </Link>
         <Link href="/personal-development-program" asChild>
           <Pressable style={styles.itemRow}>
             <Text style={styles.itemText}>תוכנית ארבעת השבועות -- התפתחות אישית</Text>
@@ -227,6 +242,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   itemText: { fontSize: 16, textAlign: "right", color: "#0a7ea4" },
+  itemSubtext: { fontSize: 12, textAlign: "right", color: "#666", marginTop: 2 },
   button: { backgroundColor: "#0a7ea4", paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, alignItems: "center" },
   buildButton: { backgroundColor: "#1a6b4a" },
   secondaryButton: { backgroundColor: "#3d8fa8" },
