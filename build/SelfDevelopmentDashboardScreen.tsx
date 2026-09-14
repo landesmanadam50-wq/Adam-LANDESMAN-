@@ -134,6 +134,19 @@ export default function SelfDevelopmentDashboardScreen() {
             <Text style={styles.itemSubtext}>יצירה וניהול של מצבים פנימיים שתרצה לחזק ולתרגל.</Text>
           </Pressable>
         </Link>
+        {/*
+          Adaptive ARC architecture task, Phase 11: a clearly separate
+          entry point for the new InterferenceItem library -- also
+          deliberately not merged into "+ בניית תוכנית חדשה" above.
+          No combined selection, no LIVE wiring here -- see
+          build/InterferenceItemListScreen.tsx's own module doc.
+        */}
+        <Link href="/interference-items" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>פריטי הפרעה</Text>
+            <Text style={styles.itemSubtext}>מחשבות, אמונות, רגשות ודחפים שתרצה לעבוד איתם.</Text>
+          </Pressable>
+        </Link>
         <Link href="/personal-development-program" asChild>
           <Pressable style={styles.itemRow}>
             <Text style={styles.itemText}>תוכנית ארבעת השבועות -- התפתחות אישית</Text>
