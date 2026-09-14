@@ -89,6 +89,10 @@ import { createEmptyThoughtLiveState } from "./thoughtLive.ts";
 import type { ThoughtLiveState } from "./thoughtLive.ts";
 import { createEmptyUrgeLiveState } from "./urgeLive.ts";
 import type { UrgeLiveState } from "./urgeLive.ts";
+import type { StateProfile } from "./stateProfile.ts";
+import type { IdentityProfile } from "./identityProfile.ts";
+import type { BeliefInterferenceItem, InterferenceItem, InterferenceUrgeRepresentation, ThoughtInterferenceItem, UrgeInterferenceItem } from "./interferenceItem.ts";
+import { resolveEffectiveIdentityForInterferenceItem } from "./libraryRelationships.ts";
 
 function safeText(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
@@ -458,4 +462,264 @@ export function resolveSingleOptionalArcStateComponent(
     return firstOptional ?? null;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, Phase 4: generalizing this composer to
+// compose from the Phase 3 libraries (arc/stateProfile.ts,
+// arc/identityProfile.ts, arc/interferenceItem.ts) instead of
+// ArcBuildProfile's own linkedUrgeArcId/linkedThoughtArcId/linkedBeliefArcId
+// fields. Every function below is NEW and purely additive -- nothing
+// above this section is modified, and every existing production call
+// site (live/ArcLiveRenderer.tsx's ComposedEncodingScreen, still calling
+// resolveEffectiveArcStateComponents with its own ArcBuildProfile-backed
+// signature) is completely untouched. Pure logic only: no storage I/O,
+// no navigation, deterministic, and every StateProfile/IdentityProfile/
+// InterferenceItem input is read-only -- see each function's own "not
+// mutated" test in arc/arcStateComposer.test.ts. Nothing here is wired
+// into any screen in this phase.
+//
+// Emotion clarification: an EmotionInterferenceItem never becomes an
+// ADDITIONAL selected optional component (resolveArcStateComponentFromInterferenceItem
+// returns null for it, exactly like null/no-item -- the base "emotion"
+// component this composer already always includes IS the structural
+// slot an Emotion item's content flows into; adding it as a second,
+// selectable component would duplicate that slot). Its own saved content
+// is never discarded because of this: resolveArcStateEncodingContentFromLibrary
+// below still folds an Emotion item's own emotionName/situationContext/
+// triggerInfo/description/regulationCue in exactly like it would for any
+// other category, and its primaryStateProfileId/identityProfileIdOverride
+// still drive which State/Identity the composition resolves, unaffected
+// by the component-mapping result.
+//
+// Reported gap (per explicit instruction: report rather than silently
+// broaden Phase 3 types): EmotionInterferenceItem -- like
+// BeliefInterferenceItem and ThoughtInterferenceItem -- has no field of
+// its own equivalent to the base StateProfile's `action` or
+// `encodingCue`. Only UrgeInterferenceItem has an Encoding-cue-equivalent
+// pair (visualEncodingConfig/sensoryEncodingConfig), and NO category has
+// an "action" field of its own -- see arc/interferenceItem.ts's own doc:
+// "Do not copy the entire State or Identity data into an
+// InterferenceItem... Store stable references to the linked profiles."
+// So for an Emotion item, `action` and `encodingCue` below always
+// resolve from the base StateProfile (or an explicit MiniOverrideConfig
+// field, which IS available to every category since it lives on the
+// shared InterferenceItemBase) -- never from the item itself.
+// `regulationCue` is the one field EmotionInterferenceItem DOES carry
+// its own value for (its `regulationCue` field), and it participates
+// fully in that field's precedence below. This is not a Phase 4 gap to
+// work around -- it is Phase 3's own intended "lightweight item, full
+// State" shape, surfaced here exactly as instructed rather than patched
+// over or used as a reason to add fields to Phase 3 types.
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps a resolved (0-or-1, per arc/libraryRelationships.ts's
+ * isValidInterferenceSelection) InterferenceItem to the optional
+ * ArcStateComponentKind it represents in this composer's own existing
+ * vocabulary -- "thought"/"belief"/"urge" map directly onto themselves
+ * (InterferenceCategory and ArcStateComponentKind share the same string
+ * values for these three). An "emotion"-category item maps to null,
+ * exactly like a null/absent item -- see this section's own "Emotion
+ * clarification" above for why that is correct (no duplicate component)
+ * and never a loss of the item's own content (still read in full by
+ * resolveArcStateEncodingContentFromLibrary below).
+ */
+export function resolveArcStateComponentFromInterferenceItem(item: InterferenceItem | null): ArcStateComponentKind | null {
+  if (!item) return null;
+  if (item.category === "emotion") return null;
+  return item.category;
+}
+
+function mapInterferenceUrgeRepresentationToLive(preference: InterferenceUrgeRepresentation): UrgeRepresentation | null {
+  switch (preference) {
+    case "visual":
+      return "visual";
+    case "sensory":
+      return "bodily";
+    case "both":
+      return "both";
+    case "decide_in_live":
+      return null;
+  }
+}
+
+/**
+ * Library-backed counterpart to seedEmbeddedUrgeLiveState above -- seeds
+ * the embedded Urge engine's own state directly from a saved
+ * UrgeInterferenceItem's own representationPreference, translated onto
+ * UrgeLiveState's own vocabulary (see mapInterferenceUrgeRepresentationToLive's
+ * own doc for the "sensory"->"bodily"/"decide_in_live"->null mapping --
+ * neither this library's nor the LIVE engine's own representation type
+ * is broadened or changed to make them match). Never re-asks anything
+ * the item already has an answer for.
+ */
+export function seedEmbeddedUrgeLiveStateFromInterferenceItem(item: UrgeInterferenceItem): UrgeLiveState {
+  return { ...createEmptyUrgeLiveState(), representation: mapInterferenceUrgeRepresentationToLive(item.representationPreference) };
+}
+
+/**
+ * Library-backed counterpart to seedEmbeddedThoughtLiveState above --
+ * seeds only thoughtText, since ThoughtInterferenceItem (deliberately
+ * lightweight, per arc/interferenceItem.ts's own doc) carries no
+ * modality/timeOrientation fields of its own the way the legacy
+ * free-text ArcStateRecognitionAnswers does. Those two stay at
+ * createEmptyThoughtLiveState()'s own defaults (null) -- asked fresh,
+ * exactly like a build with no BUILD-configured preference already
+ * behaves today, never guessed.
+ */
+export function seedEmbeddedThoughtLiveStateFromInterferenceItem(item: ThoughtInterferenceItem): ThoughtLiveState {
+  return { ...createEmptyThoughtLiveState(), thoughtText: item.thoughtText };
+}
+
+/** Library-backed counterpart to seedEmbeddedBeliefLiveState above. */
+export function seedEmbeddedBeliefLiveStateFromInterferenceItem(item: BeliefInterferenceItem): BeliefLiveState {
+  return { ...createEmptyBeliefLiveState(), limitingBeliefText: item.beliefText };
+}
+
+/**
+ * Library-backed counterpart to isPreventiveStoppingRelevant above --
+ * true only for a selected UrgeInterferenceItem with a real, non-blank
+ * preventiveStoppingAction; false for null, for any non-urge category
+ * (Emotion included), and for an urge item whose own action is
+ * blank/unset. Never reads ArcBuildProfile or a DevelopmentLayer at all
+ * -- the item's own field is the sole source, unlike
+ * isPreventiveStoppingRelevant's ArcBuildProfile-backed lookup.
+ */
+export function isPreventiveStoppingRelevantForInterferenceItem(item: InterferenceItem | null): boolean {
+  if (!item || item.category !== "urge") return false;
+  return safeText(item.preventiveStoppingAction).length > 0;
+}
+
+/** The item's own free-text "headline" -- the one category-specific field closest to a short label, used only to build recognitionContext below. Every category has exactly one such field. */
+function resolveCategoryHeadline(item: InterferenceItem): string | null {
+  switch (item.category) {
+    case "thought":
+      return item.thoughtText;
+    case "belief":
+      return item.beliefText;
+    case "urge":
+      return item.urgeName;
+    case "emotion":
+      return item.emotionName;
+  }
+}
+
+/** The item's own Regulation-cue-equivalent -- every category has one (Urge's is named regulationAnchor rather than regulationCue, but the concept is identical; see arc/interferenceItem.ts's own field docs). */
+function resolveCategoryRegulationCue(item: InterferenceItem): string | null {
+  switch (item.category) {
+    case "thought":
+      return item.regulationCue;
+    case "belief":
+      return item.regulationCue;
+    case "urge":
+      return item.regulationAnchor;
+    case "emotion":
+      return item.regulationCue;
+  }
+}
+
+/**
+ * The item's own Encoding-cue-equivalent, when its category has one --
+ * only UrgeInterferenceItem does today (its representation-based visual/
+ * sensory Encoding configuration, preferring whichever its own
+ * representationPreference points at, falling back to the other when
+ * only one is configured). Every other category (Thought/Belief/Emotion)
+ * returns null here -- see this section's own "Reported gap" doc above
+ * for why that is Phase 3's own intended shape, not a bug to route
+ * around.
+ */
+function resolveCategoryEncodingCue(item: InterferenceItem): string | null {
+  if (item.category !== "urge") return null;
+  if (item.representationPreference === "sensory") return item.sensoryEncodingConfig ?? item.visualEncodingConfig;
+  return item.visualEncodingConfig ?? item.sensoryEncodingConfig;
+}
+
+/** The item's own recognition/context text -- its category headline plus situationContext/triggerInfo/description (common to every category), joined. Never invents content: a field left unset by the trainee simply contributes nothing to the joined text. null when the item has none of these set at all. */
+function resolveInterferenceItemRecognitionContext(item: InterferenceItem): string | null {
+  const parts = [resolveCategoryHeadline(item), item.situationContext, item.triggerInfo, item.description].map((part) => safeText(part)).filter((part) => part.length > 0);
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+/**
+ * Picks the first non-blank value, trying in order: the Mini override
+ * (most specific, only when explicitly set), then the InterferenceItem's
+ * own category-specific field, then the base StateProfile field -- "Mini
+ * values... fall back to the Full State/Interference/Identity
+ * configuration" (arc/interferenceItem.ts's own MiniOverrideConfig doc).
+ *
+ * A blank/whitespace-only string at any step is treated identically to
+ * null/absent, and so never erases a meaningful earlier-resolved value.
+ * None of Phase 3's optional text fields distinguish "deliberately
+ * cleared" from "never set" -- every normalize* function (arc/stateProfile.ts,
+ * arc/identityProfile.ts, arc/interferenceItem.ts) collapses both to
+ * null identically -- so there is no signal this resolver could use to
+ * treat an explicit blank override differently from an absent one; safe
+ * blank-handling is therefore this function's own documented, tested
+ * behavior rather than something the type system distinguishes.
+ */
+function resolveWithMiniFallback(miniValue: string | null | undefined, itemValue: string | null, stateValue: string | null): string | null {
+  const mini = safeText(miniValue);
+  if (mini.length > 0) return mini;
+  const item = safeText(itemValue);
+  if (item.length > 0) return item;
+  const state = safeText(stateValue);
+  return state.length > 0 ? state : null;
+}
+
+export interface ArcStateLibraryEncodingContent {
+  /** The selected item's own recognition/context text -- see resolveInterferenceItemRecognitionContext's own doc. Always null when `item` is null. */
+  recognitionContext: string | null;
+  /** Mini override -> item's own category-specific field -> base StateProfile.regulationAnchor -> null. */
+  regulationCue: string | null;
+  /** Mini override -> item's own category-specific field (Urge only -- see this section's own "Reported gap" doc) -> base StateProfile.encodingCue -> null. */
+  encodingCue: string | null;
+  /** Mini override -> base StateProfile.action -> null. No category has its own "action" field -- see this section's own "Reported gap" doc. */
+  action: string | null;
+  /** The Identity id actually resolved for this item/State pair, via arc/libraryRelationships.ts's resolveEffectiveIdentityForInterferenceItem (never reimplemented here). null is a normal, valid outcome (Self Development allows no Identity). */
+  resolvedIdentityId: string | null;
+  /** The resolved Identity's own encodingCue -- populated only when `identity` is non-null AND `identity.id === resolvedIdentityId` (never from a stale/mismatched candidate the caller happened to pass in). */
+  identityEncodingCue: string | null;
+  /** The resolved Identity's own action -- same gating as identityEncodingCue. */
+  identityAction: string | null;
+}
+
+/**
+ * The Phase 4 content resolver: combines a base StateProfile, an
+ * optionally-selected InterferenceItem (0 or 1 -- see
+ * resolveArcStateComponentFromInterferenceItem's own doc; `item` here is
+ * whichever ONE item a caller already resolved, e.g. via
+ * arc/libraryRelationships.ts's validateInterferenceItemPrimaryState),
+ * and a candidate IdentityProfile into the fields a future Encoding-
+ * facing caller needs. Pure -- takes already-loaded records, performs no
+ * I/O, never mutates any of its three inputs (state/item/identity).
+ *
+ * Field-by-field precedence for regulationCue/encodingCue/action: see
+ * resolveWithMiniFallback's own doc. Identity resolution: see
+ * resolveEffectiveIdentityForInterferenceItem (arc/libraryRelationships.ts)
+ * -- called here, never reimplemented.
+ */
+export function resolveArcStateEncodingContentFromLibrary(state: StateProfile, item: InterferenceItem | null, identity: IdentityProfile | null): ArcStateLibraryEncodingContent {
+  const miniOverride = item?.miniOverride ?? null;
+  const regulationCue = resolveWithMiniFallback(miniOverride?.regulationAnchorOverride ?? null, item ? resolveCategoryRegulationCue(item) : null, state.regulationAnchor);
+  const encodingCue = resolveWithMiniFallback(miniOverride?.encodingCueOverride ?? null, item ? resolveCategoryEncodingCue(item) : null, state.encodingCue);
+  const action = resolveWithMiniFallback(miniOverride?.stateActionOverride ?? null, null, state.action);
+  const resolvedIdentityId = item ? resolveEffectiveIdentityForInterferenceItem(item, state) : (state.primaryIdentityProfileId ?? null);
+
+  let identityEncodingCue: string | null = null;
+  let identityAction: string | null = null;
+  if (identity !== null && identity.id === resolvedIdentityId) {
+    identityEncodingCue = identity.encodingCue;
+    identityAction = identity.action;
+  }
+
+  return {
+    recognitionContext: item ? resolveInterferenceItemRecognitionContext(item) : null,
+    regulationCue,
+    encodingCue,
+    action,
+    resolvedIdentityId,
+    identityEncodingCue,
+    identityAction,
+  };
 }

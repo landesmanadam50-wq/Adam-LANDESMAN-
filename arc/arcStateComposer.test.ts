@@ -14,6 +14,7 @@ import {
   isComponentEncoded,
   isComponentSelected,
   isPreventiveStoppingRelevant,
+  isPreventiveStoppingRelevantForInterferenceItem,
   markAcceptanceCompleted,
   markAwarenessCompleted,
   markBridgeMantraCompleted,
@@ -21,12 +22,17 @@ import {
   markPresenceCompleted,
   markRegulationCompleted,
   markStayCompleted,
+  resolveArcStateComponentFromInterferenceItem,
+  resolveArcStateEncodingContentFromLibrary,
   resolveArcStatePresenceRoute,
   resolveEffectiveArcStateComponents,
   resolveSingleOptionalArcStateComponent,
   seedEmbeddedBeliefLiveState,
+  seedEmbeddedBeliefLiveStateFromInterferenceItem,
   seedEmbeddedThoughtLiveState,
+  seedEmbeddedThoughtLiveStateFromInterferenceItem,
   seedEmbeddedUrgeLiveState,
+  seedEmbeddedUrgeLiveStateFromInterferenceItem,
   shouldShowSharedBridgeMantra,
   validateOptionalComponentSelection,
 } from "./arcStateComposer.ts";
@@ -35,6 +41,18 @@ import { createEmptyArcBuildProfile } from "./types.ts";
 import { getFirstBeliefLiveStage, getFirstEmbeddedBeliefLiveStage } from "./beliefLive.ts";
 import { getFirstEmbeddedThoughtLiveStage, getFirstThoughtLiveStage } from "./thoughtLive.ts";
 import { getFirstEmbeddedUrgeLiveStage, getFirstUrgeLiveStage } from "./urgeLive.ts";
+import { createEmptyStateProfile } from "./stateProfile.ts";
+import type { StateProfile } from "./stateProfile.ts";
+import { createEmptyIdentityProfile } from "./identityProfile.ts";
+import type { IdentityProfile } from "./identityProfile.ts";
+import {
+  createEmptyBeliefInterferenceItem,
+  createEmptyEmotionInterferenceItem,
+  createEmptyMiniOverrideConfig,
+  createEmptyThoughtInterferenceItem,
+  createEmptyUrgeInterferenceItem,
+} from "./interferenceItem.ts";
+import { resolveEffectiveIdentityForInterferenceItem } from "./libraryRelationships.ts";
 
 // --- #1/#2/#34: legacy/unconfigured route ---
 
@@ -408,4 +426,327 @@ test("resolveSingleOptionalArcStateComponent: null session selection with no con
   assert.equal(resolveSingleOptionalArcStateComponent(undefined, null), null);
   const emotionOnly: ArcStateComposition = { available: ["emotion"], defaultSelected: ["emotion"] };
   assert.equal(resolveSingleOptionalArcStateComponent(emotionOnly, null), null);
+});
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, Phase 4: generalizing this composer to
+// the Phase 3 libraries (StateProfile/IdentityProfile/InterferenceItem)
+// ---------------------------------------------------------------------------
+
+const NOW = "2026-01-01T00:00:00.000Z";
+
+function stateProfileFixture(overrides: Partial<StateProfile> = {}): StateProfile {
+  return { ...createEmptyStateProfile("state1", "רוגע", "prog1", NOW), ...overrides };
+}
+
+function identityProfileFixture(overrides: Partial<IdentityProfile> = {}): IdentityProfile {
+  return { ...createEmptyIdentityProfile("identity1", "אדם רגוע", "prog1", NOW), ...overrides };
+}
+
+// --- resolveArcStateComponentFromInterferenceItem ---
+
+test("resolveArcStateComponentFromInterferenceItem: null item maps to null", () => {
+  assert.equal(resolveArcStateComponentFromInterferenceItem(null), null);
+});
+
+test("resolveArcStateComponentFromInterferenceItem: a Thought item maps to 'thought'", () => {
+  assert.equal(resolveArcStateComponentFromInterferenceItem(createEmptyThoughtInterferenceItem("t1", "x", null, NOW)), "thought");
+});
+
+test("resolveArcStateComponentFromInterferenceItem: a Belief item maps to 'belief'", () => {
+  assert.equal(resolveArcStateComponentFromInterferenceItem(createEmptyBeliefInterferenceItem("b1", "x", null, NOW)), "belief");
+});
+
+test("resolveArcStateComponentFromInterferenceItem: an Urge item maps to 'urge'", () => {
+  assert.equal(resolveArcStateComponentFromInterferenceItem(createEmptyUrgeInterferenceItem("u1", "x", null, NOW)), "urge");
+});
+
+test("resolveArcStateComponentFromInterferenceItem: an Emotion item maps to null -- the base emotion component is already always included, never duplicated", () => {
+  assert.equal(resolveArcStateComponentFromInterferenceItem(createEmptyEmotionInterferenceItem("e1", "x", null, NOW)), null);
+});
+
+// --- seedEmbeddedUrgeLiveStateFromInterferenceItem ---
+
+test("seedEmbeddedUrgeLiveStateFromInterferenceItem: maps visual/sensory/both/decide_in_live onto the embedded engine's own vocabulary (populated records)", () => {
+  const visual = { ...createEmptyUrgeInterferenceItem("u1", "x", null, NOW), representationPreference: "visual" as const };
+  assert.equal(seedEmbeddedUrgeLiveStateFromInterferenceItem(visual).representation, "visual");
+  const sensory = { ...createEmptyUrgeInterferenceItem("u2", "x", null, NOW), representationPreference: "sensory" as const };
+  assert.equal(seedEmbeddedUrgeLiveStateFromInterferenceItem(sensory).representation, "bodily");
+  const both = { ...createEmptyUrgeInterferenceItem("u3", "x", null, NOW), representationPreference: "both" as const };
+  assert.equal(seedEmbeddedUrgeLiveStateFromInterferenceItem(both).representation, "both");
+});
+
+test("seedEmbeddedUrgeLiveStateFromInterferenceItem: a sparse (freshly created) item defaults to decide_in_live, which seeds a null representation", () => {
+  const sparse = createEmptyUrgeInterferenceItem("u4", "x", null, NOW);
+  assert.equal(sparse.representationPreference, "decide_in_live", "sanity check on the fixture");
+  assert.equal(seedEmbeddedUrgeLiveStateFromInterferenceItem(sparse).representation, null);
+});
+
+// --- seedEmbeddedThoughtLiveStateFromInterferenceItem ---
+
+test("seedEmbeddedThoughtLiveStateFromInterferenceItem: seeds thoughtText from a populated item", () => {
+  const item = { ...createEmptyThoughtInterferenceItem("t1", "x", null, NOW), thoughtText: "אני לא מספיק טוב" };
+  const seeded = seedEmbeddedThoughtLiveStateFromInterferenceItem(item);
+  assert.equal(seeded.thoughtText, "אני לא מספיק טוב");
+  assert.equal(seeded.modality, null, "ThoughtInterferenceItem carries no modality field of its own -- stays at the safe default, asked fresh");
+});
+
+test("seedEmbeddedThoughtLiveStateFromInterferenceItem: a sparse item seeds safe defaults, never crashes", () => {
+  const sparse = createEmptyThoughtInterferenceItem("t2", "x", null, NOW);
+  const seeded = seedEmbeddedThoughtLiveStateFromInterferenceItem(sparse);
+  assert.equal(seeded.thoughtText, null);
+  assert.equal(seeded.timeOrientation, null);
+});
+
+// --- seedEmbeddedBeliefLiveStateFromInterferenceItem ---
+
+test("seedEmbeddedBeliefLiveStateFromInterferenceItem: seeds limitingBeliefText from a populated item, safe default from a sparse one", () => {
+  const populated = { ...createEmptyBeliefInterferenceItem("b1", "x", null, NOW), beliefText: "אני לא מתמיד" };
+  assert.equal(seedEmbeddedBeliefLiveStateFromInterferenceItem(populated).limitingBeliefText, "אני לא מתמיד");
+  const sparse = createEmptyBeliefInterferenceItem("b2", "x", null, NOW);
+  assert.equal(seedEmbeddedBeliefLiveStateFromInterferenceItem(sparse).limitingBeliefText, null);
+});
+
+// --- isPreventiveStoppingRelevantForInterferenceItem ---
+
+test("isPreventiveStoppingRelevantForInterferenceItem: true only for a non-blank Urge preventiveStoppingAction", () => {
+  const withAction = { ...createEmptyUrgeInterferenceItem("u1", "x", null, NOW), preventiveStoppingAction: "להניח את הטלפון" };
+  assert.equal(isPreventiveStoppingRelevantForInterferenceItem(withAction), true);
+});
+
+test("isPreventiveStoppingRelevantForInterferenceItem: false for null, every non-urge category (Emotion included), and a blank urge action", () => {
+  assert.equal(isPreventiveStoppingRelevantForInterferenceItem(null), false);
+  assert.equal(isPreventiveStoppingRelevantForInterferenceItem(createEmptyThoughtInterferenceItem("t1", "x", null, NOW)), false);
+  assert.equal(isPreventiveStoppingRelevantForInterferenceItem(createEmptyBeliefInterferenceItem("b1", "x", null, NOW)), false);
+  assert.equal(isPreventiveStoppingRelevantForInterferenceItem(createEmptyEmotionInterferenceItem("e1", "x", null, NOW)), false);
+  const blank = { ...createEmptyUrgeInterferenceItem("u2", "x", null, NOW), preventiveStoppingAction: "   " };
+  assert.equal(isPreventiveStoppingRelevantForInterferenceItem(blank), false);
+});
+
+// --- resolveArcStateEncodingContentFromLibrary: base-only resolution ---
+
+test("resolveArcStateEncodingContentFromLibrary: base-only resolution when there is no item and no identity", () => {
+  const state = stateProfileFixture({ regulationAnchor: "נשימה", encodingCue: "יד על הלב", action: "לצאת להליכה" });
+  const result = resolveArcStateEncodingContentFromLibrary(state, null, null);
+  assert.equal(result.regulationCue, "נשימה");
+  assert.equal(result.encodingCue, "יד על הלב");
+  assert.equal(result.action, "לצאת להליכה");
+  assert.equal(result.recognitionContext, null);
+  assert.equal(result.resolvedIdentityId, null);
+  assert.equal(result.identityEncodingCue, null);
+  assert.equal(result.identityAction, null);
+});
+
+// --- Item override over base ---
+
+test("resolveArcStateEncodingContentFromLibrary: a Thought item's own regulationCue overrides the base StateProfile's regulationAnchor", () => {
+  const state = stateProfileFixture({ regulationAnchor: "נשימה בסיסית" });
+  const item = { ...createEmptyThoughtInterferenceItem("t1", "x", null, NOW), regulationCue: "יד על החזה" };
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, null);
+  assert.equal(result.regulationCue, "יד על החזה");
+});
+
+test("resolveArcStateEncodingContentFromLibrary: an Urge item's own visual/sensory Encoding config overrides the base StateProfile's encodingCue", () => {
+  const state = stateProfileFixture({ encodingCue: "יד על הלב" });
+  const visual = { ...createEmptyUrgeInterferenceItem("u1", "x", null, NOW), representationPreference: "visual" as const, visualEncodingConfig: "להקטין את התמונה" };
+  const result = resolveArcStateEncodingContentFromLibrary(state, visual, null);
+  assert.equal(result.encodingCue, "להקטין את התמונה");
+});
+
+test("resolveArcStateEncodingContentFromLibrary: no InterferenceItem category has its own 'action' field -- action always resolves from the base StateProfile (or a Mini override)", () => {
+  const state = stateProfileFixture({ action: "לצאת להליכה" });
+  const urge = { ...createEmptyUrgeInterferenceItem("u1", "x", null, NOW), preventiveStoppingAction: "להניח את הטלפון" };
+  const result = resolveArcStateEncodingContentFromLibrary(state, urge, null);
+  assert.equal(result.action, "לצאת להליכה", "preventiveStoppingAction is a STOP action, never mistaken for the State's own beneficial action");
+});
+
+// --- Mini override over item and base, field-by-field ---
+
+test("resolveArcStateEncodingContentFromLibrary: MiniOverrideConfig wins over both the item's own field and the base StateProfile, independently per field", () => {
+  const state = stateProfileFixture({ regulationAnchor: "בסיס", encodingCue: "בסיס", action: "בסיס" });
+  const item = {
+    ...createEmptyThoughtInterferenceItem("t1", "x", null, NOW),
+    regulationCue: "מרמת הפריט",
+    miniOverride: { ...createEmptyMiniOverrideConfig(), regulationAnchorOverride: "מיני", encodingCueOverride: "מיני קידוד", stateActionOverride: "מיני פעולה" },
+  };
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, null);
+  assert.equal(result.regulationCue, "מיני");
+  assert.equal(result.encodingCue, "מיני קידוד");
+  assert.equal(result.action, "מיני פעולה");
+});
+
+test("resolveArcStateEncodingContentFromLibrary: an unset Mini field falls back to the item's own field independently, not straight to base", () => {
+  const state = stateProfileFixture({ regulationAnchor: "בסיס" });
+  const item = {
+    ...createEmptyThoughtInterferenceItem("t1", "x", null, NOW),
+    regulationCue: "מרמת הפריט",
+    miniOverride: createEmptyMiniOverrideConfig(),
+  };
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, null);
+  assert.equal(result.regulationCue, "מרמת הפריט");
+});
+
+// --- Effective Identity resolution (via resolveEffectiveIdentityForInterferenceItem, never reimplemented) ---
+
+test("resolveArcStateEncodingContentFromLibrary: Identity override precedence -- item override wins over the State's own primary Identity", () => {
+  const state = stateProfileFixture({ primaryIdentityProfileId: "state-identity" });
+  const item = { ...createEmptyThoughtInterferenceItem("t1", "x", null, NOW), identityProfileIdOverride: "item-identity" };
+  const identity = identityProfileFixture({ id: "item-identity", encodingCue: "מנטרה", action: "לרוץ" });
+  const expected = resolveEffectiveIdentityForInterferenceItem(item, state);
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, identity);
+  assert.equal(result.resolvedIdentityId, expected, "matches the relationship helper's own output exactly -- never reimplemented here");
+  assert.equal(result.resolvedIdentityId, "item-identity");
+  assert.equal(result.identityEncodingCue, "מנטרה");
+  assert.equal(result.identityAction, "לרוץ");
+});
+
+test("resolveArcStateEncodingContentFromLibrary: with no item override, falls back to the State's own primary Identity", () => {
+  const state = stateProfileFixture({ primaryIdentityProfileId: "state-identity" });
+  const item = createEmptyThoughtInterferenceItem("t1", "x", null, NOW);
+  const identity = identityProfileFixture({ id: "state-identity" });
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, identity);
+  assert.equal(result.resolvedIdentityId, "state-identity");
+});
+
+test("resolveArcStateEncodingContentFromLibrary: with no item at all, Identity falls back to the State's own primary Identity", () => {
+  const state = stateProfileFixture({ primaryIdentityProfileId: "state-identity" });
+  const identity = identityProfileFixture({ id: "state-identity" });
+  const result = resolveArcStateEncodingContentFromLibrary(state, null, identity);
+  assert.equal(result.resolvedIdentityId, "state-identity");
+});
+
+// --- Unresolved Identity safety ---
+
+test("resolveArcStateEncodingContentFromLibrary: no Identity resolves (Self Development allows no Identity) -- safe null, never a crash", () => {
+  const state = stateProfileFixture({ primaryIdentityProfileId: null });
+  const item = createEmptyThoughtInterferenceItem("t1", "x", null, NOW);
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, null);
+  assert.equal(result.resolvedIdentityId, null);
+  assert.equal(result.identityEncodingCue, null);
+  assert.equal(result.identityAction, null);
+});
+
+test("resolveArcStateEncodingContentFromLibrary: a mismatched candidate Identity is never used, even when one happens to be passed in", () => {
+  const state = stateProfileFixture({ primaryIdentityProfileId: "expected-identity" });
+  const item = createEmptyThoughtInterferenceItem("t1", "x", null, NOW);
+  const wrongIdentity = identityProfileFixture({ id: "some-other-identity", encodingCue: "לא רלוונטי" });
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, wrongIdentity);
+  assert.equal(result.resolvedIdentityId, "expected-identity");
+  assert.equal(result.identityEncodingCue, null, "the passed-in identity's id doesn't match what actually resolved, so its content is never used");
+});
+
+// --- Blank override behavior ---
+
+test("resolveArcStateEncodingContentFromLibrary: a blank/whitespace-only item field never erases a meaningful base value", () => {
+  const state = stateProfileFixture({ regulationAnchor: "נשימה משמעותית" });
+  const item = { ...createEmptyThoughtInterferenceItem("t1", "x", null, NOW), regulationCue: "   " };
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, null);
+  assert.equal(result.regulationCue, "נשימה משמעותית");
+});
+
+test("resolveArcStateEncodingContentFromLibrary: a blank/whitespace-only Mini override never erases a meaningful item or base value", () => {
+  const state = stateProfileFixture({ regulationAnchor: "בסיס" });
+  const item = {
+    ...createEmptyThoughtInterferenceItem("t1", "x", null, NOW),
+    regulationCue: "מרמת הפריט",
+    miniOverride: { ...createEmptyMiniOverrideConfig(), regulationAnchorOverride: "   " },
+  };
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, null);
+  assert.equal(result.regulationCue, "מרמת הפריט");
+});
+
+// --- Emotion clarification: the item's content is still contributed, never discarded ---
+
+test("Emotion clarification #1: an Emotion item does not add a duplicate Emotion component", () => {
+  const emotionItem = createEmptyEmotionInterferenceItem("e1", "תסכול", "prog1", NOW);
+  assert.equal(resolveArcStateComponentFromInterferenceItem(emotionItem), null);
+});
+
+test("Emotion clarification #2: an Emotion item's saved content (name/situation/trigger/description/regulationCue) still contributes to the composed session", () => {
+  const state = stateProfileFixture({ regulationAnchor: "נשימה בסיסית" });
+  const item = {
+    ...createEmptyEmotionInterferenceItem("e1", "תסכול", "prog1", NOW),
+    emotionName: "תסכול",
+    situationContext: "בזמן עבודה מול לוח זמנים",
+    triggerInfo: "הערה של מנהל",
+    description: "מתעורר כשמרגיש לא נראה",
+    regulationCue: "כפות רגליים על הרצפה",
+  };
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, null);
+  assert.ok(result.recognitionContext !== null);
+  assert.match(result.recognitionContext as string, /תסכול/);
+  assert.match(result.recognitionContext as string, /בזמן עבודה מול לוח זמנים/);
+  assert.match(result.recognitionContext as string, /הערה של מנהל/);
+  assert.match(result.recognitionContext as string, /מתעורר כשמרגיש לא נראה/);
+  assert.equal(result.regulationCue, "כפות רגליים על הרצפה", "the item's own regulationCue overrides the base State's regulationAnchor -- never discarded");
+});
+
+test("Emotion clarification #3: an Emotion item's primaryStateProfileId identifies the StateProfile resolveArcStateEncodingContentFromLibrary treats as its linked base State", () => {
+  const state = stateProfileFixture({ id: "state1", encodingCue: "יד על החזה", action: "לצאת להליכה" });
+  const item = { ...createEmptyEmotionInterferenceItem("e1", "תסכול", "prog1", NOW), primaryStateProfileId: state.id };
+  assert.equal(item.primaryStateProfileId, state.id, "the item's own reference points at the State passed in as `state`");
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, null);
+  assert.equal(result.encodingCue, "יד על החזה", "resolved from the linked State, since Emotion has no encoding-cue field of its own -- see this section's own 'Reported gap' doc");
+  assert.equal(result.action, "לצאת להליכה");
+});
+
+test("Emotion clarification #4: an Emotion item's identityProfileIdOverride is resolved through resolveEffectiveIdentityForInterferenceItem, never reimplemented", () => {
+  const state = stateProfileFixture({ primaryIdentityProfileId: "state-identity" });
+  const item = { ...createEmptyEmotionInterferenceItem("e1", "תסכול", "prog1", NOW), identityProfileIdOverride: "item-identity" };
+  const expected = resolveEffectiveIdentityForInterferenceItem(item, state);
+  const result = resolveArcStateEncodingContentFromLibrary(state, item, null);
+  assert.equal(result.resolvedIdentityId, expected);
+  assert.equal(result.resolvedIdentityId, "item-identity");
+});
+
+test("Emotion clarification #5: no input record (StateProfile, EmotionInterferenceItem, IdentityProfile) is mutated", () => {
+  const state = stateProfileFixture();
+  const item = { ...createEmptyEmotionInterferenceItem("e1", "תסכול", "prog1", NOW), regulationCue: "x", miniOverride: createEmptyMiniOverrideConfig() };
+  const identity = identityProfileFixture();
+  const stateCopy = JSON.parse(JSON.stringify(state));
+  const itemCopy = JSON.parse(JSON.stringify(item));
+  const identityCopy = JSON.parse(JSON.stringify(identity));
+  resolveArcStateEncodingContentFromLibrary(state, item, identity);
+  assert.deepEqual(state, stateCopy);
+  assert.deepEqual(item, itemCopy);
+  assert.deepEqual(identity, identityCopy);
+});
+
+// --- No input mutation (general, beyond Emotion) ---
+
+test("seedEmbedded*LiveStateFromInterferenceItem functions never mutate their input item", () => {
+  const urgeItem = createEmptyUrgeInterferenceItem("u1", "x", null, NOW);
+  const urgeCopy = JSON.parse(JSON.stringify(urgeItem));
+  seedEmbeddedUrgeLiveStateFromInterferenceItem(urgeItem);
+  assert.deepEqual(urgeItem, urgeCopy);
+
+  const thoughtItem = createEmptyThoughtInterferenceItem("t1", "x", null, NOW);
+  const thoughtCopy = JSON.parse(JSON.stringify(thoughtItem));
+  seedEmbeddedThoughtLiveStateFromInterferenceItem(thoughtItem);
+  assert.deepEqual(thoughtItem, thoughtCopy);
+
+  const beliefItem = createEmptyBeliefInterferenceItem("b1", "x", null, NOW);
+  const beliefCopy = JSON.parse(JSON.stringify(beliefItem));
+  seedEmbeddedBeliefLiveStateFromInterferenceItem(beliefItem);
+  assert.deepEqual(beliefItem, beliefCopy);
+});
+
+test("isPreventiveStoppingRelevantForInterferenceItem never mutates its input item", () => {
+  const item = { ...createEmptyUrgeInterferenceItem("u1", "x", null, NOW), preventiveStoppingAction: "x" };
+  const copy = JSON.parse(JSON.stringify(item));
+  isPreventiveStoppingRelevantForInterferenceItem(item);
+  assert.deepEqual(item, copy);
+});
+
+// --- Existing composer-export regression parity ---
+
+test("Phase 4 additions leave every existing composer export's behavior unchanged", () => {
+  assert.deepEqual(resolveEffectiveArcStateComponents(null, null), ["emotion"]);
+  assert.equal(resolveArcStatePresenceRoute(8), "skip");
+  assert.equal(resolveArcStatePresenceRoute(5), "short");
+  assert.equal(resolveArcStatePresenceRoute(2), "full");
+  assert.deepEqual(validateOptionalComponentSelection(["urge", "thought"]), { valid: false, selectedCount: 2 });
+  assert.equal(isPreventiveStoppingRelevant(["emotion", "urge"], "state", createEmptyArcBuildProfile()), false);
+  const session = createEmptyArcStateComposedSession(["emotion", "urge"]);
+  assert.equal(getNextEncodingComponent(session), "urge");
 });
