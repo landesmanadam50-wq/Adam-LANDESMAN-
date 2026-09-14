@@ -252,6 +252,25 @@ export function isInterferenceItemSaveable(item: InterferenceItem): boolean {
 }
 
 /**
+ * Adaptive ARC architecture task, Phase 13 (combined-selection BUILD):
+ * whether `item` is linked to `stateProfileId` at all -- via its own
+ * primaryStateProfileId OR a membership in alternativeStateProfileIds
+ * (see this file's own InterferenceItemBase doc for both fields).
+ *
+ * Deliberately narrow and single-purpose: this checks ONLY the
+ * relationship, never `item.status` -- combining this with
+ * arc/libraryItemStatus.ts's own isLibraryItemEnabled is the CALLER's
+ * job (see arc/combinedSelectionBuild.ts's own groupAvailableItemsByCategory/
+ * classifyConfiguredItem), so a caller that needs relationship-only
+ * information (e.g. to explain why a still-enabled item is no longer
+ * offered) is never forced to also reason about status, and vice versa.
+ * Never an ambiguously-named/ambiguously-scoped predicate.
+ */
+export function isInterferenceItemLinkedToState(item: InterferenceItem, stateProfileId: string): boolean {
+  return item.primaryStateProfileId === stateProfileId || item.alternativeStateProfileIds.includes(stateProfileId);
+}
+
+/**
  * Defensive backfill for an InterferenceItem parsed from storage --
  * mirrors arc/stateProfile.ts's own normalizeStateProfile, but only for
  * the fields common to every category (a malformed category-specific
