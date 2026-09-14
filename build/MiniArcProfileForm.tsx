@@ -115,7 +115,7 @@ export function MiniArcProfileForm({ draft, setDraft }: { draft: MiniArcDraft; s
 
       <CollapsibleSection title="פרטים גופניים מתקדמים">
         <View style={styles.sectionBody}>
-          <Text style={styles.question}>באילו חלקי גוף מתרחש עוגן הוויסות שהגדרת? (רשות, לדמיון ב-Mini ARC Link, מופרדים בפסיק)</Text>
+          <Text style={styles.question}>באילו חלקי גוף מתרחש עוגן הוויסות שהגדרת? (רשות, לדמיון בקישור העתידי, מופרדים בפסיק)</Text>
           <TextInput
             style={styles.textInput}
             value={draft.regulationBodyParts}
@@ -132,7 +132,7 @@ export function MiniArcProfileForm({ draft, setDraft }: { draft: MiniArcDraft; s
             multiline
           />
 
-          <Text style={styles.question}>באילו חלקי גוף מתרחשת פעולת הקידוד שהגדרת? (רשות, לדמיון ב-Mini ARC Link, מופרדים בפסיק)</Text>
+          <Text style={styles.question}>באילו חלקי גוף מתרחשת פעולת הקידוד שהגדרת? (רשות, לדמיון בקישור העתידי, מופרדים בפסיק)</Text>
           <TextInput
             style={styles.textInput}
             value={draft.encodingBodyParts}
@@ -151,7 +151,7 @@ export function MiniArcProfileForm({ draft, setDraft }: { draft: MiniArcDraft; s
         </View>
       </CollapsibleSection>
 
-      <CollapsibleSection title="טריגר ל-ARC Link">
+      <CollapsibleSection title="טריגר לקישור העתידי המקוצר">
         <View style={styles.sectionBody}>
           <Text style={styles.question}>מתי או אחרי מה תרצה לזכור להתחיל את התרגיל? (רשות)</Text>
           <View style={styles.chipRow}>

@@ -80,6 +80,7 @@ import {
   applyBalancedAlternativeInterpretationSeen,
   applyBeneficialActionDurationSelected,
   applyCompletedActionImageryFinished,
+  applyFutureLinkAcknowledged,
   applyImprovedActionImageryFinished,
   applyInterferingThoughtAnswer,
   applyNeedIdentificationAnswer,
@@ -516,7 +517,10 @@ export default function LiveSessionScreen() {
     // never awarded merely for reaching "complete".
     const trimmedImprovement = improvementText.trim();
     const fullReflectionCreditEarned =
-      trimmedImprovement.length > 0 && session.completedActionImageryFinished && session.improvedActionImageryFinished;
+      trimmedImprovement.length > 0 &&
+      session.completedActionImageryFinished &&
+      session.improvedActionImageryFinished &&
+      session.futureLinkAcknowledged;
     updateLastSessionLogEntryGratitude(
       trimmedGratitude.length > 0 ? trimmedGratitude : null,
       trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
@@ -586,6 +590,37 @@ export default function LiveSessionScreen() {
   };
 
   /**
+   * ARC completion/Link simplification task, spec section 9: the
+   * plain (no routine/thenIdentityGoalId/fourWeekGoalId/pdProgramId)
+   * context's own PRIMARY completion action -- "the main outcome must
+   * be real-world action," so this exits toward the Self Development
+   * dashboard (never resets in-place; that's now the visually-secondary
+   * "תרגול שוב" button, still wired to restart() itself below). Same
+   * save-then-navigate shape as returnToFourWeekProgram/
+   * returnToPersonalDevelopmentProgram below.
+   */
+  const finishToSelfDevelopment = () => {
+    const trimmedGratitude = gratitudeText.trim();
+    const trimmedMemoryDetail = gratitudeMemoryDetailText.trim();
+    const trimmedProgressEvidence = progressEvidenceText.trim();
+    const trimmedImprovement = improvementText.trim();
+    const fullReflectionCreditEarned =
+      trimmedImprovement.length > 0 &&
+      session.completedActionImageryFinished &&
+      session.improvedActionImageryFinished &&
+      session.futureLinkAcknowledged;
+    updateLastSessionLogEntryGratitude(
+      trimmedGratitude.length > 0 ? trimmedGratitude : null,
+      trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
+      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null,
+      trimmedImprovement.length > 0 ? trimmedImprovement : null,
+      fullReflectionCreditEarned
+    ).finally(() => {
+      router.replace("/self-development");
+    });
+  };
+
+  /**
    * Four-Week Program task (spec section 10): the fourWeekGoalId-aware
    * replacement for restart() -- saves the same gratitude/reflection
    * fields onto the just-finished session log entry (identical to
@@ -602,7 +637,10 @@ export default function LiveSessionScreen() {
     // computation as restart() above -- see that function's own doc.
     const trimmedImprovement = improvementText.trim();
     const fullReflectionCreditEarned =
-      trimmedImprovement.length > 0 && session.completedActionImageryFinished && session.improvedActionImageryFinished;
+      trimmedImprovement.length > 0 &&
+      session.completedActionImageryFinished &&
+      session.improvedActionImageryFinished &&
+      session.futureLinkAcknowledged;
     updateLastSessionLogEntryGratitude(
       trimmedGratitude.length > 0 ? trimmedGratitude : null,
       trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
@@ -636,7 +674,10 @@ export default function LiveSessionScreen() {
     const trimmedProgressEvidence = progressEvidenceText.trim();
     const trimmedImprovement = improvementText.trim();
     const fullReflectionCreditEarned =
-      trimmedImprovement.length > 0 && session.completedActionImageryFinished && session.improvedActionImageryFinished;
+      trimmedImprovement.length > 0 &&
+      session.completedActionImageryFinished &&
+      session.improvedActionImageryFinished &&
+      session.futureLinkAcknowledged;
     updateLastSessionLogEntryGratitude(
       trimmedGratitude.length > 0 ? trimmedGratitude : null,
       trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
@@ -949,7 +990,8 @@ export default function LiveSessionScreen() {
           onGratitudeAndLearningContinue={() => commitAdvance(session)}
           onCompletedActionImageryContinue={() => commitAdvance(applyCompletedActionImageryFinished(session))}
           onImprovedActionImageryContinue={() => commitAdvance(applyImprovedActionImageryFinished(session))}
-          restartLabel={
+          onFutureLinkContinue={() => commitAdvance(applyFutureLinkAcknowledged(session))}
+          completePrimaryLabel={
             routine
               ? "המשך להתמקדות בהצלחה"
               : thenIdentityGoalId
@@ -960,15 +1002,19 @@ export default function LiveSessionScreen() {
                     ? "לחזור לתוכנית ההתפתחות האישית"
                     : undefined
           }
-          onRestart={
-            thenIdentityGoalId && !routine
-              ? () => router.replace({ pathname: "/identity-extension/live", params: { track: "goal_achievement", goalId: thenIdentityGoalId } })
-              : fourWeekGoalId && !routine
-                ? returnToFourWeekProgram
-                : pdProgramId && !routine
-                  ? returnToPersonalDevelopmentProgram
-                  : restart
+          onCompletePrimary={
+            routine
+              ? restart
+              : thenIdentityGoalId
+                ? () => router.replace({ pathname: "/identity-extension/live", params: { track: "goal_achievement", goalId: thenIdentityGoalId } })
+                : fourWeekGoalId
+                  ? returnToFourWeekProgram
+                  : pdProgramId
+                    ? returnToPersonalDevelopmentProgram
+                    : finishToSelfDevelopment
           }
+          completePracticeAgainLabel={!routine && !thenIdentityGoalId && !fourWeekGoalId && !pdProgramId ? "תרגול שוב" : undefined}
+          onCompletePracticeAgain={!routine && !thenIdentityGoalId && !fourWeekGoalId && !pdProgramId ? restart : undefined}
         />
         {/*
           Phase 8 Part 2 (Identity Extension), Personal Development

@@ -39,6 +39,7 @@ import {
   applyAlternativeAction,
   applyBeneficialActionDurationSelected,
   applyCompletedActionImageryFinished,
+  applyFutureLinkAcknowledged,
   applyImprovedActionImageryFinished,
   applyPlannedActionConfirmed,
   applySuccessFocusExtraMinutes,
@@ -190,7 +191,10 @@ export default function ArcGoalMiniIdentityScreen() {
       const trimmedProgressEvidence = progressEvidenceText.trim();
       const trimmedImprovement = improvementText.trim();
       const fullReflectionCreditEarned =
-        trimmedImprovement.length > 0 && finishedSession.completedActionImageryFinished && finishedSession.improvedActionImageryFinished;
+        trimmedImprovement.length > 0 &&
+        finishedSession.completedActionImageryFinished &&
+        finishedSession.improvedActionImageryFinished &&
+        finishedSession.futureLinkAcknowledged;
       updateLastSessionLogEntryGratitude(
         trimmedGratitude.length > 0 ? trimmedGratitude : null,
         trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
@@ -508,7 +512,8 @@ export default function ArcGoalMiniIdentityScreen() {
           onGratitudeAndLearningContinue={() => commitAdvance(session)}
           onCompletedActionImageryContinue={() => commitAdvance(applyCompletedActionImageryFinished(session))}
           onImprovedActionImageryContinue={() => commitAdvance(applyImprovedActionImageryFinished(session))}
-          onRestart={returnToDashboard}
+          onFutureLinkContinue={() => commitAdvance(applyFutureLinkAcknowledged(session))}
+          onCompletePrimary={returnToDashboard}
         />
       </ScrollView>
     </SafeAreaView>

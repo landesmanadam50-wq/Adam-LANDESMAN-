@@ -151,15 +151,20 @@ export const ARC_LINK_TRIGGER_CATEGORY_LABELS: Record<ArcLinkTriggerCategory, st
 };
 
 /**
- * The single, UI-facing label distinguishing all five ARC Link types
- * ("Do not overcrowd the main screen... clearly distinguish"). A
- * Bridging Link always shows as "ARC Link מגשר" regardless of its own
- * triggerCategory (which still steers its LIVE wording); every standard
- * Link shows "ARC Link <trigger-category label>".
+ * The single, UI-facing label distinguishing a saved link record's own
+ * trigger kind/category ("Do not overcrowd the main screen... clearly
+ * distinguish"). A Bridging Link always shows as "קישור מגשר" regardless
+ * of its own triggerCategory (which still steers its LIVE wording);
+ * every standard Link shows "קישור <trigger-category label>".
+ *
+ * ARC completion/Link simplification task (spec sections 1/11): never
+ * says "ARC Link" -- these are no longer presented as separate
+ * user-facing Link TYPES, only as the trigger/schedule label on one
+ * saved record (see build/ArcLinkBuildForm.tsx's own doc).
  */
 export function describeArcLinkKindAndCategory(link: Pick<ArcLink, "kind" | "triggerCategory">): string {
-  if (resolveArcLinkKind(link) === "bridging") return "ARC Link מגשר";
-  return `ARC Link ${ARC_LINK_TRIGGER_CATEGORY_LABELS[resolveArcLinkTriggerCategory(link)]}`;
+  if (resolveArcLinkKind(link) === "bridging") return "קישור מגשר";
+  return `קישור ${ARC_LINK_TRIGGER_CATEGORY_LABELS[resolveArcLinkTriggerCategory(link)]}`;
 }
 
 /**

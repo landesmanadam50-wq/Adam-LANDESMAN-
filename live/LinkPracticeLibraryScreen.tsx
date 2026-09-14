@@ -14,8 +14,9 @@ import {
 import type { ArcBuild, ArcGoal } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import type { ArcLink, RoutineTrigger, WeeklyAction } from "../arc/routineLinks.ts";
-import { buildLinkLibraryEntries, filterLinkLibraryEntries } from "../arc/linkPracticeLibrary.ts";
-import type { LinkLibraryCategory, LinkLibraryEntry } from "../arc/linkPracticeLibrary.ts";
+import { buildLinkLibraryEntries } from "../arc/linkPracticeLibrary.ts";
+import type { LinkLibraryEntry } from "../arc/linkPracticeLibrary.ts";
+import { FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL } from "../arc/futureArcLink.ts";
 
 const TARGET_TYPE_LABELS: Record<string, string> = {
   state: "ARC State",
@@ -25,12 +26,6 @@ const TARGET_TYPE_LABELS: Record<string, string> = {
   belief: "ARC Belief",
   direct_action: "פעולה ישירה",
   legacy_generic: "",
-};
-
-const PRACTICE_MODE_LABELS: Record<string, string> = {
-  short: "קישור קצר",
-  full: "תרגול מלא",
-  fast: "תרגול מהיר",
 };
 
 const MINI_KIND_LABELS: Record<string, string> = {
@@ -45,21 +40,26 @@ const MINI_KIND_LABELS: Record<string, string> = {
 /**
  * live/LinkPracticeLibraryScreen.tsx (route: /link-practice)
  *
- * General Link Practice area task (spec section 8): "תרגול קישורים" --
- * a library view over every saved ArcLink, split into "ARC Link" and
- * "ARC Mini Link" categories, including Links from both Personal
- * Development and Goal Achievement (a Goal Achievement entry is
- * labeled with its ArcGoal name). Purely a navigation aggregator over
- * arc/linkPracticeLibrary.ts's pure list-building logic -- opening an
- * entry navigates to the EXACT SAME existing rehearsal screens
- * (live/ArcLinkScreen.tsx / live/MiniArcLinkScreen.tsx) every other
- * entry point already uses; nothing here ever copies or duplicates a
- * saved Link record, and nothing here auto-opens a real-time protocol.
+ * General Link Practice area task (spec section 8), updated by the ARC
+ * completion/Link simplification task (spec sections 1/11/12): "תרגול
+ * קישורים" is a library view over every saved ArcLink record, including
+ * Links from both Personal Development and Goal Achievement (a Goal
+ * Achievement entry is labeled with its ArcGoal name) -- but the OLD
+ * "ARC Link" / "ARC Mini Link" category split is now internal-only
+ * (arc/linkPracticeLibrary.ts's own `category` field, kept for pure-
+ * logic bookkeeping) and never shown to the user as a picker: every
+ * entry is offered as "קישור ARC עתידי מקוצר" and opens the SAME
+ * /future-arc-link/[id] route every other Future Link entry point uses
+ * (arc/futureArcLink.ts), never the old /arc-link/[id] or
+ * /mini-arc-link/[id] rehearsal screens. An entry whose
+ * futureLinkBuildId cannot be resolved (a stale/unlinked Mini ARC Link
+ * with no parent Full ARC) is simply not offered here -- nothing here
+ * ever copies or duplicates a saved Link record, and nothing here
+ * auto-opens a real-time protocol.
  */
 export default function LinkPracticeLibraryScreen() {
   const [entries, setEntries] = useState<LinkLibraryEntry[]>([]);
   const [goalNamesById, setGoalNamesById] = useState<Record<string, string>>({});
-  const [category, setCategory] = useState<LinkLibraryCategory>("arc_link");
   const [loaded, setLoaded] = useState(false);
 
   const reload = useCallback(() => {
@@ -96,7 +96,7 @@ export default function LinkPracticeLibraryScreen() {
     }, [reload])
   );
 
-  const visible = filterLinkLibraryEntries(entries, category);
+  const visible = entries.filter((entry) => entry.futureLinkBuildId !== null);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -104,16 +104,7 @@ export default function LinkPracticeLibraryScreen() {
         <Text style={styles.title}>תרגול קישורים</Text>
         <Text style={styles.body}>ספריית הקישורים השמורים שלך -- לא מוגבלת למצב, למטרה או לפרוטוקול אחד.</Text>
 
-        <View style={styles.chipRow}>
-          <Pressable style={[styles.chip, category === "arc_link" && styles.chipSelected]} onPress={() => setCategory("arc_link")}>
-            <Text style={styles.chipText}>ARC Link</Text>
-          </Pressable>
-          <Pressable style={[styles.chip, category === "mini_arc_link" && styles.chipSelected]} onPress={() => setCategory("mini_arc_link")}>
-            <Text style={styles.chipText}>ARC Mini Link</Text>
-          </Pressable>
-        </View>
-
-        {loaded && visible.length === 0 && <Text style={styles.emptyText}>אין עדיין קישורים שמורים בקטגוריה הזאת.</Text>}
+        {loaded && visible.length === 0 && <Text style={styles.emptyText}>אין עדיין קישורים שמורים.</Text>}
 
         {visible.map((entry) => {
           const targetLabel = TARGET_TYPE_LABELS[entry.targetType] ?? "";
@@ -125,7 +116,6 @@ export default function LinkPracticeLibraryScreen() {
               {entry.trigger.length > 0 && <Text style={styles.cardRow}>{`טריגר: ${entry.trigger}`}</Text>}
               {targetLabel.length > 0 && <Text style={styles.cardRow}>{`יעד: ${targetLabel}`}</Text>}
               {miniKindLabel && miniKindLabel.length > 0 && <Text style={styles.cardRow}>{`Mini: ${miniKindLabel}`}</Text>}
-              {category === "arc_link" && <Text style={styles.cardRow}>{`מצב תרגול: ${PRACTICE_MODE_LABELS[entry.practiceMode]}`}</Text>}
               <Text style={styles.cardRow}>{entry.mode === "with_archi" ? "אופן: עם ARCHI" : "אופן: ללא ARCHI"}</Text>
               {goalName ? (
                 <Text style={styles.cardRowGoal}>{`מטרת ARC Goal: ${goalName}`}</Text>
@@ -135,14 +125,13 @@ export default function LinkPracticeLibraryScreen() {
               <Pressable
                 style={[styles.startButton, styles.fullWidthButton]}
                 onPress={() =>
-                  router.push(
-                    entry.category === "arc_link"
-                      ? { pathname: "/arc-link/[id]", params: { id: entry.link.protocolId, linkId: entry.link.id } }
-                      : { pathname: "/mini-arc-link/[id]", params: { id: entry.link.protocolId, linkId: entry.link.id } }
-                  )
+                  router.push({
+                    pathname: "/future-arc-link/[id]",
+                    params: { id: entry.futureLinkBuildId as string, linkId: entry.link.id },
+                  })
                 }
               >
-                <Text style={styles.startButtonText}>התחלת התרגול</Text>
+                <Text style={styles.startButtonText}>{FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL}</Text>
               </Pressable>
             </View>
           );
@@ -161,10 +150,6 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1, padding: 24 },
   title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 8 },
   body: { fontSize: 15, textAlign: "right", marginBottom: 16, lineHeight: 21, color: "#555" },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginBottom: 16 },
-  chip: { backgroundColor: "#E6F4FE", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
-  chipSelected: { backgroundColor: "#0a7ea4" },
-  chipText: { color: "#0a7ea4", fontSize: 14 },
   emptyText: { fontSize: 15, textAlign: "right", color: "#888", marginBottom: 16 },
   card: { backgroundColor: "#F7FAFC", borderRadius: 12, padding: 16, marginBottom: 14 },
   cardTitle: { fontSize: 17, fontWeight: "700", textAlign: "right", marginBottom: 6 },

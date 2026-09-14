@@ -223,11 +223,11 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   linkTriggerType: "מתי או אחרי מה תרצה לזכור להתחיל את התרגיל? (רשות)",
   linkTriggerText: "תאר את הטריגר (רשות, למשל \"בשעה 10:00\" או \"אחרי שאני קם מהמיטה\")",
   regulationBodyParts: "באילו חלקי גוף מתרחש כלי הוויסות? (רשות, מופרדים בפסיק)",
-  regulationMovementText: "איך הגוף מבצע את כלי הוויסות? (רשות, לדמיון ב-ARC Link)",
+  regulationMovementText: "איך הגוף מבצע את כלי הוויסות? (רשות, לדמיון בקישור העתידי המקוצר)",
   stateEncodingBodyParts: "באילו חלקי גוף מתרחשת שפת הגוף שהגדרת? (רשות, מופרדים בפסיק)",
-  stateEncodingMovementText: "איך הגוף מבצע אותה? (רשות, לדמיון ב-ARC Link)",
+  stateEncodingMovementText: "איך הגוף מבצע אותה? (רשות, לדמיון בקישור העתידי המקוצר)",
   identityEncodingBodyParts: "באילו חלקי גוף מתרחשת שפת הגוף שהגדרת? (רשות, מופרדים בפסיק)",
-  identityEncodingMovementText: "איך הגוף מבצע אותה? (רשות, לדמיון ב-ARC Link)",
+  identityEncodingMovementText: "איך הגוף מבצע אותה? (רשות, לדמיון בקישור העתידי המקוצר)",
 };
 
 const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
@@ -352,7 +352,7 @@ const SECTION_TITLES: Record<SectionId, string> = {
   successfulPerformance: "דמיון ביצוע מוצלח",
   negativeAction: "פעולה שלילית מוגבלת",
   dwellTimes: "זמן שהייה",
-  trigger: "טריגר ל-ARC Link",
+  trigger: "טריגר לקישור העתידי המקוצר",
 };
 
 /** Every section here that is never entirely optional (contains at least one field isTargetDraftComplete actually requires) opens expanded by default; every purely optional/advanced section stays collapsed -- this task's own explicit requirement. */

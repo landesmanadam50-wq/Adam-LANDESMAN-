@@ -193,6 +193,7 @@ const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   gratitude_and_learning: "info",
   completed_action_imagery: "info",
   improved_action_imagery: "info",
+  future_link: "info",
   negative_action: "info",
   complete: "finish",
 };
@@ -1029,6 +1030,12 @@ export function getStageCopy(
       return { title: "דמיון הפעולה שקרתה", body: "", segments: null };
     case "improved_action_imagery":
       return { title: "דמיון הפעולה המשופרת", body: "", segments: null };
+    // ARC completion/Link simplification task: rendered by its own
+    // fully custom component (live/screens.tsx's FutureArcLinkCueScreen)
+    // -- this copy is used only for the header title, same as the three
+    // stages above.
+    case "future_link":
+      return { title: "קישור ARC עתידי מקוצר", body: "", segments: null };
 
     case "negative_action": {
       // The trainee's own predefined interfering/negative behavior

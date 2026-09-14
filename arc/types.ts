@@ -177,6 +177,24 @@ export type ArcStage =
    */
   | "improved_action_imagery"
   /**
+   * ARC completion/Link simplification task: the "Short Future ARC
+   * Link" ("קישור ARC עתידי מקוצר") that now automatically closes every
+   * Full ARC session -- a brief future-trigger framing line plus a
+   * 4-7-cue arrow sequence (arc/futureArcLink.ts's own
+   * resolveFutureArcLinkContent, reusing the SAME resolved layer/action
+   * "completed_action_imagery"/"improved_action_imagery" already used),
+   * always ending in the real action and its result. This is the ONE
+   * remaining Link concept -- see arc/futureArcLink.ts's own module doc
+   * for why the old Regular/ARCHI/Mini/Mini-ARCHI ARC Link family is
+   * kept internally (backward-compatible loading only) but never
+   * reachable from here. No dwell timer of its own (a single short
+   * screen, not an imagery-hold) -- ArcLiveState.futureLinkAcknowledged
+   * marks it seen for the same stars-gating formula
+   * completedActionImageryFinished/improvedActionImageryFinished
+   * already use. See live/screens.tsx's FutureArcLinkCueScreen.
+   */
+  | "future_link"
+  /**
    * The trainee's own predefined interfering/negative behavior
    * (habit, below), timed to the current program week's gradually
    * reduced allowance -- see program/engine.ts's
@@ -1560,7 +1578,19 @@ export interface ArcGoalWeekPracticeRecord {
     /** ARC Goal four-week correction: the mandatory full Identity Extension (arc/identityExtension.ts) reaching a REAL completion (never scheduled-only -- see live/IdentityExtensionScreen.tsx's own doc). */
     | "identity_extension"
     /** ARC Goal four-week correction: Weeks 2-3's own short Mini Identity sequence (arc/miniIdentity.ts) reaching a REAL completion. */
-    | "mini_identity";
+    | "mini_identity"
+    /**
+     * ARC completion/Link simplification task: the Short Future ARC
+     * Link (arc/futureArcLink.ts), run as its OWN separate practice
+     * (never inside a Full/Mini ARC run, which logs its own
+     * "full_arc"/"mini_arc" kind whose completion tail already includes
+     * the future_link ArcStage automatically) -- the ONE remaining Link
+     * practice kind. "arc_link"/"mini_archi_link"/"mini_arc_link" above
+     * are kept only so historical records from before this correction
+     * keep displaying correctly; no new record is ever written with any
+     * of those three kinds any more.
+     */
+    | "future_arc_link";
   label: string;
   occurredAt: string;
 }
@@ -1686,7 +1716,13 @@ export type PersonalDevelopmentProtocolKind = "state" | "urge" | "thought" | "pr
  */
 export interface PersonalDevelopmentWeekPracticeRecord {
   id: string;
-  kind: "full" | "mini" | "archi_link" | "mini_link" | "action";
+  /**
+   * ARC completion/Link simplification task: "future_arc_link" is the
+   * ONE remaining Link practice kind -- "archi_link"/"mini_link" are
+   * kept only so historical records keep displaying correctly; no new
+   * record is ever written with either any more.
+   */
+  kind: "full" | "mini" | "archi_link" | "mini_link" | "action" | "future_arc_link";
   label: string;
   occurredAt: string;
 }
@@ -2419,6 +2455,18 @@ export interface ArcLiveState {
   completedActionImageryFinished: boolean;
   /** Same shape and role as completedActionImageryFinished above, for the SEPARATE improved_action_imagery stage/dwell. */
   improvedActionImageryFinished: boolean;
+  /**
+   * ARC completion/Link simplification task: set true the moment the
+   * trainee continues past the new "future_link" stage (arc/types.ts's
+   * own ArcStage doc). No dwell timer of its own -- this stage is a
+   * single short screen, not an imagery hold -- so unlike the two flags
+   * above this one is set as soon as the stage's own Continue is
+   * pressed. Same one-directional, read-once-at-finalize shape; folded
+   * into the SAME fullReflectionCreditEarned formula every caller
+   * already computes (spec section 13: the short future rehearsal is
+   * now one of the three stages that must complete for full stars).
+   */
+  futureLinkAcknowledged: boolean;
 }
 
 /**
@@ -2475,5 +2523,6 @@ export function createEmptyLiveState(): ArcLiveState {
     realActionCompleted: false,
     completedActionImageryFinished: false,
     improvedActionImageryFinished: false,
+    futureLinkAcknowledged: false,
   };
 }

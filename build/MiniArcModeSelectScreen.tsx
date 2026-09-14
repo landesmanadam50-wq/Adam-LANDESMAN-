@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
 import { getMiniArcBuild } from "../data/storage.ts";
-import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
+import { FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL } from "../arc/futureArcLink.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 
 /**
@@ -61,8 +61,6 @@ export default function MiniArcModeSelectScreen() {
     );
   }
 
-  const linkAvailable = hasConfiguredTrigger(build.linkSettings);
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.content}>
@@ -76,14 +74,22 @@ export default function MiniArcModeSelectScreen() {
           <Text style={styles.buttonText}>Mini ARC רגיל</Text>
         </Pressable>
 
-        <Pressable
-          style={[styles.button, styles.fullWidthButton, !linkAvailable && styles.buttonDisabled]}
-          disabled={!linkAvailable}
-          onPress={() => router.push({ pathname: "/mini-arc-link/[id]", params: { id: build.id } })}
-        >
-          <Text style={styles.buttonText}>Mini ARC Link</Text>
-        </Pressable>
-        {!linkAvailable && <Text style={styles.hint}>כדי לתרגל Mini ARC Link, יש להגדיר תחילה טריגר ב-BUILD.</Text>}
+        {/*
+         * ARC completion/Link simplification task, section 10: Mini ARC
+         * itself never gained (and must never gain) its own "Link"
+         * concept -- the Short Future ARC Link is offered here only
+         * when this Mini ARC is linked to a Full protocol (its own
+         * parentArcBuildId), reusing THAT protocol's own real content,
+         * never a duplicated Mini-ARC-specific future-link resolution.
+         */}
+        {build.parentArcBuildId && (
+          <Pressable
+            style={[styles.button, styles.secondaryButton, styles.fullWidthButton]}
+            onPress={() => router.push({ pathname: "/future-arc-link/[id]", params: { id: build.parentArcBuildId as string } })}
+          >
+            <Text style={styles.buttonText}>{FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL}</Text>
+          </Pressable>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -103,6 +109,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   fullWidthButton: { marginTop: 16 },
-  buttonDisabled: { opacity: 0.4 },
+  secondaryButton: { backgroundColor: "#3d8fa8" },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
 });

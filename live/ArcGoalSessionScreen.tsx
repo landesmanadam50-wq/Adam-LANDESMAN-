@@ -103,6 +103,7 @@ import {
   applyBalancedAlternativeInterpretationSeen,
   applyBeneficialActionDurationSelected,
   applyCompletedActionImageryFinished,
+  applyFutureLinkAcknowledged,
   applyImprovedActionImageryFinished,
   applyInterferingThoughtAnswer,
   applyNeedIdentificationAnswer,
@@ -420,7 +421,10 @@ export default function ArcGoalSessionScreen() {
     // exact ArcLiveState finalizeOuterSession() was just called with.
     const trimmedImprovement = improvementText.trim();
     const fullReflectionCreditEarned =
-      trimmedImprovement.length > 0 && outerSession.completedActionImageryFinished && outerSession.improvedActionImageryFinished;
+      trimmedImprovement.length > 0 &&
+      outerSession.completedActionImageryFinished &&
+      outerSession.improvedActionImageryFinished &&
+      outerSession.futureLinkAcknowledged;
     updateLastSessionLogEntryGratitude(
       trimmedGratitude.length > 0 ? trimmedGratitude : null,
       trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
@@ -578,8 +582,9 @@ export default function ArcGoalSessionScreen() {
       onGratitudeAndLearningContinue: () => commitAdvance(session),
       onCompletedActionImageryContinue: () => commitAdvance(applyCompletedActionImageryFinished(session)),
       onImprovedActionImageryContinue: () => commitAdvance(applyImprovedActionImageryFinished(session)),
-      restartLabel,
-      onRestart,
+      onFutureLinkContinue: () => commitAdvance(applyFutureLinkAcknowledged(session)),
+      completePrimaryLabel: restartLabel,
+      onCompletePrimary: onRestart,
     };
   }
 

@@ -19,7 +19,7 @@ import { describeTrigger, resolveArcLinkPracticeModeDefault, resolveArcLinkTarge
 import type { ArcLinkTargetType } from "./routineLinks.ts";
 import type { ArcBuild } from "./types.ts";
 import type { MiniArcBuild } from "./miniArc.ts";
-import { resolveMiniArcProtocolKind } from "./miniArc.ts";
+import { resolveMiniArcParentId, resolveMiniArcProtocolKind } from "./miniArc.ts";
 
 export type LinkLibraryCategory = "arc_link" | "mini_arc_link";
 
@@ -36,6 +36,19 @@ export interface LinkLibraryEntry {
   linkedArcGoalId: string | null;
   /** ARC Mini for every protocol task: the linked MiniArcBuild's own protocol kind ("state"/"urge"/"thought"/"presence"/"belief"/"generic") -- meaningful only for category "mini_arc_link"; null for an "arc_link" entry (which references a full ArcBuild, not a MiniArcBuild). */
   miniArcProtocolKind: "state" | "urge" | "thought" | "presence" | "belief" | "generic" | null;
+  /**
+   * ARC completion/Link simplification task: the ArcBuild id this entry's
+   * saved content can be replayed through as the ONE remaining user-facing
+   * Link type, /future-arc-link/[id] (arc/futureArcLink.ts) -- an "arc_link"
+   * entry already references a full ArcBuild directly (its own protocolId);
+   * a "mini_arc_link" entry borrows its linked MiniArcBuild's own
+   * parentArcBuildId (mirrors build/MiniArcModeSelectScreen.tsx's identical
+   * reuse-the-parent's-content decision). null when there is no full
+   * protocol behind this entry to resolve Future Link content from (a
+   * stale/unlinked Mini ARC) -- callers must not offer this entry for
+   * Future Link practice in that case.
+   */
+  futureLinkBuildId: string | null;
 }
 
 /**
@@ -59,6 +72,8 @@ export function buildLinkLibraryEntries(
     const weeklyAction = weeklyActionsById[link.weeklyActionId];
     const linkedArcGoalId = weeklyAction?.linkedProtocolType === "arc_goal" ? (weeklyAction.linkedProtocolId ?? null) : null;
     const miniArcProtocolKind = category === "mini_arc_link" && miniArcBuildsById[link.protocolId] ? resolveMiniArcProtocolKind(miniArcBuildsById[link.protocolId]) : null;
+    const futureLinkBuildId =
+      category === "arc_link" ? link.protocolId : miniArcBuildsById[link.protocolId] ? resolveMiniArcParentId(miniArcBuildsById[link.protocolId]) : null;
     return {
       link,
       category,
@@ -69,6 +84,7 @@ export function buildLinkLibraryEntries(
       practiceMode: resolveArcLinkPracticeModeDefault(link),
       linkedArcGoalId,
       miniArcProtocolKind,
+      futureLinkBuildId,
     };
   });
 }

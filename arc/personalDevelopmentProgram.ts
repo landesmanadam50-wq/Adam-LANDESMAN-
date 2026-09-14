@@ -419,14 +419,22 @@ export function resolvePersonalDevelopmentTaskRoute(
     return { pathname: PROTOCOL_LIVE_ROUTE_PATHS[program.protocolKind], params: { id: protocolId, mode: "mini", ...pdParams } };
   }
 
-  if (kind === "archi_link") {
+  // ARC completion/Link simplification task (spec sections 1/11/12): both
+  // "archi_link" and "mini_link" now open the SAME single remaining Link
+  // type, /future-arc-link/[id] (arc/futureArcLink.ts) -- never the old
+  // /arc-link/[id] or /mini-arc-link/[id] rehearsal screens. Content is
+  // resolved from the protocol's own ArcBuildProfile, which today only
+  // exists for "state" protocols (see arc/futureArcLink.ts's own doc);
+  // this mirrors build/MiniArcModeSelectScreen.tsx's identical "no
+  // Future Link content to resolve for a non-state kind" scope decision.
+  // The old `linkId` (program.arcLinkId/miniArcLinkId, an old saved
+  // ArcLink record) is still passed through so the new screen can seed
+  // its content from that old record's own saved fields where useful.
+  if (kind === "archi_link" || kind === "mini_link") {
     if (program.protocolKind !== "state") return null;
-    return { pathname: "/arc-link/[id]", params: { id: protocolId, ...pdParams, ...(program.arcLinkId ? { linkId: program.arcLinkId } : {}) } };
-  }
-
-  if (kind === "mini_link") {
-    if (!linkedMiniArcId) return null;
-    return { pathname: "/mini-arc-link/[id]", params: { id: linkedMiniArcId, ...pdParams, ...(program.miniArcLinkId ? { linkId: program.miniArcLinkId } : {}) } };
+    if (kind === "mini_link" && !linkedMiniArcId) return null;
+    const legacyLinkId = kind === "archi_link" ? program.arcLinkId : program.miniArcLinkId;
+    return { pathname: "/future-arc-link/[id]", params: { id: protocolId, ...pdParams, ...(legacyLinkId ? { linkId: legacyLinkId } : {}) } };
   }
 
   // kind === "action_independent" -- never a route.

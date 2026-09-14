@@ -32,6 +32,7 @@ import {
   applyAlternativeAction,
   applyBeneficialActionDurationSelected,
   applyCompletedActionImageryFinished,
+  applyFutureLinkAcknowledged,
   applyImprovedActionImageryFinished,
   applyPlannedActionConfirmed,
   applySuccessFocusExtraMinutes,
@@ -188,7 +189,10 @@ export default function IdentityExtensionScreen() {
       const trimmedProgressEvidence = progressEvidenceText.trim();
       const trimmedImprovement = improvementText.trim();
       const fullReflectionCreditEarned =
-        trimmedImprovement.length > 0 && finishedSession.completedActionImageryFinished && finishedSession.improvedActionImageryFinished;
+        trimmedImprovement.length > 0 &&
+        finishedSession.completedActionImageryFinished &&
+        finishedSession.improvedActionImageryFinished &&
+        finishedSession.futureLinkAcknowledged;
       updateLastSessionLogEntryGratitude(
         trimmedGratitude.length > 0 ? trimmedGratitude : null,
         trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
@@ -496,7 +500,8 @@ export default function IdentityExtensionScreen() {
           onGratitudeAndLearningContinue={() => commitAdvance(session)}
           onCompletedActionImageryContinue={() => commitAdvance(applyCompletedActionImageryFinished(session))}
           onImprovedActionImageryContinue={() => commitAdvance(applyImprovedActionImageryFinished(session))}
-          onRestart={returnAfterExit}
+          onFutureLinkContinue={() => commitAdvance(applyFutureLinkAcknowledged(session))}
+          onCompletePrimary={returnAfterExit}
         />
       </ScrollView>
     </SafeAreaView>

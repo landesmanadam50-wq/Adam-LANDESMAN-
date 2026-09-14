@@ -21,6 +21,7 @@ import {
 } from "../arc/personalDevelopmentProgram.ts";
 import type { PersonalDevelopmentTaskKind } from "../arc/personalDevelopmentProgram.ts";
 import { reconcilePersonalDevelopmentProgramWeekNotification } from "../data/personalDevelopmentProgramReminders.ts";
+import { FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL } from "../arc/futureArcLink.ts";
 import type { PersonalDevelopmentFourWeekProgram, PersonalDevelopmentProtocolKind } from "../arc/types.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import type { ArcLink } from "../arc/routineLinks.ts";
@@ -44,14 +45,14 @@ import { todayLocalDateString } from "../program/dateUtils.ts";
  * own real LIVE screen (the combined Urge/Thought/Presence/Belief
  * screens accept an optional `mode` param added this phase to bypass
  * their own modeChoice picker; "state" uses the pre-existing /live and
- * /mini-arc/live/[id] routes directly). "archi_link" is STATE-ONLY (see
- * arc/personalDevelopmentProgram.ts's own doc on why -- live/ArcLinkScreen.tsx
- * has no equivalent for the other 4 kinds) and routes to /arc-link/[id].
- * "mini_link" routes to /mini-arc-link/[id] using the linked Mini's OWN
- * id (that screen already supports every protocolKind via its own
- * getMiniArcBuild branching). "action_independent" (Week 4) is answered
- * locally -- a direct confirmation, never a protocol/Link route (spec:
- * never invent a screen for something that isn't a real practice).
+ * /mini-arc/live/[id] routes directly). "archi_link"/"mini_link" are
+ * STATE-ONLY (see arc/personalDevelopmentProgram.ts's own doc on why)
+ * and both route to the SAME /future-arc-link/[id] screen -- the ARC
+ * completion/Link simplification task's one remaining Link type -- never
+ * the old /arc-link/[id] or /mini-arc-link/[id] rehearsal screens.
+ * "action_independent" (Week 4) is answered locally -- a direct
+ * confirmation, never a protocol/Link route (spec: never invent a
+ * screen for something that isn't a real practice).
  *
  * Every route carries pdProgramId/pdWeek so the destination screen logs
  * its own correctly-kinded practice record and returns here on
@@ -139,7 +140,17 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
   const linkedMini = program.linkedMiniArcId ? miniArcs.find((m) => m.id === program.linkedMiniArcId) ?? null : null;
   const compatibleUnlinkedMinis = !linkedMini ? miniArcs.filter((m) => m.protocolKind === program.protocolKind && m.parentArcBuildId === program.protocolId) : [];
   const hasMini = linkedMini !== null;
-  const plan = resolvePersonalDevelopmentWeekPlan(currentWeek.weekNumber, program.protocolKind, hasMini);
+  const rawPlan = resolvePersonalDevelopmentWeekPlan(currentWeek.weekNumber, program.protocolKind, hasMini);
+  // ARC completion/Link simplification task: "archi_link" and "mini_link"
+  // now both open the SAME single Future Link screen with the SAME label
+  // (see TASK_LABELS below) -- when a week's plan lists both (their own
+  // internal practice-record-kind distinction is untouched, only this
+  // screen's own rendering is deduped), only offer the button once so the
+  // trainee never sees two identical buttons for one real destination.
+  const plan = {
+    recommended: dedupeFutureLinkTasks(rawPlan.recommended),
+    manuallyAvailable: dedupeFutureLinkTasks(rawPlan.manuallyAvailable),
+  };
   const speedFluency = isSpeedFluencyWeek(currentWeek.weekNumber);
 
   // Requirement 2/7: existing saved ArcLink candidates for this exact
@@ -249,7 +260,7 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
 
         {compatibleUnlinkedArcLinks.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.hint}>יש ARC Link שמור עבור פרוטוקול זה -- אפשר לקשר אותו כדי לתרגל עם הטריגר וההגדרות השמורות שלו.</Text>
+            <Text style={styles.hint}>יש קישור שמור עבור פרוטוקול זה -- אפשר לחבר אותו כדי שהקישור העתידי המקוצר ישתמש בטריגר ובהגדרות השמורות שלו.</Text>
             <View style={styles.chipColumn}>
               {compatibleUnlinkedArcLinks.map((link) => (
                 <Pressable
@@ -260,7 +271,7 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
                     persist({ ...setArcLinkId(program, link.id), updatedAt: new Date().toISOString() });
                   }}
                 >
-                  <Text style={styles.chipText}>{`ARC Link (${link.id})`}</Text>
+                  <Text style={styles.chipText}>{`קישור שמור מ-${link.createdAt.slice(0, 10)}`}</Text>
                 </Pressable>
               ))}
             </View>
@@ -269,7 +280,7 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
 
         {compatibleUnlinkedMiniArcLinks.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.hint}>יש Mini ARC Link שמור עבור ה-Mini המקושר -- אפשר לקשר אותו כדי לתרגל עם הטריגר וההגדרות השמורות שלו.</Text>
+            <Text style={styles.hint}>יש קישור שמור עבור ה-Mini המקושר -- אפשר לחבר אותו כדי שהקישור העתידי המקוצר ישתמש בטריגר ובהגדרות השמורות שלו.</Text>
             <View style={styles.chipColumn}>
               {compatibleUnlinkedMiniArcLinks.map((link) => (
                 <Pressable
@@ -280,7 +291,7 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
                     persist({ ...setMiniArcLinkId(program, link.id), updatedAt: new Date().toISOString() });
                   }}
                 >
-                  <Text style={styles.chipText}>{`Mini ARC Link (${link.id})`}</Text>
+                  <Text style={styles.chipText}>{`קישור שמור מ-${link.createdAt.slice(0, 10)}`}</Text>
                 </Pressable>
               ))}
             </View>
@@ -365,6 +376,10 @@ export default function PersonalDevelopmentProgramDashboardScreen() {
   );
 }
 
+function dedupeFutureLinkTasks(kinds: PersonalDevelopmentTaskKind[]): PersonalDevelopmentTaskKind[] {
+  return kinds.includes("archi_link") ? kinds.filter((kind) => kind !== "mini_link") : kinds;
+}
+
 const PROTOCOL_KIND_LABELS: Record<PersonalDevelopmentProtocolKind, string> = {
   state: "ARC State",
   urge: "ARC Urge",
@@ -376,8 +391,8 @@ const PROTOCOL_KIND_LABELS: Record<PersonalDevelopmentProtocolKind, string> = {
 const TASK_LABELS: Record<PersonalDevelopmentTaskKind, (speedFluency: boolean) => string> = {
   full: () => "תרגול ARC מלא",
   mini: () => "תרגול ARC Mini",
-  archi_link: () => "תרגול ARCHI ARC Link",
-  mini_link: (speedFluency) => (speedFluency ? "תרגול Mini ARC Link (שטף)" : "תרגול Mini ARC Link (מונחה)"),
+  archi_link: () => FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL,
+  mini_link: () => FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL,
   action_independent: () => "ביצעתי את הפעולה בעצמי, ללא ARCHI",
 };
 

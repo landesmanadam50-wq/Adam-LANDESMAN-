@@ -387,6 +387,17 @@ export function applyImprovedActionImageryFinished(session: ArcLiveState): ArcLi
 }
 
 /**
+ * ARC completion/Link simplification task: the future_link stage's own
+ * completion signal -- no dwell timer of its own (a single short
+ * screen), so this simply marks it seen the moment Continue is pressed.
+ * Folded into the same stars-gating formula every caller already
+ * computes alongside completedActionImageryFinished/improvedActionImageryFinished.
+ */
+export function applyFutureLinkAcknowledged(session: ArcLiveState): ArcLiveState {
+  return { ...session, futureLinkAcknowledged: true };
+}
+
+/**
  * When a proactive session lands on desired_state_check with no target
  * chosen yet and exactly one target is available, pick it automatically
  * instead of prompting for a choice with only one option. More than one

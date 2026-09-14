@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import { loadArcBuilds } from "../data/storage.ts";
-import { hasConfiguredTrigger } from "../arc/bodyImagery.ts";
+import { FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL } from "../arc/futureArcLink.ts";
 import type { ArcBuild } from "../arc/types.ts";
 
 /**
@@ -120,8 +120,6 @@ export default function LiveModeSelectScreen() {
     );
   }
 
-  const linkAvailable = hasConfiguredTrigger(selectedBuild.profile.linkSettings);
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.content}>
@@ -136,13 +134,11 @@ export default function LiveModeSelectScreen() {
         </Pressable>
 
         <Pressable
-          style={[styles.button, styles.fullWidthButton, !linkAvailable && styles.buttonDisabled]}
-          disabled={!linkAvailable}
-          onPress={() => router.push({ pathname: "/arc-link/[id]", params: { id: selectedBuild.id } })}
+          style={[styles.button, styles.fullWidthButton]}
+          onPress={() => router.push({ pathname: "/future-arc-link/[id]", params: { id: selectedBuild.id } })}
         >
-          <Text style={styles.buttonText}>ARC Link</Text>
+          <Text style={styles.buttonText}>{FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL}</Text>
         </Pressable>
-        {!linkAvailable && <Text style={styles.hint}>כדי לתרגל ARC Link, יש להגדיר תחילה טריגר ב-BUILD.</Text>}
 
         {builds.length > 1 && (
           <Pressable style={styles.backButton} onPress={() => setSelectedBuild(null)}>

@@ -434,11 +434,11 @@ test("resolvePersonalDevelopmentTaskRoute: 'mini' is safely null (never a crash,
   }
 });
 
-test("resolvePersonalDevelopmentTaskRoute: 'archi_link' opens /arc-link/[id] for 'state' and is safely null for the other 4 kinds", () => {
+test("resolvePersonalDevelopmentTaskRoute: 'archi_link' opens /future-arc-link/[id] for 'state' and is safely null for the other 4 kinds", () => {
   const stateProgram = createPersonalDevelopmentProgram("state", "state-1", "מצב", "2026-01-05", null, "2026-01-01T00:00:00.000Z");
   const stateRoute = resolvePersonalDevelopmentTaskRoute(stateProgram, "archi_link", null);
   assert.ok(stateRoute);
-  assert.equal(stateRoute!.pathname, "/arc-link/[id]");
+  assert.equal(stateRoute!.pathname, "/future-arc-link/[id]");
   assert.equal(stateRoute!.params.id, "state-1");
 
   const nonStateKinds: PersonalDevelopmentProtocolKind[] = ["urge", "thought", "presence", "belief"];
@@ -448,28 +448,31 @@ test("resolvePersonalDevelopmentTaskRoute: 'archi_link' opens /arc-link/[id] for
   }
 });
 
-test("resolvePersonalDevelopmentTaskRoute: 'archi_link' includes linkId only when arcLinkId is set", () => {
+test("resolvePersonalDevelopmentTaskRoute: 'archi_link' includes linkId only when arcLinkId is set (seeding the new screen from the old saved record)", () => {
   let program = createPersonalDevelopmentProgram("state", "state-1", "מצב", "2026-01-05", null, "2026-01-01T00:00:00.000Z");
   assert.equal(resolvePersonalDevelopmentTaskRoute(program, "archi_link", null)!.params.linkId, undefined);
   program = setArcLinkId(program, "arclink-1");
   assert.equal(resolvePersonalDevelopmentTaskRoute(program, "archi_link", null)!.params.linkId, "arclink-1");
 });
 
-test("resolvePersonalDevelopmentTaskRoute: 'mini_link' opens /mini-arc-link/[id] with the linked Mini's own id, for every protocol kind, and is safely null with no linked Mini", () => {
-  const kinds: PersonalDevelopmentProtocolKind[] = ["state", "urge", "thought", "presence", "belief"];
-  for (const kind of kinds) {
-    let program = createPersonalDevelopmentProgram(kind, `${kind}-1`, kind, "2026-01-05", "mini-1", "2026-01-01T00:00:00.000Z");
-    const route = resolvePersonalDevelopmentTaskRoute(program, "mini_link", "mini-1");
-    assert.ok(route, `expected a mini_link route for kind ${kind}`);
-    assert.equal(route!.pathname, "/mini-arc-link/[id]");
-    assert.equal(route!.params.id, "mini-1");
-    assert.equal(route!.params.linkId, undefined);
+test("resolvePersonalDevelopmentTaskRoute: 'mini_link' opens /future-arc-link/[id] with the protocol's own id, only for 'state' (Future Link content resolves from ArcBuildProfile, which the other 4 kinds don't have), and is safely null with no linked Mini", () => {
+  const stateProgram = createPersonalDevelopmentProgram("state", "state-1", "מצב", "2026-01-05", "mini-1", "2026-01-01T00:00:00.000Z");
+  const route = resolvePersonalDevelopmentTaskRoute(stateProgram, "mini_link", "mini-1");
+  assert.ok(route);
+  assert.equal(route!.pathname, "/future-arc-link/[id]");
+  assert.equal(route!.params.id, "state-1");
+  assert.equal(route!.params.linkId, undefined);
 
-    program = setMiniArcLinkId(program, "minilink-1");
-    assert.equal(resolvePersonalDevelopmentTaskRoute(program, "mini_link", "mini-1")!.params.linkId, "minilink-1");
+  const withLegacyLink = setMiniArcLinkId(stateProgram, "minilink-1");
+  assert.equal(resolvePersonalDevelopmentTaskRoute(withLegacyLink, "mini_link", "mini-1")!.params.linkId, "minilink-1");
 
-    const noMiniProgram = createPersonalDevelopmentProgram(kind, `${kind}-2`, kind, "2026-01-05", null, "2026-01-01T00:00:00.000Z");
-    assert.equal(resolvePersonalDevelopmentTaskRoute(noMiniProgram, "mini_link", null), null);
+  const noMiniProgram = createPersonalDevelopmentProgram("state", "state-2", "מצב", "2026-01-05", null, "2026-01-01T00:00:00.000Z");
+  assert.equal(resolvePersonalDevelopmentTaskRoute(noMiniProgram, "mini_link", null), null);
+
+  const nonStateKinds: PersonalDevelopmentProtocolKind[] = ["urge", "thought", "presence", "belief"];
+  for (const kind of nonStateKinds) {
+    const program = createPersonalDevelopmentProgram(kind, `${kind}-1`, kind, "2026-01-05", "mini-1", "2026-01-01T00:00:00.000Z");
+    assert.equal(resolvePersonalDevelopmentTaskRoute(program, "mini_link", "mini-1"), null);
   }
 });
 

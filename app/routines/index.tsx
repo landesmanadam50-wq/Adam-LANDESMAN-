@@ -11,8 +11,8 @@
  *
  *   Routine
  *   ├── Weekly Routine        (WeeklyActionsSection)
- *   ├── ARC Link -- Build and Manage  (ArcLinkManageSection)
- *   ├── ARC Link Practice     (ArcLinkPracticeSection)
+ *   ├── קישורים -- בנייה וניהול  (ArcLinkManageSection)
+ *   ├── תרגול קישור עתידי מקוצר (ArcLinkPracticeSection)
  *   └── (existing) השגרה שלי  (ScheduledRoutinesSection, unchanged)
  *
  * WeeklyAction/RoutineTrigger/ArcLink (arc/routineLinks.ts) are brand
@@ -21,6 +21,15 @@
  * only references (protocolId/weeklyActionId/triggerId); its rehearsal
  * content is always read live from the linked ArcBuild/MiniArcBuild, so
  * a BUILD edit there is automatically reflected here.
+ *
+ * ARC completion/Link simplification task (spec sections 1/11/12): a
+ * saved ArcLink record is still exactly this trigger + schedule
+ * infrastructure -- ArcLinkManageSection still builds/edits one (see
+ * build/ArcLinkBuildForm.tsx's own doc on why), but ArcLinkPracticeSection
+ * now opens EVERY saved link's practice through the SAME single
+ * /future-arc-link/[id] screen every other entry point uses, never the
+ * old /arc-link/[id] or /mini-arc-link/[id] rehearsal screens -- no
+ * separate "ARC Link"/"Mini ARC Link" practice type is shown anymore.
  */
 
 import { useCallback, useState } from "react";
@@ -68,8 +77,10 @@ import type { ArcLinkTriggerType } from "../../arc/bodyImagery.ts";
 import { todayLocalDateString } from "../../program/dateUtils.ts";
 import { createEmptyArcGoal, generateArcGoalId } from "../../arc/types.ts";
 import type { ArcBuild, ArcGoal } from "../../arc/types.ts";
+import { resolveMiniArcParentId } from "../../arc/miniArc.ts";
 import type { MiniArcBuild } from "../../arc/miniArc.ts";
 import ArcLinkBuildForm from "../../build/ArcLinkBuildForm.tsx";
+import { FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL } from "../../arc/futureArcLink.ts";
 
 const DAY_LABELS = ["א", "ב", "ג", "ד", "ה", "ו", "ש"]; // index === Date.getDay()
 const DAY_FULL_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -580,7 +591,7 @@ function ArcLinkManageSection() {
   if (building) {
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{building.protocolType === "arc" ? "בניית ARC Link" : "בניית Mini ARC Link"}</Text>
+        <Text style={styles.sectionTitle}>{building.protocolType === "arc" ? "הגדרת קישור ל-ARC" : "הגדרת קישור ל-Mini ARC"}</Text>
         <ArcLinkBuildForm
           protocolType={building.protocolType}
           editingLink={building.editingLink}
@@ -600,15 +611,15 @@ function ArcLinkManageSection() {
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>בניית וניהול ARC Link</Text>
+      <Text style={styles.sectionTitle}>בניית וניהול קישורים</Text>
       <Text style={styles.sectionDescription}>חבר בין טריגר, פרוטוקול קיים ופעולה שבועית.</Text>
 
       <View style={styles.stepButtons}>
         <Pressable style={styles.saveButton} onPress={() => setBuilding({ protocolType: "arc", editingLink: null })}>
-          <Text style={styles.saveButtonText}>+ בניית ARC Link</Text>
+          <Text style={styles.saveButtonText}>+ קישור ל-ARC</Text>
         </Pressable>
         <Pressable style={styles.saveButton} onPress={() => setBuilding({ protocolType: "mini_arc", editingLink: null })}>
-          <Text style={styles.saveButtonText}>+ בניית Mini ARC Link</Text>
+          <Text style={styles.saveButtonText}>+ קישור ל-Mini ARC</Text>
         </Pressable>
       </View>
 
@@ -618,10 +629,10 @@ function ArcLinkManageSection() {
           <Text style={styles.chipText}>הכול</Text>
         </Pressable>
         <Pressable style={[styles.chip, filter === "arc" && styles.chipSelected]} onPress={() => setFilter("arc")}>
-          <Text style={styles.chipText}>ARC Link</Text>
+          <Text style={styles.chipText}>ARC</Text>
         </Pressable>
         <Pressable style={[styles.chip, filter === "mini_arc" && styles.chipSelected]} onPress={() => setFilter("mini_arc")}>
-          <Text style={styles.chipText}>Mini ARC Link</Text>
+          <Text style={styles.chipText}>Mini ARC</Text>
         </Pressable>
       </View>
       <View style={styles.chipRow}>
@@ -640,7 +651,7 @@ function ArcLinkManageSection() {
             : miniArcBuilds.find((b) => b.id === link.protocolId)?.name ?? "פרוטוקול לא נמצא";
         const weeklyAction = resolveWeeklyAction(link.weeklyActionId, weeklyActions);
         const trigger = resolveRoutineTrigger(link.triggerId, triggers);
-        const linkTypeLabel = link.protocolType === "arc" ? describeArcLinkKindAndCategory(link) : "Mini ARC Link";
+        const linkTypeLabel = link.protocolType === "arc" ? describeArcLinkKindAndCategory(link) : "קישור ל-Mini ARC";
         return (
           <View key={link.id} style={styles.card}>
             <Text style={styles.cardTitle}>{`${linkTypeLabel} – ${protocolName}`}</Text>
@@ -652,13 +663,12 @@ function ArcLinkManageSection() {
             <View style={styles.cardActions}>
               <Pressable
                 style={styles.startButton}
-                onPress={() =>
-                  router.push(
-                    link.protocolType === "arc"
-                      ? { pathname: "/arc-link/[id]", params: { id: link.protocolId, linkId: link.id } }
-                      : { pathname: "/mini-arc-link/[id]", params: { id: link.protocolId, linkId: link.id } }
-                  )
-                }
+                onPress={() => {
+                  const futureLinkBuildId =
+                    link.protocolType === "arc" ? link.protocolId : resolveMiniArcParentId(miniArcBuilds.find((b) => b.id === link.protocolId) ?? { parentArcBuildId: null });
+                  if (!futureLinkBuildId) return;
+                  router.push({ pathname: "/future-arc-link/[id]", params: { id: futureLinkBuildId, linkId: link.id } });
+                }}
               >
                 <Text style={styles.startButtonText}>מעבר לתרגול</Text>
               </Pressable>
@@ -715,11 +725,18 @@ function ArcLinkPracticeSection() {
     }, [reload])
   );
 
-  const visibleLinks = links.filter((link) => (filter === "all" || link.protocolType === filter) && matchesCategoryFilter(link, categoryFilter));
+  // ARC completion/Link simplification task (spec sections 1/11): a
+  // "mini_arc" link is only offered for practice here when its own
+  // MiniArcBuild has a parent Full ARC -- the SAME "no Future Link
+  // content to resolve otherwise" scope decision used everywhere else
+  // this phase (build/MiniArcModeSelectScreen.tsx, arc/linkPracticeLibrary.ts).
+  const visibleLinks = links
+    .filter((link) => (filter === "all" || link.protocolType === filter) && matchesCategoryFilter(link, categoryFilter))
+    .filter((link) => link.protocolType === "arc" || resolveMiniArcParentId(miniArcBuilds.find((b) => b.id === link.protocolId) ?? { parentArcBuildId: null }) !== null);
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>תרגול ARC Link</Text>
+      <Text style={styles.sectionTitle}>תרגול קישור עתידי מקוצר</Text>
       <Text style={styles.sectionDescription}>בחר את הקישור שתרצה לחזק עכשיו.</Text>
 
       <View style={styles.chipRow}>
@@ -727,10 +744,10 @@ function ArcLinkPracticeSection() {
           <Text style={styles.chipText}>הכול</Text>
         </Pressable>
         <Pressable style={[styles.chip, filter === "arc" && styles.chipSelected]} onPress={() => setFilter("arc")}>
-          <Text style={styles.chipText}>ARC Link</Text>
+          <Text style={styles.chipText}>ARC</Text>
         </Pressable>
         <Pressable style={[styles.chip, filter === "mini_arc" && styles.chipSelected]} onPress={() => setFilter("mini_arc")}>
-          <Text style={styles.chipText}>Mini ARC Link</Text>
+          <Text style={styles.chipText}>Mini ARC</Text>
         </Pressable>
       </View>
       <View style={styles.chipRow}>
@@ -768,7 +785,7 @@ function ArcLinkPracticeSection() {
             nextPractice = next ? formatOccurrence(next) : null;
           }
         }
-        const linkTypeLabel = link.protocolType === "arc" ? describeArcLinkKindAndCategory(link) : "Mini ARC Link";
+        const linkTypeLabel = link.protocolType === "arc" ? describeArcLinkKindAndCategory(link) : "קישור ל-Mini ARC";
 
         return (
           <View key={link.id} style={styles.card}>
@@ -781,15 +798,14 @@ function ArcLinkPracticeSection() {
 
             <Pressable
               style={[styles.startButton, styles.fullWidthButton]}
-              onPress={() =>
-                router.push(
-                  link.protocolType === "arc"
-                    ? { pathname: "/arc-link/[id]", params: { id: link.protocolId, linkId: link.id } }
-                    : { pathname: "/mini-arc-link/[id]", params: { id: link.protocolId, linkId: link.id } }
-                )
-              }
+              onPress={() => {
+                const futureLinkBuildId =
+                  link.protocolType === "arc" ? link.protocolId : resolveMiniArcParentId(miniArcBuilds.find((b) => b.id === link.protocolId) ?? { parentArcBuildId: null });
+                if (!futureLinkBuildId) return;
+                router.push({ pathname: "/future-arc-link/[id]", params: { id: futureLinkBuildId, linkId: link.id } });
+              }}
             >
-              <Text style={styles.startButtonText}>התחלת התרגול</Text>
+              <Text style={styles.startButtonText}>{FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL}</Text>
             </Pressable>
           </View>
         );

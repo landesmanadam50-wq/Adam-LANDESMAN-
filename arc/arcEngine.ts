@@ -61,7 +61,9 @@
  *            -> desired_state_check -> classified by getProactiveStage():
  *                 regulate -> regulate -> desired_state_check (re-check, capped)
  *                 encode   -> encode
- *     -> encode -> act -> success_focus -> complete
+ *     -> encode -> act -> success_focus -> gratitude_and_learning ->
+ *        completed_action_imagery -> improved_action_imagery ->
+ *        future_link -> complete
  *        (unconditionally -- Negative Action reduction task: the
  *        optional Negative Action Timer is never inserted here; it's a
  *        separate, BUILD-configured tool opened intentionally from its
@@ -999,6 +1001,11 @@ export function getNextArcStage(
     case "completed_action_imagery":
       return result("improved_action_imagery", state.loopIterationCount);
     case "improved_action_imagery":
+      // ARC completion/Link simplification task: the Short Future ARC
+      // Link now always closes the session -- see arc/types.ts's own
+      // "future_link" ArcStage doc.
+      return result("future_link", state.loopIterationCount);
+    case "future_link":
       return result("complete", state.loopIterationCount);
     // negative_action is never routed to by this sequencer any more (see
     // the "success_focus" case above) -- this case only exists so the
