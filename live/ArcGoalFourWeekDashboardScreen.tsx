@@ -24,6 +24,7 @@ import {
   setReturnContext,
 } from "../arc/fourWeekProgram.ts";
 import type { ArcGoalInternalSupportKind } from "../arc/fourWeekProgram.ts";
+import { FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL } from "../arc/futureArcLink.ts";
 import { activateExecutionPhase } from "../arc/subGoalExecution.ts";
 import { reconcileFourWeekProgramWeekNotification } from "../data/fourWeekProgramReminders.ts";
 import type { ArcBuild, ArcGoal, BeliefArc, PresenceArc, ThoughtArc, UrgeArc } from "../arc/types.ts";
@@ -307,6 +308,21 @@ export default function ArcGoalFourWeekDashboardScreen() {
     router.push({ pathname: "/goals/mini-identity/[goalId]", params: { goalId: goal.id, fourWeekWeek: String(updatedProgram.currentWeek) } });
   }
 
+  /**
+   * ARC completion/Link simplification task: Weeks 2-3's own entry into
+   * the ONE remaining Link practice -- replaces the retired "Mini ARCHI
+   * Link"/"Mini ARC Link" buttons. Runs against the goal's own linked
+   * identity ArcBuild (goal.identityProtocolId), never a second/
+   * duplicated content source.
+   */
+  function startFutureArcLink() {
+    if (!goal || !goal.fourWeekProgram || !goal.identityProtocolId) return;
+    router.push({
+      pathname: "/future-arc-link/[id]",
+      params: { id: goal.identityProtocolId, fourWeekGoalId: goal.id, fourWeekWeek: String(goal.fourWeekProgram.currentWeek) },
+    });
+  }
+
   /** The saved records available for a chosen Week-1 support kind, by id. Returns [] for a kind with nothing saved yet -- the picker then shows a "no saved <kind> protocols yet" hint instead of an empty chip row. */
   function week1SupportCandidates(kind: ArcGoalInternalSupportKind): Array<{ id: string; label: string }> {
     if (kind === "state") return supportCandidateBuilds.map((b) => ({ id: b.id, label: b.name }));
@@ -506,8 +522,8 @@ export default function ArcGoalFourWeekDashboardScreen() {
               </View>
             ) : (
               <View>
-                <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArcLink", "mini_archi_link", "Mini ARCHI Link")}>
-                  <Text style={styles.buttonText}>תרגול Mini ARCHI Link</Text>
+                <Pressable style={[styles.button, styles.fullWidthButton]} onPress={startFutureArcLink}>
+                  <Text style={styles.buttonText}>{FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL}</Text>
                 </Pressable>
                 <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArc", "mini_arc", "Mini ARC")}>
                   <Text style={styles.secondaryButtonText}>תמיכת ARC Mini (לפי הצורך)</Text>
@@ -525,11 +541,9 @@ export default function ArcGoalFourWeekDashboardScreen() {
 
         {currentWeek.weekNumber === 3 && (
           <View>
-            {linkedMiniArc && (
-              <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => startSupportFlow("miniArcLink", "mini_arc_link", "Mini ARC Link")}>
-                <Text style={styles.buttonText}>Mini ARC Link</Text>
-              </Pressable>
-            )}
+            <Pressable style={[styles.button, styles.fullWidthButton]} onPress={startFutureArcLink}>
+              <Text style={styles.buttonText}>{FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL}</Text>
+            </Pressable>
             <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => setIdentityRecallOpen((v) => !v)}>
               <Text style={styles.secondaryButtonText}>היזכרות בזהות</Text>
             </Pressable>

@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
-import { loadArcGoals, loadArcLinks, loadLifeManifestTargets, loadLifeManifests } from "../data/storage.ts";
+import { loadArcGoals, loadArcLinks, loadLifeManifestTargets, loadLifeManifests, loadMiniArcBuilds } from "../data/storage.ts";
 import {
   createEmptyVisualizationSession,
   getNextVisualizationStage,
@@ -14,6 +14,9 @@ import { findMajorGoalOwner, resolveEffectiveTargetArcGoalId } from "../arc/life
 import type { MajorGoal, SubGoal, Target } from "../arc/lifeManifest.ts";
 import type { ArcGoal } from "../arc/types.ts";
 import type { ArcLink } from "../arc/routineLinks.ts";
+import { resolveMiniArcParentId } from "../arc/miniArc.ts";
+import type { MiniArcBuild } from "../arc/miniArc.ts";
+import { FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL } from "../arc/futureArcLink.ts";
 
 /**
  * live/LifeManifestVisualizationScreen.tsx (route:
@@ -37,6 +40,7 @@ export default function LifeManifestVisualizationScreen() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [arcGoals, setArcGoals] = useState<ArcGoal[]>([]);
   const [arcLinks, setArcLinks] = useState<ArcLink[]>([]);
+  const [miniArcBuilds, setMiniArcBuilds] = useState<MiniArcBuild[]>([]);
 
   const [stage, setStage] = useState<LifeManifestVisualizationStage>("observer_perspective");
   const [session, setSession] = useState<LifeManifestVisualizationSession>(createEmptyVisualizationSession());
@@ -51,8 +55,8 @@ export default function LifeManifestVisualizationScreen() {
       return;
     }
     let cancelled = false;
-    Promise.all([loadLifeManifests(), loadLifeManifestTargets(), loadArcGoals(), loadArcLinks()])
-      .then(([manifests, allTargets, allArcGoals, allArcLinks]) => {
+    Promise.all([loadLifeManifests(), loadLifeManifestTargets(), loadArcGoals(), loadArcLinks(), loadMiniArcBuilds()])
+      .then(([manifests, allTargets, allArcGoals, allArcLinks, allMiniArcBuilds]) => {
         if (cancelled) return;
         const owner = findMajorGoalOwner(manifests, majorGoalId);
         if (!owner) {
@@ -66,6 +70,7 @@ export default function LifeManifestVisualizationScreen() {
         setTargets(allTargets.filter((t) => t.subGoalId === (resolvedSubGoal ? resolvedSubGoal.id : "")));
         setArcGoals(allArcGoals);
         setArcLinks(allArcLinks);
+        setMiniArcBuilds(allMiniArcBuilds);
         setStatus("ready");
       })
       .catch((error) => {
@@ -162,6 +167,7 @@ export default function LifeManifestVisualizationScreen() {
             targets={targets}
             arcGoals={arcGoals}
             arcLinks={arcLinks}
+            miniArcBuilds={miniArcBuilds}
             onFinish={() => router.push({ pathname: "/life-manifest/[id]", params: { id: manifestId } })}
           />
         )}
@@ -190,16 +196,26 @@ function SelectNextActionSection(props: {
   targets: Target[];
   arcGoals: ArcGoal[];
   arcLinks: ArcLink[];
+  miniArcBuilds: MiniArcBuild[];
   onFinish: () => void;
 }) {
-  const { subGoal, targets, arcGoals, arcLinks, onFinish } = props;
+  const { subGoal, targets, arcGoals, arcLinks, miniArcBuilds, onFinish } = props;
+
+  // ARC completion/Link simplification task (spec sections 1/11/12):
+  // opens the SAME single /future-arc-link/[id] screen every other Link
+  // entry point uses -- never the old /arc-link/[id] or
+  // /mini-arc-link/[id] rehearsal screens. A "mini_arc" link only
+  // resolves when its own MiniArcBuild has a parent Full ARC (the same
+  // scope decision used everywhere else this phase).
+  function futureLinkBuildIdFor(link: ArcLink): string | null {
+    if (link.protocolType === "arc") return link.protocolId;
+    return resolveMiniArcParentId(miniArcBuilds.find((b) => b.id === link.protocolId) ?? { parentArcBuildId: null });
+  }
 
   function openArcLink(link: ArcLink) {
-    router.push(
-      link.protocolType === "arc"
-        ? { pathname: "/arc-link/[id]", params: { id: link.protocolId, linkId: link.id } }
-        : { pathname: "/mini-arc-link/[id]", params: { id: link.protocolId, linkId: link.id } }
-    );
+    const futureLinkBuildId = futureLinkBuildIdFor(link);
+    if (!futureLinkBuildId) return;
+    router.push({ pathname: "/future-arc-link/[id]", params: { id: futureLinkBuildId, linkId: link.id } });
   }
 
   function openArcGoal(arcGoalId: string) {
@@ -212,13 +228,13 @@ function SelectNextActionSection(props: {
       {targets.map((target) => {
         const effectiveArcGoalId = subGoal ? resolveEffectiveTargetArcGoalId(target, subGoal) : target.connectedArcGoalId;
         const effectiveArcGoal = effectiveArcGoalId ? arcGoals.find((g) => g.id === effectiveArcGoalId) ?? null : null;
-        const links = arcLinks.filter((l) => target.connectedArcLinkIds.includes(l.id));
+        const links = arcLinks.filter((l) => target.connectedArcLinkIds.includes(l.id) && futureLinkBuildIdFor(l) !== null);
         return (
           <View key={target.id} style={styles.card}>
             <Text style={styles.body}>{target.title}</Text>
             {links.map((link) => (
               <Pressable key={link.id} style={styles.actionButton} onPress={() => openArcLink(link)}>
-                <Text style={styles.actionButtonText}>לעבור ל־ARC Link של הפעולה</Text>
+                <Text style={styles.actionButtonText}>{FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL}</Text>
               </Pressable>
             ))}
             {effectiveArcGoal && (

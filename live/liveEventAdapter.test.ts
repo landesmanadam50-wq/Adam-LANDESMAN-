@@ -51,6 +51,7 @@ import {
   applyAlternativeAction,
   applyBeneficialActionDurationSelected,
   applyCompletedActionImageryFinished,
+  applyFutureLinkAcknowledged,
   applyImprovedActionImageryFinished,
   applyNegativeActionStarted,
   applyPlannedActionConfirmed,
@@ -1625,6 +1626,7 @@ test("existing downstream ARC progression is unchanged for an unknown-trigger se
     "gratitude_and_learning",
     "completed_action_imagery",
     "improved_action_imagery",
+    "future_link",
     "complete",
   ]);
 });
@@ -1704,8 +1706,16 @@ test("commitAdvance's own sequence never marks either imagery stage complete mer
   assert.equal(session.improvedActionImageryFinished, false, "merely ENTERING improved_action_imagery must never mark it complete");
 
   session = applyImprovedActionImageryFinished(session);
-  hop = advanceLiveSession("improved_action_imagery", session, p, activeLayers); // -> complete
+  hop = advanceLiveSession("improved_action_imagery", session, p, activeLayers); // -> future_link
+  session = hop.session;
+  stage = hop.stage;
+  assert.equal(stage, "future_link");
+  assert.equal(session.futureLinkAcknowledged, false, "merely ENTERING future_link must never mark it acknowledged");
+
+  session = applyFutureLinkAcknowledged(session);
+  hop = advanceLiveSession("future_link", session, p, activeLayers); // -> complete
   assert.equal(hop.stage, "complete");
   assert.equal(hop.session.completedActionImageryFinished, true, "never reset once true");
   assert.equal(hop.session.improvedActionImageryFinished, true);
+  assert.equal(hop.session.futureLinkAcknowledged, true);
 });

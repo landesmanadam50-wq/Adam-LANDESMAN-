@@ -261,19 +261,19 @@ test("resolveLinkTimerStyle defaults to 'guided' for a legacy record with no tim
   assert.equal(resolveLinkTimerStyle(arcLink({ timerStyle: null })), "guided");
 });
 
-test("describeArcLinkKindAndCategory clearly distinguishes all five UI-facing ARC Link types", () => {
-  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "scheduled" })), "ARC Link מתוזמן");
-  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "routine" })), "ARC Link לשגרה");
-  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "preventive" })), "ARC Link מניעתי");
-  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "reactive" })), "ARC Link תגובתי");
-  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "bridging", triggerCategory: "reactive" })), "ARC Link מגשר");
+test("describeArcLinkKindAndCategory clearly distinguishes all five trigger kinds, never using the old 'ARC Link' type-name wording", () => {
+  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "scheduled" })), "קישור מתוזמן");
+  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "routine" })), "קישור לשגרה");
+  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "preventive" })), "קישור מניעתי");
+  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "standard", triggerCategory: "reactive" })), "קישור תגובתי");
+  assert.equal(describeArcLinkKindAndCategory(arcLink({ kind: "bridging", triggerCategory: "reactive" })), "קישור מגשר");
 });
 
-test("a legacy ArcLink (no kind/triggerCategory at all) describes as the original 'ARC Link מתוזמן', never crashing", () => {
+test("a legacy ArcLink (no kind/triggerCategory at all) describes as the original 'קישור מתוזמן', never crashing", () => {
   const legacy = arcLink();
   delete (legacy as { kind?: unknown }).kind;
   delete (legacy as { triggerCategory?: unknown }).triggerCategory;
-  assert.equal(describeArcLinkKindAndCategory(legacy), "ARC Link מתוזמן");
+  assert.equal(describeArcLinkKindAndCategory(legacy), "קישור מתוזמן");
 });
 
 // ---------------------------------------------------------------------------
@@ -313,7 +313,7 @@ test("a legacy ArcLink parsed from stored JSON (kind/triggerCategory/triggerLeve
   assert.equal("kind" in legacy, false);
   assert.equal(resolveArcLinkKind(legacy), "standard");
   assert.equal(resolveArcLinkTriggerCategory(legacy), "scheduled");
-  assert.equal(describeArcLinkKindAndCategory(legacy), "ARC Link מתוזמן");
+  assert.equal(describeArcLinkKindAndCategory(legacy), "קישור מתוזמן");
   assert.equal(resolveCurrentTriggerLevel(legacy.triggerLevels, 3), 1);
 
   const list = upsertArcLinkInList([], legacy);

@@ -107,16 +107,27 @@ function protocolName(protocolType: "arc" | "mini_arc", id: string, arcBuilds: A
 /**
  * build/ArcLinkBuildForm.tsx
  *
- * Weekly Routine + ARC Link management task: the "בניית ARC Link" /
- * "בניית Mini ARC Link" step flow (Sections 4-6 of the task spec),
- * rendered INLINE inside the Routine page (app/routines/index.tsx) --
- * never a separate route, matching that page's own existing "one
- * screen, a few internal views" pattern (RoutineForm). Reused for BOTH
- * ARC Link and Mini ARC Link via `protocolType` -- Mini ARC Link never
- * gets any full-ARC-only field (there are none here to begin with; the
- * only branching is which protocol list Step 1 shows). Editing an
- * existing ArcLink opens this exact same flow with its data prefilled
- * (formFromLink) -- never a separate editor. Only references
+ * Weekly Routine + ARC Link management task: the trigger/schedule
+ * BUILD step flow (Sections 4-6 of that original task spec), rendered
+ * INLINE inside the Routine page (app/routines/index.tsx) -- never a
+ * separate route, matching that page's own existing "one screen, a few
+ * internal views" pattern (RoutineForm). Reused for BOTH a full-ARC and
+ * a Mini-ARC schedule via `protocolType`.
+ *
+ * ARC completion/Link simplification task (spec sections 1/11/12): this
+ * form still saves an ArcLink RECORD -- its trigger + practice
+ * schedule + weekly-action association is genuine routine-scheduling
+ * infrastructure ("Preserve... existing triggers, schedules, timers")
+ * that the new Short Future ARC Link has no equivalent of, and every
+ * saved ArcLink is still exactly what /future-arc-link/[id] seeds its
+ * content from via `linkId` (arc/futureArcLink.ts). Only the USER-FACING
+ * WORDING changed here -- every on-screen label now says "קישור"
+ * ("Link", generically) rather than the old named types ("ARC Link
+ * מתוזמן", "ARC Link מגשר", "Mini ARC Link"), so no old Link type name
+ * is shown as a distinct choice; `kind`/`triggerCategory` are still
+ * stored internally exactly as before (unrelated to what's visible).
+ * Editing an existing ArcLink opens this exact same flow with its data
+ * prefilled (formFromLink) -- never a separate editor. Only references
  * (protocolId/weeklyActionId/triggerId) are ever stored; the linked
  * protocol's own content is never copied or edited here.
  */
@@ -241,7 +252,7 @@ export default function ArcLinkBuildForm({
   if (step === "category") {
     return (
       <View>
-        <Text style={styles.title}>איזה סוג ARC Link תרצה לבנות?</Text>
+        <Text style={styles.title}>איזה סוג קישור תרצה להגדיר?</Text>
         <View style={styles.chipRow}>
           {(["scheduled", "routine", "preventive", "reactive"] as ArcLinkTriggerCategory[]).map((category) => (
             <Pressable
@@ -249,14 +260,14 @@ export default function ArcLinkBuildForm({
               style={[styles.chip, form.kind === "standard" && form.triggerCategory === category && styles.chipSelected]}
               onPress={() => setForm({ ...form, kind: "standard", triggerCategory: category })}
             >
-              <Text style={styles.chipText}>{`ARC Link ${ARC_LINK_TRIGGER_CATEGORY_LABELS[category]}`}</Text>
+              <Text style={styles.chipText}>{`קישור ${ARC_LINK_TRIGGER_CATEGORY_LABELS[category]}`}</Text>
             </Pressable>
           ))}
           <Pressable
             style={[styles.chip, form.kind === "bridging" && styles.chipSelected]}
             onPress={() => setForm({ ...form, kind: "bridging", triggerCategory: form.triggerCategory === "scheduled" ? "routine" : form.triggerCategory })}
           >
-            <Text style={styles.chipText}>ARC Link מגשר</Text>
+            <Text style={styles.chipText}>קישור מגשר</Text>
           </Pressable>
         </View>
         <Text style={styles.emptyText}>
@@ -497,7 +508,7 @@ export default function ArcLinkBuildForm({
   if (step === "schedule") {
     return (
       <View>
-        <Text style={styles.title}>{`מתי תרצה לתרגל את ה-${protocolLabel} Link?`}</Text>
+        <Text style={styles.title}>מתי תרצה לתרגל את הקישור?</Text>
         <Text style={styles.fieldLabel}>ימי תרגול (רשות)</Text>
         <View style={styles.chipRow}>
           {DAY_LABELS.map((label, day) => (
@@ -661,7 +672,7 @@ export default function ArcLinkBuildForm({
           <Text style={styles.cancelButtonText}>חזרה</Text>
         </Pressable>
         <Pressable style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>{protocolType === "arc" ? "שמירת ARC Link" : "שמירת Mini ARC Link"}</Text>
+          <Text style={styles.saveButtonText}>שמירת הקישור</Text>
         </Pressable>
       </View>
       {editingLink && (

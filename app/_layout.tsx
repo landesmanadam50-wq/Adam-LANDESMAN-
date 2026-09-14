@@ -108,8 +108,15 @@ export default function RootLayout() {
         <Stack.Screen name="mini-arc/live/[id]" options={{ title: "Mini ARC LIVE" }} />
         <Stack.Screen name="mini-arc/mode/[id]" options={{ title: "מה תרצה לתרגל?" }} />
         <Stack.Screen name="live/select" options={{ title: "מה תרצה לתרגל?" }} />
+        {/* ARC completion/Link simplification task: arc-link/[id] and
+            mini-arc-link/[id] are kept registered ONLY so an old saved
+            record (opened via a legacy ArcLink/practice-record deep
+            link) still resolves -- see arc/futureArcLink.ts's own
+            module doc. future-arc-link/[id] is the only Link route any
+            new-creation UI ever navigates to now. */}
         <Stack.Screen name="arc-link/[id]" options={{ title: "ARC Link" }} />
         <Stack.Screen name="mini-arc-link/[id]" options={{ title: "Mini ARC Link" }} />
+        <Stack.Screen name="future-arc-link/[id]" options={{ title: "קישור ARC עתידי מקוצר" }} />
         <Stack.Screen name="urge-arcs/index" options={{ title: "בניית Urge ARC" }} />
         <Stack.Screen name="urge-arcs/[id]" options={{ title: "עריכת Urge ARC" }} />
         <Stack.Screen name="urge-arcs/live/[id]" options={{ title: "Urge ARC LIVE" }} />

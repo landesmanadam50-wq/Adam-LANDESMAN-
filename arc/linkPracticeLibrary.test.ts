@@ -186,3 +186,35 @@ test("buildLinkLibraryEntries never renders 'undefined'/'null' in resolved trigg
   assert.ok(!entries[0].trigger.includes("undefined"));
   assert.ok(!entries[0].trigger.includes("null"));
 });
+
+test("buildLinkLibraryEntries resolves futureLinkBuildId to the ArcBuild's own id directly for an 'arc_link' category entry", () => {
+  const link = arcLink({ id: "l1", protocolType: "arc" });
+  const entries = buildLinkLibraryEntries([link], { "arcbuild-1": arcBuild() }, {}, { "trig-1": trigger() }, { "wa-1": weeklyAction() });
+  assert.equal(entries[0].futureLinkBuildId, "arcbuild-1");
+});
+
+test("buildLinkLibraryEntries resolves futureLinkBuildId to the linked MiniArcBuild's own parentArcBuildId for a 'mini_arc_link' category entry", () => {
+  const link = arcLink({ id: "l2", protocolType: "mini_arc", protocolId: "miniarc-1" });
+  const entries = buildLinkLibraryEntries(
+    [link],
+    {},
+    { "miniarc-1": miniArcBuild({ parentArcBuildId: "arcbuild-1" }) },
+    { "trig-1": trigger() },
+    { "wa-1": weeklyAction() }
+  );
+  assert.equal(entries[0].futureLinkBuildId, "arcbuild-1");
+});
+
+test("buildLinkLibraryEntries resolves futureLinkBuildId to null for a 'mini_arc_link' entry whose MiniArcBuild has no parent (or is missing) -- no Future Link content can be resolved", () => {
+  const linkedToUnparented = arcLink({ id: "l2", protocolType: "mini_arc", protocolId: "miniarc-1" });
+  const linkedToMissing = arcLink({ id: "l3", protocolType: "mini_arc", protocolId: "does-not-exist" });
+  const entries = buildLinkLibraryEntries(
+    [linkedToUnparented, linkedToMissing],
+    {},
+    { "miniarc-1": miniArcBuild({ parentArcBuildId: null }) },
+    { "trig-1": trigger() },
+    { "wa-1": weeklyAction() }
+  );
+  assert.equal(entries.find((e) => e.link.id === "l2")!.futureLinkBuildId, null);
+  assert.equal(entries.find((e) => e.link.id === "l3")!.futureLinkBuildId, null);
+});

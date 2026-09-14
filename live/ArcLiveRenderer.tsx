@@ -40,6 +40,7 @@ import {
   CompleteScreen,
   DesiredStateRatingScreen,
   EncodingScreen,
+  FutureArcLinkCueScreen,
   FutureSuccessFocusAskScreen,
   FutureSuccessFocusScheduleScreen,
   GratitudeAndLearningScreen,
@@ -148,8 +149,15 @@ export interface ArcLiveRendererProps {
   onGratitudeAndLearningContinue: () => void;
   onCompletedActionImageryContinue: () => void;
   onImprovedActionImageryContinue: () => void;
-  restartLabel?: string;
-  onRestart: () => void;
+  /** ARC completion/Link simplification task: continues past the new "future_link" stage -- see arc/types.ts's own ArcStage doc. */
+  onFutureLinkContinue: () => void;
+  /** See live/screens.tsx's CompleteScreen own doc -- the primary "אני מתחיל עכשיו" real-world-action CTA replaces the old always-"סשן חדש" single button. */
+  completePrimaryLabel?: string;
+  onCompletePrimary: () => void;
+  completeSecondaryLabel?: string;
+  onCompleteSecondary?: () => void;
+  completePracticeAgainLabel?: string;
+  onCompletePracticeAgain?: () => void;
 }
 
 export function ArcLiveRenderer(props: ArcLiveRendererProps) {
@@ -688,7 +696,41 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       );
     }
 
+    case "future_link": {
+      // ARC completion/Link simplification task: the same resolved
+      // layer/action every stage in this tail already uses -- the
+      // Short Future ARC Link's sequence is always built around
+      // whatever real action this session actually resolved, never a
+      // different one.
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: session.triggerType,
+        selectedTarget: session.selectedTarget,
+        buildProfile: profile,
+        selectedAction: session.selectedAction,
+      });
+      return (
+        <FutureArcLinkCueScreen
+          copy={copy}
+          profile={profile}
+          layer={layer}
+          triggerText={session.currentTriggerDescription ?? session.triggerContext}
+          onContinue={props.onFutureLinkContinue}
+        />
+      );
+    }
+
     case "complete":
-      return <CompleteScreen copy={copy} restartLabel={props.restartLabel} onRestart={props.onRestart} />;
+      return (
+        <CompleteScreen
+          copy={copy}
+          primaryLabel={props.completePrimaryLabel}
+          onPrimary={props.onCompletePrimary}
+          secondaryLabel={props.completeSecondaryLabel}
+          onSecondary={props.onCompleteSecondary}
+          practiceAgainLabel={props.completePracticeAgainLabel}
+          onPracticeAgain={props.onCompletePracticeAgain}
+        />
+      );
   }
 }

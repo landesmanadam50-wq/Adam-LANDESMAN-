@@ -165,6 +165,9 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "currentInterferingThought",
     "currentTriggerDescription",
     "desiredStateRating",
+    // ARC completion/Link simplification task: one new session-only flag --
+    // see arc/types.ts's ArcLiveState doc.
+    "futureLinkAcknowledged",
     "hasUrge",
     "identifiedNeed",
     "improvedActionImageryFinished",
@@ -523,10 +526,17 @@ test("a reactive_urge session with the habit layer active and Negative Action re
   const gratitudeIndex = visitedStages.indexOf("gratitude_and_learning");
   const completedImageryIndex = visitedStages.indexOf("completed_action_imagery");
   const improvedImageryIndex = visitedStages.indexOf("improved_action_imagery");
+  const futureLinkIndex = visitedStages.indexOf("future_link");
   const completeIndex = visitedStages.indexOf("complete");
 
   assert.ok(
-    actIndex >= 0 && successFocusIndex >= 0 && gratitudeIndex >= 0 && completedImageryIndex >= 0 && improvedImageryIndex >= 0 && completeIndex >= 0,
+    actIndex >= 0 &&
+      successFocusIndex >= 0 &&
+      gratitudeIndex >= 0 &&
+      completedImageryIndex >= 0 &&
+      improvedImageryIndex >= 0 &&
+      futureLinkIndex >= 0 &&
+      completeIndex >= 0,
     "sanity: every stage in the sequence must actually be reached"
   );
   assert.ok(actIndex < successFocusIndex, "Beneficial Action (act) must come before Success Focus");
@@ -534,11 +544,13 @@ test("a reactive_urge session with the habit layer active and Negative Action re
   // Post-action reflection/imagery task: Success Focus now continues
   // DIRECTLY into the mandatory reflection/imagery sequence (never
   // Negative Action, and never anything else) -- which itself continues
-  // directly into complete, with no gap between any of the four stages.
+  // directly into the Short Future ARC Link, then complete, with no gap
+  // between any of the five stages.
   assert.equal(successFocusIndex + 1, gratitudeIndex, "Success Focus must continue DIRECTLY into gratitude_and_learning");
   assert.equal(gratitudeIndex + 1, completedImageryIndex, "gratitude_and_learning must continue DIRECTLY into completed_action_imagery");
   assert.equal(completedImageryIndex + 1, improvedImageryIndex, "completed_action_imagery must continue DIRECTLY into improved_action_imagery");
-  assert.equal(improvedImageryIndex + 1, completeIndex, "improved_action_imagery must continue DIRECTLY into complete");
+  assert.equal(improvedImageryIndex + 1, futureLinkIndex, "improved_action_imagery must continue DIRECTLY into future_link");
+  assert.equal(futureLinkIndex + 1, completeIndex, "future_link must continue DIRECTLY into complete");
   assert.ok(!visitedStages.includes("negative_action"), "must never produce Negative Action automatically after ARC or Success Focus, even with the habit layer active and a negative action configured and enabled");
 });
 

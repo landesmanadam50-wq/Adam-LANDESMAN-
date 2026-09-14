@@ -30,6 +30,7 @@ import type { InstructionSegment } from "../arc/instructionTiming.ts";
 import { getMiniArcStageCopy } from "../arc/miniArc.ts";
 import type { MiniArcBuild } from "../arc/miniArc.ts";
 import { getAcceptanceReadinessRecheckQuestion, getAcceptanceUnwillingnessAcknowledgment, getPreventiveActionReinforcement } from "../arc/stageCopy.ts";
+import { FUTURE_ARC_LINK_SCHEDULE_LATER_LABEL, FUTURE_ARC_LINK_START_ACTION_LABEL, FUTURE_ARC_LINK_TRIGGER_ACTIVATION_PROMPT, formatFutureArcLinkSequence, resolveFutureArcLinkContent } from "../arc/futureArcLink.ts";
 import { hasTrailingDwellSegment } from "../arc/dwellTimes.ts";
 import { formatRemainingTime, generateTimerRunId, getActionTimerStatusFromStartedAt } from "../arc/actionTimer.ts";
 import type { ActionTimerStatus } from "../arc/actionTimer.ts";
@@ -2123,7 +2124,8 @@ export function GratitudeAndLearningScreen({
  * live/ArcLiveRenderer.tsx's key on this stage) is built here rather
  * than reusing or modifying that shared component.
  */
-function useDwellCountdown(dwellSeconds: number): { remainingSeconds: number; complete: boolean } {
+/** Exported for live/FutureArcLinkScreen.tsx's own standalone dwell-gated imagery screens -- same dwell-hold pattern, never a duplicated timer implementation. */
+export function useDwellCountdown(dwellSeconds: number): { remainingSeconds: number; complete: boolean } {
   const elapsedSeconds = useElapsedSeconds();
   const remainingSeconds = Math.max(0, dwellSeconds - elapsedSeconds);
   return { remainingSeconds, complete: elapsedSeconds >= dwellSeconds };
@@ -2215,27 +2217,95 @@ export function ImprovedActionImageryScreen({
 }
 
 /**
- * Reinforcement's completion screen -- since the post-action
- * reflection/imagery task, Gratitude/memory-detail/Evidence-of-Progress
- * (and the new improvement question) moved to their own earlier stage
- * (GratitudeAndLearningScreen above), this screen is now just the
- * closing title plus the session-restart action; nothing here reads or
- * writes those fields anymore.
+ * ARC completion/Link simplification task, spec section 7: the Short
+ * Future ARC Link's own arrow-cue sequence, shown automatically at the
+ * end of every Full ARC session (between improved_action_imagery and
+ * complete -- see arc/types.ts's "future_link" ArcStage doc). Never a
+ * dwell-gated screen (a single short screen, not an imagery hold) and
+ * never the full protocol repeated -- arc/futureArcLink.ts's own
+ * resolveFutureArcLinkContent already reduces the profile's saved
+ * content down to brief cue labels. `content === null` (no resolvable
+ * action) shows a safe, generic continuation line instead of blocking
+ * -- this stage never prevents finishing the session.
+ */
+export function FutureArcLinkCueScreen({
+  copy,
+  profile,
+  layer,
+  triggerText,
+  onContinue,
+}: {
+  copy: ArcStageCopy;
+  profile: ArcBuildProfile;
+  layer: DevelopmentLayer;
+  triggerText: string | null;
+  onContinue: () => void;
+}) {
+  const content = resolveFutureArcLinkContent(profile, layer, triggerText);
+  return (
+    <View>
+      <Title copy={copy} />
+      <Text style={styles.body}>{FUTURE_ARC_LINK_TRIGGER_ACTIVATION_PROMPT}</Text>
+      {content ? (
+        <>
+          <Text style={styles.body}>{content.triggerCueText}</Text>
+          <Text style={styles.futureLinkSequence}>{formatFutureArcLinkSequence(content)}</Text>
+        </>
+      ) : (
+        <Text style={styles.body}>גם בלי רצף שמור אפשר להמשיך -- דמיין בקצרה את הפעם הבאה שבה תרצה לפעול כך.</Text>
+      )}
+      <PrimaryButton label="המשך" onPress={onContinue} />
+    </View>
+  );
+}
+
+/**
+ * Reinforcement's completion screen. ARC completion/Link simplification
+ * task, spec section 9: the main outcome is real-world action, so the
+ * PRIMARY button here is always the "אני מתחיל עכשיו" action-oriented
+ * CTA (onPrimary) -- never a plain "start a new session" label. An
+ * optional secondary "סיום -- אחזור בזמן שנקבע" (onSecondary) appears
+ * only when this particular completion genuinely has a scheduled/
+ * deferred action to return to (Identity Extension's own "scheduled"
+ * action mode -- see live/IdentityExtensionScreen.tsx/
+ * live/ArcGoalMiniIdentityScreen.tsx). An optional, visually secondary
+ * "תרגול שוב" (onPracticeAgain) may remain but must never compete with
+ * the primary button -- see this file's own styles (practiceAgainButton
+ * is deliberately smaller/muted, never a second PrimaryButton). "Avoid
+ * automatic repetition loops": no caller wires onPracticeAgain to fire
+ * automatically or by default.
  */
 export function CompleteScreen({
   copy,
-  restartLabel = "סשן חדש",
-  onRestart,
+  primaryLabel = FUTURE_ARC_LINK_START_ACTION_LABEL,
+  onPrimary,
+  secondaryLabel,
+  onSecondary,
+  practiceAgainLabel,
+  onPracticeAgain,
 }: {
   copy: ArcStageCopy;
-  /** Multiple Scheduled ARC + Success Focus Routines: a routine-launched session shows "המשך להתמקדות בהצלחה" here instead of "סשן חדש" -- onRestart, for that same session, continues into the routine's own post-ARC Success Focus timer rather than starting a brand-new session (see live/LiveSessionScreen.tsx's restart()). Every other, non-routine caller omits this and keeps the original label/behavior unchanged. */
-  restartLabel?: string;
-  onRestart: () => void;
+  primaryLabel?: string;
+  onPrimary: () => void;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
+  practiceAgainLabel?: string;
+  onPracticeAgain?: () => void;
 }) {
   return (
     <View>
       <Title copy={copy} />
-      <PrimaryButton label="סשן חדש" onPress={onRestart} />
+      <PrimaryButton label={primaryLabel} onPress={onPrimary} />
+      {onSecondary && (
+        <Pressable style={styles.completeSecondaryButton} onPress={onSecondary}>
+          <Text style={styles.completeSecondaryButtonText}>{secondaryLabel ?? FUTURE_ARC_LINK_SCHEDULE_LATER_LABEL}</Text>
+        </Pressable>
+      )}
+      {onPracticeAgain && (
+        <Pressable style={styles.completePracticeAgainButton} onPress={onPracticeAgain}>
+          <Text style={styles.completePracticeAgainButtonText}>{practiceAgainLabel ?? "תרגול שוב"}</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -2252,6 +2322,32 @@ const styles = StyleSheet.create({
     textAlign: "right",
     marginBottom: 24,
     lineHeight: 24,
+  },
+  futureLinkSequence: {
+    fontSize: 17,
+    fontWeight: "600",
+    textAlign: "right",
+    marginBottom: 24,
+    lineHeight: 28,
+  },
+  completeSecondaryButton: {
+    marginTop: 12,
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  completeSecondaryButtonText: {
+    fontSize: 15,
+    color: "#0a7ea4",
+    fontWeight: "600",
+  },
+  completePracticeAgainButton: {
+    marginTop: 8,
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  completePracticeAgainButtonText: {
+    fontSize: 13,
+    color: "#999",
   },
   buttonRow: {
     flexDirection: "row",
