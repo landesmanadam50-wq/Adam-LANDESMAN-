@@ -166,3 +166,30 @@ export function upsertStateProfileInList(profiles: StateProfile[], profile: Stat
   if (index === -1) return [...profiles, profile];
   return profiles.map((existing, i) => (i === index ? profile : existing));
 }
+
+/**
+ * Adaptive ARC architecture task, Phase 10 (StateProfile BUILD): the
+ * minimum bar for PERSISTING a StateProfile at all -- deliberately not
+ * "complete" or "ready for LIVE practice" (no such stronger validator
+ * exists anywhere in this codebase yet, and this phase does not invent
+ * one -- see this function's own two rules below, both already fully
+ * implied by the existing data model: `name` is the one field every
+ * `createEmptyStateProfile` caller must already supply, and
+ * `ActionTimerConfig.durationMinutes`'s own doc already defines `null`
+ * as "untimed" and implies a supplied value is a real duration, which
+ * can never be zero, negative, or non-finite).
+ *
+ * A name-only StateProfile (every other field left null, exactly like
+ * createEmptyStateProfile's own output) IS saveable -- "a name-only
+ * profile may be saved for incremental editing" -- callers that also
+ * want to communicate "not yet meaningfully practiceable" do so with
+ * their own UI copy, never a second validator/source of truth here.
+ *
+ * Pure and read-only: never mutates `profile`.
+ */
+export function isStateProfileSaveable(profile: StateProfile): boolean {
+  if (profile.name.trim().length === 0) return false;
+  const durationMinutes = profile.actionTimerConfig?.durationMinutes;
+  if (durationMinutes != null && !(Number.isFinite(durationMinutes) && durationMinutes > 0)) return false;
+  return true;
+}
