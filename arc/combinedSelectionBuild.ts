@@ -41,6 +41,7 @@ import {
   generateCombinedInterferenceSelectionId,
 } from "./combinedInterferenceSelection.ts";
 import type { CombinedInterferenceSelection } from "./combinedInterferenceSelection.ts";
+import type { FullPresenceAvailability } from "./combinedPresenceLink.ts";
 
 // ---------------------------------------------------------------------------
 // Grouping available items by category
@@ -147,7 +148,7 @@ export function removeSelectedItemId(selectedItemIds: string[], id: string): str
 // Save eligibility
 // ---------------------------------------------------------------------------
 
-export type SaveBlockedReason = "state_not_enabled" | "no_available_item_selected";
+export type SaveBlockedReason = "state_not_enabled" | "no_available_item_selected" | "presence_requires_link";
 
 export interface SaveEligibility {
   allowed: boolean;
@@ -156,13 +157,32 @@ export interface SaveEligibility {
 
 /**
  * A configuration is saveable only when: the StateProfile itself is
- * enabled, AND at least one of the DRAFT's own selected ids classifies
- * as "available" (Presence on its own is never sufficient, and an
+ * enabled, at least one of the DRAFT's own selected ids classifies as
+ * "available" (Presence on its own is never sufficient, and an
  * unavailable configured item lingering in the draft never counts
- * toward this minimum -- see classifyConfiguredItems above). Presence
- * being on or off never affects this decision either way.
+ * toward this minimum -- see classifyConfiguredItems above), AND -- if
+ * Presence is enabled -- a real, resolvable PresenceArc is linked
+ * (arc/combinedPresenceLink.ts's own resolver; "not_linked"/
+ * "linked_not_found" both block saving a NEWLY edited configuration in
+ * an unusable, unlinked state; only "not_requested"/"available" allow
+ * it). An old, already-saved configuration in that same unlinked state
+ * still LOADS fine (arc/combinedInterferenceSelection.ts's own
+ * normalizeCombinedInterferenceSelection never rejects it) -- this rule
+ * only ever blocks the Save action itself, never the read/load path.
+ *
+ * Adaptive ARC architecture task, Phase 14A: `fullPresenceAvailability`
+ * is a new, OPTIONAL 4th parameter, defaulting to `{kind:
+ * "not_requested"}` -- every call site that predates this parameter
+ * (and therefore never considered a Presence link at all) keeps
+ * compiling and behaving EXACTLY as before, since that default can never
+ * trigger the new "presence_requires_link" outcome.
  */
-export function resolveSaveEligibility(stateProfileStatus: LibraryItemStatus, selectedItemIds: string[], classifiedItems: ClassifiedConfiguredItem[]): SaveEligibility {
+export function resolveSaveEligibility(
+  stateProfileStatus: LibraryItemStatus,
+  selectedItemIds: string[],
+  classifiedItems: ClassifiedConfiguredItem[],
+  fullPresenceAvailability: FullPresenceAvailability = { kind: "not_requested" }
+): SaveEligibility {
   if (stateProfileStatus !== "enabled") {
     return { allowed: false, blockedReason: "state_not_enabled" };
   }
@@ -171,12 +191,16 @@ export function resolveSaveEligibility(stateProfileStatus: LibraryItemStatus, se
   if (!hasAvailableSelected) {
     return { allowed: false, blockedReason: "no_available_item_selected" };
   }
+  if (fullPresenceAvailability.kind === "not_linked" || fullPresenceAvailability.kind === "linked_not_found") {
+    return { allowed: false, blockedReason: "presence_requires_link" };
+  }
   return { allowed: true, blockedReason: null };
 }
 
 export const SAVE_BLOCKED_REASON_LABELS: Record<SaveBlockedReason, string> = {
   state_not_enabled: "אי אפשר לשמור -- המצב הרצוי אינו פעיל.",
   no_available_item_selected: "יש לבחור לפחות גורם מפריע זמין אחד לפני השמירה.",
+  presence_requires_link: "כדי להשתמש בתרגול נוכחות מלא במסלול המשולב, יש לבחור פרוטוקול נוכחות.",
 };
 
 // ---------------------------------------------------------------------------
@@ -199,6 +223,16 @@ export function findExistingSelectionForState(selections: CombinedInterferenceSe
  * removeSelectedItemId is still saved, never silently dropped ("do not
  * rewrite the stored configuration automatically merely because an item
  * became unavailable").
+ *
+ * Adaptive ARC architecture task, Phase 14A: `linkedPresenceArcId` is a
+ * new, OPTIONAL final parameter (mirrors
+ * arc/combinedInterferenceSelection.ts's own applyConfiguredSelectionForState
+ * exactly, for the same backward-compatibility reason -- every call site
+ * predating this field keeps compiling and behaving exactly as before).
+ * Omitting it (`undefined`) preserves whatever link the existing record
+ * already had (or null for a brand-new one) -- it is never silently
+ * cleared by a caller that doesn't know about it yet. Pass `null`
+ * explicitly to clear a link, or a real id to set/replace one.
  */
 export function buildCombinedSelectionSaveDraft(
   existing: CombinedInterferenceSelection | null,
@@ -207,11 +241,18 @@ export function buildCombinedSelectionSaveDraft(
   selectedItemIds: string[],
   presenceEnabled: boolean,
   now: string,
-  generateId: () => string = generateCombinedInterferenceSelectionId
+  generateId: () => string = generateCombinedInterferenceSelectionId,
+  linkedPresenceArcId?: string | null
 ): CombinedInterferenceSelection {
   const deduped = dedupeItemIdsPreservingOrder(selectedItemIds);
+  const resolvedLinkedPresenceArcId = linkedPresenceArcId !== undefined ? linkedPresenceArcId : (existing?.linkedPresenceArcId ?? null);
   if (existing) {
-    return { ...existing, configuredItemIds: deduped, presenceEnabled, updatedAt: now };
+    return { ...existing, configuredItemIds: deduped, presenceEnabled, linkedPresenceArcId: resolvedLinkedPresenceArcId, updatedAt: now };
   }
-  return { ...createEmptyCombinedInterferenceSelection(generateId(), stateProfileId, ownerProgramId, now), configuredItemIds: deduped, presenceEnabled };
+  return {
+    ...createEmptyCombinedInterferenceSelection(generateId(), stateProfileId, ownerProgramId, now),
+    configuredItemIds: deduped,
+    presenceEnabled,
+    linkedPresenceArcId: resolvedLinkedPresenceArcId,
+  };
 }

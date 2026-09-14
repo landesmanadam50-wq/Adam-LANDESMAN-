@@ -57,6 +57,24 @@ export interface CombinedInterferenceSelection extends OwnedLibraryRecord {
    * can never appear inside configuredItemIds itself.
    */
   presenceEnabled: boolean;
+  /**
+   * Adaptive ARC architecture task, Phase 14A: the stable id of the one
+   * saved PresenceArc (arc/types.ts) this State's combined practice
+   * should run as its full Presence protocol -- never a copy of that
+   * record's own fields (same "reference, never duplicate" convention
+   * every other cross-reference in this feature already uses). null
+   * means "not yet chosen" -- this is a normal, valid state (including
+   * for every record saved before this field existed, via
+   * normalizeCombinedInterferenceSelection's own backfill below), never
+   * treated as an error on its own; only arc/combinedPresenceLink.ts's
+   * own resolver decides what that means for readiness. Presence itself
+   * can be enabled/disabled independently of whether a link is chosen --
+   * disabling presenceEnabled never clears this field (see
+   * arc/combinedPresenceLink.ts's own "not_requested regardless of a
+   * stale linked id" rule), so re-enabling Presence later remembers the
+   * previous choice.
+   */
+  linkedPresenceArcId: string | null;
   status: LibraryItemStatus;
   schemaVersion: number;
   createdAt: string;
@@ -75,6 +93,7 @@ export function createEmptyCombinedInterferenceSelection(id: string, stateProfil
     stateProfileId,
     configuredItemIds: [],
     presenceEnabled: false,
+    linkedPresenceArcId: null,
     status: "enabled",
     schemaVersion: 1,
     createdAt: now,
@@ -107,6 +126,7 @@ export function normalizeCombinedInterferenceSelection(selection: CombinedInterf
     ownerProgramId: selection.ownerProgramId ?? null,
     configuredItemIds: dedupeItemIdsPreservingOrder(Array.isArray(selection.configuredItemIds) ? selection.configuredItemIds : []),
     presenceEnabled: selection.presenceEnabled ?? false,
+    linkedPresenceArcId: selection.linkedPresenceArcId ?? null,
     status: selection.status ?? "enabled",
     schemaVersion: selection.schemaVersion ?? 1,
   };
@@ -142,6 +162,17 @@ export function resolveCombinedInterferenceSelectionForState(selections: Combine
  * resolveCombinedInterferenceSelectionForState yourself, or a second
  * record for the same State can be created. `generateId` is injectable
  * purely for deterministic tests; production callers omit it.
+ *
+ * Adaptive ARC architecture task, Phase 14A: `linkedPresenceArcId` is a
+ * new, OPTIONAL final parameter (backward-compatible signature -- every
+ * existing call site that predates this field keeps compiling and
+ * behaving exactly as before). Passing `undefined` (i.e. omitting the
+ * argument entirely) means "leave whatever link this State already had
+ * untouched" -- it resolves to the existing record's own
+ * linkedPresenceArcId (or null for a brand-new record), never to null
+ * outright, so an old caller that has never heard of this field can
+ * never silently clear a link a trainee already chose. Pass `null`
+ * explicitly to clear a link, or a real id to set/replace one.
  */
 export function applyConfiguredSelectionForState(
   selections: CombinedInterferenceSelection[],
@@ -150,12 +181,19 @@ export function applyConfiguredSelectionForState(
   presenceEnabled: boolean,
   ownerProgramId: string | null,
   now: string,
-  generateId: () => string = generateCombinedInterferenceSelectionId
+  generateId: () => string = generateCombinedInterferenceSelectionId,
+  linkedPresenceArcId?: string | null
 ): CombinedInterferenceSelection[] {
   const existing = resolveCombinedInterferenceSelectionForState(selections, stateProfileId);
   const deduped = dedupeItemIdsPreservingOrder(configuredItemIds);
+  const resolvedLinkedPresenceArcId = linkedPresenceArcId !== undefined ? linkedPresenceArcId : (existing?.linkedPresenceArcId ?? null);
   const updated: CombinedInterferenceSelection = existing
-    ? { ...existing, configuredItemIds: deduped, presenceEnabled, updatedAt: now }
-    : { ...createEmptyCombinedInterferenceSelection(generateId(), stateProfileId, ownerProgramId, now), configuredItemIds: deduped, presenceEnabled };
+    ? { ...existing, configuredItemIds: deduped, presenceEnabled, linkedPresenceArcId: resolvedLinkedPresenceArcId, updatedAt: now }
+    : {
+        ...createEmptyCombinedInterferenceSelection(generateId(), stateProfileId, ownerProgramId, now),
+        configuredItemIds: deduped,
+        presenceEnabled,
+        linkedPresenceArcId: resolvedLinkedPresenceArcId,
+      };
   return upsertCombinedInterferenceSelectionInList(selections, updated);
 }

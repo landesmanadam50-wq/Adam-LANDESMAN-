@@ -1,12 +1,21 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
-import { getStateProfile, loadCombinedInterferenceSelections, loadInterferenceItems, restoreCombinedInterferenceSelection, upsertCombinedInterferenceSelection } from "../data/storage.ts";
+import {
+  getStateProfile,
+  loadCombinedInterferenceSelections,
+  loadInterferenceItems,
+  loadPresenceArcs,
+  restoreCombinedInterferenceSelection,
+  upsertCombinedInterferenceSelection,
+} from "../data/storage.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import type { CombinedInterferenceSelection } from "../arc/combinedInterferenceSelection.ts";
+import type { PresenceArc } from "../arc/types.ts";
+import { resolveFullPresenceAvailability } from "../arc/combinedPresenceLink.ts";
 import {
   SAVE_BLOCKED_REASON_LABELS,
   UNAVAILABLE_REASON_LABELS,
@@ -62,6 +71,8 @@ export default function CombinedInterferenceSelectionScreen() {
   const [existingSelection, setExistingSelection] = useState<CombinedInterferenceSelection | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [presenceEnabled, setPresenceEnabled] = useState(false);
+  const [linkedPresenceArcId, setLinkedPresenceArcId] = useState<string | null>(null);
+  const [presenceArcs, setPresenceArcs] = useState<PresenceArc[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
@@ -69,14 +80,15 @@ export default function CombinedInterferenceSelectionScreen() {
   function load() {
     if (!stateProfileId) return;
     setStatus("loading");
-    Promise.all([getStateProfile(stateProfileId), loadInterferenceItems(), loadCombinedInterferenceSelections()])
-      .then(([profile, items, selections]) => {
+    Promise.all([getStateProfile(stateProfileId), loadInterferenceItems(), loadCombinedInterferenceSelections(), loadPresenceArcs()])
+      .then(([profile, items, selections, presenceArcList]) => {
         if (!profile) {
           setStatus("stateNotFound");
           return;
         }
         setStateProfile(profile);
         setAllItems(items);
+        setPresenceArcs(presenceArcList);
         if (profile.status !== "enabled") {
           setStatus("stateNotEnabled");
           return;
@@ -85,6 +97,7 @@ export default function CombinedInterferenceSelectionScreen() {
         setExistingSelection(existing);
         setSelectedItemIds(existing?.configuredItemIds ?? []);
         setPresenceEnabled(existing?.presenceEnabled ?? false);
+        setLinkedPresenceArcId(existing?.linkedPresenceArcId ?? null);
         setStatus("ready");
       })
       .catch((error) => {
@@ -95,12 +108,36 @@ export default function CombinedInterferenceSelectionScreen() {
 
   useEffect(load, [stateProfileId]);
 
+  /**
+   * Adaptive ARC architecture task, Phase 14A: refreshes ONLY the
+   * PresenceArc list on every focus (never the rest of this screen's own
+   * state) -- so returning from creating one on the existing /presence-arcs
+   * screen (see the "יצירת פרוטוקול נוכחות" link below) shows up here
+   * without losing an in-progress, unsaved item-selection/Presence-toggle
+   * edit the trainee made before navigating away. Mirrors this codebase's
+   * own existing useFocusEffect reload convention (e.g.
+   * build/StateProfileListScreen.tsx), scoped narrowly to just this one
+   * list rather than the whole screen.
+   */
+  const reloadPresenceArcs = useCallback(() => {
+    loadPresenceArcs()
+      .then(setPresenceArcs)
+      .catch((error) => {
+        console.warn("[CombinedInterferenceSelectionScreen] Failed to refresh Presence protocols.", error);
+      });
+  }, []);
+
+  useFocusEffect(reloadPresenceArcs);
+
   const groups = groupAvailableItemsByCategory(allItems, stateProfileId ?? "");
   const hasAnyAvailableItemsAtAll = CATEGORY_GROUPS.some((group) => groups[group.key].length > 0);
   const classifiedItems: ClassifiedConfiguredItem[] = classifyConfiguredItems(selectedItemIds, allItems, stateProfileId ?? "");
   const unavailableItems = classifiedItems.filter((c) => c.classification.kind === "unavailable");
   const configEditableNow = existingSelection === null || existingSelection.status === "enabled";
-  const eligibility = stateProfile ? resolveSaveEligibility(stateProfile.status, selectedItemIds, classifiedItems) : { allowed: false, blockedReason: null };
+  const fullPresenceAvailability = resolveFullPresenceAvailability(presenceEnabled, linkedPresenceArcId, presenceArcs);
+  const eligibility = stateProfile
+    ? resolveSaveEligibility(stateProfile.status, selectedItemIds, classifiedItems, fullPresenceAvailability)
+    : { allowed: false, blockedReason: null };
 
   function toggleItem(id: string) {
     setSelectedItemIds((current) => toggleSelectedItemId(current, id));
@@ -108,6 +145,11 @@ export default function CombinedInterferenceSelectionScreen() {
 
   function removeUnavailable(id: string) {
     setSelectedItemIds((current) => removeSelectedItemId(current, id));
+  }
+
+  /** Single-select: tapping the already-linked PresenceArc again clears the link (never forces one to stay chosen). */
+  function selectPresenceArc(id: string) {
+    setLinkedPresenceArcId((current) => (current === id ? null : id));
   }
 
   async function handleRestoreSelection() {
@@ -126,7 +168,7 @@ export default function CombinedInterferenceSelectionScreen() {
     setSaveError(null);
     setSaving(true);
     try {
-      const draft = buildCombinedSelectionSaveDraft(existingSelection, stateProfileId, null, selectedItemIds, presenceEnabled, new Date().toISOString());
+      const draft = buildCombinedSelectionSaveDraft(existingSelection, stateProfileId, null, selectedItemIds, presenceEnabled, new Date().toISOString(), undefined, linkedPresenceArcId);
       await upsertCombinedInterferenceSelection(draft);
       router.back();
     } catch {
@@ -230,6 +272,34 @@ export default function CombinedInterferenceSelectionScreen() {
                 <Text style={styles.checkboxMark}>{presenceEnabled ? "☑" : "☐"}</Text>
                 <Text style={styles.checkboxLabel}>לכלול תרגול נוכחות בעת הצורך</Text>
               </Pressable>
+
+              {presenceEnabled && (
+                <View style={styles.presenceLinkBlock}>
+                  <Text style={styles.presenceLinkTitle}>בחירת פרוטוקול נוכחות מלא</Text>
+
+                  {presenceArcs.length === 0 ? (
+                    <Text style={styles.presenceLinkHint}>עדיין לא נבנה פרוטוקול נוכחות. אפשר ליצור אחד במסך תרגולי הנוכחות.</Text>
+                  ) : (
+                    presenceArcs.map((presenceArc) => (
+                      <Pressable key={presenceArc.id} style={styles.checkboxRow} onPress={() => selectPresenceArc(presenceArc.id)}>
+                        <Text style={styles.checkboxMark}>{linkedPresenceArcId === presenceArc.id ? "●" : "○"}</Text>
+                        <Text style={styles.checkboxLabel}>{presenceArc.name}</Text>
+                      </Pressable>
+                    ))
+                  )}
+
+                  <Pressable style={styles.presenceLinkCreateButton} onPress={() => router.push("/presence-arcs")}>
+                    <Text style={styles.presenceLinkCreateText}>יצירת פרוטוקול נוכחות</Text>
+                  </Pressable>
+
+                  {fullPresenceAvailability.kind === "not_linked" && (
+                    <Text style={styles.errorText}>כדי להשתמש בתרגול נוכחות מלא במסלול המשולב, יש לבחור פרוטוקול נוכחות.</Text>
+                  )}
+                  {fullPresenceAvailability.kind === "linked_not_found" && (
+                    <Text style={styles.errorText}>פרוטוקול הנוכחות שהיה מקושר לא נמצא יותר. אפשר לבחור פרוטוקול אחר או לכבות את תרגול הנוכחות.</Text>
+                  )}
+                </View>
+              )}
             </Section>
 
             {unavailableItems.length > 0 && (
@@ -298,6 +368,11 @@ const styles = StyleSheet.create({
     borderBottomColor: "#F0F0F0",
   },
   unavailableLabel: { fontSize: 14, textAlign: "right", color: "#666", flex: 1 },
+  presenceLinkBlock: { marginTop: 4, paddingTop: 8, paddingStart: 12, borderStartWidth: 2, borderStartColor: "#E6F4FE" },
+  presenceLinkTitle: { fontSize: 14, fontWeight: "700", textAlign: "right", color: "#0a7ea4", marginBottom: 4 },
+  presenceLinkHint: { fontSize: 13, textAlign: "right", color: "#666", marginBottom: 8 },
+  presenceLinkCreateButton: { paddingVertical: 6, alignItems: "flex-end" },
+  presenceLinkCreateText: { color: "#0a7ea4", fontSize: 14 },
   actionButton: { paddingVertical: 6, paddingHorizontal: 10 },
   actionButtonText: { color: "#c0392b", fontSize: 14 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 16 },
