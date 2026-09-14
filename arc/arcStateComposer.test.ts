@@ -21,11 +21,14 @@ import {
   markPresenceCompleted,
   markRegulationCompleted,
   markStayCompleted,
+  resolveArcStatePresenceRoute,
   resolveEffectiveArcStateComponents,
+  resolveSingleOptionalArcStateComponent,
   seedEmbeddedBeliefLiveState,
   seedEmbeddedThoughtLiveState,
   seedEmbeddedUrgeLiveState,
   shouldShowSharedBridgeMantra,
+  validateOptionalComponentSelection,
 } from "./arcStateComposer.ts";
 import type { ArcStateComponentKind, ArcStateComposition } from "./types.ts";
 import { createEmptyArcBuildProfile } from "./types.ts";
@@ -320,4 +323,89 @@ test("getRelevantArcStateRecheckItems always includes emotion and 'what changed'
   assert.deepEqual(withoutUrge.map((i) => i.kind), ["emotion", "whatChanged"]);
   const withUrge = getRelevantArcStateRecheckItems(["emotion", "urge"]);
   assert.deepEqual(withUrge.map((i) => i.kind), ["emotion", "urge", "whatChanged"]);
+});
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, decision 1: three-way Presence routing
+// ---------------------------------------------------------------------------
+
+test("resolveArcStatePresenceRoute: 7-10 skips Presence entirely", () => {
+  assert.equal(resolveArcStatePresenceRoute(7), "skip");
+  assert.equal(resolveArcStatePresenceRoute(8), "skip");
+  assert.equal(resolveArcStatePresenceRoute(9), "skip");
+  assert.equal(resolveArcStatePresenceRoute(10), "skip");
+});
+
+test("resolveArcStatePresenceRoute: 4-6 runs the short Presence route", () => {
+  assert.equal(resolveArcStatePresenceRoute(4), "short");
+  assert.equal(resolveArcStatePresenceRoute(5), "short");
+  assert.equal(resolveArcStatePresenceRoute(6), "short");
+});
+
+test("resolveArcStatePresenceRoute: 1-3 runs the full Presence route", () => {
+  assert.equal(resolveArcStatePresenceRoute(1), "full");
+  assert.equal(resolveArcStatePresenceRoute(2), "full");
+  assert.equal(resolveArcStatePresenceRoute(3), "full");
+});
+
+test("resolveArcStatePresenceRoute: exact required boundary values (1, 3, 4, 6, 7, 10)", () => {
+  assert.equal(resolveArcStatePresenceRoute(1), "full");
+  assert.equal(resolveArcStatePresenceRoute(3), "full");
+  assert.equal(resolveArcStatePresenceRoute(4), "short");
+  assert.equal(resolveArcStatePresenceRoute(6), "short");
+  assert.equal(resolveArcStatePresenceRoute(7), "skip");
+  assert.equal(resolveArcStatePresenceRoute(10), "skip");
+});
+
+test("resolveArcStatePresenceRoute: missing/invalid values always default to the safe 'full' route, never 'skip'", () => {
+  assert.equal(resolveArcStatePresenceRoute(null), "full");
+  assert.equal(resolveArcStatePresenceRoute(0), "full");
+  assert.equal(resolveArcStatePresenceRoute(11), "full");
+  assert.equal(resolveArcStatePresenceRoute(-3), "full");
+  assert.equal(resolveArcStatePresenceRoute(5.5), "full");
+  assert.equal(resolveArcStatePresenceRoute(Number.NaN), "full");
+});
+
+test("resolveArcStatePresenceRoute: never adds a Micro Presence step -- the rating alone determines the route with no additional prerequisite stage", () => {
+  // There is no third input/prerequisite parameter -- the function's own
+  // signature (rating only) is itself the proof that no separate warm-up
+  // stage is consulted before routing.
+  assert.equal(resolveArcStatePresenceRoute.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task: zero-or-one derivative validation
+// ---------------------------------------------------------------------------
+
+test("validateOptionalComponentSelection: zero or one optional component is valid", () => {
+  assert.deepEqual(validateOptionalComponentSelection([]), { valid: true, selectedCount: 0 });
+  assert.deepEqual(validateOptionalComponentSelection(["emotion"]), { valid: true, selectedCount: 0 });
+  assert.deepEqual(validateOptionalComponentSelection(["urge"]), { valid: true, selectedCount: 1 });
+  assert.deepEqual(validateOptionalComponentSelection(["emotion", "thought"]), { valid: true, selectedCount: 1 });
+});
+
+test("validateOptionalComponentSelection: two or more optional components is invalid", () => {
+  assert.deepEqual(validateOptionalComponentSelection(["urge", "thought"]), { valid: false, selectedCount: 2 });
+  assert.deepEqual(validateOptionalComponentSelection(["urge", "thought", "belief"]), { valid: false, selectedCount: 3 });
+  assert.deepEqual(validateOptionalComponentSelection(["emotion", "urge", "belief"]), { valid: false, selectedCount: 2 });
+});
+
+test("resolveSingleOptionalArcStateComponent: an explicit session selection wins, 'emotion' and null both mean 'None'", () => {
+  assert.equal(resolveSingleOptionalArcStateComponent(null, "urge"), "urge");
+  assert.equal(resolveSingleOptionalArcStateComponent(null, "thought"), "thought");
+  assert.equal(resolveSingleOptionalArcStateComponent(null, "belief"), "belief");
+  assert.equal(resolveSingleOptionalArcStateComponent(null, "emotion"), null);
+  assert.equal(resolveSingleOptionalArcStateComponent(null, null), null);
+});
+
+test("resolveSingleOptionalArcStateComponent: null session selection falls back to the BUILD-configured default's own first optional component", () => {
+  const composition: ArcStateComposition = { available: ["emotion", "urge", "thought"], defaultSelected: ["emotion", "thought"] };
+  assert.equal(resolveSingleOptionalArcStateComponent(composition, null), "thought");
+});
+
+test("resolveSingleOptionalArcStateComponent: null session selection with no configured default (or only 'emotion' default) resolves to 'None'", () => {
+  assert.equal(resolveSingleOptionalArcStateComponent(null, null), null);
+  assert.equal(resolveSingleOptionalArcStateComponent(undefined, null), null);
+  const emotionOnly: ArcStateComposition = { available: ["emotion"], defaultSelected: ["emotion"] };
+  assert.equal(resolveSingleOptionalArcStateComponent(emotionOnly, null), null);
 });

@@ -1789,6 +1789,18 @@ export interface PersonalDevelopmentFourWeekProgram {
   startedAt: string | null;
   completedAt: string | null;
   returnContext: PersonalDevelopmentSupportReturnContext | null;
+  /**
+   * Adaptive ARC architecture task (decision 1, single-active-program
+   * semantics): true for the one globally active Self Development
+   * program, false/absent otherwise. undefined for every program saved
+   * before this field existed -- normalizePersonalDevelopmentProgram
+   * backfills it to `false`, never `true` (no reliable signal to guess
+   * which pre-existing program "should" be active). Written/read only by
+   * arc/activeProgramPolicy.ts's pure helpers in this phase.
+   */
+  isActive?: boolean;
+  /** Companion to isActive above -- see ArcGoal.archivedAt's identical doc. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1991,6 +2003,54 @@ export interface ArcGoal {
    * set here (see arc/miniIdentity.ts's own resolveMiniIdentityContent).
    */
   miniIdentityConfig?: ArcGoalMiniIdentityConfig | null;
+  /**
+   * Adaptive ARC architecture task (decision 3): the EXPLICIT reference to
+   * this goal's one required base State configuration -- introduced
+   * backward-compatibly as an optional field. undefined/null for every
+   * goal saved before this field existed, and for every goal until a
+   * trainee/coach explicitly sets it; such a goal is resolved through the
+   * LEGACY, implicit path instead (see arc/goalStateIdentity.ts's own
+   * resolveGoalRequiredState -- there is deliberately no reliable single
+   * legacy field this can be inferred from today, so a legacy goal
+   * resolves to an explicit "unresolved" result rather than a guess).
+   * Once this phase's State-library entities exist, this id will
+   * reference one of them; until then it is written by nothing and read
+   * only by the resolver above, which must treat it exactly like any
+   * other optional reference -- present or not, never invented.
+   */
+  stateProfileId?: string | null;
+  /**
+   * Adaptive ARC architecture task (decision 3): the EXPLICIT reference to
+   * this goal's one required Identity. Same introduction pattern as
+   * stateProfileId above, but WITH a reliable legacy fallback: a goal
+   * saved before this field existed resolves through the pre-existing
+   * `identityProtocolId` field above instead (see
+   * arc/goalStateIdentity.ts's own resolveGoalRequiredIdentity) --
+   * `identityProtocolId` remains the actual stored/read reference for
+   * every current screen; this field is additive, forward-looking, and
+   * unread by any screen in this phase.
+   */
+  identityProfileId?: string | null;
+  /**
+   * Adaptive ARC architecture task (decision 1, single-active-program
+   * semantics): true for the one globally active Goal in the Goal track,
+   * false/absent for every other (archived/inactive) Goal. undefined for
+   * every goal saved before this field existed -- normalizeArcGoal
+   * backfills it to `false`, never `true` (see that function's own doc:
+   * no reliable signal exists to guess which pre-existing goal "should"
+   * be the active one, so migration never silently activates one).
+   * Written and read only by arc/activeProgramPolicy.ts's pure helpers in
+   * this phase -- no screen sets or reads it yet.
+   */
+  isActive?: boolean;
+  /**
+   * Companion to isActive above: the moment this goal was archived
+   * (replaced as the active goal, or explicitly archived), null while
+   * active or never yet archived. Never cleared by re-archiving an
+   * already-archived goal (idempotent, see
+   * arc/activeProgramPolicy.ts's archiveProgram).
+   */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

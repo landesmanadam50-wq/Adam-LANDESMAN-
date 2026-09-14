@@ -509,6 +509,25 @@ test("normalizePersonalDevelopmentProgram preserves an already-present arcLinkId
   assert.equal(normalized.miniArcLinkId, "minilink-9");
 });
 
+// Adaptive ARC architecture task (Phase 2): isActive/archivedAt backfill.
+
+test("normalizePersonalDevelopmentProgram backfills a missing isActive to false and archivedAt to null -- migration never silently activates a pre-existing program", () => {
+  const program = createPersonalDevelopmentProgram("state", "state-1", "מצב", "2026-01-05", null, "2026-01-01T00:00:00.000Z");
+  const legacyRaw = { ...program } as Record<string, unknown>;
+  delete legacyRaw.isActive;
+  delete legacyRaw.archivedAt;
+  const normalized = normalizePersonalDevelopmentProgram(legacyRaw as unknown as typeof program);
+  assert.equal(normalized.isActive, false);
+  assert.equal(normalized.archivedAt, null);
+});
+
+test("normalizePersonalDevelopmentProgram preserves an already-set isActive/archivedAt unchanged", () => {
+  const program = { ...createPersonalDevelopmentProgram("state", "state-1", "מצב", "2026-01-05", null, "2026-01-01T00:00:00.000Z"), isActive: true, archivedAt: null };
+  const normalized = normalizePersonalDevelopmentProgram(program);
+  assert.equal(normalized.isActive, true);
+  assert.equal(normalized.archivedAt, null);
+});
+
 // ---------------------------------------------------------------------------
 // Existing ArcLink linking (requirement 2/7): surfaces real candidates,
 // never invents one.

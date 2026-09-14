@@ -171,6 +171,31 @@ test("normalizeArcGoal backfills every urge mapping's new optional fields to the
   assert.equal(normalized.urgeMappings[0].need, "רגיעה");
 });
 
+// --- Adaptive ARC architecture task (Phase 2): normalizeArcGoal's own
+// safe-default backfill for stateProfileId/identityProfileId/isActive/archivedAt.
+
+test("normalizeArcGoal backfills missing stateProfileId/identityProfileId to null -- an old goal saved before the adaptive architecture existed loads without error", () => {
+  const legacyGoal = { ...goal(), stateProfileId: undefined, identityProfileId: undefined } as unknown as ArcGoal;
+  const normalized = normalizeArcGoal(legacyGoal);
+  assert.equal(normalized.stateProfileId, null);
+  assert.equal(normalized.identityProfileId, null);
+});
+
+test("normalizeArcGoal backfills a missing isActive to false and archivedAt to null -- migration never silently activates a pre-existing goal", () => {
+  const legacyGoal = { ...goal(), isActive: undefined, archivedAt: undefined } as unknown as ArcGoal;
+  const normalized = normalizeArcGoal(legacyGoal);
+  assert.equal(normalized.isActive, false);
+  assert.equal(normalized.archivedAt, null);
+});
+
+test("normalizeArcGoal preserves an already-set stateProfileId/identityProfileId/isActive/archivedAt untouched", () => {
+  const g = goal({ stateProfileId: "state-1", identityProfileId: "identity-1", isActive: true, archivedAt: null });
+  const normalized = normalizeArcGoal(g);
+  assert.equal(normalized.stateProfileId, "state-1");
+  assert.equal(normalized.identityProfileId, "identity-1");
+  assert.equal(normalized.isActive, true);
+});
+
 test("normalizeArcGoal never overwrites an already-configured field with its default", () => {
   const g = goal({
     interferingMappings: [
