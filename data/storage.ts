@@ -58,6 +58,18 @@ import type { ArcProgramSelection } from "../program/programTypes.ts";
 import { PROGRAM_DEFINITIONS } from "../program/config.ts";
 import type { SessionLogEntry } from "./sessionLog.ts";
 import type { LifeManifestJournalEntry } from "./lifeManifestJournal.ts";
+import { normalizeStateProfile, upsertStateProfileInList } from "../arc/stateProfile.ts";
+import type { StateProfile } from "../arc/stateProfile.ts";
+import { normalizeIdentityProfile, upsertIdentityProfileInList } from "../arc/identityProfile.ts";
+import type { IdentityProfile } from "../arc/identityProfile.ts";
+import { normalizeInterferenceItem, upsertInterferenceItemInList } from "../arc/interferenceItem.ts";
+import type { InterferenceItem } from "../arc/interferenceItem.ts";
+import {
+  archiveLibraryItem,
+  disableLibraryItem,
+  restoreLibraryItem,
+  resolveEnabledLibraryItemsForProgram,
+} from "../arc/libraryItemStatus.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
 const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
@@ -77,6 +89,12 @@ const LIFE_MANIFESTS_KEY = "archi.lifeManifests.v1";
 const LIFE_MANIFEST_TARGETS_KEY = "archi.lifeManifestTargets.v1";
 /** Sub-goal↔ARC Goal connection task: the Life Manifest journal -- append-only, mirrors SESSION_LOG_KEY's own shape/guarantees exactly (see data/lifeManifestJournal.ts's module doc). Never read/written by any other Life Manifest key, ARC/ArcGoal/MiniArc/UrgeArc/ArcLink/routine code. */
 const LIFE_MANIFEST_JOURNAL_KEY = "archi.lifeManifestJournal.v1";
+/** Adaptive ARC architecture task, Phase 3 (data-layer foundations): a brand-new, independent collection of reusable StateProfile records (arc/stateProfile.ts) -- never read/written by any existing ARC/ArcGoal/MiniArc/UrgeArc/ThoughtArc/BeliefArc/PresenceArc key. No legacy migration: there is no prior data format for StateProfile, so an absent key simply means "no State Profiles yet". */
+const STATE_PROFILES_KEY = "archi.stateProfiles.v1";
+/** Adaptive ARC architecture task, Phase 3: a brand-new, independent collection of reusable IdentityProfile records (arc/identityProfile.ts) -- same non-migrated, non-conflicting key convention as STATE_PROFILES_KEY. */
+const IDENTITY_PROFILES_KEY = "archi.identityProfiles.v1";
+/** Adaptive ARC architecture task, Phase 3: a brand-new, independent collection of InterferenceItem records (arc/interferenceItem.ts) -- storing only REFERENCES to StateProfile/IdentityProfile (never their content), same "reference, never duplicate" convention as ARC_GOALS_KEY. Legacy UrgeArc/ThoughtArc/BeliefArc records are never migrated into this key -- they remain readable at their own existing keys and are only ever projected into this shape at read time (arc/legacyDerivativeAdapter.ts's adaptUrgeArcToInterferenceItem/adaptThoughtArcToInterferenceItem/adaptBeliefArcToInterferenceItem), never written back here. */
+const INTERFERENCE_ITEMS_KEY = "archi.interferenceItems.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -566,6 +584,179 @@ export async function upsertPresenceArc(presenceArc: PresenceArc): Promise<void>
 export async function deletePresenceArc(id: string): Promise<void> {
   const presenceArcs = await loadPresenceArcs();
   await savePresenceArcs(deletePresenceArcFromList(presenceArcs, id));
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, Phase 3 (data-layer foundations): CRUD
+// for the three new library collections (StateProfile/IdentityProfile/
+// InterferenceItem) -- mirrors loadUrgeArcs/loadThoughtArcs/
+// loadBeliefArcs' own defensive-parse + normalize pattern exactly.
+// "Avoid destructive deletion APIs" (spec section 7): unlike UrgeArc/
+// ThoughtArc/etc. above, none of these three get a delete* function --
+// only archive (non-destructive) and restore, per spec section 7's own
+// explicit instruction.
+// ---------------------------------------------------------------------------
+
+export async function loadStateProfiles(): Promise<StateProfile[]> {
+  const raw = await AsyncStorage.getItem(STATE_PROFILES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as StateProfile[];
+    return Array.isArray(parsed) ? parsed.map(normalizeStateProfile) : [];
+  } catch (error) {
+    console.warn("[storage] Stored State Profiles are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveUrgeArcs/saveThoughtArcs' own style. */
+export async function saveStateProfiles(profiles: StateProfile[]): Promise<void> {
+  await AsyncStorage.setItem(STATE_PROFILES_KEY, JSON.stringify(profiles));
+}
+
+export async function getStateProfile(id: string): Promise<StateProfile | null> {
+  const profiles = await loadStateProfiles();
+  return profiles.find((profile) => profile.id === id) ?? null;
+}
+
+/** Create or update -- upserts by id, see arc/stateProfile.ts's upsertStateProfileInList. */
+export async function upsertStateProfile(profile: StateProfile): Promise<void> {
+  const profiles = await loadStateProfiles();
+  await saveStateProfiles(upsertStateProfileInList(profiles, profile));
+}
+
+/** "Archive/disable without deletion" -- marks the one matching StateProfile disabled (never removes it). A no-op if the id doesn't match any row. */
+export async function disableStateProfile(id: string, now: string): Promise<void> {
+  const profiles = await loadStateProfiles();
+  const target = profiles.find((profile) => profile.id === id);
+  if (!target) return;
+  await saveStateProfiles(upsertStateProfileInList(profiles, disableLibraryItem(target, now)));
+}
+
+/** Retires the one matching StateProfile (kept for history, never offered live) -- never deletes it. A no-op if the id doesn't match any row. */
+export async function archiveStateProfile(id: string, now: string): Promise<void> {
+  const profiles = await loadStateProfiles();
+  const target = profiles.find((profile) => profile.id === id);
+  if (!target) return;
+  await saveStateProfiles(upsertStateProfileInList(profiles, archiveLibraryItem(target, now)));
+}
+
+/** "Restore/enable" -- returns the one matching StateProfile to "enabled" regardless of whether it was disabled or archived. A no-op if the id doesn't match any row. */
+export async function restoreStateProfile(id: string, now: string): Promise<void> {
+  const profiles = await loadStateProfiles();
+  const target = profiles.find((profile) => profile.id === id);
+  if (!target) return;
+  await saveStateProfiles(upsertStateProfileInList(profiles, restoreLibraryItem(target, now)));
+}
+
+/** "Resolve enabled items for a program" -- only the ENABLED StateProfiles owned by `programId`. */
+export async function resolveEnabledStateProfilesForProgram(programId: string): Promise<StateProfile[]> {
+  const profiles = await loadStateProfiles();
+  return resolveEnabledLibraryItemsForProgram(profiles, programId);
+}
+
+export async function loadIdentityProfiles(): Promise<IdentityProfile[]> {
+  const raw = await AsyncStorage.getItem(IDENTITY_PROFILES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as IdentityProfile[];
+    return Array.isArray(parsed) ? parsed.map(normalizeIdentityProfile) : [];
+  } catch (error) {
+    console.warn("[storage] Stored Identity Profiles are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function saveIdentityProfiles(profiles: IdentityProfile[]): Promise<void> {
+  await AsyncStorage.setItem(IDENTITY_PROFILES_KEY, JSON.stringify(profiles));
+}
+
+export async function getIdentityProfile(id: string): Promise<IdentityProfile | null> {
+  const profiles = await loadIdentityProfiles();
+  return profiles.find((profile) => profile.id === id) ?? null;
+}
+
+export async function upsertIdentityProfile(profile: IdentityProfile): Promise<void> {
+  const profiles = await loadIdentityProfiles();
+  await saveIdentityProfiles(upsertIdentityProfileInList(profiles, profile));
+}
+
+export async function disableIdentityProfile(id: string, now: string): Promise<void> {
+  const profiles = await loadIdentityProfiles();
+  const target = profiles.find((profile) => profile.id === id);
+  if (!target) return;
+  await saveIdentityProfiles(upsertIdentityProfileInList(profiles, disableLibraryItem(target, now)));
+}
+
+export async function archiveIdentityProfile(id: string, now: string): Promise<void> {
+  const profiles = await loadIdentityProfiles();
+  const target = profiles.find((profile) => profile.id === id);
+  if (!target) return;
+  await saveIdentityProfiles(upsertIdentityProfileInList(profiles, archiveLibraryItem(target, now)));
+}
+
+export async function restoreIdentityProfile(id: string, now: string): Promise<void> {
+  const profiles = await loadIdentityProfiles();
+  const target = profiles.find((profile) => profile.id === id);
+  if (!target) return;
+  await saveIdentityProfiles(upsertIdentityProfileInList(profiles, restoreLibraryItem(target, now)));
+}
+
+export async function resolveEnabledIdentityProfilesForProgram(programId: string): Promise<IdentityProfile[]> {
+  const profiles = await loadIdentityProfiles();
+  return resolveEnabledLibraryItemsForProgram(profiles, programId);
+}
+
+export async function loadInterferenceItems(): Promise<InterferenceItem[]> {
+  const raw = await AsyncStorage.getItem(INTERFERENCE_ITEMS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as InterferenceItem[];
+    return Array.isArray(parsed) ? parsed.map(normalizeInterferenceItem) : [];
+  } catch (error) {
+    console.warn("[storage] Stored Interference Items are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function saveInterferenceItems(items: InterferenceItem[]): Promise<void> {
+  await AsyncStorage.setItem(INTERFERENCE_ITEMS_KEY, JSON.stringify(items));
+}
+
+export async function getInterferenceItem(id: string): Promise<InterferenceItem | null> {
+  const items = await loadInterferenceItems();
+  return items.find((item) => item.id === id) ?? null;
+}
+
+export async function upsertInterferenceItem(item: InterferenceItem): Promise<void> {
+  const items = await loadInterferenceItems();
+  await saveInterferenceItems(upsertInterferenceItemInList(items, item));
+}
+
+export async function disableInterferenceItem(id: string, now: string): Promise<void> {
+  const items = await loadInterferenceItems();
+  const target = items.find((item) => item.id === id);
+  if (!target) return;
+  await saveInterferenceItems(upsertInterferenceItemInList(items, disableLibraryItem(target, now)));
+}
+
+export async function archiveInterferenceItem(id: string, now: string): Promise<void> {
+  const items = await loadInterferenceItems();
+  const target = items.find((item) => item.id === id);
+  if (!target) return;
+  await saveInterferenceItems(upsertInterferenceItemInList(items, archiveLibraryItem(target, now)));
+}
+
+export async function restoreInterferenceItem(id: string, now: string): Promise<void> {
+  const items = await loadInterferenceItems();
+  const target = items.find((item) => item.id === id);
+  if (!target) return;
+  await saveInterferenceItems(upsertInterferenceItemInList(items, restoreLibraryItem(target, now)));
+}
+
+export async function resolveEnabledInterferenceItemsForProgram(programId: string): Promise<InterferenceItem[]> {
+  const items = await loadInterferenceItems();
+  return resolveEnabledLibraryItemsForProgram(items, programId);
 }
 
 /**
