@@ -52,6 +52,33 @@
  * arc/arcEngine.ts, live/ArcLiveRenderer.tsx or live/LiveSessionScreen.tsx
  * is modified by this file -- composition is purely additive branching
  * a caller opts into.
+ *
+ * Adaptive ARC architecture task, Phase 2 (pure logic only -- no screen
+ * in this repository calls anything below this point yet):
+ *
+ * 1. Three-way Presence routing (decision 1 of that task) --
+ *    resolveArcStatePresenceRoute below is a NEW, standalone routing
+ *    function. It intentionally does NOT replace or call
+ *    arc/engine.ts's existing shouldRunArcThought/arc/config.ts's
+ *    presence.threshold (the two-way split every CURRENT production
+ *    session still runs on, via arc/arcEngine.ts's own "presence_check"
+ *    case) -- that pair remains completely untouched, still driving
+ *    today's real LIVE sessions unchanged, exactly as "do not modify
+ *    existing production routing" requires. This new function expresses
+ *    the ADAPTIVE architecture's own three-way rule (7-10 skip / 4-6
+ *    short / 1-3 full) for the composer to use once a future phase
+ *    wires it in; until then it is exercised only by its own tests.
+ *
+ * 2. Zero-or-one derivative validation (decision "zero-or-one derivative
+ *    validation") -- resolveSingleOptionalArcStateComponent/
+ *    validateOptionalComponentSelection below are NEW, additive
+ *    functions alongside (never replacing) resolveEffectiveArcStateComponents
+ *    above, which live/ArcLiveRenderer.tsx's ComposedEncodingScreen
+ *    still calls today with its own, still-multi-component-capable
+ *    signature -- that existing call site is left completely alone.
+ *    The new functions give a future, single-derivative-only caller a
+ *    type-level guarantee ("at most one") the array-based function
+ *    above cannot express on its own.
  */
 
 import type { ArcBuildProfile, ArcStateComponentKind, ArcStateComposition, DevelopmentLayer, ThoughtModality, ThoughtTimeOrientation, UrgeRepresentation } from "./types.ts";
@@ -324,4 +351,111 @@ export function getRelevantArcStateRecheckItems(selectedComponents: ArcStateComp
 /** True only while the shared Regulation block's own Bridge Mantra hasn't been shown yet THIS session -- the one gate every embedded component's own Bridge-Mantra-adjacent copy (arc/beliefLive.ts's getFirstEmbeddedBeliefLiveStage's own bridgeMantraAlreadyShown parameter) should be driven from. */
 export function shouldShowSharedBridgeMantra(state: ArcStateComposedSessionState): boolean {
   return !state.bridgeMantraCompleted;
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, decision 1: three-way Presence routing.
+// A NEW routing function, deliberately separate from arc/engine.ts's
+// existing shouldRunArcThought/arc/config.ts's presence.threshold pair --
+// see this file's own module doc above for why the old pair is left
+// completely untouched. Not called by any production code in this phase.
+// ---------------------------------------------------------------------------
+
+/**
+ * "skip" -- no Presence exercise at all, continue directly (rating 7-10).
+ * "short" -- the short Presence route (rating 4-6).
+ * "full" -- the full Presence route (rating 1-3, and any missing/invalid
+ * rating -- see resolveArcStatePresenceRoute's own doc for why "full" is
+ * the safe default for unknown input, never "skip").
+ */
+export type ArcStatePresenceRouteDecision = "skip" | "short" | "full";
+
+/**
+ * Adaptive ARC architecture task, decision 1 (Presence entry routing):
+ * "עד כמה אתה נוכח כרגע?", 1-10, routed as:
+ *   7-10 -> "skip" (continue directly -- no Presence exercise at all)
+ *   4-6  -> "short" (the short Presence route)
+ *   1-3  -> "full" (the full Presence route)
+ *
+ * There is deliberately no "Micro Presence" step before this rating --
+ * the rating question is always the first thing asked, never preceded
+ * by a separate warm-up exercise (decision 1's own explicit "do not add
+ * a separate Micro Presence exercise" and "Incorrect: Micro Presence ->
+ * Presence rating -> Presence again").
+ *
+ * A missing or invalid rating (null, not a finite number, not an integer,
+ * or outside 1-10 -- e.g. a corrupted/legacy value) always resolves to
+ * "full": the safe, most-supportive default, matching the existing
+ * production engine's own null-rating behavior (arc/engine.ts's
+ * shouldRunArcThought(null) is also true, i.e. "run the full route" --
+ * see arc/config.ts's presence.threshold). Never silently "skip" on
+ * unknown/bad input -- that would be the one unsafe direction (skipping
+ * support the trainee may actually need).
+ */
+export function resolveArcStatePresenceRoute(presenceRating: number | null): ArcStatePresenceRouteDecision {
+  if (presenceRating === null || !Number.isInteger(presenceRating) || presenceRating < 1 || presenceRating > 10) {
+    return "full";
+  }
+  if (presenceRating >= 7) return "skip";
+  if (presenceRating >= 4) return "short";
+  return "full";
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, "zero-or-one derivative validation".
+// Additive alongside resolveEffectiveArcStateComponents above -- that
+// function (and its still-multi-component-capable ArcStateComponentKind[]
+// signature) is left completely untouched, since live/ArcLiveRenderer.tsx's
+// ComposedEncodingScreen still calls it today. The functions below give a
+// future, single-derivative-only caller a type-level "at most one"
+// guarantee the array-based function above cannot express.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a raw (possibly legacy/multi-select-shaped) selection array
+ * satisfies the adaptive architecture's "zero or one selected main
+ * derivative" rule (decision: "In LIVE... Only one interfering item may
+ * be active in one session. Do not combine several Thought, Belief,
+ * Urge, or Emotion protocols in one sequence."). "emotion" is never
+ * counted as an optional derivative here (it is the always-included base
+ * state itself, exactly like COMPONENT_ORDER's own exclusion above) --
+ * only urge/thought/belief count toward the at-most-one limit.
+ */
+export function validateOptionalComponentSelection(selection: ArcStateComponentKind[]): { valid: boolean; selectedCount: number } {
+  const optionalCount = selection.filter((kind) => (COMPONENT_ORDER as ArcStateComponentKind[]).includes(kind)).length;
+  return { valid: optionalCount <= 1, selectedCount: optionalCount };
+}
+
+/**
+ * The single-derivative-only counterpart to resolveEffectiveArcStateComponents
+ * above -- takes at most ONE optional component (or null for "None") at
+ * the type level, rather than an array a caller could accidentally widen.
+ * Returns just that one selected derivative kind, or null when none is
+ * selected ("None" -- decision "The selected main derivative may be:
+ * Thought / Belief / Urge / Emotion / None"). "Emotion" as an explicit
+ * selection is treated identically to null here: the base state/emotion
+ * layer is always included regardless (see resolveEffectiveArcStateComponents's
+ * own doc), so there is no functional difference between "the trainee
+ * explicitly chose Emotion as the derivative" and "the trainee chose
+ * None" -- both mean "no urge/thought/belief component this session."
+ *
+ * `composition`'s own defaultSelected is used as the BUILD-configured
+ * fallback exactly like resolveEffectiveArcStateComponents -- only the
+ * first non-emotion entry is honored here (the composition itself may
+ * still list several `available` options for the trainee to choose
+ * between at session time; only the session's own eventual choice must
+ * collapse to at most one).
+ */
+export function resolveSingleOptionalArcStateComponent(
+  composition: ArcStateComposition | null | undefined,
+  sessionSelection: ArcStateComponentKind | null
+): ArcStateComponentKind | null {
+  if (sessionSelection !== null && sessionSelection !== "emotion") {
+    return COMPONENT_ORDER.includes(sessionSelection) ? sessionSelection : null;
+  }
+  if (sessionSelection === null && composition && composition.defaultSelected.length > 0) {
+    const firstOptional = composition.defaultSelected.find((kind) => (COMPONENT_ORDER as ArcStateComponentKind[]).includes(kind));
+    return firstOptional ?? null;
+  }
+  return null;
 }

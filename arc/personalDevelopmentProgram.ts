@@ -174,7 +174,17 @@ export function normalizePersonalDevelopmentProgram(program: PersonalDevelopment
   // declared required on the type, so a plain object-spread default
   // would never type-check even though it's exactly correct at runtime).
   const raw = program as unknown as Partial<PersonalDevelopmentFourWeekProgram>;
-  return { ...program, arcLinkId: raw.arcLinkId ?? null, miniArcLinkId: raw.miniArcLinkId ?? null };
+  return {
+    ...program,
+    arcLinkId: raw.arcLinkId ?? null,
+    miniArcLinkId: raw.miniArcLinkId ?? null,
+    // Adaptive ARC architecture task (decision 1): every program saved
+    // before these fields existed backfills to false/null -- never
+    // silently activated by migration, see PersonalDevelopmentFourWeekProgram
+    // .isActive's own doc.
+    isActive: raw.isActive ?? false,
+    archivedAt: raw.archivedAt ?? null,
+  };
 }
 
 export function setArcLinkId(program: PersonalDevelopmentFourWeekProgram, arcLinkId: string | null): PersonalDevelopmentFourWeekProgram {

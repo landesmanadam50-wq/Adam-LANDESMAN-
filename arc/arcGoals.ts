@@ -129,5 +129,15 @@ export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
     // existed backfills to null -- "derive live from the full identity,"
     // never invented. See ArcGoal.miniIdentityConfig's own doc.
     miniIdentityConfig: goal.miniIdentityConfig ?? null,
+    // Adaptive ARC architecture task (decisions 1, 3): every goal saved
+    // before these fields existed backfills to their safe, inert
+    // defaults -- stateProfileId/identityProfileId to null (resolved
+    // through the legacy path instead, see arc/goalStateIdentity.ts),
+    // isActive to false and archivedAt to null (never silently activated
+    // by migration -- see ArcGoal.isActive's own doc).
+    stateProfileId: goal.stateProfileId ?? null,
+    identityProfileId: goal.identityProfileId ?? null,
+    isActive: goal.isActive ?? false,
+    archivedAt: goal.archivedAt ?? null,
   };
 }
