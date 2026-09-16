@@ -2,10 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildPersonalDevelopmentRouteConfigFromLegacySelection,
   createEmptyPersonalDevelopmentRouteConfig,
   generatePersonalDevelopmentRouteConfigId,
+  isPersonalDevelopmentRouteConfigSaveable,
   normalizePersonalDevelopmentRouteConfig,
   resolveActionRelationshipForItem,
+  resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection,
+  resolvePendingBuildNewStateReturn,
+  resolvePersonalDevelopmentRouteConfigForLegacySelection,
   upsertPersonalDevelopmentRouteConfigInList,
   validatePersonalDevelopmentRouteConfig,
 } from "./personalDevelopmentRouteConfig.ts";
@@ -14,12 +19,18 @@ import { createEmptyEmotionInterferenceItem, createEmptyThoughtInterferenceItem 
 import type { InterferenceItem } from "./interferenceItem.ts";
 import { createEmptyStateProfile } from "./stateProfile.ts";
 import type { StateProfile } from "./stateProfile.ts";
+import { createEmptyCombinedInterferenceSelection } from "./combinedInterferenceSelection.ts";
+import type { CombinedInterferenceSelection } from "./combinedInterferenceSelection.ts";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 const LATER = "2026-01-02T00:00:00.000Z";
 
 function config(overrides: Partial<PersonalDevelopmentRouteConfig> = {}): PersonalDevelopmentRouteConfig {
   return { ...createEmptyPersonalDevelopmentRouteConfig("route1", "prog1", NOW), ...overrides };
+}
+
+function legacySelection(overrides: Partial<CombinedInterferenceSelection> = {}): CombinedInterferenceSelection {
+  return { ...createEmptyCombinedInterferenceSelection("sel1", "state1", "prog1", NOW), ...overrides };
 }
 
 // --- Create / defaults ---
@@ -213,4 +224,115 @@ test("an Emotion-containing route with stateInclusionPolicy linked and a resolva
 test("a configured item missing its own itemRelationships entry fails validation", () => {
   const c = config({ interferenceItemIds: ["t1"], itemRelationships: {} });
   assert.equal(validatePersonalDevelopmentRouteConfig(c, [thought("t1")], []).reason, "missing_item_action_relationship");
+});
+
+// --- Phase 14B-2: sourceLegacyCombinedSelectionId ---
+
+test("createEmptyPersonalDevelopmentRouteConfig defaults sourceLegacyCombinedSelectionId to null", () => {
+  assert.equal(createEmptyPersonalDevelopmentRouteConfig("r1", "prog1", NOW).sourceLegacyCombinedSelectionId, null);
+});
+
+test("normalizePersonalDevelopmentRouteConfig backfills a missing sourceLegacyCombinedSelectionId to null and preserves an already-set one", () => {
+  const { sourceLegacyCombinedSelectionId, ...legacyShape } = config();
+  assert.equal(normalizePersonalDevelopmentRouteConfig(legacyShape as PersonalDevelopmentRouteConfig).sourceLegacyCombinedSelectionId, null);
+  assert.equal(normalizePersonalDevelopmentRouteConfig(config({ sourceLegacyCombinedSelectionId: "sel1" })).sourceLegacyCombinedSelectionId, "sel1");
+});
+
+// --- Phase 14B-2: isPersonalDevelopmentRouteConfigSaveable (alias, distinct from readiness) ---
+
+test("isPersonalDevelopmentRouteConfigSaveable mirrors validatePersonalDevelopmentRouteConfig(...).valid exactly", () => {
+  const valid = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } } });
+  assert.equal(isPersonalDevelopmentRouteConfigSaveable(valid, [thought("t1")], []), true);
+  assert.equal(isPersonalDevelopmentRouteConfigSaveable(config(), [], []), false, "an empty route is not saveable, same reason validate() rejects it");
+});
+
+// --- Phase 14B-2: legacy CombinedInterferenceSelection conversion ---
+
+test("buildPersonalDevelopmentRouteConfigFromLegacySelection prefills linked policy, the source State, deduped items, Presence config, and legacy_unspecified relationships -- never guessed", () => {
+  const selection = legacySelection({
+    stateProfileId: "state1",
+    configuredItemIds: ["t1", "t1", "b1"],
+    presenceEnabled: true,
+    linkedPresenceArcId: "presence1",
+    ownerProgramId: "prog9",
+  });
+  const built = buildPersonalDevelopmentRouteConfigFromLegacySelection(selection, NOW, () => "new-route-id");
+  assert.equal(built.id, "new-route-id");
+  assert.equal(built.ownerProgramId, "prog9");
+  assert.equal(built.stateInclusionPolicy, "linked");
+  assert.equal(built.stateProfileId, "state1");
+  assert.deepEqual(built.interferenceItemIds, ["t1", "b1"]);
+  assert.deepEqual(built.itemRelationships, { t1: { actionRelationship: "legacy_unspecified" }, b1: { actionRelationship: "legacy_unspecified" } });
+  assert.equal(built.presenceEnabled, true);
+  assert.equal(built.linkedPresenceArcId, "presence1");
+  assert.equal(built.presenceActionRelationship, "legacy_unspecified");
+  assert.equal(built.sourceLegacyCombinedSelectionId, "sel1");
+});
+
+test("buildPersonalDevelopmentRouteConfigFromLegacySelection never reads or mutates the source selection", () => {
+  const selection = legacySelection({ configuredItemIds: ["t1"] });
+  const before = JSON.parse(JSON.stringify(selection));
+  buildPersonalDevelopmentRouteConfigFromLegacySelection(selection, NOW, () => "new-route-id");
+  assert.deepEqual(selection, before);
+});
+
+test("resolvePersonalDevelopmentRouteConfigForLegacySelection finds the one route matching sourceLegacyCombinedSelectionId, never by translated text or array position", () => {
+  const converted = config({ id: "route1", sourceLegacyCombinedSelectionId: "sel1" });
+  const unrelated = config({ id: "route2", sourceLegacyCombinedSelectionId: "sel2" });
+  const neverConverted = config({ id: "route3", sourceLegacyCombinedSelectionId: null });
+  assert.equal(resolvePersonalDevelopmentRouteConfigForLegacySelection([unrelated, converted, neverConverted], "sel1"), converted);
+  assert.equal(resolvePersonalDevelopmentRouteConfigForLegacySelection([unrelated, neverConverted], "sel1"), null);
+});
+
+test("resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection creates exactly one new route the first time", () => {
+  const selection = legacySelection({ id: "sel1", configuredItemIds: ["t1"] });
+  const { configs, result } = resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection([], selection, NOW, () => "route-a");
+  assert.equal(configs.length, 1);
+  assert.equal(result.id, "route-a");
+  assert.equal(result.sourceLegacyCombinedSelectionId, "sel1");
+});
+
+test("repeated conversion of the SAME legacy selection resolves to the SAME one route, never creating a duplicate (idempotent, permanent regression test)", () => {
+  const selection = legacySelection({ id: "sel1", configuredItemIds: ["t1"] });
+  const first = resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection([], selection, NOW, () => "route-a");
+  const second = resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection(first.configs, selection, LATER, () => "should-not-be-used");
+  const third = resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection(second.configs, selection, LATER, () => "also-should-not-be-used");
+  assert.equal(second.configs.length, 1, "still exactly one route after a second conversion request");
+  assert.equal(third.configs.length, 1, "still exactly one route after a third conversion request");
+  assert.equal(second.result.id, "route-a", "the same existing route is returned, never regenerated");
+  assert.equal(third.result.id, "route-a");
+  assert.deepEqual(second.result, first.result, "the existing route is returned completely untouched, not re-copied from the (possibly since-edited) legacy selection");
+});
+
+test("converting two DIFFERENT legacy selections produces two distinct routes", () => {
+  const selectionA = legacySelection({ id: "selA", stateProfileId: "stateA", configuredItemIds: ["t1"] });
+  const selectionB = legacySelection({ id: "selB", stateProfileId: "stateB", configuredItemIds: ["b1"] });
+  const afterA = resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection([], selectionA, NOW, () => "route-a");
+  const afterB = resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection(afterA.configs, selectionB, NOW, () => "route-b");
+  assert.equal(afterB.configs.length, 2);
+  assert.notEqual(afterA.result.id, afterB.result.id);
+  assert.equal(afterB.result.sourceLegacyCombinedSelectionId, "selB");
+});
+
+test("resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection never archives, renames, or mutates the source legacy selection", () => {
+  const selection = legacySelection({ id: "sel1", configuredItemIds: ["t1"] });
+  const before = JSON.parse(JSON.stringify(selection));
+  resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection([], selection, NOW, () => "route-a");
+  assert.deepEqual(selection, before, "still status enabled, still exactly as it was");
+});
+
+// --- Phase 14B-2: "Build new State" return-resolution decision ---
+
+test("resolvePendingBuildNewStateReturn: no pending id at all means nothing to apply", () => {
+  assert.deepEqual(resolvePendingBuildNewStateReturn(null, [createEmptyStateProfile("s1", "x", null, NOW)]), { found: false, stateProfileId: null });
+});
+
+test("resolvePendingBuildNewStateReturn: returning before the State is actually saved never applies anything -- the route policy is never changed", () => {
+  assert.deepEqual(resolvePendingBuildNewStateReturn("pending-id", []), { found: false, stateProfileId: null });
+  assert.deepEqual(resolvePendingBuildNewStateReturn("pending-id", [createEmptyStateProfile("some-other-id", "x", null, NOW)]), { found: false, stateProfileId: null });
+});
+
+test("resolvePendingBuildNewStateReturn: auto-selection occurs only once the exact pending id is found", () => {
+  const profiles = [createEmptyStateProfile("s1", "x", null, NOW), createEmptyStateProfile("pending-id", "y", null, NOW)];
+  assert.deepEqual(resolvePendingBuildNewStateReturn("pending-id", profiles), { found: true, stateProfileId: "pending-id" });
 });

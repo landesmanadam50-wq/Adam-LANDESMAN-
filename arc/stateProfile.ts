@@ -193,3 +193,26 @@ export function isStateProfileSaveable(profile: StateProfile): boolean {
   if (durationMinutes != null && !(Number.isFinite(durationMinutes) && durationMinutes > 0)) return false;
   return true;
 }
+
+/**
+ * Adaptive ARC architecture task, Phase 14B-2: whether `profile` is
+ * COMPLETE-FOR-PRACTICE -- distinct from, and strictly stronger than,
+ * isStateProfileSaveable above (which stays the permanent, unchanged
+ * name-only draft tolerance). No schema-version distinction is needed
+ * here (unlike InterferenceItem's own schemaVersion 1/2 split): unlike
+ * InterferenceItem.beneficialActionAgainstFactor, regulationAnchor/
+ * encodingCue/action have existed on every StateProfile since Phase 3/10
+ * -- there is no "old record that never had the field" case to
+ * distinguish from "a new draft still missing it," so an old and a new
+ * incomplete profile are treated identically, correctly, by this one
+ * rule alone.
+ *
+ * Requires all three of: regulationAnchor, encodingCue, action -- a
+ * State missing any of these can still be saved as a draft
+ * (isStateProfileSaveable), but is never complete-for-practice.
+ *
+ * Pure and read-only: never mutates `profile`.
+ */
+export function isStateProfileCompleteForPractice(profile: StateProfile): boolean {
+  return (profile.regulationAnchor ?? "").trim().length > 0 && (profile.encodingCue ?? "").trim().length > 0 && (profile.action ?? "").trim().length > 0;
+}

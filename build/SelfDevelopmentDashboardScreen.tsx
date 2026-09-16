@@ -147,6 +147,20 @@ export default function SelfDevelopmentDashboardScreen() {
             <Text style={styles.itemSubtext}>מחשבות, אמונות, רגשות ודחפים שתרצה לעבוד איתם.</Text>
           </Pressable>
         </Link>
+        {/*
+          Adaptive ARC architecture task, Phase 14B-2: a clearly separate,
+          State-INDEPENDENT entry point for PersonalDevelopmentRouteConfig
+          -- unlike build/CombinedInterferenceSelectionScreen.tsx (reached
+          only from a StateProfile card via build/StateProfileListScreen.tsx),
+          a route here can be created without ever choosing a StateProfile
+          first.
+        */}
+        <Link href="/personal-development-routes" asChild>
+          <Pressable style={styles.itemRow}>
+            <Text style={styles.itemText}>מסלולי תרגול משולבים</Text>
+            <Text style={styles.itemSubtext}>שילוב כמה גורמים מפריעים במסלול תרגול אחד, עם או בלי מצב רצוי.</Text>
+          </Pressable>
+        </Link>
         <Link href="/personal-development-program" asChild>
           <Pressable style={styles.itemRow}>
             <Text style={styles.itemText}>תוכנית ארבעת השבועות -- התפתחות אישית</Text>

@@ -66,6 +66,24 @@ export function isPresenceArcDraftComplete(draft: PresenceArcDraft): boolean {
   return draft.name.trim().length > 0;
 }
 
+/**
+ * Adaptive ARC architecture task, Phase 14B-2: whether `presenceArc` is
+ * ready to serve as the linked Presence protocol inside a new
+ * PersonalDevelopmentRouteConfig (arc/personalDevelopmentRouteConfig.ts)
+ * -- distinct from isPresenceArcDraftComplete above (a permanent,
+ * unchanged name-only save bar) and from standalone Presence LIVE, which
+ * runs an existing PresenceArc completely unchanged regardless of this
+ * predicate's result. Checks PresenceArc.beneficialAction alone -- never
+ * fabricates a value from any ARC State action; a PresenceArc with a
+ * blank beneficialAction is simply not ready, and stays that way until a
+ * coach fills it in through this same, unchanged field.
+ *
+ * Pure and read-only: never mutates `presenceArc`.
+ */
+export function isPresenceArcReadyForCombinedRoute(presenceArc: PresenceArc): boolean {
+  return (presenceArc.beneficialAction ?? "").trim().length > 0;
+}
+
 function parseOptionalDwellSeconds(value: string): number | null {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;

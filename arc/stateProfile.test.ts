@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createEmptyStateProfile, generateStateProfileId, isStateProfileSaveable, normalizeStateProfile, upsertStateProfileInList } from "./stateProfile.ts";
+import { createEmptyStateProfile, generateStateProfileId, isStateProfileCompleteForPractice, isStateProfileSaveable, normalizeStateProfile, upsertStateProfileInList } from "./stateProfile.ts";
 import type { StateProfile } from "./stateProfile.ts";
 import { archiveLibraryItem, disableLibraryItem, restoreLibraryItem, resolveEnabledLibraryItemsForProgram } from "./libraryItemStatus.ts";
 
@@ -195,4 +195,33 @@ test("a StateProfile survives a JSON.stringify/parse round trip with its status 
   const normalized = normalizeStateProfile(roundTripped);
   assert.equal(normalized.status, "archived");
   assert.equal(normalized.primaryIdentityProfileId, "identity-1");
+});
+
+// --- Phase 14B-2: isStateProfileCompleteForPractice ---
+
+test("isStateProfileCompleteForPractice is false for a name-only profile (same bar for an old or a new empty profile -- no schema-version distinction)", () => {
+  assert.equal(isStateProfileCompleteForPractice(stateProfile()), false);
+});
+
+test("isStateProfileCompleteForPractice requires all three of regulationAnchor/encodingCue/action -- any one missing is incomplete", () => {
+  assert.equal(isStateProfileCompleteForPractice(stateProfile({ regulationAnchor: "עוגן", encodingCue: "קידוד" })), false, "missing action");
+  assert.equal(isStateProfileCompleteForPractice(stateProfile({ regulationAnchor: "עוגן", action: "פעולה" })), false, "missing encodingCue");
+  assert.equal(isStateProfileCompleteForPractice(stateProfile({ encodingCue: "קידוד", action: "פעולה" })), false, "missing regulationAnchor");
+});
+
+test("isStateProfileCompleteForPractice is true once all three are set, regardless of schemaVersion", () => {
+  const complete = stateProfile({ regulationAnchor: "עוגן", encodingCue: "קידוד", action: "פעולה" });
+  assert.equal(isStateProfileCompleteForPractice(complete), true);
+  assert.equal(isStateProfileCompleteForPractice({ ...complete, schemaVersion: 1 }), true, "an old profile with the same three fields filled in is equally complete");
+});
+
+test("isStateProfileCompleteForPractice treats whitespace-only fields as missing", () => {
+  assert.equal(isStateProfileCompleteForPractice(stateProfile({ regulationAnchor: "  ", encodingCue: "קידוד", action: "פעולה" })), false);
+});
+
+test("isStateProfileCompleteForPractice never mutates the profile it validates", () => {
+  const profile = stateProfile({ regulationAnchor: "עוגן", encodingCue: "קידוד", action: "פעולה" });
+  const before = JSON.parse(JSON.stringify(profile));
+  isStateProfileCompleteForPractice(profile);
+  assert.deepEqual(profile, before);
 });
