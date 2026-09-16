@@ -105,3 +105,29 @@ export function isPersonalDevelopmentRouteConfigCompleteForPractice(
 
   return true;
 }
+
+/**
+ * Regression repair task: the single sanctioned selector for "which
+ * PersonalDevelopmentRouteConfig records may start from a LIVE picker
+ * right now" -- reused by build/LiveModeSelectScreen.tsx (the general
+ * ARCHI LIVE selection screen) so that screen and
+ * build/PersonalDevelopmentRouteListScreen.tsx's own per-card start
+ * buttons apply the EXACT same two-part gate: `status === "enabled"`
+ * (never "disabled"/"archived" -- disabling or archiving a route in the
+ * management screen removes it from here on the very next call, no
+ * separate LIVE-visibility flag to keep in sync) AND
+ * isPersonalDevelopmentRouteConfigCompleteForPractice. Pure and
+ * read-only -- `configs` is the same list every caller already loads via
+ * data/storage.ts's loadPersonalDevelopmentRouteConfigs, so there is
+ * exactly one persisted route record, never a second LIVE-only copy.
+ */
+export function selectActiveCombinedRoutesForLive(
+  configs: PersonalDevelopmentRouteConfig[],
+  items: InterferenceItem[],
+  stateProfiles: StateProfile[],
+  presenceArcs: PresenceArc[]
+): PersonalDevelopmentRouteConfig[] {
+  return configs.filter(
+    (config) => config.status === "enabled" && isPersonalDevelopmentRouteConfigCompleteForPractice(config, items, stateProfiles, presenceArcs)
+  );
+}
