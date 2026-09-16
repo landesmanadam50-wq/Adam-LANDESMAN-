@@ -75,6 +75,7 @@ import {
   resolveEnabledLibraryItemsForProgram,
 } from "../arc/libraryItemStatus.ts";
 import type { MappingProgressionStore } from "../arc/reactiveProactiveProgression.ts";
+import type { PersonalDevelopmentRouteProgress } from "../arc/personalDevelopmentRouteProgress.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
 const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
@@ -106,6 +107,8 @@ const COMBINED_INTERFERENCE_SELECTIONS_KEY = "archi.combinedInterferenceSelectio
 const PERSONAL_DEVELOPMENT_ROUTE_CONFIGS_KEY = "archi.personalDevelopmentRouteConfigs.v1";
 /** Adaptive ARC architecture task, Phase 8 (progression persistence): a brand-new key storing the whole MappingProgressionStore (arc/reactiveProactiveProgression.ts) as one plain JSON object map, keyed by the mapping-key strings arc/progressionSessionBridge.ts's own resolveProgressionMappingKey produces -- never a flat array like every other key above. No legacy migration: there is no prior data format for per-mapping progression, so an absent key simply means "no progression recorded yet". Never read/written by any other key above. */
 const PROGRESSION_MAPPING_STORE_KEY = "archi.progressionMappingStore.v1";
+/** Adaptive ARC architecture task, Phase 15: a brand-new key storing the whole PersonalDevelopmentRouteProgressStore (arc/personalDevelopmentRouteProgress.ts) as one plain JSON object map, keyed by PersonalDevelopmentRouteConfig.id -- deliberately separate from PROGRESSION_MAPPING_STORE_KEY (that store is keyed by a single-InterferenceItem/StateProfile mapping key and belongs to the unrelated Stage 1-4 legacy progression system; combined multi-factor sessions never write to it). No legacy migration: an absent key simply means "no combined-route sessions counted yet" -- every existing PersonalDevelopmentRouteConfig loads with zero progress. Never read/written by any other key above. */
+const PERSONAL_DEVELOPMENT_ROUTE_PROGRESS_KEY = "archi.personalDevelopmentRouteProgress.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -1542,4 +1545,31 @@ export async function loadProgressionMappingStore(): Promise<MappingProgressionS
 /** Always the FULL store -- callers read-modify-write, matching every other saveX function's own style. Never catches its own AsyncStorage.setItem failure -- a genuine write failure propagates to the caller exactly like every other saveX function here, never silently swallowed. */
 export async function saveProgressionMappingStore(store: MappingProgressionStore): Promise<void> {
   await AsyncStorage.setItem(PROGRESSION_MAPPING_STORE_KEY, JSON.stringify(store));
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, Phase 15: the combined Personal
+// Development route-level progress store -- same "one plain JSON object
+// map" shape/defensive-parse convention as PROGRESSION_MAPPING_STORE_KEY
+// above, keyed by routeConfigId instead of a single-item mapping key.
+// ---------------------------------------------------------------------------
+
+export type PersonalDevelopmentRouteProgressStore = Record<string, PersonalDevelopmentRouteProgress>;
+
+export async function loadPersonalDevelopmentRouteProgressStore(): Promise<PersonalDevelopmentRouteProgressStore> {
+  const raw = await AsyncStorage.getItem(PERSONAL_DEVELOPMENT_ROUTE_PROGRESS_KEY);
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const isPlainObject = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+    return isPlainObject ? (parsed as PersonalDevelopmentRouteProgressStore) : {};
+  } catch (error) {
+    console.warn("[storage] Stored Personal Development route progress store is not valid JSON -- returning an empty store rather than crashing.", error);
+    return {};
+  }
+}
+
+/** Always the FULL store. Never catches its own AsyncStorage.setItem failure -- a genuine write failure propagates to the caller exactly like every other saveX function here, never silently swallowed. */
+export async function savePersonalDevelopmentRouteProgressStore(store: PersonalDevelopmentRouteProgressStore): Promise<void> {
+  await AsyncStorage.setItem(PERSONAL_DEVELOPMENT_ROUTE_PROGRESS_KEY, JSON.stringify(store));
 }
