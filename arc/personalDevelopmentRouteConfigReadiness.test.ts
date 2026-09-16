@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { isPersonalDevelopmentRouteConfigCompleteForPractice } from "./personalDevelopmentRouteConfigReadiness.ts";
+import { isPersonalDevelopmentRouteConfigCompleteForPractice, selectActiveCombinedRoutesForLive } from "./personalDevelopmentRouteConfigReadiness.ts";
 import { createEmptyPersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
 import type { PersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
 import { createEmptyBeliefInterferenceItem, createEmptyEmotionInterferenceItem, createEmptyThoughtInterferenceItem, createEmptyUrgeInterferenceItem } from "./interferenceItem.ts";
@@ -86,32 +86,32 @@ test("route State selection does not depend on an item's legacy primaryStateProf
 
 // --- Linked/decide_in_live State readiness ---
 
-test("\"linked\" with an incomplete State is NOT practice-ready", () => {
+test('"linked" with an incomplete State is NOT practice-ready', () => {
   const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" });
   const item = thoughtV2({ beneficialActionAgainstFactor: "פעולה" });
   assert.equal(isPersonalDevelopmentRouteConfigCompleteForPractice(c, [item], [incompleteState()], []), false);
 });
 
-test("\"linked\" with a complete, enabled State and an explicit action relationship is practice-ready", () => {
+test('"linked" with a complete, enabled State and an explicit action relationship is practice-ready', () => {
   const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "different_actions" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" });
   const item = thoughtV2({ beneficialActionAgainstFactor: "פעולה" });
   assert.equal(isPersonalDevelopmentRouteConfigCompleteForPractice(c, [item], [completeState()], []), true);
 });
 
-test("\"linked\" with a DISABLED State is not practice-ready even if its content is complete", () => {
+test('"linked" with a DISABLED State is not practice-ready even if its content is complete', () => {
   const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" });
   const item = thoughtV2({ beneficialActionAgainstFactor: "פעולה" });
   const disabledState = disableLibraryItem(completeState(), NOW);
   assert.equal(isPersonalDevelopmentRouteConfigCompleteForPractice(c, [item], [disabledState], []), false);
 });
 
-test("\"decide_in_live\" with an incomplete candidate State is NOT practice-ready -- LIVE may still choose to include it", () => {
+test('"decide_in_live" with an incomplete candidate State is NOT practice-ready -- LIVE may still choose to include it', () => {
   const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "decide_in_live", stateProfileId: "s1" });
   const item = thoughtV2({ beneficialActionAgainstFactor: "פעולה" });
   assert.equal(isPersonalDevelopmentRouteConfigCompleteForPractice(c, [item], [incompleteState()], []), false);
 });
 
-test("\"decide_in_live\" with a complete candidate State is practice-ready", () => {
+test('"decide_in_live" with a complete candidate State is practice-ready', () => {
   const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "decide_in_live", stateProfileId: "s1" });
   const item = thoughtV2({ beneficialActionAgainstFactor: "פעולה" });
   assert.equal(isPersonalDevelopmentRouteConfigCompleteForPractice(c, [item], [completeState()], []), true);
@@ -146,7 +146,7 @@ test("a v1 item with no own action and no State is NOT practice-ready", () => {
 
 // --- Explicit action relationship requirement ---
 
-test("State included AND the item's own action is resolvable -- \"legacy_unspecified\" blocks readiness", () => {
+test('State included AND the item\'s own action is resolvable -- "legacy_unspecified" blocks readiness', () => {
   const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" });
   const item = thoughtV2({ beneficialActionAgainstFactor: "פעולה" });
   assert.equal(isPersonalDevelopmentRouteConfigCompleteForPractice(c, [item], [completeState()], []), false);
@@ -194,4 +194,72 @@ test("a saveable route is not necessarily practice-ready -- saving a draft and b
   // Structurally valid/saveable (the item resolves, the route is internally consistent)...
   // ...but not complete-for-practice (the v2 item's own required action is still missing).
   assert.equal(isPersonalDevelopmentRouteConfigCompleteForPractice(c, [draftItem], [], []), false);
+});
+
+// --- selectActiveCombinedRoutesForLive -- regression repair task: the
+// single selector build/LiveModeSelectScreen.tsx (the ARCHI LIVE
+// selection screen) uses to decide which combined routes to show. ---
+
+function readyNoStateThought(id: string): { config: PersonalDevelopmentRouteConfig; item: InterferenceItem } {
+  return {
+    config: config({ id, interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" }),
+    item: thoughtV2({ beneficialActionAgainstFactor: "לנשום עמוק" }),
+  };
+}
+
+test("selectActiveCombinedRoutesForLive: an enabled, practice-ready route appears in the LIVE selection", () => {
+  const { config: c, item } = readyNoStateThought("route1");
+  const result = selectActiveCombinedRoutesForLive([c], [item], [], []);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, "route1");
+});
+
+test("selectActiveCombinedRoutesForLive: a disabled route does not appear even though its own content is complete", () => {
+  const { config: c, item } = readyNoStateThought("route1");
+  const disabled = { ...c, status: "disabled" as const };
+  assert.deepEqual(selectActiveCombinedRoutesForLive([disabled], [item], [], []), []);
+});
+
+test("selectActiveCombinedRoutesForLive: an archived route does not appear even though its own content is complete", () => {
+  const { config: c, item } = readyNoStateThought("route1");
+  const archived = { ...c, status: "archived" as const };
+  assert.deepEqual(selectActiveCombinedRoutesForLive([archived], [item], [], []), []);
+});
+
+test("selectActiveCombinedRoutesForLive: a not-yet-ready (draft) enabled route does not appear", () => {
+  const c = config({ id: "route1", interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" });
+  const draftItem = thoughtV2({ beneficialActionAgainstFactor: null });
+  assert.deepEqual(selectActiveCombinedRoutesForLive([c], [draftItem], [], []), []);
+});
+
+test("selectActiveCombinedRoutesForLive: editing a route (e.g. enabling Presence) changes what the next call returns -- no stale/duplicated record", () => {
+  const { config: c, item } = readyNoStateThought("route1");
+  const beforeEdit = selectActiveCombinedRoutesForLive([c], [item], [], []);
+  assert.equal(beforeEdit[0].presenceEnabled, false);
+
+  const edited = { ...c, presenceEnabled: true, linkedPresenceArcId: "p1" };
+  const notReadyPresence = createEmptyPresenceArc("p1", "נוכחות", NOW);
+  const afterEditWithIncompletePresence = selectActiveCombinedRoutesForLive([edited], [item], [], [notReadyPresence]);
+  assert.deepEqual(afterEditWithIncompletePresence, [], "the edited route is not yet ready again until its new Presence config is itself complete");
+
+  const readyPresenceArc = { ...notReadyPresence, beneficialAction: "פעולה מיטיבה" };
+  const afterEditReady = selectActiveCombinedRoutesForLive([edited], [item], [], [readyPresenceArc]);
+  assert.equal(afterEditReady.length, 1);
+  assert.equal(afterEditReady[0].presenceEnabled, true, "the LIVE selection reflects the route's latest saved configuration, never a stale copy");
+});
+
+test("selectActiveCombinedRoutesForLive: multiple active combined routes are each shown independently, keyed by their own stable id", () => {
+  const routeA = readyNoStateThought("route-A");
+  const routeB = readyNoStateThought("route-B");
+  const result = selectActiveCombinedRoutesForLive([routeA.config, routeB.config], [routeA.item], [], []);
+  const ids = result.map((r) => r.id).sort();
+  assert.deepEqual(ids, ["route-A", "route-B"]);
+});
+
+test("selectActiveCombinedRoutesForLive: one disabled route among several active ones only removes that one -- the others stay independently visible", () => {
+  const routeA = readyNoStateThought("route-A");
+  const routeB = readyNoStateThought("route-B");
+  const disabledB = { ...routeB.config, status: "disabled" as const };
+  const result = selectActiveCombinedRoutesForLive([routeA.config, disabledB], [routeA.item], [], []);
+  assert.deepEqual(result.map((r) => r.id), ["route-A"]);
 });
