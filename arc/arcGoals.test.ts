@@ -145,7 +145,7 @@ test("normalizeArcGoal backfills a missing interferingMappings array to [] the s
   assert.deepEqual(normalized.interferingMappings, []);
 });
 
-test("normalizeArcGoal backfills every interfering mapping's new optional fields to their safe defaults -- miniArcId/identityProtocolId/goalAction null, executionMode 'full'", () => {
+test("normalizeArcGoal backfills every interfering mapping's new optional fields to their safe defaults -- miniArcId/identityProtocolId/goalAction null, executionMode 'full', actionRelationship legacy_unspecified", () => {
   const legacyMapping = { id: "m1", interferingState: "עייפות", supportiveProtocolId: "s1", supportiveAction: "a1" };
   const g = goal({ interferingMappings: [legacyMapping] });
   const normalized = normalizeArcGoal(g);
@@ -153,6 +153,7 @@ test("normalizeArcGoal backfills every interfering mapping's new optional fields
   assert.equal(normalized.interferingMappings[0].executionMode, "full", "'full' -- every pre-existing mapping's only real bridge was always the Full protocol");
   assert.equal(normalized.interferingMappings[0].identityProtocolId, null);
   assert.equal(normalized.interferingMappings[0].goalAction, null);
+  assert.equal(normalized.interferingMappings[0].actionRelationship, "legacy_unspecified", "never guessed as same_action/different_actions");
   // The mapping's own pre-existing fields are completely untouched.
   assert.equal(normalized.interferingMappings[0].interferingState, "עייפות");
   assert.equal(normalized.interferingMappings[0].supportiveProtocolId, "s1");
@@ -167,8 +168,19 @@ test("normalizeArcGoal backfills every urge mapping's new optional fields to the
   assert.equal(normalized.urgeMappings[0].executionMode, "full");
   assert.equal(normalized.urgeMappings[0].identityProtocolId, null);
   assert.equal(normalized.urgeMappings[0].goalAction, null);
+  assert.equal(normalized.urgeMappings[0].actionRelationship, "legacy_unspecified");
   assert.equal(normalized.urgeMappings[0].urgeArcId, "urge-1");
   assert.equal(normalized.urgeMappings[0].need, "רגיעה");
+});
+
+test("normalizeArcGoal preserves an already-set actionRelationship on both mapping kinds, never overwriting the coach's own explicit decision", () => {
+  const g = goal({
+    interferingMappings: [{ id: "m1", interferingState: "עייפות", supportiveProtocolId: "s1", supportiveAction: "a1", actionRelationship: "same_action" }],
+    urgeMappings: [{ id: "um1", urgeArcId: "urge-1", need: null, actionRelationship: "different_actions" } as never],
+  });
+  const normalized = normalizeArcGoal(g);
+  assert.equal(normalized.interferingMappings[0].actionRelationship, "same_action");
+  assert.equal(normalized.urgeMappings[0].actionRelationship, "different_actions");
 });
 
 // --- Adaptive ARC architecture task (Phase 2): normalizeArcGoal's own

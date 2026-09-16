@@ -100,7 +100,23 @@ interface InterferenceItemBase extends OwnedLibraryRecord {
 /** Reuses UrgeArc.representationPreference's own concept/value set (arc/types.ts's UrgeRepresentationPreference), renamed only for this library's own vocabulary ("sensory" here corresponds to that type's "bodily") -- never a second, incompatible representation system. */
 export type InterferenceUrgeRepresentation = "visual" | "sensory" | "both" | "decide_in_live";
 
-export interface ThoughtInterferenceItem extends InterferenceItemBase {
+/**
+ * Adaptive ARC architecture task, Phase 14B-1: "פעולה מיטיבה מול הגורם
+ * המפריע" -- this factor's OWN beneficial action, distinct from
+ * StateProfile.action (the ARC State's own final action). Required for a
+ * practice-ready schemaVersion-2 record (see isInterferenceItemCompleteForPractice);
+ * a schemaVersion-1 (legacy) record with this left null instead falls
+ * back to a resolvable linked State action once (arc/factorAction.ts's
+ * resolveFactorActionOutcome) -- never fabricated when neither resolves.
+ * Never present on EmotionInterferenceItem -- Emotion's own final action
+ * IS the required ARC State action (see EmotionInterferenceItem's own doc
+ * below), so it never gets a separate factor action field.
+ */
+interface FactorActionField {
+  beneficialActionAgainstFactor: string | null;
+}
+
+export interface ThoughtInterferenceItem extends InterferenceItemBase, FactorActionField {
   category: "thought";
   thoughtText: string | null;
   acceptanceMantra: string | null;
@@ -111,7 +127,7 @@ export interface ThoughtInterferenceItem extends InterferenceItemBase {
   existingNodCue: string | null;
 }
 
-export interface BeliefInterferenceItem extends InterferenceItemBase {
+export interface BeliefInterferenceItem extends InterferenceItemBase, FactorActionField {
   category: "belief";
   beliefText: string | null;
   /** "Supportive or alternative belief" -- reuses BeliefArc.replacementBelief's own concept. */
@@ -119,7 +135,7 @@ export interface BeliefInterferenceItem extends InterferenceItemBase {
   regulationCue: string | null;
 }
 
-export interface UrgeInterferenceItem extends InterferenceItemBase {
+export interface UrgeInterferenceItem extends InterferenceItemBase, FactorActionField {
   category: "urge";
   /** "Urge name/type". */
   urgeName: string | null;
@@ -144,11 +160,30 @@ export interface EmotionInterferenceItem extends InterferenceItemBase {
    * this IS `primaryStateProfileId` (the common field every variant
    * already has): an Emotion item's whole purpose is pointing at its
    * supportive State, so no separate/duplicate field is added here.
+   *
+   * Adaptive ARC architecture task, Phase 14B-1: Emotion deliberately
+   * never gains FactorActionField either, for the same reason -- its
+   * final action IS the required ARC State action, never a separate
+   * factor-level action (see arc/factorAction.ts's resolveEmotionActionOutcome).
    */
   regulationCue: string | null;
 }
 
 export type InterferenceItem = ThoughtInterferenceItem | BeliefInterferenceItem | UrgeInterferenceItem | EmotionInterferenceItem;
+
+/**
+ * Adaptive ARC architecture task, Phase 14B-1: every newly created
+ * InterferenceItem is authored under the new action model going forward
+ * (schemaVersion 2) -- distinct from an existing record loaded from
+ * storage, which keeps whatever version it already has
+ * (normalizeInterferenceItem never bumps a stored 1 to 2). A
+ * schemaVersion-2 Thought/Belief/Urge item requires its own
+ * beneficialActionAgainstFactor to be complete-for-practice (see
+ * isInterferenceItemCompleteForPractice) -- it is NOT eligible for the
+ * legacy shared-State-action fallback a schemaVersion-1 record gets
+ * (arc/factorAction.ts's resolveFactorActionOutcome).
+ */
+const CURRENT_ACTION_MODEL_SCHEMA_VERSION = 2;
 
 function generateBaseFields(id: string, name: string, ownerProgramId: string | null, now: string): InterferenceItemBase {
   return {
@@ -163,7 +198,7 @@ function generateBaseFields(id: string, name: string, ownerProgramId: string | n
     identityProfileIdOverride: null,
     miniOverride: null,
     status: "enabled",
-    schemaVersion: 1,
+    schemaVersion: CURRENT_ACTION_MODEL_SCHEMA_VERSION,
     createdAt: now,
     updatedAt: now,
   };
@@ -182,6 +217,7 @@ export function createEmptyThoughtInterferenceItem(id: string, name: string, own
     alternativeInterpretation: null,
     regulationCue: null,
     existingNodCue: null,
+    beneficialActionAgainstFactor: null,
   };
 }
 
@@ -192,6 +228,7 @@ export function createEmptyBeliefInterferenceItem(id: string, name: string, owne
     beliefText: null,
     supportiveBelief: null,
     regulationCue: null,
+    beneficialActionAgainstFactor: null,
   };
 }
 
@@ -207,6 +244,7 @@ export function createEmptyUrgeInterferenceItem(id: string, name: string, ownerP
     regulationAnchor: null,
     recheckEnabled: false,
     recheckPrompt: null,
+    beneficialActionAgainstFactor: null,
   };
 }
 
@@ -268,6 +306,55 @@ export function isInterferenceItemSaveable(item: InterferenceItem): boolean {
  */
 export function isInterferenceItemLinkedToState(item: InterferenceItem, stateProfileId: string): boolean {
   return item.primaryStateProfileId === stateProfileId || item.alternativeStateProfileIds.includes(stateProfileId);
+}
+
+/**
+ * Adaptive ARC architecture task, Phase 14B-1: whether `item` is
+ * COMPLETE-FOR-PRACTICE -- distinct from, and strictly stronger than,
+ * isInterferenceItemSaveable above (which stays a permanent, unchanged
+ * name-only draft tolerance). Gates enabling a new LIVE route; never
+ * weakens "required" into an optional warning for a schemaVersion-2
+ * record.
+ *
+ * - Thought/Belief/Urge, schemaVersion >= 2: requires a non-empty
+ *   beneficialActionAgainstFactor -- a missing action is a real,
+ *   permanent block, never a legacy fallback.
+ * - Thought/Belief/Urge, schemaVersion 1 (legacy): complete when either
+ *   its own beneficialActionAgainstFactor OR a resolvable linked State
+ *   action is available (arc/factorAction.ts's own
+ *   resolveFactorActionOutcome performs the same resolution at read
+ *   time) -- `hasResolvableStateAction` is supplied by the caller, since
+ *   resolving a State reference is arc/stateInclusion.ts's/
+ *   arc/libraryRelationships.ts's own concern, not this module's.
+ * - Emotion (any version): requires `hasResolvableStateAction` --
+ *   Emotion never has its own factor action (see EmotionInterferenceItem's
+ *   own doc).
+ *
+ * Pure and read-only: never mutates `item`.
+ */
+export function isInterferenceItemCompleteForPractice(item: InterferenceItem, hasResolvableStateAction: boolean): boolean {
+  if (item.category === "emotion") return hasResolvableStateAction;
+
+  const factorActionSet = (item.beneficialActionAgainstFactor ?? "").trim().length > 0;
+  if (item.schemaVersion >= 2) return factorActionSet;
+  return factorActionSet || hasResolvableStateAction;
+}
+
+/**
+ * Adaptive ARC architecture task, Phase 14B-1: the EXPLICIT upgrade path
+ * for a legacy (schemaVersion 1) record -- never called automatically by
+ * normalizeInterferenceItem or any load path ("loading must never
+ * automatically rewrite version 1 to version 2"). Marks `item` as
+ * authored under the new action model without inventing or moving any
+ * content -- beneficialActionAgainstFactor is left exactly as it already
+ * was (typically null, making the result a new-model DRAFT still missing
+ * its required action, per isInterferenceItemCompleteForPractice above),
+ * so an old record's semantics are never silently changed by this call
+ * alone. A no-op (still returns a fresh object with a refreshed
+ * updatedAt) when `item` is already schemaVersion >= 2.
+ */
+export function upgradeInterferenceItemToActionModelV2(item: InterferenceItem, now: string): InterferenceItem {
+  return { ...item, schemaVersion: Math.max(item.schemaVersion, CURRENT_ACTION_MODEL_SCHEMA_VERSION), updatedAt: now };
 }
 
 /**

@@ -104,6 +104,10 @@ export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
       executionMode: mapping.executionMode ?? "full",
       identityProtocolId: mapping.identityProtocolId ?? null,
       goalAction: mapping.goalAction ?? null,
+      // Adaptive ARC architecture task, Phase 14B-1: every mapping saved
+      // before this field existed backfills to "legacy_unspecified" --
+      // never guessed as "same_action"/"different_actions".
+      actionRelationship: mapping.actionRelationship ?? "legacy_unspecified",
     })),
     urgeMappings: (goal.urgeMappings ?? []).map((mapping) => ({
       ...mapping,
@@ -111,6 +115,7 @@ export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
       executionMode: mapping.executionMode ?? "full",
       identityProtocolId: mapping.identityProtocolId ?? null,
       goalAction: mapping.goalAction ?? null,
+      actionRelationship: mapping.actionRelationship ?? "legacy_unspecified",
     })),
     // Four-Week Program task: every ArcGoal saved before this field
     // existed backfills to null -- "no four-week program configured,"

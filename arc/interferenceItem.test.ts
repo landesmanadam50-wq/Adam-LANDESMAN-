@@ -7,9 +7,11 @@ import {
   createEmptyThoughtInterferenceItem,
   createEmptyUrgeInterferenceItem,
   generateInterferenceItemId,
+  isInterferenceItemCompleteForPractice,
   isInterferenceItemLinkedToState,
   isInterferenceItemSaveable,
   normalizeInterferenceItem,
+  upgradeInterferenceItemToActionModelV2,
   upsertInterferenceItemInList,
 } from "./interferenceItem.ts";
 import type { InterferenceItem } from "./interferenceItem.ts";
@@ -156,6 +158,80 @@ test("normalizeInterferenceItem never reclassifies an item's category", () => {
   const belief = createEmptyBeliefInterferenceItem("i1", "x", null, NOW);
   const normalized = normalizeInterferenceItem(belief);
   assert.equal(normalized.category, "belief");
+});
+
+// --- Phase 14B-1: versioned action model ---
+
+test("every newly created Thought/Belief/Urge/Emotion item is authored under the new action model (schemaVersion 2)", () => {
+  assert.equal(createEmptyThoughtInterferenceItem("i1", "x", null, NOW).schemaVersion, 2);
+  assert.equal(createEmptyBeliefInterferenceItem("i1", "x", null, NOW).schemaVersion, 2);
+  assert.equal(createEmptyUrgeInterferenceItem("i1", "x", null, NOW).schemaVersion, 2);
+  assert.equal(createEmptyEmotionInterferenceItem("i1", "x", null, NOW).schemaVersion, 2);
+});
+
+test("Thought/Belief/Urge createEmpty* default beneficialActionAgainstFactor to null", () => {
+  assert.equal(createEmptyThoughtInterferenceItem("i1", "x", null, NOW).beneficialActionAgainstFactor, null);
+  assert.equal(createEmptyBeliefInterferenceItem("i1", "x", null, NOW).beneficialActionAgainstFactor, null);
+  assert.equal(createEmptyUrgeInterferenceItem("i1", "x", null, NOW).beneficialActionAgainstFactor, null);
+});
+
+test("normalizeInterferenceItem defaults a genuinely missing schemaVersion to 1 (the safe legacy assumption), never to 2", () => {
+  const { schemaVersion, ...legacyShape } = createEmptyThoughtInterferenceItem("i1", "x", null, NOW);
+  const normalized = normalizeInterferenceItem(legacyShape as InterferenceItem);
+  assert.equal(normalized.schemaVersion, 1);
+});
+
+test("normalizeInterferenceItem never bumps an already-stored schemaVersion 1 to 2 -- loading never rewrites legacy semantics", () => {
+  const legacy = { ...createEmptyThoughtInterferenceItem("i1", "x", null, NOW), schemaVersion: 1 };
+  const normalized = normalizeInterferenceItem(legacy);
+  assert.equal(normalized.schemaVersion, 1);
+});
+
+test("isInterferenceItemCompleteForPractice: v2 Thought/Belief/Urge requires its own action -- a resolvable State action never substitutes", () => {
+  const withoutAction = { ...createEmptyThoughtInterferenceItem("i1", "x", null, NOW), schemaVersion: 2, beneficialActionAgainstFactor: null };
+  assert.equal(isInterferenceItemCompleteForPractice(withoutAction, true), false, "resolvable State action does not make a v2 draft complete");
+  assert.equal(isInterferenceItemCompleteForPractice(withoutAction, false), false);
+
+  const withAction = { ...withoutAction, beneficialActionAgainstFactor: "לנשום עמוק" };
+  assert.equal(isInterferenceItemCompleteForPractice(withAction, false), true);
+});
+
+test("isInterferenceItemCompleteForPractice: v1 Thought/Belief/Urge is complete via either its own action or a resolvable State action", () => {
+  const v1NoAction = { ...createEmptyThoughtInterferenceItem("i1", "x", null, NOW), schemaVersion: 1, beneficialActionAgainstFactor: null };
+  assert.equal(isInterferenceItemCompleteForPractice(v1NoAction, true), true, "legacy fallback makes a v1 item complete");
+  assert.equal(isInterferenceItemCompleteForPractice(v1NoAction, false), false, "neither resolves -- not complete");
+
+  const v1WithAction = { ...v1NoAction, beneficialActionAgainstFactor: "לנשום עמוק" };
+  assert.equal(isInterferenceItemCompleteForPractice(v1WithAction, false), true);
+});
+
+test("isInterferenceItemCompleteForPractice: Emotion (any version) requires a resolvable State action, never a factor action", () => {
+  const emotion = createEmptyEmotionInterferenceItem("i1", "x", null, NOW);
+  assert.equal(isInterferenceItemCompleteForPractice(emotion, true), true);
+  assert.equal(isInterferenceItemCompleteForPractice(emotion, false), false);
+});
+
+test("upgradeInterferenceItemToActionModelV2 marks a legacy record as v2 without inventing or moving its action -- the result is a new-model draft still missing its required action", () => {
+  const legacy = { ...createEmptyThoughtInterferenceItem("i1", "x", null, NOW), schemaVersion: 1, beneficialActionAgainstFactor: null };
+  const upgraded = upgradeInterferenceItemToActionModelV2(legacy, LATER);
+  assert.equal(upgraded.schemaVersion, 2);
+  assert.equal((upgraded as typeof legacy).beneficialActionAgainstFactor, null, "never fabricates an action");
+  assert.equal(upgraded.updatedAt, LATER);
+  assert.equal(isInterferenceItemCompleteForPractice(upgraded, true), false, "a resolvable State action still never substitutes once upgraded");
+});
+
+test("upgradeInterferenceItemToActionModelV2 preserves an already-set factor action", () => {
+  const legacy = { ...createEmptyThoughtInterferenceItem("i1", "x", null, NOW), schemaVersion: 1, beneficialActionAgainstFactor: "לנשום עמוק" };
+  const upgraded = upgradeInterferenceItemToActionModelV2(legacy, LATER);
+  assert.equal((upgraded as typeof legacy).beneficialActionAgainstFactor, "לנשום עמוק");
+  assert.equal(isInterferenceItemCompleteForPractice(upgraded, false), true);
+});
+
+test("upgradeInterferenceItemToActionModelV2 is a no-op on version (already refreshes updatedAt) for an already-v2 record", () => {
+  const alreadyV2 = createEmptyThoughtInterferenceItem("i1", "x", null, NOW);
+  const result = upgradeInterferenceItemToActionModelV2(alreadyV2, LATER);
+  assert.equal(result.schemaVersion, 2);
+  assert.equal(result.updatedAt, LATER);
 });
 
 // --- Mini override placeholder ---

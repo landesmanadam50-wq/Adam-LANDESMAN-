@@ -1,4 +1,5 @@
 import type { ArcLinkSettings, BodyImagery } from "./bodyImagery.ts";
+import type { ActionRelationship } from "./factorAction.ts";
 
 export type DevelopmentLayer = "state" | "identity" | "habit";
 
@@ -930,6 +931,19 @@ export interface ArcGoalInterferingMapping {
   /** Per-mapping override of ArcGoal.identityProtocolId/goalAction below -- null (the default) falls back to the goal-level field, so most mappings never need to set these. */
   identityProtocolId?: string | null;
   goalAction?: string | null;
+  /**
+   * Adaptive ARC architecture task, Phase 14B-1: whether this mapping's
+   * own action IS the goal's action ("same_action") or a genuinely
+   * different one ("different_actions") -- kept here, per-mapping,
+   * mirroring exactly why identityProtocolId/goalAction above are ALSO
+   * kept off the referenced supportive-state protocol: the same protocol
+   * may be reused by several different mappings/goals, so a relationship
+   * this specific can never live globally on the reused record itself
+   * (see arc/factorAction.ts's own ActionRelationship). Undefined/null
+   * ("legacy_unspecified") is the safe default for every mapping saved
+   * before this field existed.
+   */
+  actionRelationship?: ActionRelationship;
 }
 
 /**
@@ -951,6 +965,8 @@ export interface ArcGoalUrgeMapping {
   executionMode?: ExecutionMode;
   identityProtocolId?: string | null;
   goalAction?: string | null;
+  /** Adaptive ARC architecture task, Phase 14B-1: same rationale as ArcGoalInterferingMapping.actionRelationship above -- kept per-mapping, never on the reused UrgeArc itself. */
+  actionRelationship?: ActionRelationship;
 }
 
 /**
