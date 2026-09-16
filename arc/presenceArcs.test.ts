@@ -8,6 +8,7 @@ import {
   draftFromPresenceArc,
   duplicatePresenceArc,
   isPresenceArcDraftComplete,
+  isPresenceArcReadyForCombinedRoute,
   normalizePresenceArc,
   upsertPresenceArcInList,
 } from "./presenceArcs.ts";
@@ -124,4 +125,23 @@ test("a JSON round trip (JSON.stringify then JSON.parse, exactly what data/stora
   const original = presenceArc({ presenceColor: "x", presenceDwellSeconds: 10 });
   const roundTripped = JSON.parse(JSON.stringify(original)) as PresenceArc;
   assert.deepEqual(roundTripped, original);
+});
+
+// --- Phase 14B-2: isPresenceArcReadyForCombinedRoute ---
+
+test("isPresenceArcReadyForCombinedRoute is false when beneficialAction is null or blank -- never fabricated from anything else", () => {
+  assert.equal(isPresenceArcReadyForCombinedRoute(presenceArc({ beneficialAction: null })), false);
+  assert.equal(isPresenceArcReadyForCombinedRoute(presenceArc({ beneficialAction: "   " })), false);
+});
+
+test("isPresenceArcReadyForCombinedRoute is true once beneficialAction is a real, non-blank value", () => {
+  assert.equal(isPresenceArcReadyForCombinedRoute(presenceArc({ beneficialAction: "לנשום עמוק" })), true);
+});
+
+test("a legacy standalone PresenceArc with no beneficialAction remains fully loadable/normalizable -- readiness is a separate, additive concern that never blocks standalone use", () => {
+  const legacy = presenceArc({ beneficialAction: null });
+  const normalized = normalizePresenceArc(legacy);
+  assert.equal(normalized.beneficialAction, null);
+  assert.equal(isPresenceArcReadyForCombinedRoute(normalized), false, "not ready for a NEW combined route");
+  assert.equal(normalized.name, legacy.name, "the record itself loads completely unchanged for standalone use");
 });

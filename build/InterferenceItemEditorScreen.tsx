@@ -10,11 +10,25 @@ import {
   createEmptyThoughtInterferenceItem,
   createEmptyUrgeInterferenceItem,
   generateInterferenceItemId,
+  isInterferenceItemCompleteForPractice,
   isInterferenceItemSaveable,
+  upgradeInterferenceItemToActionModelV2,
 } from "../arc/interferenceItem.ts";
 import type { InterferenceCategory, InterferenceItem, InterferenceUrgeRepresentation } from "../arc/interferenceItem.ts";
 import { isLibraryItemEnabled } from "../arc/libraryItemStatus.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
+
+/**
+ * Adaptive ARC architecture task, Phase 14B-2: shown for every
+ * Thought/Belief/Urge category (never Emotion -- its final action IS the
+ * required ARC State action, see arc/interferenceItem.ts's own
+ * EmotionInterferenceItem doc), regardless of schemaVersion -- a v1
+ * record's own beneficialActionAgainstFactor, once filled in, is already
+ * honored by arc/factorAction.ts's resolver exactly like a v2 record's;
+ * only the "not ready without it" framing differs (a v2 record needs it,
+ * a v1 record may still fall back to a route's State action).
+ */
+const FACTOR_ACTION_CATEGORIES: InterferenceCategory[] = ["thought", "belief", "urge"];
 
 const CATEGORY_LABELS: Record<InterferenceCategory, string> = {
   thought: "מחשבה",
@@ -144,6 +158,17 @@ export default function InterferenceItemEditorScreen() {
     }
   }
 
+  /**
+   * Adaptive ARC architecture task, Phase 14B-2: the EXPLICIT upgrade
+   * action -- applies upgradeInterferenceItemToActionModelV2 to local
+   * state only; the coach still presses the ordinary Save button
+   * afterward. Never fires from loading the screen or editing any other
+   * field.
+   */
+  function handleUpgradeToActionModelV2() {
+    setItem((current) => (current ? upgradeInterferenceItemToActionModelV2(current, new Date().toISOString()) : current));
+  }
+
   if (status === "loading") {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -237,18 +262,14 @@ export default function InterferenceItemEditorScreen() {
               placeholder="פרשנות מאוזנת יותר"
               multiline
             />
-            <Field
-              label="רמז ויסות"
-              value={current.regulationCue ?? ""}
-              onChangeText={(text) => updateField({ regulationCue: text.trim().length > 0 ? text : null })}
-              placeholder="עוגן ויסות"
-            />
+            <LegacyRegulationNote value={current.regulationCue} />
             <Field
               label="רמז הנהון"
               value={current.existingNodCue ?? ""}
               onChangeText={(text) => updateField({ existingNodCue: text.trim().length > 0 ? text : null })}
               placeholder="רמז הנהון עדין (רשות)"
             />
+            <FactorActionField item={current} updateField={updateField} onUpgrade={handleUpgradeToActionModelV2} />
           </Section>
         )}
 
@@ -268,12 +289,8 @@ export default function InterferenceItemEditorScreen() {
               placeholder="אמונה מאוזנת יותר"
               multiline
             />
-            <Field
-              label="רמז ויסות"
-              value={current.regulationCue ?? ""}
-              onChangeText={(text) => updateField({ regulationCue: text.trim().length > 0 ? text : null })}
-              placeholder="עוגן ויסות"
-            />
+            <LegacyRegulationNote value={current.regulationCue} />
+            <FactorActionField item={current} updateField={updateField} onUpgrade={handleUpgradeToActionModelV2} />
           </Section>
         )}
 
@@ -285,12 +302,8 @@ export default function InterferenceItemEditorScreen() {
               onChangeText={(text) => updateField({ emotionName: text.trim().length > 0 ? text : null })}
               placeholder="לדוגמה: תסכול"
             />
-            <Field
-              label="רמז ויסות"
-              value={current.regulationCue ?? ""}
-              onChangeText={(text) => updateField({ regulationCue: text.trim().length > 0 ? text : null })}
-              placeholder="עוגן ויסות"
-            />
+            <Text style={styles.helperText}>רגש תמיד מקושר למצב רצוי -- הפעולה הסופית שלו היא פעולת המצב הרצוי עצמה, ללא פעולה נפרדת מול הגורם המפריע.</Text>
+            <LegacyRegulationNote value={current.regulationCue} />
           </Section>
         )}
 
@@ -334,12 +347,7 @@ export default function InterferenceItemEditorScreen() {
               onChangeText={(text) => updateField({ sensoryEncodingConfig: text.trim().length > 0 ? text : null })}
               placeholder="תיאור תחושתי לקידוד (רשות)"
             />
-            <Field
-              label="עוגן ויסות"
-              value={current.regulationAnchor ?? ""}
-              onChangeText={(text) => updateField({ regulationAnchor: text.trim().length > 0 ? text : null })}
-              placeholder="עוגן ויסות"
-            />
+            <LegacyRegulationNote value={current.regulationAnchor} />
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>אפשר בדיקה חוזרת?</Text>
               <View style={styles.chipRow}>
@@ -359,24 +367,34 @@ export default function InterferenceItemEditorScreen() {
                 placeholder="שאלה לבדיקה חוזרת"
               />
             )}
+            <FactorActionField item={current} updateField={updateField} onUpgrade={handleUpgradeToActionModelV2} />
           </Section>
         )}
 
-        <Section title="מצב רצוי מקושר (רשות)">
-          <Text style={styles.helperText}>אפשר לקשר פריט זה למצב רצוי שכבר יצרת.</Text>
-          <View style={styles.chipRow}>
-            {stateProfiles.map((profile) => (
-              <Pressable
-                key={profile.id}
-                style={[styles.chip, current.primaryStateProfileId === profile.id && styles.chipSelected]}
-                onPress={() => updateField({ primaryStateProfileId: current.primaryStateProfileId === profile.id ? null : profile.id })}
-              >
-                <Text style={styles.chipText}>{profile.name}</Text>
-              </Pressable>
-            ))}
-            {stateProfiles.length === 0 && <Text style={styles.helperText}>אין עדיין מצבים רצויים זמינים.</Text>}
-          </View>
-        </Section>
+        {/*
+          Adaptive ARC architecture task, Phase 14B-2: legacy applicability
+          metadata ONLY -- read-only, never the way to decide whether ARC
+          State participates in a combined route. The route-level
+          stateInclusionPolicy/stateProfileId (arc/personalDevelopmentRouteConfig.ts,
+          configured in the new route editor) is the actual, authoritative
+          State control; this section never writes to primaryStateProfileId
+          and every existing stored id is preserved untouched through
+          ordinary saves.
+        */}
+        {(current.primaryStateProfileId || current.alternativeStateProfileIds.length > 0) && (
+          <Section title="קישור למצב רצוי -- מידע ישן (לקריאה בלבד)">
+            <Text style={styles.helperText}>
+              זהו קישור היסטורי בין הפריט למצב רצוי. הוא אינו קובע האם מצב רצוי ישתתף במסלול תרגול משולב -- זה נקבע בעורך תצורת המסלול.
+            </Text>
+            {[current.primaryStateProfileId, ...current.alternativeStateProfileIds]
+              .filter((id): id is string => Boolean(id))
+              .map((id) => (
+                <Text key={id} style={styles.legacyNote}>
+                  {stateProfiles.find((profile) => profile.id === id)?.name ?? id}
+                </Text>
+              ))}
+          </Section>
+        )}
 
         {current.name.trim().length === 0 && <Text style={styles.errorText}>יש להזין שם לפני השמירה.</Text>}
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}
@@ -430,6 +448,68 @@ function Field({
   );
 }
 
+/**
+ * Adaptive ARC architecture task, Phase 14B-2: read-only display of a
+ * legacy general-regulation value -- never rendered as an editable
+ * TextInput any more (see this file's own removal of the old "רמז ויסות"/
+ * "עוגן ויסות" fields), never erased by an unrelated save (the value
+ * simply rides through unchanged since nothing writes to this key
+ * anymore), never relabeled as ARC State regulation, never copied onto
+ * any StateProfile. Renders nothing at all when there is no legacy value
+ * to show.
+ */
+function LegacyRegulationNote({ value }: { value: string | null }) {
+  if (!value) return null;
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={styles.fieldLabel}>ערך ויסות ישן (לקריאה בלבד)</Text>
+      <Text style={styles.legacyNote}>{value}</Text>
+    </View>
+  );
+}
+
+type FactorActionBearingItem = Extract<InterferenceItem, { category: "thought" | "belief" | "urge" }>;
+
+/**
+ * Adaptive ARC architecture task, Phase 14B-2: "פעולה מיטיבה מול הגורם
+ * המפריע" -- shown for every Thought/Belief/Urge item, any schemaVersion.
+ * A schemaVersion-2 item without this is flagged as not ready for LIVE
+ * practice (never blocking Save); a schemaVersion-1 (legacy) item gets a
+ * softer note plus an explicit, one-tap upgrade action -- upgrading never
+ * fires from merely opening or saving this screen.
+ */
+function FactorActionField({ item, updateField, onUpgrade }: { item: FactorActionBearingItem; updateField: (patch: Record<string, string | boolean | null>) => void; onUpgrade: () => void }) {
+  // hasResolvableStateAction is conservatively false here -- this screen has
+  // no route context (a route's own State readiness is a
+  // PersonalDevelopmentRouteConfig-level concern, see arc/personalDevelopmentRouteConfigReadiness.ts),
+  // so this only ever reflects whether the item has its OWN action -- never
+  // over-claims readiness a route might not actually deliver.
+  const hasOwnAction = isInterferenceItemCompleteForPractice(item, false);
+  return (
+    <View style={styles.section}>
+      <Field
+        label="פעולה מיטיבה מול הגורם המפריע"
+        value={item.beneficialActionAgainstFactor ?? ""}
+        onChangeText={(text) => updateField({ beneficialActionAgainstFactor: text.trim().length > 0 ? text : null })}
+        placeholder="התגובה החלופית והמיטיבה מול הגורם המפריע הזה"
+        multiline
+      />
+      {item.schemaVersion >= 2 && !hasOwnAction && <Text style={styles.errorText}>פריט זה אינו מוכן לתרגול LIVE ללא פעולה מיטיבה מול הגורם המפריע.</Text>}
+      {item.schemaVersion < 2 && (
+        <View style={styles.legacyNoticeBox}>
+          <Text style={styles.legacyNoticeText}>
+            פריט זה נוצר לפי המודל הישן.
+            {hasOwnAction ? " יש לו פעולה משלו." : " אם לא תוגדר כאן פעולה, בעת שימוש במסלול משולב עם מצב רצוי תשמש פעולת המצב הרצוי כברירת מחדל."}
+          </Text>
+          <Pressable style={styles.upgradeButton} onPress={onUpgrade}>
+            <Text style={styles.upgradeButtonText}>שדרג למודל הפעולה החדש</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
   content: { flexGrow: 1, padding: 24 },
@@ -444,6 +524,11 @@ const styles = StyleSheet.create({
   textInputMultiline: { minHeight: 70, textAlignVertical: "top" },
   chipRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 },
   chip: { backgroundColor: "#E6F4FE", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+  legacyNote: { fontSize: 14, textAlign: "right", color: "#666", fontStyle: "italic" },
+  legacyNoticeBox: { backgroundColor: "#FDF3D9", borderRadius: 10, padding: 12, marginTop: 4 },
+  legacyNoticeText: { fontSize: 13, textAlign: "right", color: "#8a6d1a", lineHeight: 19, marginBottom: 8 },
+  upgradeButton: { alignItems: "flex-end" },
+  upgradeButtonText: { color: "#0a7ea4", fontSize: 14, fontWeight: "600" },
   chipSelected: { backgroundColor: "#0a7ea4" },
   chipText: { color: "#0a7ea4", fontSize: 14 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 12 },

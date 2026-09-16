@@ -39,6 +39,7 @@ import type { StateProfile } from "./stateProfile.ts";
 import type { ActionRelationship } from "./factorAction.ts";
 import type { StateInclusionPolicy } from "./stateInclusion.ts";
 import { dedupeItemIdsPreservingOrder } from "./combinedInterferenceSelection.ts";
+import type { CombinedInterferenceSelection } from "./combinedInterferenceSelection.ts";
 
 export interface PersonalDevelopmentRouteConfig extends OwnedLibraryRecord {
   interferenceItemIds: string[];
@@ -62,6 +63,17 @@ export interface PersonalDevelopmentRouteConfig extends OwnedLibraryRecord {
   linkedPresenceArcId: string | null;
   /** Only meaningful when presenceEnabled && stateInclusionPolicy !== "none" -- see arc/factorAction.ts's resolvePresenceActionOutcome. */
   presenceActionRelationship: ActionRelationship | null;
+  /**
+   * Adaptive ARC architecture task, Phase 14B-2: the stable provenance
+   * link back to the legacy CombinedInterferenceSelection (Phase 12-14A)
+   * this route was converted from, or null for a route created directly
+   * in the new editor. This is the sole mechanism that makes converting
+   * the SAME legacy selection idempotent -- see
+   * resolvePersonalDevelopmentRouteConfigForLegacySelection/
+   * resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection
+   * below -- never a translated-text or array-position comparison.
+   */
+  sourceLegacyCombinedSelectionId: string | null;
   status: LibraryItemStatus;
   schemaVersion: number;
   createdAt: string;
@@ -84,6 +96,7 @@ export function createEmptyPersonalDevelopmentRouteConfig(id: string, ownerProgr
     presenceEnabled: false,
     linkedPresenceArcId: null,
     presenceActionRelationship: null,
+    sourceLegacyCombinedSelectionId: null,
     status: "enabled",
     schemaVersion: 1,
     createdAt: now,
@@ -118,6 +131,7 @@ export function normalizePersonalDevelopmentRouteConfig(config: PersonalDevelopm
     presenceEnabled: config.presenceEnabled ?? false,
     linkedPresenceArcId: config.linkedPresenceArcId ?? null,
     presenceActionRelationship: config.presenceActionRelationship ?? null,
+    sourceLegacyCombinedSelectionId: config.sourceLegacyCombinedSelectionId ?? null,
     status: config.status ?? "enabled",
     schemaVersion: config.schemaVersion ?? 1,
   };
@@ -198,4 +212,114 @@ export function validatePersonalDevelopmentRouteConfig(config: PersonalDevelopme
   }
 
   return ok();
+}
+
+/**
+ * Adaptive ARC architecture task, Phase 14B-2: the minimum bar for
+ * PERSISTING a route at all -- an alias over validatePersonalDevelopmentRouteConfig's
+ * own result, named separately (and deliberately never merged with
+ * isPersonalDevelopmentRouteConfigCompleteForPractice,
+ * arc/personalDevelopmentRouteConfigReadiness.ts) so callers never
+ * conflate "saveable" with "ready to appear in a future LIVE picker."
+ * Reuses the same structural checks validatePersonalDevelopmentRouteConfig
+ * already performs (item/State references must resolve) rather than a
+ * second, divergent copy of that logic.
+ */
+export function isPersonalDevelopmentRouteConfigSaveable(config: PersonalDevelopmentRouteConfig, items: InterferenceItem[], stateProfiles: StateProfile[]): boolean {
+  return validatePersonalDevelopmentRouteConfig(config, items, stateProfiles).valid;
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, Phase 14B-2: legacy CombinedInterferenceSelection
+// -> PersonalDevelopmentRouteConfig conversion. Additive and read-only with
+// respect to the source record -- never archives, renames, or mutates it.
+// ---------------------------------------------------------------------------
+
+/**
+ * The pure builder: a fresh PersonalDevelopmentRouteConfig prefilled from
+ * `selection`'s own fields -- `stateInclusionPolicy: "linked"` (a legacy
+ * CombinedInterferenceSelection is always State-scoped), every configured
+ * item's own ActionRelationship defaulted to "legacy_unspecified" (never
+ * guessed as same/different), Presence config copied verbatim. Never
+ * reads or writes `selection` itself. Callers that need idempotency
+ * (never creating a second route for the same source) use
+ * resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection below
+ * rather than calling this directly.
+ */
+export function buildPersonalDevelopmentRouteConfigFromLegacySelection(
+  selection: CombinedInterferenceSelection,
+  now: string,
+  generateId: () => string = generatePersonalDevelopmentRouteConfigId
+): PersonalDevelopmentRouteConfig {
+  const interferenceItemIds = dedupeItemIdsPreservingOrder(selection.configuredItemIds);
+  const itemRelationships: Record<string, { actionRelationship: ActionRelationship }> = {};
+  for (const itemId of interferenceItemIds) {
+    itemRelationships[itemId] = { actionRelationship: "legacy_unspecified" };
+  }
+  return {
+    ...createEmptyPersonalDevelopmentRouteConfig(generateId(), selection.ownerProgramId, now),
+    interferenceItemIds,
+    stateInclusionPolicy: "linked",
+    stateProfileId: selection.stateProfileId,
+    itemRelationships,
+    presenceEnabled: selection.presenceEnabled,
+    linkedPresenceArcId: selection.linkedPresenceArcId,
+    presenceActionRelationship: selection.presenceEnabled ? "legacy_unspecified" : null,
+    sourceLegacyCombinedSelectionId: selection.id,
+  };
+}
+
+/**
+ * The stable provenance lookup: the one PersonalDevelopmentRouteConfig
+ * already converted from `legacySelectionId`, or null if it was never
+ * converted -- matched ONLY by sourceLegacyCombinedSelectionId, never by
+ * translated text or array position (per the approved amendment). This is
+ * what makes repeated conversion of the same legacy selection idempotent.
+ */
+export function resolvePersonalDevelopmentRouteConfigForLegacySelection(configs: PersonalDevelopmentRouteConfig[], legacySelectionId: string): PersonalDevelopmentRouteConfig | null {
+  return configs.find((config) => config.sourceLegacyCombinedSelectionId === legacySelectionId) ?? null;
+}
+
+/**
+ * The sanctioned "convert this legacy selection" write path: if a route
+ * already exists for `selection.id` (resolvePersonalDevelopmentRouteConfigForLegacySelection),
+ * returns the EXISTING record and an untouched `configs` list -- a
+ * second, third, Nth request for the same source legacy selection always
+ * resolves to the same one route, never creating a duplicate. Only
+ * builds and appends a new record the first time. `generateId` is
+ * injectable purely for deterministic tests; production callers omit it.
+ */
+export function resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection(
+  configs: PersonalDevelopmentRouteConfig[],
+  selection: CombinedInterferenceSelection,
+  now: string,
+  generateId: () => string = generatePersonalDevelopmentRouteConfigId
+): { configs: PersonalDevelopmentRouteConfig[]; result: PersonalDevelopmentRouteConfig } {
+  const existing = resolvePersonalDevelopmentRouteConfigForLegacySelection(configs, selection.id);
+  if (existing) return { configs, result: existing };
+  const created = buildPersonalDevelopmentRouteConfigFromLegacySelection(selection, now, generateId);
+  return { configs: upsertPersonalDevelopmentRouteConfigInList(configs, created), result: created };
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, Phase 14B-2: the "Build new State"
+// return-resolution decision (build/PersonalDevelopmentRouteEditorScreen.tsx's
+// own UI command -- see arc/stateInclusion.ts's own doc on why "build_new"
+// is never itself a persisted policy value).
+// ---------------------------------------------------------------------------
+
+/**
+ * Pure decision for what the route editor should do when it regains
+ * focus after a "Build new State" round trip. The screen owns a single
+ * `pendingNewStateId` (the id it pre-generated, once, before navigating
+ * to StateProfile creation) and clears it to null the moment this
+ * resolver reports `found: true` -- so a later focus event (or a
+ * manually-chosen State in between) can never re-apply an auto-selection,
+ * and returning without ever saving that State never changes the route's
+ * own policy (the screen simply never calls setState with this result).
+ */
+export function resolvePendingBuildNewStateReturn(pendingNewStateId: string | null, stateProfiles: StateProfile[]): { found: boolean; stateProfileId: string | null } {
+  if (!pendingNewStateId) return { found: false, stateProfileId: null };
+  const found = stateProfiles.some((state) => state.id === pendingNewStateId);
+  return found ? { found: true, stateProfileId: pendingNewStateId } : { found: false, stateProfileId: null };
 }

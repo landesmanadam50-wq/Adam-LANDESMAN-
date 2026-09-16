@@ -420,6 +420,26 @@ export default function ArcGoalEditorScreen() {
                   onChangeText={(text) => updateUrgeMapping(mapping.id, { goalAction: text.trim().length > 0 ? text : null })}
                   textAlign="right"
                 />
+                {/*
+                  Adaptive ARC architecture task, Phase 14B-2: stores the
+                  explicit relationship only -- ARC Goal LIVE (arc/arcGoalEngine.ts)
+                  is not changed by this phase and never reads this field yet.
+                */}
+                <Text style={styles.fieldLabel}>האם הפעולה מתוך המצב הרצוי היא גם הפעולה המיטיבה מול הגורם המפריע?</Text>
+                <View style={styles.chipColumn}>
+                  <Pressable
+                    style={[styles.chip, mapping.actionRelationship === "same_action" && styles.chipSelected]}
+                    onPress={() => updateUrgeMapping(mapping.id, { actionRelationship: "same_action" })}
+                  >
+                    <Text style={styles.chipText}>כן -- זו אותה פעולה</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.chip, mapping.actionRelationship === "different_actions" && styles.chipSelected]}
+                    onPress={() => updateUrgeMapping(mapping.id, { actionRelationship: "different_actions" })}
+                  >
+                    <Text style={styles.chipText}>לא -- אלו שתי פעולות שונות</Text>
+                  </Pressable>
+                </View>
                 <Pressable style={styles.removeButton} onPress={() => removeUrgeMapping(mapping.id)}>
                   <Text style={styles.deleteText}>הסר דחף</Text>
                 </Pressable>
@@ -526,6 +546,26 @@ export default function ArcGoalEditorScreen() {
                   onChangeText={(text) => updateMapping(mapping.id, { goalAction: text.trim().length > 0 ? text : null })}
                   textAlign="right"
                 />
+                {/*
+                  Adaptive ARC architecture task, Phase 14B-2: stores the
+                  explicit relationship only -- ARC Goal LIVE (arc/arcGoalEngine.ts)
+                  is not changed by this phase and never reads this field yet.
+                */}
+                <Text style={styles.fieldLabel}>האם הפעולה מתוך המצב הרצוי היא גם הפעולה המיטיבה מול הגורם המפריע?</Text>
+                <View style={styles.chipColumn}>
+                  <Pressable
+                    style={[styles.chip, mapping.actionRelationship === "same_action" && styles.chipSelected]}
+                    onPress={() => updateMapping(mapping.id, { actionRelationship: "same_action" })}
+                  >
+                    <Text style={styles.chipText}>כן -- זו אותה פעולה</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.chip, mapping.actionRelationship === "different_actions" && styles.chipSelected]}
+                    onPress={() => updateMapping(mapping.id, { actionRelationship: "different_actions" })}
+                  >
+                    <Text style={styles.chipText}>לא -- אלו שתי פעולות שונות</Text>
+                  </Pressable>
+                </View>
                 <Pressable style={styles.removeButton} onPress={() => removeMapping(mapping.id)}>
                   <Text style={styles.deleteText}>הסר מיפוי</Text>
                 </Pressable>

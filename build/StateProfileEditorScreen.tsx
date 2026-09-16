@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
 import { getStateProfile, upsertStateProfile } from "../data/storage.ts";
-import { createEmptyStateProfile, generateStateProfileId, isStateProfileSaveable } from "../arc/stateProfile.ts";
+import { createEmptyStateProfile, generateStateProfileId, isStateProfileCompleteForPractice, isStateProfileSaveable } from "../arc/stateProfile.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
 
 const NATURAL_BREATHING_GUIDANCE = "אפשר לנשימה להמשיך בחופשיות. שים לב כיצד היא מתרחשת מעצמה, בלי לנסות לשנות אותה.";
@@ -39,7 +39,7 @@ const NATURAL_BREATHING_GUIDANCE = "אפשר לנשימה להמשיך בחופ�
  * matching arc/naturalBreathing.ts's own free-breathing convention.
  */
 export default function StateProfileEditorScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, presetId } = useLocalSearchParams<{ id: string; presetId?: string }>();
   const isNew = id === "new";
 
   const [status, setStatus] = useState<"loading" | "notFound" | "ready">(isNew ? "ready" : "loading");
@@ -47,7 +47,15 @@ export default function StateProfileEditorScreen() {
   // React only ever runs a useState initializer once per component
   // instance, so this is never re-minted on re-render, retry, or repeated
   // Save taps.
-  const [profile, setProfile] = useState<StateProfile>(() => createEmptyStateProfile(generateStateProfileId(), "", null, new Date().toISOString()));
+  //
+  // Adaptive ARC architecture task, Phase 14B-2: when a caller (e.g. the
+  // route-config draft's own "Build new State" command) navigates here
+  // with an explicit `presetId` query param, that id is used instead of
+  // generating a new one -- so the caller can recognize this exact record
+  // once it comes back into view (arc/personalDevelopmentRouteConfig.ts's
+  // own resolvePendingBuildNewStateReturn). Every existing caller that
+  // never passes `presetId` behaves exactly as before.
+  const [profile, setProfile] = useState<StateProfile>(() => createEmptyStateProfile(typeof presetId === "string" && presetId.length > 0 ? presetId : generateStateProfileId(), "", null, new Date().toISOString()));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -185,7 +193,13 @@ export default function StateProfileEditorScreen() {
 
         <Section title="קידוד" subtitle="הרמז והפעולה שמחזקים את המצב הרצוי בזמן אמת.">
           <Field label="רמז קידוד" value={profile.encodingCue ?? ""} onChangeText={(text) => updateField("encodingCue", text.trim().length > 0 ? text : null)} placeholder="רמז קצר לקידוד המצב" />
-          <Field label="פעולה" value={profile.action ?? ""} onChangeText={(text) => updateField("action", text.trim().length > 0 ? text : null)} placeholder="פעולה מיטיבה שמבטאת את המצב הרצוי" multiline />
+          <Field
+            label="פעולה מתוך המצב הרצוי"
+            value={profile.action ?? ""}
+            onChangeText={(text) => updateField("action", text.trim().length > 0 ? text : null)}
+            placeholder="פעולה מיטיבה שמבטאת את המצב הרצוי"
+            multiline
+          />
         </Section>
 
         <Section title="טיימר פעולה" subtitle="משך זמן (בדקות) לפעולה, אם רלוונטי -- ריק פירושו ללא הגבלת זמן.">
@@ -198,6 +212,9 @@ export default function StateProfileEditorScreen() {
         )}
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}
         <Text style={styles.helperText}>אפשר לשמור מצב עם שם בלבד ולהשלים את שאר הפרטים מאוחר יותר -- זה עדיין לא אומר שהמצב מוכן לתרגול LIVE.</Text>
+        {!isStateProfileCompleteForPractice(profile) && (
+          <Text style={styles.readinessNote}>מצב רצוי מוכן לתרגול LIVE רק לאחר שהוגדרו עבורו עוגן ויסות, רמז קידוד, ופעולה מתוך המצב הרצוי.</Text>
+        )}
 
         <Pressable style={[styles.button, styles.fullWidthButton, !canSave && styles.buttonDisabled]} disabled={!canSave} onPress={handleSave}>
           <Text style={styles.buttonText}>שמור</Text>
@@ -264,6 +281,7 @@ const styles = StyleSheet.create({
   textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16 },
   textInputMultiline: { minHeight: 70, textAlignVertical: "top" },
   helperText: { fontSize: 13, textAlign: "right", color: "#666", marginTop: 16 },
+  readinessNote: { fontSize: 13, textAlign: "right", color: "#8a6d1a", marginTop: 8, lineHeight: 19 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 12 },
   button: { backgroundColor: "#0a7ea4", paddingVertical: 14, paddingHorizontal: 20, borderRadius: 10, alignItems: "center" },
   fullWidthButton: { marginTop: 16 },

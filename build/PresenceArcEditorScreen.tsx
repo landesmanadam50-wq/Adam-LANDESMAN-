@@ -186,10 +186,20 @@ export default function PresenceArcEditorScreen() {
         <Text style={styles.helperText}>אם לא תוגדר, ייעשה שימוש בזמן ברירת המחדל של הפרוטוקול הרגיל.</Text>
         <TextInput style={styles.textInput} value={draft.presenceDwellSeconds} onChangeText={(value) => setDraft({ ...draft, presenceDwellSeconds: value })} textAlign="right" keyboardType="numeric" />
 
-        <Text style={styles.sectionHeader}>פעולה מיטיבה ולאחר הפעולה (רשות)</Text>
+        <Text style={styles.sectionHeader}>פעולה מיטיבה ולאחר הפעולה</Text>
         <Text style={styles.helperText}>לאחר שהנוכחות מגיעה למצב הרצוי, מבצעים בפועל פעולה מיטיבה.</Text>
-        <Text style={styles.question}>הפעולה המיטיבה (רשות)</Text>
+        <Text style={styles.question}>פעולה מיטיבה מול הגורם המפריע</Text>
         <TextInput style={styles.textInput} value={draft.beneficialAction} onChangeText={(value) => setDraft({ ...draft, beneficialAction: value })} textAlign="right" multiline />
+        {/*
+          Adaptive ARC architecture task, Phase 14B-2: standalone Presence
+          LIVE runs an existing PresenceArc completely unchanged regardless
+          of this field -- this note is purely informational, never
+          blocking, and never fabricates a value from anything else (see
+          arc/presenceArcs.ts's own isPresenceArcReadyForCombinedRoute).
+        */}
+        {draft.beneficialAction.trim().length === 0 && (
+          <Text style={styles.readinessNote}>ללא פעולה מיטיבה מול הגורם המפריע, פרוטוקול זה לא ייחשב מוכן לשילוב במסלול תרגול משולב חדש (התרגול העצמאי הרגיל ימשיך לפעול כרגיל).</Text>
+        )}
         <Text style={styles.question}>שאלת תודה מותאמת (רשות)</Text>
         <TextInput style={styles.textInput} value={draft.gratitudePrompt} onChangeText={(value) => setDraft({ ...draft, gratitudePrompt: value })} textAlign="right" placeholder="על מה אתה מודה לעצמך בעקבות הפעולה?" multiline />
         <Text style={styles.question}>משך דמיון הפעולה בשניות (רשות)</Text>
@@ -267,6 +277,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 16 },
   question: { fontSize: 16, fontWeight: "600", textAlign: "right", marginTop: 20, marginBottom: 8 },
   helperText: { fontSize: 13, textAlign: "right", color: "#666", marginTop: -4, marginBottom: 8 },
+  readinessNote: { fontSize: 13, textAlign: "right", color: "#8a6d1a", marginTop: -4, marginBottom: 8, lineHeight: 19 },
   sectionHeader: { fontSize: 15, fontWeight: "700", textAlign: "right", marginTop: 24, color: "#0a7ea4" },
   textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16 },
   errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 16 },

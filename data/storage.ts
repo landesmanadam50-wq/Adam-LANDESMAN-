@@ -66,6 +66,8 @@ import { normalizeInterferenceItem, upsertInterferenceItemInList } from "../arc/
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import { normalizeCombinedInterferenceSelection, upsertCombinedInterferenceSelectionInList } from "../arc/combinedInterferenceSelection.ts";
 import type { CombinedInterferenceSelection } from "../arc/combinedInterferenceSelection.ts";
+import { normalizePersonalDevelopmentRouteConfig, upsertPersonalDevelopmentRouteConfigInList } from "../arc/personalDevelopmentRouteConfig.ts";
+import type { PersonalDevelopmentRouteConfig } from "../arc/personalDevelopmentRouteConfig.ts";
 import {
   archiveLibraryItem,
   disableLibraryItem,
@@ -100,6 +102,8 @@ const IDENTITY_PROFILES_KEY = "archi.identityProfiles.v1";
 const INTERFERENCE_ITEMS_KEY = "archi.interferenceItems.v1";
 /** Adaptive ARC architecture task, Phase 12: a brand-new, independent collection of CombinedInterferenceSelection records (arc/combinedInterferenceSelection.ts) -- storing only a REFERENCE to one StateProfile plus REFERENCES to InterferenceItem ids (never their content), same "reference, never duplicate" convention as INTERFERENCE_ITEMS_KEY. No legacy migration: there is no prior data format for this, so an absent key simply means "no combined selections configured yet". Never read/written by any other key above, including STATE_PROFILES_KEY/INTERFERENCE_ITEMS_KEY themselves (both stay completely untouched by this phase). */
 const COMBINED_INTERFERENCE_SELECTIONS_KEY = "archi.combinedInterferenceSelections.v1";
+/** Adaptive ARC architecture task, Phase 14B-2: a brand-new, independent collection of PersonalDevelopmentRouteConfig records (arc/personalDevelopmentRouteConfig.ts) -- never restructures or migrates COMBINED_INTERFERENCE_SELECTIONS_KEY, which stays completely untouched and remains valid, State-scoped BUILD-authoring data in its own right. No legacy migration: there is no prior data format for this record, so an absent key simply means "no Personal Development route configurations yet". */
+const PERSONAL_DEVELOPMENT_ROUTE_CONFIGS_KEY = "archi.personalDevelopmentRouteConfigs.v1";
 /** Adaptive ARC architecture task, Phase 8 (progression persistence): a brand-new key storing the whole MappingProgressionStore (arc/reactiveProactiveProgression.ts) as one plain JSON object map, keyed by the mapping-key strings arc/progressionSessionBridge.ts's own resolveProgressionMappingKey produces -- never a flat array like every other key above. No legacy migration: there is no prior data format for per-mapping progression, so an absent key simply means "no progression recorded yet". Never read/written by any other key above. */
 const PROGRESSION_MAPPING_STORE_KEY = "archi.progressionMappingStore.v1";
 
@@ -822,6 +826,63 @@ export async function restoreCombinedInterferenceSelection(id: string, now: stri
   const target = selections.find((selection) => selection.id === id);
   if (!target) return;
   await saveCombinedInterferenceSelections(upsertCombinedInterferenceSelectionInList(selections, restoreLibraryItem(target, now)));
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task, Phase 14B-2: CRUD for PersonalDevelopmentRouteConfig
+// (arc/personalDevelopmentRouteConfig.ts) -- mirrors loadCombinedInterferenceSelections'
+// own defensive-parse + normalize pattern exactly. Same "avoid destructive
+// deletion APIs" rule as every other library key: only disable/archive
+// (non-destructive) and restore, never a delete* function.
+// ---------------------------------------------------------------------------
+
+export async function loadPersonalDevelopmentRouteConfigs(): Promise<PersonalDevelopmentRouteConfig[]> {
+  const raw = await AsyncStorage.getItem(PERSONAL_DEVELOPMENT_ROUTE_CONFIGS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PersonalDevelopmentRouteConfig[];
+    return Array.isArray(parsed) ? parsed.map(normalizePersonalDevelopmentRouteConfig) : [];
+  } catch (error) {
+    console.warn("[storage] Stored Personal Development Route Configs are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching saveCombinedInterferenceSelections' own style. */
+export async function savePersonalDevelopmentRouteConfigs(configs: PersonalDevelopmentRouteConfig[]): Promise<void> {
+  await AsyncStorage.setItem(PERSONAL_DEVELOPMENT_ROUTE_CONFIGS_KEY, JSON.stringify(configs));
+}
+
+export async function getPersonalDevelopmentRouteConfig(id: string): Promise<PersonalDevelopmentRouteConfig | null> {
+  const configs = await loadPersonalDevelopmentRouteConfigs();
+  return configs.find((config) => config.id === id) ?? null;
+}
+
+/** Create or update -- upserts by id, see arc/personalDevelopmentRouteConfig.ts's upsertPersonalDevelopmentRouteConfigInList. For the idempotent "convert this legacy CombinedInterferenceSelection" write path, see that module's own resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection instead -- this function alone does not enforce that invariant. */
+export async function upsertPersonalDevelopmentRouteConfig(config: PersonalDevelopmentRouteConfig): Promise<void> {
+  const configs = await loadPersonalDevelopmentRouteConfigs();
+  await savePersonalDevelopmentRouteConfigs(upsertPersonalDevelopmentRouteConfigInList(configs, config));
+}
+
+export async function disablePersonalDevelopmentRouteConfig(id: string, now: string): Promise<void> {
+  const configs = await loadPersonalDevelopmentRouteConfigs();
+  const target = configs.find((config) => config.id === id);
+  if (!target) return;
+  await savePersonalDevelopmentRouteConfigs(upsertPersonalDevelopmentRouteConfigInList(configs, disableLibraryItem(target, now)));
+}
+
+export async function archivePersonalDevelopmentRouteConfig(id: string, now: string): Promise<void> {
+  const configs = await loadPersonalDevelopmentRouteConfigs();
+  const target = configs.find((config) => config.id === id);
+  if (!target) return;
+  await savePersonalDevelopmentRouteConfigs(upsertPersonalDevelopmentRouteConfigInList(configs, archiveLibraryItem(target, now)));
+}
+
+export async function restorePersonalDevelopmentRouteConfig(id: string, now: string): Promise<void> {
+  const configs = await loadPersonalDevelopmentRouteConfigs();
+  const target = configs.find((config) => config.id === id);
+  if (!target) return;
+  await savePersonalDevelopmentRouteConfigs(upsertPersonalDevelopmentRouteConfigInList(configs, restoreLibraryItem(target, now)));
 }
 
 /**

@@ -234,6 +234,15 @@ test("upgradeInterferenceItemToActionModelV2 is a no-op on version (already refr
   assert.equal(result.updatedAt, LATER);
 });
 
+// --- Phase 14B-2: legacy primaryStateProfileId/alternativeStateProfileIds survive unrelated v2 edits ---
+
+test("patching only beneficialActionAgainstFactor (the BUILD screen's own updateField pattern) leaves primaryStateProfileId/alternativeStateProfileIds completely untouched", () => {
+  const item = { ...createEmptyThoughtInterferenceItem("i1", "x", null, NOW), primaryStateProfileId: "legacy-state-1", alternativeStateProfileIds: ["legacy-state-2"] };
+  const patched = { ...item, beneficialActionAgainstFactor: "לנשום עמוק" };
+  assert.equal(patched.primaryStateProfileId, "legacy-state-1");
+  assert.deepEqual(patched.alternativeStateProfileIds, ["legacy-state-2"]);
+});
+
 // --- Mini override placeholder ---
 
 test("miniOverride is null by default and accepts a partial override configuration", () => {

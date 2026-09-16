@@ -7,8 +7,10 @@ import {
   getStateProfile,
   loadCombinedInterferenceSelections,
   loadInterferenceItems,
+  loadPersonalDevelopmentRouteConfigs,
   loadPresenceArcs,
   restoreCombinedInterferenceSelection,
+  savePersonalDevelopmentRouteConfigs,
   upsertCombinedInterferenceSelection,
 } from "../data/storage.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
@@ -16,6 +18,7 @@ import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import type { CombinedInterferenceSelection } from "../arc/combinedInterferenceSelection.ts";
 import type { PresenceArc } from "../arc/types.ts";
 import { resolveFullPresenceAvailability } from "../arc/combinedPresenceLink.ts";
+import { resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection } from "../arc/personalDevelopmentRouteConfig.ts";
 import {
   SAVE_BLOCKED_REASON_LABELS,
   UNAVAILABLE_REASON_LABELS,
@@ -76,6 +79,8 @@ export default function CombinedInterferenceSelectionScreen() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [converting, setConverting] = useState(false);
+  const [convertError, setConvertError] = useState<string | null>(null);
 
   function load() {
     if (!stateProfileId) return;
@@ -163,6 +168,31 @@ export default function CombinedInterferenceSelectionScreen() {
     }
   }
 
+  /**
+   * Adaptive ARC architecture task, Phase 14B-2: creates (or, on a
+   * repeat tap, simply reopens) the PersonalDevelopmentRouteConfig
+   * converted from this legacy selection -- resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection
+   * is permanently idempotent by sourceLegacyCombinedSelectionId, so a
+   * second/third tap (or returning to this screen later and tapping
+   * again) never creates a duplicate route. This selection itself is
+   * never archived, renamed, or mutated by this action.
+   */
+  async function handleConvertToRouteConfig() {
+    if (!existingSelection || converting) return;
+    setConvertError(null);
+    setConverting(true);
+    try {
+      const existingRouteConfigs = await loadPersonalDevelopmentRouteConfigs();
+      const { configs, result } = resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection(existingRouteConfigs, existingSelection, new Date().toISOString());
+      await savePersonalDevelopmentRouteConfigs(configs);
+      router.push({ pathname: "/personal-development-routes/[id]", params: { id: result.id } });
+    } catch {
+      setConvertError("אירעה שגיאה ביצירת תצורת המסלול. נסה שוב.");
+    } finally {
+      setConverting(false);
+    }
+  }
+
   async function handleSave() {
     if (saving || !eligibility.allowed || !stateProfileId) return;
     setSaveError(null);
@@ -236,6 +266,16 @@ export default function CombinedInterferenceSelectionScreen() {
         <Text style={styles.eyebrow}>{stateProfile?.name}</Text>
         <Text style={styles.title}>הגדרת גורמים מפריעים</Text>
         <Text style={styles.helperText}>כאן מגדירים אילו גורמים עשויים להפריע למצב הזה. בזמן התרגול תוכל לבחור רק את מה שמפריע לך באותו רגע.</Text>
+
+        {existingSelection && (
+          <View style={styles.convertBlock}>
+            <Text style={styles.helperText}>אפשר ליצור מסלול תרגול משולב חדש מתוך הגדרה זו -- ההגדרה הישנה תישאר כפי שהיא.</Text>
+            <Pressable style={styles.actionButton} disabled={converting} onPress={handleConvertToRouteConfig}>
+              <Text style={styles.actionButtonText}>צור תצורת מסלול חדשה מהגדרה זו</Text>
+            </Pressable>
+            {convertError && <Text style={styles.errorText}>{convertError}</Text>}
+          </View>
+        )}
 
         {existingSelection && existingSelection.status !== "enabled" && (
           <View style={styles.statusBanner}>
@@ -352,6 +392,7 @@ const styles = StyleSheet.create({
   helperText: { fontSize: 13, textAlign: "right", color: "#666", marginBottom: 16, lineHeight: 19 },
   body: { fontSize: 15, textAlign: "right", color: "#333", marginBottom: 16, lineHeight: 21 },
   emptyText: { fontSize: 14, textAlign: "right", color: "#666", marginBottom: 16 },
+  convertBlock: { backgroundColor: "#F5F9FC", borderRadius: 10, padding: 14, marginBottom: 16 },
   statusBanner: { backgroundColor: "#FDF3D9", borderRadius: 10, padding: 14, marginBottom: 16 },
   statusBannerText: { fontSize: 14, textAlign: "right", color: "#8a6d1a", marginBottom: 8 },
   section: { marginTop: 20, borderTopWidth: 1, borderTopColor: "#E6F4FE", paddingTop: 16 },
