@@ -1,0 +1,203 @@
+/**
+ * arc/combinedFactorPlanCopy.ts
+ *
+ * Adaptive ARC architecture task, Phase 14B-3: the pure Hebrew content
+ * resolver for the per-factor/shared steps arc/combinedFullPlan.ts and
+ * arc/combinedMiniPlan.ts produce. Nothing here decides ORDER -- that is
+ * each deriver's own job; this module only ever answers "what does step
+ * X say," given the already-resolved item(s)/StateProfile.
+ *
+ * Recovered from WIP commit 60d70d7's own arc/combinedRouteStepCopy.ts,
+ * with two corrections for the merged architecture:
+ *   - shared_regulation/getBeneficialActionCopy are RETIRED entirely --
+ *     the WIP hardcoded unconditional State regulation and a single
+ *     StateProfile.action as the only possible final action, both now
+ *     wrong (State participation is optional; the final action is the
+ *     merged ActionResolutionOutcome, arc/factorAction.ts). Replaced by
+ *     getStateRegulationAnchorCopy/getStateDesiredStateEncodingCopy
+ *     below, called ONLY when arc/combinedFullPlan.ts/arc/combinedMiniPlan.ts
+ *     actually emit a "state_regulation_anchor"/"state_desired_state_encoding"
+ *     step (i.e. only when State participates) -- never unconditionally.
+ *   - Category-specific processing content no longer reads
+ *     item.regulationCue/item.regulationAnchor at all -- Phase 14B-1/14B-2
+ *     already established these as legacy, no-longer-BUILD-editable
+ *     State-level regulation duplicates, never a factor's own content
+ *     (see build/InterferenceItemEditorScreen.tsx's own read-only legacy
+ *     section). Urge's own processing content is now its visual/sensory
+ *     transformation ALONE. Emotion's own processing content is always
+ *     neutral -- its true content lives entirely in the State block
+ *     (Emotion's whole purpose is pointing at its supportive State, see
+ *     arc/interferenceItem.ts's own EmotionInterferenceItem doc); "support
+ *     only where semantically applicable" never means reusing a legacy
+ *     field the item no longer owns.
+ *
+ * Recognition content is deliberately "notice what is already present"
+ * framing for every one of the four categories, never an invitation to
+ * evoke/intensify/imagine anything not already there -- verified by this
+ * module's own tests against arc/instructions.ts's containsInductionPattern
+ * (unmodified). Recognition/processing content reads ONLY the item's own
+ * fields -- no StateProfile dependency at all, so a no-State route's
+ * copy resolves identically to a with-State route's (the two never
+ * differ in factor-specific wording).
+ */
+
+import type { InterferenceCategory, InterferenceItem } from "./interferenceItem.ts";
+import type { StateProfile } from "./stateProfile.ts";
+
+function safeText(value: string | null | undefined): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+// ---------------------------------------------------------------------------
+// Recognition -- one per selected factor (Full) or folded into one combined
+// line by the caller (Mini, using each factor's own context as source material).
+// ---------------------------------------------------------------------------
+
+export interface RecognitionStepCopy {
+  framing: string;
+  context: string | null;
+}
+
+const RECOGNITION_FRAMING: Record<InterferenceCategory, string> = {
+  thought: "שים לב למחשבה שעולה עכשיו.",
+  belief: "שים לב לאמונה המפריעה שמתעוררת עכשיו.",
+  emotion: "שים לב לרגש או לתחושה שנוכחים כרגע.",
+  urge: "שים לב לדחף שמופיע כרגע.",
+};
+
+function resolveCategoryHeadline(item: InterferenceItem): string | null {
+  switch (item.category) {
+    case "thought":
+      return item.thoughtText;
+    case "belief":
+      return item.beliefText;
+    case "urge":
+      return item.urgeName;
+    case "emotion":
+      return item.emotionName;
+  }
+}
+
+/** The item's own recognition/context text -- its category headline plus situationContext/triggerInfo/description (common to every category, InterferenceItemBase). Never invents content: a field left unset contributes nothing. null when the item has none of these set at all. Deliberately item-only -- no StateProfile involved (unlike the legacy arc/arcStateComposer.ts's own resolveArcStateEncodingContentFromLibrary, which requires one). */
+export function resolveFactorRecognitionContext(item: InterferenceItem): string | null {
+  const parts = [resolveCategoryHeadline(item), item.situationContext, item.triggerInfo, item.description].map(safeText).filter((part) => part.length > 0);
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+export function getRecognitionStepCopy(item: InterferenceItem): RecognitionStepCopy {
+  return { framing: RECOGNITION_FRAMING[item.category], context: resolveFactorRecognitionContext(item) };
+}
+
+// ---------------------------------------------------------------------------
+// Category-specific processing (Full) / factor_intervention (Mini) --
+// item-only, category-specific field ONLY, never StateProfile.regulationAnchor.
+// ---------------------------------------------------------------------------
+
+export interface ProcessingStepCopy {
+  /** null when the item has no content of its own for this step -- the caller shows a short neutral continuation, never a repeat of the State block's own line. */
+  text: string | null;
+}
+
+export const NEUTRAL_PROCESSING_CONTINUATION_LINE = "אפשר להמשיך הלאה.";
+
+/** Emotion never has its own processing content -- its true content lives entirely in the State block (see this module's own header doc). Always returns null; the caller shows NEUTRAL_PROCESSING_CONTINUATION_LINE. */
+export function getEmotionProcessingStepCopy(item: InterferenceItem): ProcessingStepCopy {
+  if (item.category !== "emotion") return { text: null };
+  return { text: null };
+}
+
+/** Urge's own visual/sensory transformation ALONE -- never item.regulationAnchor (legacy, see this module's own header doc). */
+export function getUrgeProcessingStepCopy(item: InterferenceItem): ProcessingStepCopy {
+  if (item.category !== "urge") return { text: null };
+  const encoding = item.representationPreference === "sensory" ? safeText(item.sensoryEncodingConfig) || safeText(item.visualEncodingConfig) : safeText(item.visualEncodingConfig) || safeText(item.sensoryEncodingConfig);
+  return { text: encoding.length > 0 ? encoding : null };
+}
+
+export function getBeliefProcessingStepCopy(item: InterferenceItem): ProcessingStepCopy {
+  if (item.category !== "belief") return { text: null };
+  const text = safeText(item.supportiveBelief);
+  return { text: text.length > 0 ? text : null };
+}
+
+export function getThoughtProcessingStepCopy(item: InterferenceItem): ProcessingStepCopy {
+  if (item.category !== "thought") return { text: null };
+  const text = safeText(item.alternativeInterpretation);
+  return { text: text.length > 0 ? text : null };
+}
+
+/**
+ * Adaptive ARC architecture task, Phase 14B-3: reworded from the WIP's
+ * own fixed line -- "דמיין את עצמך ממשיך הלאה..." trips
+ * arc/instructions.ts's containsInductionPattern (its own "imagine"
+ * guard only sanctions nine specific continuations, none of which is
+ * "ממשיך"/continuing). Rewritten to the same future-insight/continuation
+ * meaning without the word "דמיין" at all -- confirmed safe by this
+ * module's own tests.
+ */
+export const THOUGHT_FUTURE_INSIGHT_FIXED_LINE = "אפשר להמשיך הלאה, כשהמחשבה הזו כבר אינה תופסת מקום מרכזי.";
+
+/** The item's own processing content, dispatched by category -- the one entry point arc/combinedFullPlan.ts's/arc/combinedMiniPlan.ts's own "processing"/"factor_intervention" steps use. */
+export function getFactorProcessingStepCopy(item: InterferenceItem): ProcessingStepCopy {
+  switch (item.category) {
+    case "emotion":
+      return getEmotionProcessingStepCopy(item);
+    case "urge":
+      return getUrgeProcessingStepCopy(item);
+    case "belief":
+      return getBeliefProcessingStepCopy(item);
+    case "thought":
+      return getThoughtProcessingStepCopy(item);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared Stay / Acceptance -- fixed, generic, never per-item, never State-dependent.
+// ---------------------------------------------------------------------------
+
+export type SharedStageKind = "shared_stay" | "shared_acceptance";
+
+export function getSharedStageCopy(kind: SharedStageKind): { title: string; body: string } {
+  return kind === "shared_stay"
+    ? { title: "שהייה", body: "אפשר להישאר לרגע עם מה שנוכח, בלי למהר להיפטר ממנו." }
+    : { title: "קבלה", body: "מותר למה שנוכח כרגע להיות כאן, בלי התנגדות מיידית." };
+}
+
+// ---------------------------------------------------------------------------
+// ARC State block -- ONLY ever called when State genuinely participates
+// (arc/combinedFullPlan.ts/arc/combinedMiniPlan.ts only emit these steps
+// in that case) -- never a repeat of any factor's own processing content.
+// ---------------------------------------------------------------------------
+
+export function getStateRegulationAnchorCopy(state: StateProfile): { title: string; anchor: string | null } {
+  const anchor = safeText(state.regulationAnchor);
+  return { title: "ויסות מהמצב הרצוי", anchor: anchor.length > 0 ? anchor : null };
+}
+
+export function getStateDesiredStateEncodingCopy(state: StateProfile): { title: string; cue: string | null } {
+  const cue = safeText(state.encodingCue);
+  return { title: "קידוד המצב הרצוי", cue: cue.length > 0 ? cue : null };
+}
+
+// ---------------------------------------------------------------------------
+// Cognitive reassessment -- exact required Hebrew wording, chosen by
+// whether Thought and/or Belief was actually practiced this session.
+// ---------------------------------------------------------------------------
+
+export type CognitiveReassessmentVariant = "thought_only" | "belief_present";
+
+export interface CognitiveReassessmentCopy {
+  question: string;
+  notStuckLabel: string;
+  stillStuckLabel: string;
+}
+
+export function resolveCognitiveReassessmentVariant(hasThought: boolean, hasBelief: boolean): CognitiveReassessmentVariant {
+  return hasBelief ? "belief_present" : "thought_only";
+}
+
+export function getCognitiveReassessmentCopy(variant: CognitiveReassessmentVariant): CognitiveReassessmentCopy {
+  if (variant === "thought_only") {
+    return { question: "האם המחשבה עדיין מושכת את תשומת הלב שלך?", notStuckLabel: "לא, אפשר להמשיך", stillStuckLabel: "כן, אני עדיין תקוע במחשבה" };
+  }
+  return { question: "האם המחשבה או האמונה עדיין מושכות את תשומת הלב שלך?", notStuckLabel: "לא, אפשר להמשיך", stillStuckLabel: "כן, אני עדיין תקוע בזה" };
+}
