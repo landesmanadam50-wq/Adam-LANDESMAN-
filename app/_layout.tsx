@@ -136,6 +136,7 @@ export default function RootLayout() {
         <Stack.Screen name="combined-selection/[stateProfileId]" options={{ title: "הגדרת גורמים מפריעים" }} />
         <Stack.Screen name="personal-development-routes/index" options={{ title: "מסלולי תרגול משולבים" }} />
         <Stack.Screen name="personal-development-routes/[id]" options={{ title: "עריכת מסלול תרגול משולב" }} />
+        <Stack.Screen name="personal-development-routes/[id]/live" options={{ title: "תרגול משולב LIVE" }} />
         <Stack.Screen name="identity-extension/offer" options={{ title: "המשך לבניית הזהות" }} />
         <Stack.Screen name="identity-extension/live" options={{ title: "בניית הזהות והפעולה" }} />
         <Stack.Screen name="personal-development-program/index" options={{ title: "תוכניות התפתחות אישית" }} />

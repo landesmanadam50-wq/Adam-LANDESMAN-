@@ -73,11 +73,12 @@
  * would occupy) -- never a hardcoded/guessed count, so it self-corrects
  * against any future reordering of the steps before it. When the
  * controller's step cursor is about to cross that index and presenceMode
- * has not yet been resolved, it surfaces phase "presence_decision"
- * (Emotion/Urge-only or "full_required"/"full_optional" routes resolve
- * this immediately from cognitiveWorkSelected/reassessmentAnswer, per
- * arc/combinedRoute.ts's own resolvePresenceRoute) instead of advancing;
- * once resolved, either zero or one extra Presence stage renders (phase
+ * has not yet been resolved, arc/combinedRoute.ts's own resolvePresenceRoute
+ * decides: "skip"/"embedded"/"full_required" resolve immediately with no
+ * question at all (from cognitiveWorkSelected/emotionOrUrgeOnlySelected/
+ * reassessmentAnswer alone); only "full_optional" surfaces phase
+ * "presence_optional_offer" and waits for an explicit accept/decline. Once
+ * resolved, either zero or one extra Presence stage renders (phase
  * "presence_embedded" or "presence_full_active"), and the cursor then
  * continues through the SAME unmodified spine -- the spine array itself
  * is never rebuilt or mutated.
@@ -170,7 +171,6 @@ export type CombinedLiveSessionPhase =
   | "primary_choice"
   | "state_decision"
   | "steps"
-  | "presence_decision"
   | "presence_optional_offer"
   | "presence_embedded"
   | "presence_full_active"
