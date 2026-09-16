@@ -1169,7 +1169,18 @@ export async function getOrCreatePilotStartedAt(): Promise<string> {
  * actually been processed (sound played, notification cancelled) --
  * once set, it is never processed a second time for this run.
  */
-export type TimerType = "beneficialAction" | "successCoding" | "negativeAction" | "routineSuccessFocus";
+/**
+ * Adaptive ARC architecture task, Phase 14B-4: three new timer types for
+ * the combined Personal Development LIVE route's own action(s) --
+ * "combinedStateAction" and "combinedFactorAction" are DISTINCT stable
+ * identities so a state_then_factor outcome's two sequential actions
+ * never collide in this singleton-per-type storage slot; a
+ * shared_explicit/legacy_shared_state_fallback outcome uses its own
+ * third, unambiguous "combinedSharedAction" slot rather than overloading
+ * either of the other two with a second meaning. Every existing timer
+ * type/call site is completely unaffected -- this is a pure addition.
+ */
+export type TimerType = "beneficialAction" | "successCoding" | "negativeAction" | "routineSuccessFocus" | "combinedStateAction" | "combinedFactorAction" | "combinedSharedAction";
 
 export interface TimerRun {
   timerType: TimerType;
@@ -1192,6 +1203,18 @@ export interface TimerRun {
    * literal "undefined" read as a real id.
    */
   relatedRoutineId?: string | null;
+  /**
+   * Adaptive ARC architecture task, Phase 14B-4: only ever set for the
+   * three "combined*Action" timer types above -- the owning combined LIVE
+   * session's own sessionId (minted once by arc/combinedLiveSession.ts).
+   * Mirrors relatedRoutineId's exact shape/purpose for a different owner:
+   * lets a resumed run be validated against the CURRENT in-memory
+   * session before being trusted (a mismatch means the run belongs to an
+   * earlier, abandoned session -- treated as stale, never silently
+   * resumed into unrelated session state). Optional for the same legacy-
+   * record-safety reason as relatedRoutineId.
+   */
+  relatedCombinedSessionId?: string | null;
 }
 
 function timerRunKey(timerType: TimerType): string {

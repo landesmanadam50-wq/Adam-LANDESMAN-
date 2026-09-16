@@ -123,7 +123,9 @@ function useTimerRun(
   copy: ArcStageCopy,
   durationMinutes: number | null,
   resumedRun?: TimerRun | null,
-  relatedRoutineId?: string | null
+  relatedRoutineId?: string | null,
+  /** Adaptive ARC architecture task, Phase 14B-4: only meaningful alongside a "combined*Action" timerType -- see data/storage.ts's TimerRun.relatedCombinedSessionId. */
+  relatedCombinedSessionId?: string | null
 ): { status: ActionTimerStatus; actionStartedAt: string } {
   const [runId] = useState(() => resumedRun?.runId ?? generateTimerRunId());
   const [actionStartedAt] = useState(() => resumedRun?.actionStartedAt ?? new Date().toISOString());
@@ -142,6 +144,7 @@ function useTimerRun(
       notificationId: null,
       completedAt: null,
       relatedRoutineId: relatedRoutineId ?? null,
+      relatedCombinedSessionId: relatedCombinedSessionId ?? null,
     };
     saveTimerRun(baseRun); // Persisted immediately, before the notification round-trip below resolves.
     if (durationMinutes !== null) {
@@ -172,6 +175,7 @@ function useTimerRun(
       notificationId: notificationIdRef.current,
       completedAt: new Date().toISOString(),
       relatedRoutineId: resumedRun?.relatedRoutineId ?? relatedRoutineId ?? null,
+      relatedCombinedSessionId: resumedRun?.relatedCombinedSessionId ?? relatedCombinedSessionId ?? null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.complete]);
@@ -275,7 +279,8 @@ function RevealedRatingPrompt({ question, children }: { question: string; childr
   );
 }
 
-function ScaleButtons({ onSelect }: { onSelect: (value: number) => void }) {
+/** Adaptive ARC architecture task, Phase 14B-4: exported (was module-private) so live/CombinedInterferenceLiveScreen.tsx's own factor/desired-state rating steps can reuse the exact same 1-10 button row every other rating screen in this file already renders internally -- no behavior change for any existing caller. */
+export function ScaleButtons({ onSelect }: { onSelect: (value: number) => void }) {
   return (
     <View style={styles.scaleRow}>
       {SCALE_VALUES.map((value) => (
@@ -1691,13 +1696,18 @@ export function ActionScreen({
   durationMinutes,
   resumedRun,
   onCompleted,
+  timerType = "beneficialAction",
+  relatedCombinedSessionId,
 }: {
   copy: ArcStageCopy;
   durationMinutes: number | null;
   resumedRun?: TimerRun | null;
   onCompleted: () => void;
+  /** Adaptive ARC architecture task, Phase 14B-4: defaults to "beneficialAction" so every existing call site (the regular ARC/ARC Goal action stage) is completely unaffected. The combined Personal Development LIVE screen passes one of the three "combined*Action" types instead, giving its State/factor/shared actions distinct stable timer identities within the same session (see data/storage.ts's TimerRun doc) while reusing this exact same component/behavior. */
+  timerType?: TimerType;
+  relatedCombinedSessionId?: string | null;
 }) {
-  const { status } = useTimerRun("beneficialAction", copy, durationMinutes, resumedRun);
+  const { status } = useTimerRun(timerType, copy, durationMinutes, resumedRun, undefined, relatedCombinedSessionId);
   return (
     <View>
       <Title copy={copy} />
