@@ -54,6 +54,9 @@ import { getMiniPostActionCompletionCopy, getPostActionCompletionCopy } from "..
 import { presenceArcToProfile, isPresenceComplete } from "../arc/presenceLive.ts";
 import { advanceLiveSession } from "./liveEventAdapter.ts";
 import { ActionScreen, ScaleButtons } from "./screens.tsx";
+import { toCombinedLiveSessionFacts } from "../arc/combinedLiveSessionFacts.ts";
+import { recordCombinedSessionCompletion } from "../data/personalDevelopmentRouteProgressPersistence.ts";
+import type { RecordCombinedSessionOutcome } from "../arc/personalDevelopmentRouteProgress.ts";
 
 /**
  * live/CombinedInterferenceLiveScreen.tsx (route:
@@ -243,14 +246,89 @@ function renderBody(state: CombinedLiveSessionState, update: (next: CombinedLive
       return renderTail(state, update);
 
     case "complete":
-      return (
-        <View>
-          <Text style={styles.title}>סיום</Text>
-          <Text style={styles.body}>התרגול הושלם.</Text>
-          <PrimaryButton label="סיום" onPress={() => router.replace("/personal-development-routes")} />
-        </View>
-      );
+      return <CombinedSessionCompletionScreen state={state} />;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Terminal completion -- Phase 15: records the terminal facts against the
+// combined route's own durable progress record exactly once per genuine
+// save attempt. The component-local "saving" guard prevents a noisy
+// repeated call while one is already in flight; data/personalDevelopmentRouteProgressPersistence.ts's
+// own persisted countedSessionIds ledger (checked via a fresh load on
+// every call) is the AUTHORITATIVE idempotency guarantee -- it, not this
+// ref, is what makes a re-render, a repeated terminal event, back/forward
+// navigation, or an app restart all safe to retry against.
+// ---------------------------------------------------------------------------
+
+type CombinedSessionSaveStatus = "saving" | "done" | "error";
+
+function CombinedSessionCompletionScreen({ state }: { state: CombinedLiveSessionState }) {
+  const [status, setStatus] = useState<CombinedSessionSaveStatus>("saving");
+  const mountedRef = useRef(true);
+  const startedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  function attemptSave() {
+    setStatus("saving");
+    const facts = toCombinedLiveSessionFacts(state);
+    const now = new Date().toISOString();
+    recordCombinedSessionCompletion(facts, now)
+      .then((outcome: RecordCombinedSessionOutcome) => {
+        if (!mountedRef.current) return;
+        // "applied" and "duplicate_session" both mean the completion is
+        // safely recorded -- a duplicate is not a lesser success, it is
+        // confirmation the session was already counted (e.g. an earlier
+        // attempt succeeded before a retry was triggered).
+        setStatus(outcome.kind === "applied" || outcome.kind === "duplicate_session" ? "done" : "error");
+      })
+      .catch((error: unknown) => {
+        console.warn("[CombinedInterferenceLiveScreen] Failed to record session completion.", error);
+        if (mountedRef.current) setStatus("error");
+      });
+  }
+
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    attemptSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (status === "saving") {
+    return (
+      <View>
+        <Text style={styles.title}>סיום</Text>
+        <Text style={styles.body}>שומר את התרגול...</Text>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <View>
+        <Text style={styles.title}>סיום</Text>
+        <Text style={styles.body}>התרגול הושלם, אך שמירת ההתקדמות נכשלה. אפשר לנסות לשמור שוב, או לצאת בכל זאת.</Text>
+        <PrimaryButton label="נסה לשמור שוב" onPress={attemptSave} />
+        <PrimaryButton label="יציאה" onPress={() => router.replace("/personal-development-routes")} />
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <Text style={styles.title}>סיום</Text>
+      <Text style={styles.body}>התרגול הושלם.</Text>
+      <PrimaryButton label="סיום" onPress={() => router.replace("/personal-development-routes")} />
+    </View>
+  );
 }
 
 // ---------------------------------------------------------------------------

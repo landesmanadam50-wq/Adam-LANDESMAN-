@@ -8,16 +8,25 @@ import {
   disablePersonalDevelopmentRouteConfig,
   loadInterferenceItems,
   loadPersonalDevelopmentRouteConfigs,
+  loadPersonalDevelopmentRouteProgressStore,
   loadPresenceArcs,
   loadStateProfiles,
   restorePersonalDevelopmentRouteConfig,
 } from "../data/storage.ts";
+import type { PersonalDevelopmentRouteProgressStore } from "../data/storage.ts";
 import type { PersonalDevelopmentRouteConfig } from "../arc/personalDevelopmentRouteConfig.ts";
 import { isPersonalDevelopmentRouteConfigCompleteForPractice } from "../arc/personalDevelopmentRouteConfigReadiness.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
 import type { PresenceArc } from "../arc/types.ts";
 import type { LibraryItemStatus } from "../arc/libraryItemStatus.ts";
+
+const INTERFERENCE_TYPE_LABELS = {
+  thought: "מחשבה",
+  belief: "אמונה",
+  emotion: "רגש",
+  urge: "דחף",
+} as const;
 
 const STATUS_LABELS: Record<LibraryItemStatus, string> = {
   enabled: "פעיל",
@@ -52,15 +61,17 @@ export default function PersonalDevelopmentRouteListScreen() {
   const [items, setItems] = useState<InterferenceItem[]>([]);
   const [stateProfiles, setStateProfiles] = useState<StateProfile[]>([]);
   const [presenceArcs, setPresenceArcs] = useState<PresenceArc[]>([]);
+  const [progressStore, setProgressStore] = useState<PersonalDevelopmentRouteProgressStore>({});
   const [showArchived, setShowArchived] = useState(false);
 
   const reload = useCallback(() => {
-    Promise.all([loadPersonalDevelopmentRouteConfigs(), loadInterferenceItems(), loadStateProfiles(), loadPresenceArcs()])
-      .then(([loadedConfigs, loadedItems, loadedStates, loadedPresence]) => {
+    Promise.all([loadPersonalDevelopmentRouteConfigs(), loadInterferenceItems(), loadStateProfiles(), loadPresenceArcs(), loadPersonalDevelopmentRouteProgressStore()])
+      .then(([loadedConfigs, loadedItems, loadedStates, loadedPresence, loadedProgress]) => {
         setConfigs(loadedConfigs);
         setItems(loadedItems);
         setStateProfiles(loadedStates);
         setPresenceArcs(loadedPresence);
+        setProgressStore(loadedProgress);
       })
       .catch((error) => {
         console.warn("[PersonalDevelopmentRouteListScreen] Failed to load -- showing the empty state.", error);
@@ -114,6 +125,7 @@ export default function PersonalDevelopmentRouteListScreen() {
 
         {visibleConfigs.map((config) => {
           const ready = isPersonalDevelopmentRouteConfigCompleteForPractice(config, items, stateProfiles, presenceArcs);
+          const progress = progressStore[config.id] ?? null;
           return (
             <View key={config.id} style={styles.card}>
               <View style={styles.cardHeaderRow}>
@@ -122,6 +134,20 @@ export default function PersonalDevelopmentRouteListScreen() {
               </View>
               <Text style={styles.cardRow}>{STATE_INCLUSION_LABELS[config.stateInclusionPolicy]}</Text>
               <Text style={[styles.readinessBadge, ready ? styles.readinessBadge_ready : styles.readinessBadge_draft]}>{ready ? "מוכן לתרגול" : "טיוטה -- לא מוכן לתרגול"}</Text>
+
+              {progress && progress.completedSessions > 0 && (
+                <View style={styles.progressBlock}>
+                  <Text style={styles.progressLine}>{`סשנים שהושלמו: ${progress.completedSessions}`}</Text>
+                  {(Object.keys(INTERFERENCE_TYPE_LABELS) as (keyof typeof INTERFERENCE_TYPE_LABELS)[]).map(
+                    (type) =>
+                      progress.completedByInterferenceType[type] > 0 && (
+                        <Text key={type} style={styles.progressLine}>{`${INTERFERENCE_TYPE_LABELS[type]}: ${progress.completedByInterferenceType[type]}`}</Text>
+                      )
+                  )}
+                  {progress.embeddedPresenceUses > 0 && <Text style={styles.progressLine}>{`תרגולי נוכחות קצרים: ${progress.embeddedPresenceUses}`}</Text>}
+                  {progress.fullPresenceCompletions > 0 && <Text style={styles.progressLine}>{`נוכחות מלאה: ${progress.fullPresenceCompletions}`}</Text>}
+                </View>
+              )}
 
               {ready && config.status === "enabled" && (
                 <View style={styles.cardActions}>
@@ -205,6 +231,8 @@ const styles = StyleSheet.create({
   readinessBadge: { fontSize: 12, fontWeight: "600", textAlign: "right", marginTop: 6 },
   readinessBadge_ready: { color: "#1a6b4a" },
   readinessBadge_draft: { color: "#8a6d1a" },
+  progressBlock: { marginTop: 8 },
+  progressLine: { fontSize: 13, textAlign: "right", color: "#555" },
   cardActions: { flexDirection: "row-reverse", gap: 16, marginTop: 10, justifyContent: "flex-end" },
   startButton: { backgroundColor: "#0a7ea4", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
   startButtonText: { color: "#fff", fontWeight: "600", fontSize: 14 },
