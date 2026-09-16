@@ -248,6 +248,10 @@ export function adaptUrgeArcToInterferenceItem(urgeArc: UrgeArc): LegacyInterfer
     regulationAnchor: urgeArc.regulationAnchor || null,
     recheckEnabled: false,
     recheckPrompt: null,
+    // Adaptive ARC architecture task, Phase 14B-1: a legacy-adapted item is
+    // always schemaVersion 1 -- never fabricated, this stays null and
+    // relies on the legacy shared-State-action fallback (arc/factorAction.ts).
+    beneficialActionAgainstFactor: null,
   };
   return { item, legacyFallbackUsed: true, legacySourceKind: "UrgeArc", legacySourceId: urgeArc.id };
 }
@@ -278,6 +282,7 @@ export function adaptThoughtArcToInterferenceItem(thoughtArc: ThoughtArc): Legac
     alternativeInterpretation: thoughtArc.usefulInsight ?? thoughtArc.supportiveThought ?? null,
     regulationCue: thoughtArc.encodingAnchor,
     existingNodCue: thoughtArc.gentleNodCue,
+    beneficialActionAgainstFactor: null,
   };
   return { item, legacyFallbackUsed: true, legacySourceKind: "ThoughtArc", legacySourceId: thoughtArc.id };
 }
@@ -302,6 +307,7 @@ export function adaptBeliefArcToInterferenceItem(beliefArc: BeliefArc): LegacyIn
     beliefText: beliefArc.limitingBelief,
     supportiveBelief: beliefArc.replacementBelief,
     regulationCue: beliefArc.regulationAnchor,
+    beneficialActionAgainstFactor: null,
   };
   return { item, legacyFallbackUsed: true, legacySourceKind: "BeliefArc", legacySourceId: beliefArc.id };
 }
