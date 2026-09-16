@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildFullCombinedSteps } from "./combinedFullPlan.ts";
+import { buildFullAwarenessSteps, buildFullCombinedSteps, buildFullStepsAfterPrimaryResolution } from "./combinedFullPlan.ts";
 import type { FullCombinedStepKind } from "./combinedFullPlan.ts";
 import { resolveCombinedFactorPlan } from "./combinedFactorPlan.ts";
 import type { CombinedFactorPlanInput, ResolvedCombinedFactorPlan } from "./combinedFactorPlan.ts";
@@ -245,6 +245,82 @@ test("terminal_boundary is always the last step", () => {
 });
 
 // --- Cognitive reassessment ---
+
+// --- Phase 14B-4: staged Full-awareness API regression coverage ---
+
+test("buildFullCombinedSteps is exactly the concatenation of buildFullAwarenessSteps + buildFullStepsAfterPrimaryResolution -- for every plan shape, no drift possible", () => {
+  const cases: { plan: ResolvedCombinedFactorPlan; presence: Parameters<typeof buildFullCombinedSteps>[1] }[] = [
+    { plan: resolve({ config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" }), items: [thought()] }), presence: "skipped" },
+    {
+      plan: resolve({
+        config: config({
+          interferenceItemIds: ["t1", "b1", "u1"],
+          itemRelationships: { t1: { actionRelationship: "same_action" }, b1: { actionRelationship: "same_action" }, u1: { actionRelationship: "same_action" } },
+          stateInclusionPolicy: "linked",
+          stateProfileId: "s1",
+        }),
+        items: [thought(), belief(), urge()],
+        stateProfiles: [completeState()],
+        primaryFactorId: "t1",
+      }),
+      presence: "embedded",
+    },
+    {
+      plan: resolve({
+        config: config({ interferenceItemIds: ["e1"], itemRelationships: { e1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
+        items: [emotion()],
+        stateProfiles: [completeState()],
+      }),
+      presence: "full",
+    },
+  ];
+  for (const { plan, presence } of cases) {
+    const combined = buildFullCombinedSteps(plan, presence);
+    const split = [...buildFullAwarenessSteps({ factors: plan.factors, presence: plan.presence }), ...buildFullStepsAfterPrimaryResolution(plan, presence)];
+    assert.deepEqual(combined, split);
+  }
+});
+
+test("buildFullAwarenessSteps emits exactly one recognition step per factor followed by exactly one afterAwareness checkpoint -- never more, never fewer, regardless of factor count", () => {
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["t1", "b1", "u1"],
+      itemRelationships: { t1: { actionRelationship: "same_action" }, b1: { actionRelationship: "same_action" }, u1: { actionRelationship: "same_action" } },
+      stateInclusionPolicy: "none",
+    }),
+    items: [thought(), belief(), urge()],
+    primaryFactorId: "t1",
+  });
+  const awareness = buildFullAwarenessSteps({ factors: plan.factors, presence: plan.presence });
+  assert.equal(awareness.filter((s) => s.kind === "recognition").length, 3);
+  assert.equal(awareness.filter((s) => s.kind === "rating_checkpoint" && s.checkpoint === "afterAwareness").length, 1);
+  assert.equal(awareness.length, 4, "no other step kind belongs in the Awareness prefix");
+});
+
+test("buildFullAwarenessSteps returns an empty array for a Presence-only, zero-factor plan -- no fabricated recognition/checkpoint", () => {
+  const plan = resolve({
+    config: config({ interferenceItemIds: [], presenceEnabled: true, linkedPresenceArcId: "p1", presenceActionRelationship: "legacy_unspecified", stateInclusionPolicy: "none" }),
+    presenceArcs: [{ id: "p1", name: "נוכחות", createdAt: NOW, updatedAt: NOW, presenceColor: null, presenceDwellSeconds: null, beneficialAction: "פעולת נוכחות", postActionImageryDwellSeconds: null, gratitudePrompt: null }],
+  });
+  assert.deepEqual(buildFullAwarenessSteps({ factors: plan.factors, presence: plan.presence }), []);
+});
+
+test("buildFullStepsAfterPrimaryResolution never contains a recognition step or an afterAwareness checkpoint -- those belong exclusively to buildFullAwarenessSteps, proving a future Awareness-prefix change cannot silently duplicate into the remainder", () => {
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["t1", "u1"],
+      itemRelationships: { t1: { actionRelationship: "same_action" }, u1: { actionRelationship: "same_action" } },
+      stateInclusionPolicy: "linked",
+      stateProfileId: "s1",
+    }),
+    items: [thought(), urge()],
+    stateProfiles: [completeState()],
+    primaryFactorId: "t1",
+  });
+  const remainder = buildFullStepsAfterPrimaryResolution(plan, "full");
+  assert.equal(remainder.some((s) => s.kind === "recognition"), false);
+  assert.equal(remainder.some((s) => s.kind === "rating_checkpoint" && s.checkpoint === "afterAwareness"), false);
+});
 
 test("cognitive_reassessment appears once only when Thought and/or Belief selected", () => {
   const withThought = buildFullCombinedSteps(
