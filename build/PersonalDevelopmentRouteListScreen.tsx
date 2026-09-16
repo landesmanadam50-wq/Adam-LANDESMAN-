@@ -123,6 +123,23 @@ export default function PersonalDevelopmentRouteListScreen() {
               <Text style={styles.cardRow}>{STATE_INCLUSION_LABELS[config.stateInclusionPolicy]}</Text>
               <Text style={[styles.readinessBadge, ready ? styles.readinessBadge_ready : styles.readinessBadge_draft]}>{ready ? "מוכן לתרגול" : "טיוטה -- לא מוכן לתרגול"}</Text>
 
+              {ready && config.status === "enabled" && (
+                <View style={styles.cardActions}>
+                  <Pressable
+                    style={styles.startButton}
+                    onPress={() => router.push({ pathname: "/personal-development-routes/[id]/live", params: { id: config.id, mode: "full" } })}
+                  >
+                    <Text style={styles.startButtonText}>▶ ARC מלא</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.startButton}
+                    onPress={() => router.push({ pathname: "/personal-development-routes/[id]/live", params: { id: config.id, mode: "mini" } })}
+                  >
+                    <Text style={styles.startButtonText}>▶ Mini ARC</Text>
+                  </Pressable>
+                </View>
+              )}
+
               <View style={styles.cardActions}>
                 <Pressable style={styles.actionButton} onPress={() => router.push({ pathname: "/personal-development-routes/[id]", params: { id: config.id } })}>
                   <Text style={styles.actionButtonText}>ערוך</Text>
@@ -189,6 +206,8 @@ const styles = StyleSheet.create({
   readinessBadge_ready: { color: "#1a6b4a" },
   readinessBadge_draft: { color: "#8a6d1a" },
   cardActions: { flexDirection: "row-reverse", gap: 16, marginTop: 10, justifyContent: "flex-end" },
+  startButton: { backgroundColor: "#0a7ea4", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+  startButtonText: { color: "#fff", fontWeight: "600", fontSize: 14 },
   actionButton: { paddingVertical: 6, paddingHorizontal: 10 },
   actionButtonText: { color: "#0a7ea4", fontSize: 14 },
   button: { backgroundColor: "#0a7ea4", paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, alignItems: "center" },

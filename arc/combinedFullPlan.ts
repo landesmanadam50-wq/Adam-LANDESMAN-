@@ -7,6 +7,28 @@
  * reachable until that plan is fully resolved (the type system already
  * enforces this: there is no "in-progress" ResolvedCombinedFactorPlan).
  *
+ * Adaptive ARC architecture task, Phase 14B-4: split into two explicit,
+ * independently callable halves -- buildFullAwarenessSteps (recognition +
+ * the "afterAwareness" checkpoint, derivable from an UnresolvedCombinedFactorContext
+ * alone, i.e. BEFORE a primary factor is even known) and
+ * buildFullStepsAfterPrimaryResolution (everything from urge preventive
+ * stopping onward, requiring a genuinely resolved plan). This exists
+ * because a LIVE controller must render Awareness recognition/ratings to
+ * even RESOLVE the primary factor (arc/factorRating.ts's
+ * resolveBaselinePrimaryFactor needs real ratings) -- i.e. Awareness must
+ * render before a ResolvedCombinedFactorPlan can exist at all for a
+ * multi-factor route. The controller therefore renders
+ * buildFullAwarenessSteps's output FIRST (exactly once, from the
+ * UnresolvedCombinedFactorContext already returned by
+ * arc/combinedFactorPlan.ts's own "needs_primary_factor"/"needs_state_decision"
+ * results, or equivalently from a "resolved" plan's own factors/presence),
+ * then -- once the plan is resolved -- renders
+ * buildFullStepsAfterPrimaryResolution's output, with NO index arithmetic,
+ * no re-deriving/skipping an assumed prefix, and no risk of the two ever
+ * drifting apart, since buildFullCombinedSteps below is now defined as
+ * nothing more than their concatenation (see
+ * arc/combinedFullPlan.test.ts's own regression coverage).
+ *
  * Exact order (approved architecture, supersedes WIP commit 60d70d7's
  * own unconditional "shared_regulation" ordering):
  *   1. Recognition, every selected factor (RECOGNITION_CATEGORY_ORDER).
@@ -15,7 +37,8 @@
  *   -- but it is a planner-stage boundary (see arc/combinedFactorPlan.ts's
  *   own "needs_primary_factor"), never a rendered step in this sequence,
  *   since by construction a ResolvedCombinedFactorPlan already has
- *   primaryFactorId fixed before this function is ever called.]
+ *   primaryFactorId fixed before buildFullStepsAfterPrimaryResolution is
+ *   ever called.]
  *   3. Urge preventive stopping, when relevant.
  *   4. Shared Stay.
  *   5. Shared Acceptance.
@@ -46,7 +69,7 @@
  */
 
 import type { InterferenceCategory } from "./interferenceItem.ts";
-import type { ResolvedCombinedFactorPlan } from "./combinedFactorPlan.ts";
+import type { ResolvedCombinedFactorPlan, UnresolvedCombinedFactorContext } from "./combinedFactorPlan.ts";
 import { resolveCombinedActionKinds } from "./combinedFactorPlan.ts";
 import type { FinalPresenceMode } from "./combinedRoute.ts";
 
@@ -94,15 +117,48 @@ function checkpointStep(checkpoint: FullRatingCheckpoint): FullCombinedStep {
   return { kind: "rating_checkpoint", itemId: null, category: null, checkpoint };
 }
 
-export function buildFullCombinedSteps(plan: ResolvedCombinedFactorPlan, finalPresenceMode: FinalPresenceMode): FullCombinedStep[] {
+/**
+ * Adaptive ARC architecture task, Phase 14B-4: the Awareness prefix ALONE
+ * -- recognition (RECOGNITION_CATEGORY_ORDER) for every factor in
+ * `context.factors`, then exactly one "afterAwareness" checkpoint step
+ * when at least one factor is present. Derivable from an
+ * UnresolvedCombinedFactorContext (arc/combinedFactorPlan.ts's own
+ * "needs_primary_factor"/"needs_state_decision" results already carry
+ * one) -- i.e. callable BEFORE a primary factor or State decision is
+ * known, which is exactly why a LIVE controller can render this once,
+ * collect real ratings against it, resolve the primary factor from
+ * those ratings, and only then obtain a genuinely resolved plan. A
+ * "resolved" ResolvedCombinedFactorPlan's own {factors, presence} is
+ * structurally the same shape, so this same function also serves the
+ * single-factor auto-resolved case (called with `{factors: plan.factors,
+ * presence: plan.presence}`) -- there is exactly one Awareness-building
+ * code path, never two.
+ */
+export function buildFullAwarenessSteps(context: UnresolvedCombinedFactorContext): FullCombinedStep[] {
   const steps: FullCombinedStep[] = [];
-  const byCategory = (category: InterferenceCategory) => plan.factors.filter((factor) => factor.category === category);
-  const hasFactors = plan.factors.length > 0;
+  const byCategory = (category: InterferenceCategory) => context.factors.filter((factor) => factor.category === category);
+  const hasFactors = context.factors.length > 0;
 
   for (const category of RECOGNITION_CATEGORY_ORDER) {
     for (const factor of byCategory(category)) steps.push(factorStep("recognition", factor.itemId, factor.category));
   }
   if (hasFactors) steps.push(checkpointStep("afterAwareness"));
+
+  return steps;
+}
+
+/**
+ * Adaptive ARC architecture task, Phase 14B-4: everything from urge
+ * preventive stopping through terminal_boundary -- callable only once a
+ * ResolvedCombinedFactorPlan genuinely exists (primaryFactorId and
+ * stateIncluded already fixed). Never re-renders recognition or the
+ * "afterAwareness" checkpoint -- those belong exclusively to
+ * buildFullAwarenessSteps above, called once, earlier, by the controller.
+ */
+export function buildFullStepsAfterPrimaryResolution(plan: ResolvedCombinedFactorPlan, finalPresenceMode: FinalPresenceMode): FullCombinedStep[] {
+  const steps: FullCombinedStep[] = [];
+  const byCategory = (category: InterferenceCategory) => plan.factors.filter((factor) => factor.category === category);
+  const hasFactors = plan.factors.length > 0;
 
   for (const factor of byCategory("urge")) {
     if (factor.preventiveStoppingRelevant) steps.push(factorStep("urge_preventive_stopping", factor.itemId, factor.category));
@@ -139,4 +195,17 @@ export function buildFullCombinedSteps(plan: ResolvedCombinedFactorPlan, finalPr
   steps.push(sessionStep("terminal_boundary"));
 
   return steps;
+}
+
+/**
+ * Adaptive ARC architecture task, Phase 14B-4: retained ONLY as the exact
+ * concatenation of buildFullAwarenessSteps + buildFullStepsAfterPrimaryResolution
+ * -- a convenience for any caller (tests included) that already has a
+ * fully resolved plan and wants the whole Full sequence in one call. A
+ * real LIVE controller never calls this directly; it calls the two
+ * halves separately (see this module's own header doc) so Awareness is
+ * rendered exactly once, never duplicated.
+ */
+export function buildFullCombinedSteps(plan: ResolvedCombinedFactorPlan, finalPresenceMode: FinalPresenceMode): FullCombinedStep[] {
+  return [...buildFullAwarenessSteps({ factors: plan.factors, presence: plan.presence }), ...buildFullStepsAfterPrimaryResolution(plan, finalPresenceMode)];
 }

@@ -34,6 +34,28 @@
  *   4. One short factor-specific intervention per selected factor
  *      (PROCESSING_CATEGORY_ORDER, mirroring Full's own canonical order
  *      for the same "ownership rules never contradict" reason).
+ *   4b. Adaptive ARC architecture task, Phase 14B-4 (approved, narrowly
+ *      additive correction): one compact "presence_intervention" step
+ *      when Presence is configured and resolves for this route
+ *      (`plan.presence !== null` -- the same unconditional signal Full
+ *      uses to know Presence is available at all, never gated on
+ *      Full-only concepts like cognitive-reassessment "still stuck",
+ *      since Mini has no reassessment step to produce that answer from).
+ *      This is Mini's own version of "one short unique intervention for
+ *      every selected disturbing factor" extended to Presence -- NOT the
+ *      full embedded/full Presence protocol (arc/combinedRoute.ts's own
+ *      PresenceRouteDecision/FinalPresenceMode machinery is a Full-only
+ *      concern, never consulted here). The renderer guides this single
+ *      semantic step using arc/embeddedPresence.ts's existing four
+ *      compact stages (visual field / body contact / natural breathing /
+ *      present environment) -- reused content, never a second, new
+ *      Presence protocol -- with no rating, no reassessment loop, and no
+ *      entry into PresenceArc's own standalone action/tail sub-engine.
+ *      Presence's own resolved action (plan.presence.actionOutcome)
+ *      still only ever surfaces through resolveCombinedActionKinds' own
+ *      existing primary/presence-fallback rule (step 6 below) -- adding
+ *      this recognition/intervention step never changes which outcome
+ *      becomes the rendered action.
  *   5. Only when State participates: State regulation anchor, then State
  *      desired-state encoding cue -- paired, no checkpoint or rating of
  *      any kind between them (unlike Full, which has the
@@ -59,6 +81,7 @@ export type MiniCombinedStepKind =
   | "combined_recognition"
   | "urge_preventive_stopping"
   | "factor_intervention"
+  | "presence_intervention"
   | "state_regulation_anchor"
   | "state_desired_state_encoding"
   | "state_action"
@@ -93,6 +116,8 @@ export function buildMiniCombinedSteps(plan: ResolvedCombinedFactorPlan): MiniCo
   for (const category of PROCESSING_CATEGORY_ORDER) {
     for (const factor of byCategory(category)) steps.push(factorStep("factor_intervention", factor.itemId, factor.category));
   }
+
+  if (plan.presence !== null) steps.push(sessionStep("presence_intervention"));
 
   if (plan.stateIncluded) {
     steps.push(sessionStep("state_regulation_anchor"));

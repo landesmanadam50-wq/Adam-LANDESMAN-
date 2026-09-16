@@ -11,8 +11,13 @@ import { createEmptyBeliefInterferenceItem, createEmptyThoughtInterferenceItem, 
 import type { BeliefInterferenceItem, InterferenceItem, ThoughtInterferenceItem, UrgeInterferenceItem } from "./interferenceItem.ts";
 import { createEmptyStateProfile } from "./stateProfile.ts";
 import type { StateProfile } from "./stateProfile.ts";
+import type { PresenceArc } from "./types.ts";
 
 const NOW = "2026-01-01T00:00:00.000Z";
+
+function presenceArc(overrides: Partial<PresenceArc> = {}): PresenceArc {
+  return { id: "p1", name: "נוכחות", createdAt: NOW, updatedAt: NOW, presenceColor: null, presenceDwellSeconds: null, beneficialAction: "פעולת נוכחות", postActionImageryDwellSeconds: null, gratitudePrompt: null, ...overrides };
+}
 
 function config(overrides: Partial<PersonalDevelopmentRouteConfig> = {}): PersonalDevelopmentRouteConfig {
   return { ...createEmptyPersonalDevelopmentRouteConfig("route1", "prog1", NOW), ...overrides };
@@ -57,6 +62,7 @@ test("MiniCombinedStepKind has no rating/checkpoint/desired-state-rating member 
     "combined_recognition",
     "urge_preventive_stopping",
     "factor_intervention",
+    "presence_intervention",
     "state_regulation_anchor",
     "state_desired_state_encoding",
     "state_action",
@@ -196,4 +202,105 @@ test("terminal_boundary is always the last Mini step", () => {
   const plan = resolve({ config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" }), items: [thought()] });
   const steps = buildMiniCombinedSteps(plan);
   assert.equal(steps[steps.length - 1].kind, "terminal_boundary");
+});
+
+// --- Phase 14B-4: Mini compact Presence intervention (approved correction) ---
+
+test("Presence-only Mini (zero disturbing factors, Presence configured): one presence_intervention step, no combined_recognition (nothing to recognize), resolved action driven by Presence's own outcome", () => {
+  const plan = resolve({
+    config: config({ interferenceItemIds: [], presenceEnabled: true, linkedPresenceArcId: "p1", presenceActionRelationship: "legacy_unspecified", stateInclusionPolicy: "none" }),
+    presenceArcs: [presenceArc()],
+  });
+  const steps = buildMiniCombinedSteps(plan);
+  const k = kinds(steps);
+  assert.equal(k.filter((kind) => kind === "presence_intervention").length, 1);
+  assert.equal(k.includes("combined_recognition"), false, "nothing to recognize when zero factors are selected");
+  assert.equal(k.includes("factor_action"), true, "Presence's own outcome becomes the rendered action when it is the only source");
+});
+
+test("Thought + Presence Mini: combined_recognition, one factor_intervention (Thought), one presence_intervention, no rating anywhere", () => {
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["t1"],
+      itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } },
+      presenceEnabled: true,
+      linkedPresenceArcId: "p1",
+      presenceActionRelationship: "legacy_unspecified",
+      stateInclusionPolicy: "none",
+    }),
+    items: [thought()],
+    presenceArcs: [presenceArc()],
+  });
+  const steps = buildMiniCombinedSteps(plan);
+  const k = kinds(steps);
+  assert.equal(k.filter((kind) => kind === "combined_recognition").length, 1);
+  assert.equal(k.filter((kind) => kind === "factor_intervention").length, 1);
+  assert.equal(k.filter((kind) => kind === "presence_intervention").length, 1);
+  for (const step of steps) assert.ok(!step.kind.toLowerCase().includes("rating"));
+});
+
+test("Thought + Urge + Presence Mini: one factor_intervention per selected factor plus exactly one presence_intervention, preventive stopping still precedes it", () => {
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["t1", "u1"],
+      itemRelationships: { t1: { actionRelationship: "same_action" }, u1: { actionRelationship: "same_action" } },
+      presenceEnabled: true,
+      linkedPresenceArcId: "p1",
+      presenceActionRelationship: "legacy_unspecified",
+      stateInclusionPolicy: "none",
+    }),
+    items: [thought(), urge()],
+    presenceArcs: [presenceArc()],
+    primaryFactorId: "t1",
+  });
+  const steps = buildMiniCombinedSteps(plan);
+  const k = kinds(steps);
+  assert.equal(k.filter((kind) => kind === "factor_intervention").length, 2, "one intervention per selected factor");
+  assert.equal(k.filter((kind) => kind === "presence_intervention").length, 1);
+  assert.ok(steps.findIndex((s) => s.kind === "urge_preventive_stopping") < steps.findIndex((s) => s.kind === "presence_intervention"));
+});
+
+test("no presence_intervention step at all when Presence is not configured for the route", () => {
+  const plan = resolve({ config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" }), items: [thought()] });
+  assert.equal(kinds(buildMiniCombinedSteps(plan)).includes("presence_intervention"), false);
+});
+
+test("Mini Presence never runs a standalone Presence action/tail sub-engine -- the planner output contains only this module's own MiniCombinedStepKind values, never a PresenceArc-specific action/imagery/gratitude stage name", () => {
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["t1"],
+      itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } },
+      presenceEnabled: true,
+      linkedPresenceArcId: "p1",
+      presenceActionRelationship: "legacy_unspecified",
+      stateInclusionPolicy: "none",
+    }),
+    items: [thought()],
+    presenceArcs: [presenceArc()],
+  });
+  const steps = buildMiniCombinedSteps(plan);
+  const disallowedStandalonePresenceStageNames = ["action_imagery", "improvement_entry", "improved_action_imagery", "gratitude", "action", "complete"];
+  for (const step of steps) assert.ok(!disallowedStandalonePresenceStageNames.includes(step.kind), `"${step.kind}" must never appear -- it belongs to arc/presenceLive.ts's own separate standalone sub-engine, never this planner`);
+});
+
+test("Presence Mini remains one combined route -- a single flat, linear step array, never a nested/branching structure", () => {
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["t1", "u1"],
+      itemRelationships: { t1: { actionRelationship: "same_action" }, u1: { actionRelationship: "same_action" } },
+      presenceEnabled: true,
+      linkedPresenceArcId: "p1",
+      presenceActionRelationship: "different_actions",
+      stateInclusionPolicy: "linked",
+      stateProfileId: "s1",
+    }),
+    items: [thought(), urge()],
+    presenceArcs: [presenceArc()],
+    stateProfiles: [completeState()],
+    primaryFactorId: "t1",
+  });
+  const steps = buildMiniCombinedSteps(plan);
+  assert.ok(Array.isArray(steps));
+  assert.ok(steps.every((s) => typeof s.kind === "string" && !Array.isArray(s)), "every element is one flat step, never a nested array/sub-sequence");
+  assert.equal(steps[steps.length - 1].kind, "terminal_boundary", "still ends in the one shared terminal boundary, regardless of Presence participating");
 });
