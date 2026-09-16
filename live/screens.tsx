@@ -275,7 +275,8 @@ function RevealedRatingPrompt({ question, children }: { question: string; childr
   );
 }
 
-function ScaleButtons({ onSelect }: { onSelect: (value: number) => void }) {
+/** Adaptive ARC architecture task, Phase 14B: exported (was module-private) so live/CombinedInterferenceLiveScreen.tsx's own factor-rating checkpoints can reuse the exact same 1-10 button row every other rating screen in this file already renders internally -- no behavior change for any existing caller. */
+export function ScaleButtons({ onSelect }: { onSelect: (value: number) => void }) {
   return (
     <View style={styles.scaleRow}>
       {SCALE_VALUES.map((value) => (

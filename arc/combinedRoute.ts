@@ -105,7 +105,21 @@ export const INTERFERENCE_CATEGORY_ORDER: InterferenceCategory[] = ["thought", "
 export type CombinedRouteStepKind =
   | "thought_recognition"
   | "belief_recognition"
+  /**
+   * Adaptive ARC architecture task, Phase 14B: added alongside
+   * urge_recognition so every category has a real "just notice it"
+   * moment before any processing/support content -- Emotion and Urge
+   * previously had none (thought_recognition/belief_recognition were
+   * the only two categories with a dedicated recognition step). Content
+   * for both is resolveInterferenceItemRecognitionContext's own
+   * category-agnostic output (arc/arcStateComposer.ts, unmodified) --
+   * never the item's own regulationCue/preventiveStoppingAction/encoding
+   * fields, so recognition never leaks category-specific processing
+   * content (see arc/combinedRouteStepCopy.ts's own doc).
+   */
+  | "emotion_recognition"
   | "emotion_support"
+  | "urge_recognition"
   | "urge_preventive_stopping"
   | "urge_support"
   | "belief_alternative"
@@ -237,28 +251,50 @@ export type CombinedRoutePlanResult =
  * Never emits Stay/Acceptance/Regulation/Success Focus/Gratitude -- see
  * this module's own header doc. Never mutates `input.selectedItems`.
  */
-export function buildCombinedRoutePlan(input: CombinedRoutePlanInput): CombinedRoutePlanResult {
-  if (input.selectedItems.length === 0) {
-    return { kind: "no_active_items" };
-  }
-
-  const byCategory = (category: InterferenceCategory) => input.selectedItems.filter((item) => item.category === category);
+/**
+ * Adaptive ARC architecture task, Phase 14B: the ONE place that decides,
+ * for a resolved set of active items, which of the ten per-item/per-
+ * category CombinedRouteStepKind values are emitted and in what
+ * relative order -- thought_recognition, belief_recognition,
+ * emotion_recognition, emotion_support, urge_recognition,
+ * urge_preventive_stopping, urge_support, belief_alternative,
+ * thought_alternative, thought_future_insight. Every consumer that
+ * needs this ordering (buildCombinedRoutePlan below, and
+ * arc/combinedLiveSequence.ts's own Full-LIVE bucketing) calls THIS
+ * function rather than re-deriving its own category loop over
+ * `activeItems` -- there is exactly one place in this codebase that
+ * loops over thought/belief/emotion/urge items to decide step order,
+ * never two independently-maintained copies of that loop.
+ *
+ * Preserves the exact pre-Phase-14B relative order for every
+ * previously-existing step kind (thought_recognition -> belief_recognition
+ * -> emotion_support -> [urge_preventive_stopping?/urge_support]* ->
+ * belief_alternative -> thought_alternative -> thought_future_insight);
+ * the two new recognition kinds are inserted immediately before their
+ * own category's first existing step (emotion_recognition right before
+ * emotion_support; urge_recognition right before that same item's own
+ * urge_preventive_stopping/urge_support), never reordering anything
+ * else.
+ */
+export function buildCombinedRouteCoreSteps(activeItems: InterferenceItem[]): CombinedRouteStep[] {
+  const byCategory = (category: InterferenceCategory) => activeItems.filter((item) => item.category === category);
   const thoughts = byCategory("thought");
   const beliefs = byCategory("belief");
   const emotions = byCategory("emotion");
   const urges = byCategory("urge");
-
   const hasThought = thoughts.length > 0;
   const hasBelief = beliefs.length > 0;
-  const cognitiveWorkSelected = hasThought || hasBelief;
-  const emotionOrUrgeOnlySelected = !cognitiveWorkSelected && (emotions.length > 0 || urges.length > 0);
 
   const steps: CombinedRouteStep[] = [];
 
   for (const item of thoughts) steps.push({ kind: "thought_recognition", itemId: item.id });
   for (const item of beliefs) steps.push({ kind: "belief_recognition", itemId: item.id });
-  for (const item of emotions) steps.push({ kind: "emotion_support", itemId: item.id });
+  for (const item of emotions) {
+    steps.push({ kind: "emotion_recognition", itemId: item.id });
+    steps.push({ kind: "emotion_support", itemId: item.id });
+  }
   for (const item of urges) {
+    steps.push({ kind: "urge_recognition", itemId: item.id });
     if (isPreventiveStoppingRelevantForInterferenceItem(item)) {
       steps.push({ kind: "urge_preventive_stopping", itemId: item.id });
     }
@@ -269,6 +305,22 @@ export function buildCombinedRoutePlan(input: CombinedRoutePlanInput): CombinedR
   if (hasThought && !hasBelief) {
     for (const item of thoughts) steps.push({ kind: "thought_future_insight", itemId: item.id });
   }
+
+  return steps;
+}
+
+export function buildCombinedRoutePlan(input: CombinedRoutePlanInput): CombinedRoutePlanResult {
+  if (input.selectedItems.length === 0) {
+    return { kind: "no_active_items" };
+  }
+
+  const hasThought = input.selectedItems.some((item) => item.category === "thought");
+  const hasBelief = input.selectedItems.some((item) => item.category === "belief");
+  const hasEmotionOrUrge = input.selectedItems.some((item) => item.category === "emotion" || item.category === "urge");
+  const cognitiveWorkSelected = hasThought || hasBelief;
+  const emotionOrUrgeOnlySelected = !cognitiveWorkSelected && hasEmotionOrUrge;
+
+  const steps: CombinedRouteStep[] = buildCombinedRouteCoreSteps(input.selectedItems);
   if (cognitiveWorkSelected) {
     steps.push({ kind: "cognitive_reassessment", itemId: null });
   }

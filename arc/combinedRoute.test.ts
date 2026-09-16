@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   SHARED_SESSION_STAGE_NAMES,
+  buildCombinedRouteCoreSteps,
   buildCombinedRoutePlan,
   createEmptyCombinedRouteSessionFacts,
   deriveCompletedInterferenceTypes,
@@ -155,7 +156,7 @@ test("Thought + Belief: exact canonical step sequence -- one coherent route, nev
   ]);
 });
 
-test("Thought + Belief + Emotion + Urge: Emotion/Urge support falls between cognitive recognition and alternative meaning", () => {
+test("Thought + Belief + Emotion + Urge: Emotion/Urge recognition+support falls between cognitive recognition and alternative meaning", () => {
   const plan = expectPlan(
     buildCombinedRoutePlan({
       selectedItems: [thought("t1"), belief("b1"), emotion("e1"), urge("u1", { preventiveStoppingAction: "עצור" })],
@@ -167,8 +168,12 @@ test("Thought + Belief + Emotion + Urge: Emotion/Urge support falls between cogn
   const order = kinds(plan.steps);
   const afterRecognition = order.indexOf("belief_recognition");
   const beforeAlternative = order.indexOf("belief_alternative");
+  assert.ok(order.indexOf("emotion_recognition") > afterRecognition && order.indexOf("emotion_recognition") < beforeAlternative);
   assert.ok(order.indexOf("emotion_support") > afterRecognition && order.indexOf("emotion_support") < beforeAlternative);
+  assert.ok(order.indexOf("urge_recognition") > afterRecognition && order.indexOf("urge_recognition") < beforeAlternative);
   assert.ok(order.indexOf("urge_support") > afterRecognition && order.indexOf("urge_support") < beforeAlternative);
+  assert.ok(order.indexOf("emotion_recognition") < order.indexOf("emotion_support"));
+  assert.ok(order.indexOf("urge_recognition") < order.indexOf("urge_preventive_stopping"));
   assert.ok(order.indexOf("urge_preventive_stopping") < order.indexOf("urge_support"));
 });
 
@@ -217,6 +222,31 @@ test("urge_preventive_stopping appears only when the item's own preventiveStoppi
 test("urge_support always appears for a selected Urge item, regardless of preventive stopping", () => {
   const plan = expectPlan(buildCombinedRoutePlan({ selectedItems: [urge("u1")], presenceEnabled: false, reassessmentAnswer: null, fullPresenceAccepted: null }));
   assert.ok(kinds(plan.steps).includes("urge_support"));
+});
+
+// ---------------------------------------------------------------------------
+// Phase 14B: buildCombinedRouteCoreSteps -- the single shared core-step
+// builder, consumed as-is by buildCombinedRoutePlan (never a second,
+// independently-derived category loop).
+// ---------------------------------------------------------------------------
+
+test("buildCombinedRouteCoreSteps: every selected Emotion item gets its own emotion_recognition immediately before its own emotion_support", () => {
+  const steps = buildCombinedRouteCoreSteps([emotion("e1")]);
+  const order = kinds(steps);
+  assert.deepEqual(order, ["emotion_recognition", "emotion_support"]);
+});
+
+test("buildCombinedRouteCoreSteps: every selected Urge item gets its own urge_recognition immediately before preventive stopping/support", () => {
+  const steps = buildCombinedRouteCoreSteps([urge("u1", { preventiveStoppingAction: "עצור" })]);
+  const order = kinds(steps);
+  assert.deepEqual(order, ["urge_recognition", "urge_preventive_stopping", "urge_support"]);
+});
+
+test("buildCombinedRouteCoreSteps: buildCombinedRoutePlan consumes this exact output verbatim for its own core steps", () => {
+  const items = [thought("t1"), belief("b1"), emotion("e1"), urge("u1")];
+  const core = buildCombinedRouteCoreSteps(items);
+  const plan = expectPlan(buildCombinedRoutePlan({ selectedItems: items, presenceEnabled: false, reassessmentAnswer: "not_stuck", fullPresenceAccepted: null }));
+  assert.deepEqual(plan.steps.slice(0, core.length), core);
 });
 
 // ---------------------------------------------------------------------------
@@ -338,7 +368,10 @@ test("a genuinely empty selection with Presence disabled is also rejected, never
 test("a single selected Thought item resolves to a minimal, correct plan -- no Belief/Emotion/Urge steps appear", () => {
   const plan = expectPlan(buildCombinedRoutePlan({ selectedItems: [thought("t1")], presenceEnabled: false, reassessmentAnswer: "not_stuck", fullPresenceAccepted: null }));
   for (const step of plan.steps) {
-    assert.equal(["belief_recognition", "belief_alternative", "emotion_support", "urge_support", "urge_preventive_stopping"].includes(step.kind), false);
+    assert.equal(
+      ["belief_recognition", "belief_alternative", "emotion_recognition", "emotion_support", "urge_recognition", "urge_support", "urge_preventive_stopping"].includes(step.kind),
+      false
+    );
   }
 });
 
