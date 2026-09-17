@@ -38,6 +38,7 @@ import type { InterferenceItem } from "./interferenceItem.ts";
 import type { StateProfile } from "./stateProfile.ts";
 import type { ActionRelationship } from "./factorAction.ts";
 import type { StateInclusionPolicy } from "./stateInclusion.ts";
+import type { PresenceArc } from "./types.ts";
 import { dedupeItemIdsPreservingOrder } from "./combinedInterferenceSelection.ts";
 import type { CombinedInterferenceSelection } from "./combinedInterferenceSelection.ts";
 
@@ -147,6 +148,59 @@ export function upsertPersonalDevelopmentRouteConfigInList(configs: PersonalDeve
 /** The ActionRelationship configured for `itemId`, or "legacy_unspecified" when the route has no entry for it yet (never throws, never invents anything stronger). */
 export function resolveActionRelationshipForItem(config: PersonalDevelopmentRouteConfig, itemId: string): ActionRelationship {
   return config.itemRelationships[itemId]?.actionRelationship ?? "legacy_unspecified";
+}
+
+/**
+ * Desired State / combined-route readiness fix: whether THIS route's own
+ * configuration genuinely needs the linked/candidate StateProfile's own
+ * `action` field to be filled in, independent of whether that StateProfile
+ * actually has one.
+ *
+ * Per arc/factorAction.ts's own combineFactorAndState, a "same_action"
+ * relationship never reads the State's own action into its resolved
+ * outcome (`shared_explicit` uses the factor's/Presence's own action text
+ * only) -- so requiring the State to ALSO carry that same text a second
+ * time was pure duplicate data entry, never something LIVE actually
+ * consumes. This resolver returns false (the State's own action is not
+ * required) only when EVERY configured "state consumer" in this route
+ * already supplies its own action under an explicit "same_action"
+ * relationship -- any Emotion item (which has no factor action of its own,
+ * see EmotionInterferenceItem's own doc), any "different_actions"/
+ * "legacy_unspecified" relationship, or Presence under the same rules,
+ * still requires a real, resolvable State action, exactly as before.
+ *
+ * Pure and read-only. Never mutates any argument, never resolves the
+ * State's own content itself -- callers combine this with the State's own
+ * field presence (see arc/personalDevelopmentRouteConfigReadiness.ts).
+ */
+export function isRouteStateOwnActionRequired(config: PersonalDevelopmentRouteConfig, items: InterferenceItem[], presenceArcs: PresenceArc[]): boolean {
+  let sawAnyConsumer = false;
+
+  for (const itemId of config.interferenceItemIds) {
+    const item = items.find((candidate) => candidate.id === itemId);
+    if (!item) continue;
+    if (item.category === "emotion") return true;
+
+    sawAnyConsumer = true;
+    const relationship = resolveActionRelationshipForItem(config, itemId);
+    const ownActionSet = (item.beneficialActionAgainstFactor ?? "").trim().length > 0;
+    if (relationship !== "same_action" || !ownActionSet) return true;
+  }
+
+  if (config.presenceEnabled && config.linkedPresenceArcId) {
+    const presenceArc = presenceArcs.find((candidate) => candidate.id === config.linkedPresenceArcId);
+    if (presenceArc) {
+      sawAnyConsumer = true;
+      const presenceOwnActionSet = (presenceArc.beneficialAction ?? "").trim().length > 0;
+      if (config.presenceActionRelationship !== "same_action" || !presenceOwnActionSet) return true;
+    }
+  }
+
+  // No resolvable consumer at all is structurally invalid anyway
+  // (validatePersonalDevelopmentRouteConfig's own no_factors_configured) --
+  // defensively treat it as still requiring the State action rather than
+  // silently declaring it optional.
+  return !sawAnyConsumer;
 }
 
 export interface RouteConfigValidationResult {

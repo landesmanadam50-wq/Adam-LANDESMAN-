@@ -6,6 +6,7 @@ import {
   createEmptyPersonalDevelopmentRouteConfig,
   generatePersonalDevelopmentRouteConfigId,
   isPersonalDevelopmentRouteConfigSaveable,
+  isRouteStateOwnActionRequired,
   normalizePersonalDevelopmentRouteConfig,
   resolveActionRelationshipForItem,
   resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection,
@@ -16,11 +17,13 @@ import {
 } from "./personalDevelopmentRouteConfig.ts";
 import type { PersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
 import { createEmptyEmotionInterferenceItem, createEmptyThoughtInterferenceItem } from "./interferenceItem.ts";
-import type { InterferenceItem } from "./interferenceItem.ts";
+import type { InterferenceItem, ThoughtInterferenceItem } from "./interferenceItem.ts";
 import { createEmptyStateProfile } from "./stateProfile.ts";
 import type { StateProfile } from "./stateProfile.ts";
 import { createEmptyCombinedInterferenceSelection } from "./combinedInterferenceSelection.ts";
 import type { CombinedInterferenceSelection } from "./combinedInterferenceSelection.ts";
+import { createEmptyPresenceArc } from "./types.ts";
+import type { PresenceArc } from "./types.ts";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 const LATER = "2026-01-02T00:00:00.000Z";
@@ -335,4 +338,81 @@ test("resolvePendingBuildNewStateReturn: returning before the State is actually 
 test("resolvePendingBuildNewStateReturn: auto-selection occurs only once the exact pending id is found", () => {
   const profiles = [createEmptyStateProfile("s1", "x", null, NOW), createEmptyStateProfile("pending-id", "y", null, NOW)];
   assert.deepEqual(resolvePendingBuildNewStateReturn("pending-id", profiles), { found: true, stateProfileId: "pending-id" });
+});
+
+// --- Desired State / combined-route readiness fix: isRouteStateOwnActionRequired ---
+
+function thoughtItem(overrides: Partial<ThoughtInterferenceItem> = {}): InterferenceItem {
+  return { ...createEmptyThoughtInterferenceItem("t1", "מחשבה", null, NOW), schemaVersion: 2, ...overrides };
+}
+
+function presence(overrides: Partial<PresenceArc> = {}): PresenceArc {
+  return { ...createEmptyPresenceArc("p1", "נוכחות", NOW), ...overrides };
+}
+
+test("isRouteStateOwnActionRequired: a single factor with an explicit same_action relationship and its own action present does not require the State's own action", () => {
+  const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } } });
+  const item = thoughtItem({ beneficialActionAgainstFactor: "לנשום עמוק" });
+  assert.equal(isRouteStateOwnActionRequired(c, [item], []), false);
+});
+
+test("isRouteStateOwnActionRequired: a factor with different_actions still requires the State's own action", () => {
+  const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "different_actions" } } });
+  const item = thoughtItem({ beneficialActionAgainstFactor: "לנשום עמוק" });
+  assert.equal(isRouteStateOwnActionRequired(c, [item], []), true);
+});
+
+test("isRouteStateOwnActionRequired: an unresolved relationship (legacy_unspecified) still requires the State's own action", () => {
+  const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } } });
+  const item = thoughtItem({ beneficialActionAgainstFactor: "לנשום עמוק" });
+  assert.equal(isRouteStateOwnActionRequired(c, [item], []), true);
+});
+
+test("isRouteStateOwnActionRequired: same_action declared but the factor's own action is still empty still requires the State's own action", () => {
+  const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } } });
+  const item = thoughtItem({ beneficialActionAgainstFactor: null });
+  assert.equal(isRouteStateOwnActionRequired(c, [item], []), true);
+});
+
+test("isRouteStateOwnActionRequired: an Emotion item always requires the State's own action, regardless of any other relationship", () => {
+  const c = config({ interferenceItemIds: ["e1"], itemRelationships: { e1: { actionRelationship: "same_action" } } });
+  const emotion = createEmptyEmotionInterferenceItem("e1", "רגש", null, NOW);
+  assert.equal(isRouteStateOwnActionRequired(c, [emotion], []), true);
+});
+
+test("isRouteStateOwnActionRequired: multiple factors all under same_action with their own actions present -- still not required", () => {
+  const c = config({
+    interferenceItemIds: ["t1", "t2"],
+    itemRelationships: { t1: { actionRelationship: "same_action" }, t2: { actionRelationship: "same_action" } },
+  });
+  const item1 = thoughtItem({ id: "t1", beneficialActionAgainstFactor: "פעולה א" });
+  const item2 = thoughtItem({ id: "t2", beneficialActionAgainstFactor: "פעולה ב" });
+  assert.equal(isRouteStateOwnActionRequired(c, [item1, item2], []), false);
+});
+
+test("isRouteStateOwnActionRequired: one same_action factor plus one different_actions factor -- required (not every consumer is covered)", () => {
+  const c = config({
+    interferenceItemIds: ["t1", "t2"],
+    itemRelationships: { t1: { actionRelationship: "same_action" }, t2: { actionRelationship: "different_actions" } },
+  });
+  const item1 = thoughtItem({ id: "t1", beneficialActionAgainstFactor: "פעולה א" });
+  const item2 = thoughtItem({ id: "t2", beneficialActionAgainstFactor: "פעולה ב" });
+  assert.equal(isRouteStateOwnActionRequired(c, [item1, item2], []), true);
+});
+
+test("isRouteStateOwnActionRequired: Presence under same_action with its own beneficial action present does not require the State's own action", () => {
+  const c = config({ presenceEnabled: true, linkedPresenceArcId: "p1", presenceActionRelationship: "same_action" });
+  const presenceArc = presence({ beneficialAction: "פעולה מיטיבה" });
+  assert.equal(isRouteStateOwnActionRequired(c, [], [presenceArc]), false);
+});
+
+test("isRouteStateOwnActionRequired: Presence under different_actions still requires the State's own action", () => {
+  const c = config({ presenceEnabled: true, linkedPresenceArcId: "p1", presenceActionRelationship: "different_actions" });
+  const presenceArc = presence({ beneficialAction: "פעולה מיטיבה" });
+  assert.equal(isRouteStateOwnActionRequired(c, [], [presenceArc]), true);
+});
+
+test("isRouteStateOwnActionRequired: a route with zero resolvable consumers defensively still requires the State's own action", () => {
+  const c = config({ interferenceItemIds: [] });
+  assert.equal(isRouteStateOwnActionRequired(c, [], []), true);
 });

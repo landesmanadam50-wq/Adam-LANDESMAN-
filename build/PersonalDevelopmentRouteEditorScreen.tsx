@@ -16,10 +16,9 @@ import {
   isPersonalDevelopmentRouteConfigSaveable,
   resolveActionRelationshipForItem,
   resolvePendingBuildNewStateReturn,
-  validatePersonalDevelopmentRouteConfig,
 } from "../arc/personalDevelopmentRouteConfig.ts";
 import type { PersonalDevelopmentRouteConfig } from "../arc/personalDevelopmentRouteConfig.ts";
-import { isPersonalDevelopmentRouteConfigCompleteForPractice } from "../arc/personalDevelopmentRouteConfigReadiness.ts";
+import { evaluatePersonalDevelopmentRouteConfigReadiness } from "../arc/personalDevelopmentRouteConfigReadiness.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import type { ActionRelationship } from "../arc/factorAction.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
@@ -32,18 +31,6 @@ const CATEGORY_PREFIX_LABELS: Record<InterferenceItem["category"], string> = {
   belief: "אמונה",
   urge: "דחף",
   emotion: "רגש",
-};
-
-const VALIDATION_REASON_LABELS: Record<string, string> = {
-  no_factors_configured: "יש לבחור לפחות גורם מפריע אחד או לכלול נוכחות.",
-  configured_item_not_found: "אחד הפריטים שנבחרו כבר אינו זמין.",
-  linked_requires_state_profile_id: "יש לבחור מצב רצוי.",
-  linked_state_not_found: "המצב הרצוי שנבחר לא נמצא.",
-  emotion_requires_linked_state: "מסלול הכולל רגש דורש מצב רצוי מקושר (לא ניתן להשתמש ב\"לא\" או ב\"להחליט בזמן התרגול\").",
-  decide_in_live_requires_a_candidate_state_profile_id: "יש לבחור מצב רצוי מועמד עבור החלטה בזמן התרגול.",
-  decide_in_live_candidate_state_not_found: "המצב הרצוי המועמד לא נמצא.",
-  none_must_not_reference_a_state: "לא ניתן לקשר מצב רצוי כאשר נבחרה האפשרות \"לא\".",
-  missing_item_action_relationship: "חסר מידע פנימי על יחס הפעולה עבור אחד הפריטים.",
 };
 
 function ownFactorActionIsSet(item: InterferenceItem): boolean {
@@ -214,9 +201,9 @@ export default function PersonalDevelopmentRouteEditorScreen() {
   const enabledItems = items.filter(isLibraryItemEnabled);
   const enabledStateProfiles = stateProfiles.filter(isLibraryItemEnabled);
   const stateIncluded = config.stateInclusionPolicy !== "none";
-  const validation = validatePersonalDevelopmentRouteConfig(config, items, stateProfiles);
   const canSave = isPersonalDevelopmentRouteConfigSaveable(config, items, stateProfiles) && !saving;
-  const ready = isPersonalDevelopmentRouteConfigCompleteForPractice(config, items, stateProfiles, presenceArcs);
+  const readiness = evaluatePersonalDevelopmentRouteConfigReadiness(config, items, stateProfiles, presenceArcs);
+  const ready = readiness.ready;
   const selectedPresenceArc = config.linkedPresenceArcId ? presenceArcs.find((arc) => arc.id === config.linkedPresenceArcId) : null;
   const presenceOwnActionSet = (selectedPresenceArc?.beneficialAction ?? "").trim().length > 0;
 
@@ -332,7 +319,15 @@ export default function PersonalDevelopmentRouteEditorScreen() {
         </Section>
 
         <Text style={[styles.readinessBadge, ready ? styles.readinessBadge_ready : styles.readinessBadge_draft]}>{ready ? "מוכן לתרגול LIVE" : "טיוטה -- עדיין לא מוכן לתרגול LIVE"}</Text>
-        {!validation.valid && validation.reason && <Text style={styles.errorText}>{VALIDATION_REASON_LABELS[validation.reason] ?? validation.reason}</Text>}
+        {!ready && readiness.missingRequirements.length > 0 && (
+          <View style={styles.missingRequirementsBlock}>
+            {readiness.missingRequirements.map((requirement) => (
+              <Text key={requirement.code} style={styles.errorText}>
+                {requirement.message}
+              </Text>
+            ))}
+          </View>
+        )}
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}
         <Text style={styles.helperText}>אפשר לשמור מסלול כטיוטה ולהשלים אותו מאוחר יותר -- זה עדיין לא אומר שהוא מוכן לתרגול LIVE.</Text>
 
@@ -382,7 +377,8 @@ const styles = StyleSheet.create({
   readinessBadge: { fontSize: 14, fontWeight: "700", textAlign: "right", marginTop: 16 },
   readinessBadge_ready: { color: "#1a6b4a" },
   readinessBadge_draft: { color: "#8a6d1a" },
-  errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 12 },
+  missingRequirementsBlock: { marginTop: 8, gap: 4 },
+  errorText: { fontSize: 14, textAlign: "right", color: "#c0392b", marginTop: 4 },
   button: { backgroundColor: "#0a7ea4", paddingVertical: 14, paddingHorizontal: 20, borderRadius: 10, alignItems: "center" },
   fullWidthButton: { marginTop: 16 },
   buttonDisabled: { opacity: 0.4 },

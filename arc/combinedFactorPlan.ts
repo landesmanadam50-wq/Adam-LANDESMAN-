@@ -36,7 +36,7 @@ import { isLibraryItemEnabled } from "./libraryItemStatus.ts";
 import type { PersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
 import { resolveActionRelationshipForItem, validatePersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
 import type { StateProfile } from "./stateProfile.ts";
-import { isStateProfileCompleteForPractice } from "./stateProfile.ts";
+import { isLinkedStateProfileUsableForRoute } from "./personalDevelopmentRouteConfigReadiness.ts";
 import type { PresenceArc } from "./types.ts";
 import { isPresenceArcReadyForCombinedRoute } from "./presenceArcs.ts";
 import { resolveStateInclusion } from "./stateInclusion.ts";
@@ -229,7 +229,7 @@ export function resolveCombinedFactorPlan(input: CombinedFactorPlanInput): Combi
     stateIncluded = false;
   } else if (stateInclusion.kind === "linked") {
     resolvedState = stateProfiles.find((candidate) => candidate.id === stateInclusion.stateProfileId) ?? null;
-    if (!resolvedState || !isLibraryItemEnabled(resolvedState) || !isStateProfileCompleteForPractice(resolvedState)) {
+    if (!resolvedState || !isLinkedStateProfileUsableForRoute(resolvedState, config, resolvedItems, presenceArcs)) {
       return { kind: "invalid", reason: "linked_state_incomplete" };
     }
     stateIncluded = true;
@@ -251,7 +251,7 @@ export function resolveCombinedFactorPlan(input: CombinedFactorPlanInput): Combi
     }
     if (input.stateDecisionAnswer === true) {
       resolvedState = stateProfiles.find((candidate) => candidate.id === stateInclusion.candidateStateProfileId) ?? null;
-      if (!resolvedState || !isLibraryItemEnabled(resolvedState) || !isStateProfileCompleteForPractice(resolvedState)) {
+      if (!resolvedState || !isLinkedStateProfileUsableForRoute(resolvedState, config, resolvedItems, presenceArcs)) {
         return { kind: "invalid", reason: "decide_in_live_candidate_incomplete" };
       }
       stateIncluded = true;
