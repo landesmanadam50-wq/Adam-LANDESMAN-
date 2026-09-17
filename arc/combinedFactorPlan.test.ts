@@ -223,6 +223,32 @@ test("linked with an incomplete State is invalid", () => {
   assert.deepEqual(result, { kind: "invalid", reason: "linked_state_incomplete" });
 });
 
+// Desired State / combined-route readiness fix: "same_action" resolves fine
+// at LIVE time even when the linked State genuinely has no own action --
+// the factor's own action becomes the shared action, matching what
+// arc/personalDevelopmentRouteConfigReadiness.ts's own readiness now allows.
+test("linked with same_action and a State missing only its own action still resolves -- the factor's own action is used as the shared action", () => {
+  const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" });
+  const stateWithoutOwnAction = { ...createEmptyStateProfile("s1", "מצב", null, NOW), regulationAnchor: "עוגן", encodingCue: "קידוד", action: null };
+  const plan = resolvedPlan(resolveCombinedFactorPlan(baseInput({ config: c, items: [thought({ beneficialActionAgainstFactor: "לדבר בביטחון" })], stateProfiles: [stateWithoutOwnAction] })));
+  assert.equal(plan.stateIncluded, true);
+  assert.deepEqual(plan.factors[0].actionOutcome, { kind: "factor_only", action: "לדבר בביטחון" });
+});
+
+test("linked with different_actions and a State missing its own action is still invalid -- the relaxation only applies to same_action", () => {
+  const c = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "different_actions" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" });
+  const stateWithoutOwnAction = { ...createEmptyStateProfile("s1", "מצב", null, NOW), regulationAnchor: "עוגן", encodingCue: "קידוד", action: null };
+  const result = resolveCombinedFactorPlan(baseInput({ config: c, items: [thought({ beneficialActionAgainstFactor: "לדבר בביטחון" })], stateProfiles: [stateWithoutOwnAction] }));
+  assert.deepEqual(result, { kind: "invalid", reason: "linked_state_incomplete" });
+});
+
+test("linked with same_action and an Emotion item still requires the State's own real action -- Emotion has no factor action of its own", () => {
+  const c = config({ interferenceItemIds: ["e1"], itemRelationships: { e1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" });
+  const stateWithoutOwnAction = { ...createEmptyStateProfile("s1", "מצב", null, NOW), regulationAnchor: "עוגן", encodingCue: "קידוד", action: null };
+  const result = resolveCombinedFactorPlan(baseInput({ config: c, items: [emotion()], stateProfiles: [stateWithoutOwnAction] }));
+  assert.deepEqual(result, { kind: "invalid", reason: "linked_state_incomplete" });
+});
+
 // --- explicit action relationship requirement ---
 
 test("State included and the factor's own action resolvable -- legacy_unspecified relationship is invalid", () => {

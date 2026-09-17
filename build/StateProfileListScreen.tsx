@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
 import { disableStateProfile, archiveStateProfile, loadStateProfiles, restoreStateProfile } from "../data/storage.ts";
+import { isStateProfileCompleteForPractice } from "../arc/stateProfile.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
 import type { LibraryItemStatus } from "../arc/libraryItemStatus.ts";
 
@@ -94,13 +95,20 @@ export default function StateProfileListScreen() {
         {profiles.length === 0 && <Text style={styles.emptyText}>עדיין אין כאן מצבים רצויים שמורים. אפשר להוסיף אחד חדש למטה.</Text>}
         {profiles.length > 0 && visibleProfiles.length === 0 && <Text style={styles.emptyText}>כל המצבים הרצויים שלך נמצאים כרגע בארכיון.</Text>}
 
-        {visibleProfiles.map((profile) => (
+        {visibleProfiles.map((profile) => {
+          const completeForPractice = isStateProfileCompleteForPractice(profile);
+          return (
           <View key={profile.id} style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>{profile.name}</Text>
-              <Text style={[styles.statusBadge, styles[`statusBadge_${profile.status}`]]}>{STATUS_LABELS[profile.status]}</Text>
-            </View>
-            {profile.description && <Text style={styles.cardRow}>{profile.description}</Text>}
+            <Pressable onPress={() => router.push({ pathname: "/state-profiles/[id]", params: { id: profile.id } })}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.cardTitle}>{profile.name}</Text>
+                <Text style={[styles.statusBadge, styles[`statusBadge_${profile.status}`]]}>{STATUS_LABELS[profile.status]}</Text>
+              </View>
+              {profile.description && <Text style={styles.cardRow}>{profile.description}</Text>}
+              <Text style={[styles.readinessBadge, completeForPractice ? styles.readinessBadge_ready : styles.readinessBadge_draft]}>
+                {completeForPractice ? "מוכן לתרגול LIVE" : "חסר: עוגן ויסות, רמז קידוד ו/או פעולה -- הקש לעריכה"}
+              </Text>
+            </Pressable>
 
             <View style={styles.cardActions}>
               <Pressable style={styles.actionButton} onPress={() => router.push({ pathname: "/state-profiles/[id]", params: { id: profile.id } })}>
@@ -148,7 +156,8 @@ export default function StateProfileListScreen() {
               )}
             </View>
           </View>
-        ))}
+          );
+        })}
 
         <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.push({ pathname: "/state-profiles/[id]", params: { id: "new" } })}>
           <Text style={styles.buttonText}>+ הוספת מצב רצוי</Text>
@@ -184,6 +193,9 @@ const styles = StyleSheet.create({
   statusBadge_disabled: { backgroundColor: "#FDF3D9", color: "#8a6d1a" },
   statusBadge_archived: { backgroundColor: "#F0F0F0", color: "#666" },
   cardRow: { fontSize: 14, textAlign: "right", color: "#333", marginTop: 6 },
+  readinessBadge: { fontSize: 12, fontWeight: "600", textAlign: "right", marginTop: 6 },
+  readinessBadge_ready: { color: "#1a6b4a" },
+  readinessBadge_draft: { color: "#8a6d1a" },
   cardActions: { flexDirection: "row-reverse", gap: 16, marginTop: 10, justifyContent: "flex-end" },
   actionButton: { paddingVertical: 6, paddingHorizontal: 10 },
   actionButtonText: { color: "#0a7ea4", fontSize: 14 },
