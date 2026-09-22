@@ -39,6 +39,7 @@ import {
   clearTimerRun,
   getArcGoal,
   loadArcBuilds,
+  loadLifeManifests,
   loadMiniArcBuilds,
   loadSessionLog,
   loadUrgeArcs,
@@ -46,6 +47,8 @@ import {
   updateLastSessionLogEntryGratitude,
   upsertWeeklyAction,
 } from "../data/storage.ts";
+import { resolveLifeManifestContributionForArcGoal } from "../arc/lifeManifest.ts";
+import type { LifeManifestContribution } from "../arc/lifeManifest.ts";
 import { markWeeklyActionCompletedToday } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
@@ -92,6 +95,8 @@ import {
   URGE_SELECT_TITLE,
   URGE_STOP_ACTION_DONE_LABEL,
   urgeArcToProfile,
+  getGoalConnectionStepCopy,
+  shouldInterceptOuterAtGoalConnection,
 } from "../arc/arcGoalEngine.ts";
 import type { ArcGoalLiveState, ArcGoalUiStage } from "../arc/arcGoalEngine.ts";
 import {
@@ -133,6 +138,54 @@ import {
   StateClarificationDecisionScreen,
   TriggerIdentificationScreen,
 } from "./screens.tsx";
+import { toArcGoalSharedFacts } from "../arc/sharedLiveSessionFacts.ts";
+import { recordSharedLiveSessionCompletion } from "../data/sharedLiveSessionCompletion.ts";
+import { confirmActionRoleAndPersist, startPendingSharedActionExecution } from "../data/pendingSharedActionExecutionPersistence.ts";
+import { shouldInterceptOuterAtSuccessFocus } from "../arc/arcGoalEngine.ts";
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+ * correction: the THREE required PendingSharedActionExecution roles for
+ * an ArcGoal session -- corrected from an earlier, wrong two-role model
+ * that silently treated the outer run's own "act" confirmation AS the
+ * confirmation of ArcGoal.goalAction. getGoalActionConfirmCopy's own doc
+ * is explicit that the two are DISTINCT real actions ("distinct from the
+ * identity protocol's own identityAction") -- both are now preserved and
+ * tracked separately.
+ *
+ * BENEFICIAL_ACTION_ROLE = the urge/supportive bridge's own action
+ * (confirmed at urge_action_confirm/supportive_action_confirm -- see
+ * getUrgeActionConfirmCopy/getSupportiveActionConfirmCopy's own doc).
+ * Only required when this session actually resolves to an urge/supportive
+ * bridge (reassessmentChoice !== "direct", or the goal has no
+ * urge/interfering mappings at all -- in either case there is no bridge
+ * action to confirm, so this role is never added to the queue).
+ *
+ * IDENTITY_ACTION_ROLE = the outer (identity) run's own "act" stage
+ * confirmation (ArcLiveState.realActionCompleted becoming true via
+ * onActionCompleted below) -- the identityProfile's own action content,
+ * never the goal's own.
+ *
+ * GOAL_ACTION_ROLE = the separate, pre-existing "goal_action_confirm"
+ * stage's own confirmation (ArcGoal.goalAction + desiredResult, via
+ * getGoalActionConfirmCopy). Now RELOCATED (see
+ * shouldInterceptOuterAtSuccessFocus's own doc and commitAdvanceOuter
+ * below) to fire immediately after the Identity Action is confirmed and
+ * BEFORE the outer run is ever allowed to continue into success_focus --
+ * so "Success Focus only after explicit Identity/Goal Action
+ * confirmation" covers BOTH roles, in order, never either alone. Its own
+ * "סיימתי" tap now resumes the outer run (into success_focus) rather than
+ * exiting the screen -- the routine-completion marking that used to fire
+ * here has moved to the true end of the tail (see handleCompleteContinue's
+ * own doc for exactly where and why).
+ */
+const BENEFICIAL_ACTION_ROLE = "beneficial_action";
+const IDENTITY_ACTION_ROLE = "identity_action";
+const GOAL_ACTION_ROLE = "goal_action";
+
+function generateArcGoalSessionId(): string {
+  return `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 type Status = "loading" | "notFound" | "noIdentityProtocol" | "running";
 
@@ -161,7 +214,31 @@ export default function ArcGoalSessionScreen() {
   const [urgeArcsById, setUrgeArcsById] = useState<Record<string, UrgeArc>>({});
   const [miniArcsById, setMiniArcsById] = useState<Record<string, MiniArcBuild>>({});
   const [evidenceIndex, setEvidenceIndex] = useState<EvidenceRecord[]>([]);
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+   * correction: resolved once per focus, from the already-loaded
+   * LifeManifest store + this goal's own lifeManifestSubGoalId -- see
+   * arc/lifeManifest.ts's own resolveLifeManifestContributionForArcGoal.
+   * null whenever this goal has no Manifest link at all, or the linked
+   * Sub-goal was since deleted -- getGoalConnectionStepCopy then simply
+   * omits the Manifest-contribution line, never inventing one.
+   */
+  const [manifestContribution, setManifestContribution] = useState<LifeManifestContribution | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6: minted
+   * once per fresh session (alongside sessionStartedAt, in the same
+   * useFocusEffect below) and never regenerated by a retry -- every
+   * PendingSharedActionExecution/progress call for this session reuses
+   * this exact id, mirroring live/CombinedInterferenceLiveScreen.tsx's
+   * own "mint once, reuse for every retry" sessionId pattern. Regenerated
+   * on every FOCUS, not just mount, because this screen already resets
+   * its whole session on every focus (see this file's own module doc) --
+   * there is no cross-restart resume for an in-progress ArcGoal session
+   * today, exactly like the PD screen; see the integration report for
+   * this finding.
+   */
+  const [sessionId, setSessionId] = useState(() => generateArcGoalSessionId());
 
   const [outerSession, setOuterSession] = useState<ArcLiveState>(() => createArcGoalOuterInitialSession());
   const [outerStage, setOuterStage] = useState<ArcStage>("trigger_selection");
@@ -195,16 +272,70 @@ export default function ArcGoalSessionScreen() {
     setPendingAlternativeActionDuration(null);
   }
 
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6: starts
+   * (and persists) this session's PendingSharedActionExecution queue --
+   * called exactly once per session, either immediately on load (a goal
+   * with no urge/interfering mappings at all -- the reassessment screen
+   * never shows, so this is the only chance) or from the reassessment
+   * screen's own onSelect (see below), never both for the same session.
+   * Fire-and-forget, exactly like this screen's own existing
+   * appendSessionLogEntry/markWeeklyActionCompletedToday background
+   * writes -- a failure here is logged, never blocks rendering.
+   */
+  function beginPendingActionExecution(freshSessionId: string, roleIds: string[]) {
+    startPendingSharedActionExecution("arc_goal", goalId, freshSessionId, roleIds, new Date().toISOString()).catch((error) => {
+      console.warn("[ArcGoalSessionScreen] Failed to start pending action execution.", error);
+    });
+  }
+
+  /** Persists one role's explicit confirmation -- see this file's own BENEFICIAL_ACTION_ROLE/IDENTITY_ACTION_ROLE/GOAL_ACTION_ROLE doc for exactly which UI event calls this with which role. */
+  function confirmArcGoalActionRole(roleId: string) {
+    confirmActionRoleAndPersist("arc_goal", goalId, roleId, new Date().toISOString()).catch((error) => {
+      console.warn("[ArcGoalSessionScreen] Failed to persist action role confirmation.", error);
+    });
+  }
+
+  /**
+   * Attempts the progress write through Phase 5's shared dispatcher --
+   * safe to call after EITHER role's confirmation (not just the last
+   * one): data/pendingSharedActionExecutionPersistence.ts's own
+   * commitArcGoalProgressIfReady gates on the action queue alone and is a
+   * silent no-op ("not_ready") until every required role is confirmed,
+   * so calling this defensively after both confirm points never risks a
+   * premature or duplicate write. Takes the latest outer session/goal
+   * state as explicit parameters (never the closed-over state variables)
+   * because both call sites below have a freshly-computed local value
+   * that React's own state setters have not yet applied.
+   */
+  function attemptArcGoalProgressCommit(latestOuterSession: ArcLiveState, latestGoalState: ArcGoalLiveState) {
+    if (!goal) return;
+    const mapping = resolveSelectedMapping(goal, latestGoalState) ?? resolveSelectedUrgeMapping(goal, latestGoalState);
+    const facts = toArcGoalSharedFacts({
+      sessionId,
+      arcGoalId: goalId,
+      weeklyActionId,
+      outerSession: latestOuterSession,
+      goalState: latestGoalState,
+      mappingActionRelationship: mapping?.actionRelationship ?? null,
+      terminalCompleted: true,
+    });
+    recordSharedLiveSessionCompletion(facts, new Date().toISOString()).catch((error) => {
+      console.warn("[ArcGoalSessionScreen] Failed to record ArcGoal session completion.", error);
+    });
+  }
+
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      Promise.all([getArcGoal(goalId), loadArcBuilds(), loadSessionLog(), loadUrgeArcs(), loadMiniArcBuilds()]).then(
-        ([loadedGoal, builds, sessionLog, urgeArcs, miniArcBuilds]) => {
+      Promise.all([getArcGoal(goalId), loadArcBuilds(), loadSessionLog(), loadUrgeArcs(), loadMiniArcBuilds(), loadLifeManifests()]).then(
+        ([loadedGoal, builds, sessionLog, urgeArcs, miniArcBuilds, manifests]) => {
         if (cancelled) return;
         if (!loadedGoal) {
           setStatus("notFound");
           return;
         }
+        setManifestContribution(resolveLifeManifestContributionForArcGoal(manifests, loadedGoal.lifeManifestSubGoalId));
         const byId: Record<string, ArcBuild> = {};
         for (const build of builds) byId[build.id] = build;
         setArcBuildsById(byId);
@@ -228,6 +359,18 @@ export default function ArcGoalSessionScreen() {
         setInnerStage("sensation_check");
         setGoalState(createEmptyArcGoalLiveState());
         setSessionStartedAt(new Date().toISOString());
+        const freshSessionId = generateArcGoalSessionId();
+        setSessionId(freshSessionId);
+        // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6: a
+        // goal with neither urgeMappings nor interferingMappings never
+        // shows the reassessment screen at all (needsReassessmentDetour's
+        // own doc: "continues straight into desired_state_check, exactly
+        // as if the trainee had answered 'direct'") -- this is the ONLY
+        // chance to start the queue for such a session, since
+        // resolveAfterReassessment's own onSelect (below) will never fire.
+        if (loadedGoal.urgeMappings.length === 0 && loadedGoal.interferingMappings.length === 0) {
+          beginPendingActionExecution(freshSessionId, [IDENTITY_ACTION_ROLE, GOAL_ACTION_ROLE]);
+        }
         setPresenceObjectGroundingDone(false);
         clearPendingFields();
         setGratitudeText("");
@@ -311,7 +454,25 @@ export default function ArcGoalSessionScreen() {
   function commitAdvanceOuter(patchedSession: ArcLiveState, transitionStage: ArcStage = outerStage) {
     if (!identityProfile || !goal) return;
     const { session: nextSession, stage: nextStage } = advanceLiveSession(transitionStage, patchedSession, identityProfile, ["identity"]);
-    if (outerStage === "act" && nextStage !== "act") clearTimerRun("beneficialAction");
+    if (outerStage === "act" && nextStage !== "act") {
+      clearTimerRun("beneficialAction");
+      // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+      // correction: the ONLY way the outer run ever leaves "act" is via
+      // ActionScreen's own onCompleted (onActionCompleted above applies
+      // realActionCompleted: true before ever calling commitAdvance) --
+      // so this transition IS the Identity Action role's explicit
+      // confirmation. Defensive guard on nextSession.realActionCompleted
+      // anyway, mirroring this codebase's general "never trust reached
+      // alone" convention. This is NEVER the Goal Action's own
+      // confirmation (see IDENTITY_ACTION_ROLE/GOAL_ACTION_ROLE's own
+      // doc) and never writes progress by itself -- the attempt below is
+      // still a safe no-op, since Goal Action (confirmed later, at
+      // goal_action_confirm's own "סיימתי") has not been confirmed yet.
+      if (nextSession.realActionCompleted) {
+        confirmArcGoalActionRole(IDENTITY_ACTION_ROLE);
+        attemptArcGoalProgressCommit(nextSession, goalState);
+      }
+    }
     setOuterSession(nextSession);
     setOuterStage(nextStage);
     clearPendingFields();
@@ -329,6 +490,36 @@ export default function ArcGoalSessionScreen() {
       setInnerSession(createArcGoalInnerInitialSession());
       setInnerStage("sensation_check");
       setGoalState((current) => ({ ...current, uiStage: "reassessment" }));
+      return;
+    }
+    // Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+    // correction: intercept BEFORE "encode" ever renders -- the approved
+    // method's own "Acceptance -> Regulation -> Goal Connection ->
+    // Encoding" order, applied one stage boundary earlier than
+    // shouldInterceptOuterAtSuccessFocus below. Same already-advanced-
+    // underneath pattern: outerSession/outerStage are already updated to
+    // the real "encode" above; only goalState.uiStage diverts, and
+    // handleGoalConnectionContinue below simply returns uiStage to
+    // "outer" once the trainee continues.
+    if (shouldInterceptOuterAtGoalConnection(outerStage, nextStage)) {
+      // Final-review correction: mark the Future Mantra as already shown
+      // this session, the moment goal_connection is reached -- read by
+      // the outer getStageCopy call below to suppress its own repeat
+      // appearance at the shared "encode" ArcStage.
+      setGoalState((current) => ({ ...current, uiStage: "goal_connection", goalConnectionShown: true }));
+      return;
+    }
+    // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+    // correction: intercept BEFORE success_focus ever renders -- the Goal
+    // Action must be explicitly confirmed first (see
+    // shouldInterceptOuterAtSuccessFocus's own doc). outerSession/outerStage
+    // are already updated to the real "success_focus" above (mirrors
+    // needsTriggerPrefixDetour's own already-advanced-underneath pattern);
+    // only goalState.uiStage diverts, and the render logic resumes reading
+    // the real outerStage once goal_action_confirm's own handler routes
+    // back to "outer" (see handleGoalActionRoleConfirmed below).
+    if (shouldInterceptOuterAtSuccessFocus(outerStage, nextStage)) {
+      setGoalState((current) => ({ ...current, uiStage: "goal_action_confirm" }));
       return;
     }
     if (nextStage === "complete") {
@@ -410,7 +601,17 @@ export default function ArcGoalSessionScreen() {
     setInnerStage(nextStage);
   }
 
-  function handleCompleteContinue() {
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+   * correction: this is now the TRUE final exit of the session --
+   * goal_action_confirm no longer follows it (it was RELOCATED, see
+   * handleGoalActionRoleConfirmed and commitAdvanceOuter's own
+   * shouldInterceptOuterAtSuccessFocus branch, to fire before
+   * success_focus instead of after this reflection step). Made async
+   * because it now also performs the routine-completion side effect that
+   * used to live in handleGoalActionConfirmDone.
+   */
+  async function handleCompleteContinue() {
     const trimmedGratitude = gratitudeText.trim();
     const trimmedMemoryDetail = gratitudeMemoryDetailText.trim();
     const trimmedProgressEvidence = progressEvidenceText.trim();
@@ -436,7 +637,39 @@ export default function ArcGoalSessionScreen() {
     setGratitudeMemoryDetailText("");
     setProgressEvidenceText("");
     setImprovementText("");
-    setGoalState((current) => ({ ...current, uiStage: "goal_action_confirm" }));
+    await handleSessionExit();
+  }
+
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+   * correction: goal_action_confirm's own "סיימתי" tap, now reached
+   * BEFORE success_focus (see commitAdvanceOuter's own
+   * shouldInterceptOuterAtSuccessFocus branch) -- this is the Goal
+   * Action role's explicit confirmation, distinct from the Identity
+   * Action confirmed earlier at "act" itself. Never exits the screen:
+   * resumes the outer run by returning goalState.uiStage to "outer",
+   * which then renders the ALREADY-ADVANCED outerStage
+   * ("success_focus") exactly like every other detour in this file
+   * (needsTriggerPrefixDetour's own doc explains the same
+   * already-advanced-underneath pattern).
+   */
+  function handleGoalActionRoleConfirmed() {
+    confirmArcGoalActionRole(GOAL_ACTION_ROLE);
+    attemptArcGoalProgressCommit(outerSession, goalState);
+    setGoalState((current) => ({ ...current, uiStage: "outer" }));
+  }
+
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+   * correction: goal_connection's own "המשך" tap -- a passive imagery/
+   * mantra readthrough, never a confirmation gate (unlike goal_action_confirm's
+   * own "סיימתי", which confirms a real action role and writes progress).
+   * Simply resumes the outer run by returning uiStage to "outer", which
+   * then renders the ALREADY-ADVANCED outerStage ("encode") exactly like
+   * every other detour in this file.
+   */
+  function handleGoalConnectionContinue() {
+    setGoalState((current) => ({ ...current, uiStage: "outer" }));
   }
 
   /**
@@ -444,17 +677,18 @@ export default function ArcGoalSessionScreen() {
    * the ARC Goal session is completed, return automatically to the
    * routine. Mark the routine action as completed only after the
    * connected goal action is completed." -- reached exclusively from
-   * goal_action_confirm's own "סיימתי" tap (never earlier: leaving/
-   * canceling the session at any point before this, including the whole
-   * urge/supportive bridge and the outer run itself, never marks
-   * anything complete). Reuses arc/routineLinks.ts's own
+   * handleCompleteContinue above, the screen's own true final step
+   * (never earlier: leaving/canceling the session at any point before
+   * this, including the whole urge/supportive bridge, the outer run's
+   * own Identity Action, and the Goal Action confirmation itself, never
+   * marks anything complete). Reuses arc/routineLinks.ts's own
    * markWeeklyActionCompletedToday -- the SAME completion rule
    * WeeklyActionsSection's own no-linked-protocol plain check-off
    * already uses, never a separate one. Every other entry point into
    * this screen (weeklyActionId absent) keeps the original "back to
    * Home" behavior unchanged.
    */
-  async function handleGoalActionConfirmDone() {
+  async function handleSessionExit() {
     if (weeklyActionId) {
       const weeklyActions = await loadWeeklyActions();
       const target = weeklyActions.find((action) => action.id === weeklyActionId);
@@ -708,7 +942,22 @@ export default function ArcGoalSessionScreen() {
           <ReassessmentScreen
             showUrgeOption={goal.urgeMappings.length > 0}
             showSupportiveOption={goal.interferingMappings.length > 0}
-            onSelect={(choice) => applyGoalHop(resolveAfterReassessment(choice, goal, goalState, urgeArcsById))}
+            onSelect={(choice) => {
+              // Adaptive ARC architecture task (unified PD/ARC Goal),
+              // Phase 6: "direct" never runs a bridge this session (no
+              // Beneficial Action to confirm); "urge"/"supportive" always
+              // will (see resolveAfterReassessment's own doc -- neither
+              // choice is ever offered/reachable unless its own mapping
+              // list is non-empty). This is the only other place a fresh
+              // session's queue is ever started -- see this file's own
+              // beginPendingActionExecution doc for the complementary
+              // zero-mapping case.
+              beginPendingActionExecution(
+                sessionId,
+                choice === "direct" ? [IDENTITY_ACTION_ROLE, GOAL_ACTION_ROLE] : [BENEFICIAL_ACTION_ROLE, IDENTITY_ACTION_ROLE, GOAL_ACTION_ROLE]
+              );
+              applyGoalHop(resolveAfterReassessment(choice, goal, goalState, urgeArcsById));
+            }}
           />
         </ScrollView>
       </SafeAreaView>
@@ -884,7 +1133,12 @@ export default function ArcGoalSessionScreen() {
           <Pressable
             style={[styles.button, styles.fullWidthButton]}
             onPress={() => {
+              // Adaptive ARC architecture task (unified PD/ARC Goal),
+              // Phase 6: this tap IS the Beneficial Action role's
+              // explicit confirmation for the urge route.
+              confirmArcGoalActionRole(BENEFICIAL_ACTION_ROLE);
               const resolved = resolveAfterBridgeConfirmed(goalState);
+              attemptArcGoalProgressCommit(outerSession, resolved);
               setInnerSession(createArcGoalUrgeInnerInitialSession());
               setInnerStage("sensation_check");
               setGoalState(resolved);
@@ -909,7 +1163,12 @@ export default function ArcGoalSessionScreen() {
           <Pressable
             style={[styles.button, styles.fullWidthButton]}
             onPress={() => {
+              // Adaptive ARC architecture task (unified PD/ARC Goal),
+              // Phase 6: this tap IS the Beneficial Action role's
+              // explicit confirmation for the supportive-state route.
+              confirmArcGoalActionRole(BENEFICIAL_ACTION_ROLE);
               const resolved = resolveAfterBridgeConfirmed(goalState);
+              attemptArcGoalProgressCommit(outerSession, resolved);
               setInnerSession(createArcGoalInnerInitialSession());
               setInnerStage("sensation_check");
               setGoalState(resolved);
@@ -930,8 +1189,30 @@ export default function ArcGoalSessionScreen() {
         <View style={styles.content}>
           <Text style={styles.title}>{copy.title}</Text>
           <Text style={styles.body}>{copy.body}</Text>
-          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleGoalActionConfirmDone}>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleGoalActionRoleConfirmed}>
             <Text style={styles.buttonText}>סיימתי</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "goal_connection") {
+    // Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+    // correction: reached only when identityProfile/goal are both already
+    // resolved (this uiStage is only ever set from inside commitAdvanceOuter,
+    // which already requires both -- see that function's own early return).
+    const copy = getGoalConnectionStepCopy(goal!, identityProfile!, manifestContribution);
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <View style={styles.content}>
+          <Text style={styles.title}>{copy.title}</Text>
+          {copy.lines.map((line, index) => (
+            <Text key={index} style={styles.body}>{line}</Text>
+          ))}
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleGoalConnectionContinue}>
+            <Text style={styles.buttonText}>המשך</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -991,9 +1272,16 @@ export default function ArcGoalSessionScreen() {
       commitAdvance: commitAdvanceOuter,
     },
     handleCompleteContinue,
-    "המשך לפעולת המטרה"
+    // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+    // correction: this label used to read "המשך לפעולת המטרה" ("continue
+    // to the goal action"), because goal_action_confirm used to follow
+    // this exact screen. It no longer does (relocated to before
+    // success_focus -- see this file's own module doc) -- handleCompleteContinue
+    // is now the screen's true final step, so the label is corrected to
+    // match what it actually does.
+    weeklyActionId ? "סיום וחזרה לשגרה" : "סיום"
   );
-  const copy = getStageCopy(outerStage, identityProfile, outerSession, ["identity"], evidenceIndex);
+  const copy = getStageCopy(outerStage, identityProfile, outerSession, ["identity"], evidenceIndex, goalState.goalConnectionShown);
   return (
     <SafeAreaView style={styles.safeArea}>
       <Stack.Screen options={{ title: `ARC Goal LIVE — ${copy.title}` }} />

@@ -43,6 +43,7 @@
 
 import type { InterferenceCategory, InterferenceItem } from "./interferenceItem.ts";
 import type { StateProfile } from "./stateProfile.ts";
+import type { PersonalDevelopmentRouteGoalConnection } from "./personalDevelopmentRouteConfig.ts";
 
 function safeText(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
@@ -151,15 +152,94 @@ export function getFactorProcessingStepCopy(item: InterferenceItem): ProcessingS
 }
 
 // ---------------------------------------------------------------------------
-// Shared Stay / Acceptance -- fixed, generic, never per-item, never State-dependent.
+// Shared Stay -- fixed, generic, never per-item, never State-dependent.
 // ---------------------------------------------------------------------------
 
-export type SharedStageKind = "shared_stay" | "shared_acceptance";
+export type SharedStageKind = "shared_stay";
 
 export function getSharedStageCopy(kind: SharedStageKind): { title: string; body: string } {
-  return kind === "shared_stay"
-    ? { title: "שהייה", body: "אפשר להישאר לרגע עם מה שנוכח, בלי למהר להיפטר ממנו." }
-    : { title: "קבלה", body: "מותר למה שנוכח כרגע להיות כאן, בלי התנגדות מיידית." };
+  void kind;
+  return { title: "שהייה", body: "אפשר להישאר לרגע עם מה שנוכח, בלי למהר להיפטר ממנו." };
+}
+
+// ---------------------------------------------------------------------------
+// Acceptance -- Adaptive ARC architecture task (unified PD/ARC Goal),
+// method-completion correction: names the actual disturbance category
+// (or a generic phrase when several are selected at once, mirroring Mini's
+// own combined_recognition step's "מה שמפריע" phrasing) alongside a
+// neutral anchor, and explicitly frames BOTH as allowed to be present --
+// never an instruction to evoke, intensify, suppress, or replace the
+// disturbance. The neutral anchor reuses the route's own configured State
+// regulation anchor (StateProfile.regulationAnchor) when one is available
+// -- the same anchor Regulation itself uses one step later, so Acceptance
+// and Regulation reference the identical anchor rather than two
+// unrelated ones -- and falls back to a fixed, always-available generic
+// anchor (feet-floor contact) when no State participates or none is
+// configured, so Acceptance is never blocked on State inclusion.
+// ---------------------------------------------------------------------------
+
+const ACCEPTANCE_DISTURBANCE_LABEL: Record<InterferenceCategory, string> = {
+  thought: "המחשבה המפריעה",
+  belief: "האמונה המפריעה",
+  urge: "הדחף",
+  emotion: "התחושה",
+};
+
+const DEFAULT_NEUTRAL_ANCHOR_LINE = "המגע של כפות הרגליים עם הרצפה";
+
+/** The neutral-anchor phrase Acceptance and Regulation both reference -- StateProfile.regulationAnchor when configured, otherwise the fixed, always-available default (feet-floor contact). Never null: an anchor is always available. */
+export function resolveNeutralAnchorPhrase(regulationAnchor: string | null | undefined): string {
+  const custom = safeText(regulationAnchor);
+  return custom.length > 0 ? custom : DEFAULT_NEUTRAL_ANCHOR_LINE;
+}
+
+/**
+ * `categories` is every DISTINCT category among the session's selected
+ * factors (usually one; several when more than one factor was selected
+ * for this route) -- a single category is named specifically ("המחשבה
+ * המפריעה"/"האמונה המפריעה"/"הדחף"/"התחושה"); more than one falls back
+ * to the same generic "מה שמפריע" phrasing arc/combinedFullPlan.ts's own
+ * "combined_recognition" step already uses for the identical situation,
+ * never inventing a new combined phrase. An empty `categories` array
+ * (Presence-only routes with no factor selected) also uses the generic
+ * phrase -- there is still a real experience to accept, even without a
+ * named disturbing factor.
+ */
+export function getAcceptanceStepCopy(categories: InterferenceCategory[], regulationAnchor: string | null | undefined): { title: string; body: string } {
+  const distinctCategories = [...new Set(categories)];
+  const disturbanceLabel = distinctCategories.length === 1 ? ACCEPTANCE_DISTURBANCE_LABEL[distinctCategories[0]] : "מה שמפריע";
+  const anchor = resolveNeutralAnchorPhrase(regulationAnchor);
+  return {
+    title: "קבלה",
+    body: `אפשר לשים לב ל${disturbanceLabel}, ובו-זמנית ל${anchor} -- עוגן ניטרלי שנמצא כאן. מותר לשניהם להיות נוכחים יחד, בלי למהר להיפטר מאף אחד מהם.`,
+  };
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
+ * task, correction round 3: the UNIVERSAL, State-independent Regulation
+ * cue arc/personalDevelopmentRouteLink.ts's own compact rehearsal needs --
+ * "applies according to the selected disturbing factor whether or not ARC
+ * State is included" (the latest method correction). Deliberately its own
+ * function, never a reuse or rename of getStateRegulationAnchorCopy below
+ * -- that one is genuinely State-specific (reads StateProfile's own
+ * configured fields, only ever called when a route's plan actually
+ * resolves stateIncluded) and stays exactly that. This one reuses ONLY
+ * the same neutral-anchor concept resolveNeutralAnchorPhrase already
+ * established for Acceptance (StateProfile.regulationAnchor when
+ * configured, the fixed default otherwise) -- gradually directing more
+ * attention toward it, with a generic natural-breathing/stable-posture
+ * line to reinforce ordinary stability. Never requires relief or a
+ * positive feeling, and never fabricates a specific StateProfile
+ * breathing/posture cue when none is configured (a no-State/no-anchor
+ * route still gets this step, with the fixed default anchor alone).
+ */
+export function getNeutralRegulationCueCopy(regulationAnchor: string | null | undefined): { title: string; body: string } {
+  const anchor = resolveNeutralAnchorPhrase(regulationAnchor);
+  return {
+    title: "ויסות",
+    body: `אפשר להפנות בהדרגה עוד תשומת לב אל ${anchor} -- עוגן ניטרלי וקבוע. נשימה טבעית ותנוחת גוף יציבה יכולות לחזק את היציבות הרגילה, בלי צורך להרגיש הקלה או תחושה חיובית באופן מיידי.`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -168,14 +248,112 @@ export function getSharedStageCopy(kind: SharedStageKind): { title: string; body
 // in that case) -- never a repeat of any factor's own processing content.
 // ---------------------------------------------------------------------------
 
-export function getStateRegulationAnchorCopy(state: StateProfile): { title: string; anchor: string | null } {
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+ * correction: "full" surfaces StateProfile's own already-real,
+ * already-BUILD-configured breathing/posture/gaze content (naturalBreathingAwareness/
+ * bodyLanguageCue/gazeCue) alongside the regulation anchor, mirroring
+ * regular ARC's own "regulate" ArcStage (arc/stageCopy.ts) reading the
+ * equivalent ArcBuildProfile fields -- these StateProfile fields already
+ * existed for exactly this purpose (see StateProfile's own doc) but were
+ * never actually read here until now. "mini" stays deliberately light --
+ * anchor + one merged body-language line, no separate breathing/gaze
+ * lines -- mirroring arc/combinedMiniPlan.ts's own documented "no
+ * checkpoint or rating of any kind" simplicity for this pair; never the
+ * Full richness transplanted onto Mini.
+ */
+export type CombinedStateCopyMode = "full" | "mini";
+
+export function getStateRegulationAnchorCopy(state: StateProfile, mode: CombinedStateCopyMode = "full"): { title: string; lines: string[] } {
   const anchor = safeText(state.regulationAnchor);
-  return { title: "ויסות מהמצב הרצוי", anchor: anchor.length > 0 ? anchor : null };
+  const bodyLanguage = safeText(state.bodyLanguageCue);
+  const lines: string[] = [];
+  if (anchor) lines.push(anchor);
+  if (mode === "full") {
+    const breathing = safeText(state.naturalBreathingAwareness);
+    const gaze = safeText(state.gazeCue);
+    if (breathing) lines.push(breathing);
+    if (bodyLanguage) lines.push(`תנוחת הגוף: ${bodyLanguage}`);
+    if (gaze) lines.push(`מבט: ${gaze}`);
+  } else if (bodyLanguage) {
+    lines.push(bodyLanguage);
+  }
+  return { title: "ויסות מהמצב הרצוי", lines };
 }
 
-export function getStateDesiredStateEncodingCopy(state: StateProfile): { title: string; cue: string | null } {
+/**
+ * The State Mantra's own repetition instruction -- "full" honors the
+ * saved mantraRepetitionMode (StateProfile's own field, already
+ * BUILD-configured, never read by this module until now): "fixed_count"
+ * names the saved count, "until_change_noticed" instructs repeating
+ * until a change is noticed, "once" (and the mini path, unconditionally)
+ * states it plainly once. Distinct from Future Mantra
+ * (arc/futureOrientedMantra.ts, an ArcBuildProfile-only concept with no
+ * StateProfile equivalent yet -- PD has no per-goal Future Mantra field
+ * to read) and from Identity Mantra (EncodingProfile.mantra, regular
+ * ARC/ArcGoal only) -- this is State Mantra alone, never conflated with
+ * either.
+ */
+function resolveStateMantraLine(state: StateProfile, mode: CombinedStateCopyMode): string | null {
+  const text = safeText(state.stateMantra);
+  if (!text) return null;
+  if (mode === "mini") return `מנטרת המצב: "${text}".`;
+  if (state.mantraRepetitionMode === "fixed_count" && state.mantraFixedRepetitionCount) {
+    return `חזור על מנטרת המצב ${state.mantraFixedRepetitionCount} פעמים: "${text}".`;
+  }
+  if (state.mantraRepetitionMode === "until_change_noticed") {
+    return `חזור על מנטרת המצב עד שתבחין בשינוי: "${text}".`;
+  }
+  return `מנטרת המצב: "${text}".`;
+}
+
+export function getStateDesiredStateEncodingCopy(state: StateProfile, mode: CombinedStateCopyMode = "full"): { title: string; lines: string[] } {
   const cue = safeText(state.encodingCue);
-  return { title: "קידוד המצב הרצוי", cue: cue.length > 0 ? cue : null };
+  const bodyLanguage = safeText(state.bodyLanguageCue);
+  const mantraLine = resolveStateMantraLine(state, mode);
+  const lines: string[] = [];
+  if (cue) lines.push(cue);
+  if (mode === "full") {
+    const sensation = safeText(state.desiredBodySensation);
+    const location = safeText(state.bodySensationLocation);
+    if (sensation) lines.push(location ? `${sensation} (${location})` : sensation);
+    if (bodyLanguage) lines.push(`תנוחת הגוף: ${bodyLanguage}`);
+  } else {
+    const sensation = safeText(state.desiredBodySensation);
+    if (sensation) lines.push(sensation);
+  }
+  if (mantraLine) lines.push(mantraLine);
+  return { title: "קידוד המצב הרצוי", lines };
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 7: the
+ * "goal_connection" step's own content -- only ever called when
+ * arc/combinedFullPlan.ts actually emits that step (i.e. only when a
+ * PersonalDevelopmentRouteGoalConnection is genuinely configured on the
+ * route). Reads back exactly the coach-authored fields, never inventing
+ * or rephrasing them -- the trainee's own desired result, the value it
+ * expresses, and their personal reason it matters, in that order,
+ * immediately before Encoding (see arc/combinedFullPlan.ts's own header
+ * doc, step 11).
+ *
+ * Final-review correction: valueText/personalReasonText are BUILD-optional
+ * (see build/PersonalDevelopmentRouteEditorScreen.tsx's own "(רשות)"
+ * labels) -- a blank optional field is omitted entirely, never rendered
+ * as an empty "label: " line. Mirrors arc/arcGoalEngine.ts's own
+ * getGoalConnectionStepCopy exactly (same {title, lines} shape, same
+ * omit-when-blank rule), so the two tracks' Goal Connection screens never
+ * drift into two different blank-field behaviors.
+ */
+export function getGoalConnectionCopy(goalConnection: PersonalDevelopmentRouteGoalConnection): { title: string; lines: string[] } {
+  const lines: string[] = [];
+  const desiredResult = safeText(goalConnection.desiredResultText);
+  if (desiredResult) lines.push(`התוצאה הרצויה: ${desiredResult}`);
+  const value = safeText(goalConnection.valueText);
+  if (value) lines.push(`הערך שהיא מבטאת: ${value}`);
+  const personalReason = safeText(goalConnection.personalReasonText);
+  if (personalReason) lines.push(`הסיבה האישית שלך: ${personalReason}`);
+  return { title: "חיבור למטרה", lines };
 }
 
 // ---------------------------------------------------------------------------

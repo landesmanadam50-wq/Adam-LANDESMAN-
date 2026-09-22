@@ -237,7 +237,23 @@ export function getStageCopy(
    * Optional and defaults to empty so every other stage, and every
    * existing caller/test of this function, is completely unaffected.
    */
-  evidenceIndex: EvidenceRecord[] = []
+  evidenceIndex: EvidenceRecord[] = [],
+  /**
+   * Final-review correction: true only when the caller has ALREADY shown
+   * this exact Future Mantra line once this session, elsewhere -- today
+   * that is ArcGoal alone (live/ArcGoalSessionScreen.tsx's own
+   * "goal_connection" screen, arc/arcGoalEngine.ts's own
+   * getGoalConnectionStepCopy, reached unconditionally once per outer run
+   * immediately before "encode"). Only ever read by the "encode" case
+   * below, and only ever to skip pushing that ONE segment -- every other
+   * stage, and every other ArcBuild session type (regular ARC, Identity
+   * Extension, Mini variants, Presence, Negative Action), never sets
+   * this, so their own Future Mantra behavior at "encode" is completely
+   * unaffected by this parameter's existence. Optional and defaults to
+   * false for the exact same backward-compatibility reason evidenceIndex
+   * above does.
+   */
+  suppressFutureMantra: boolean = false
 ): ArcStageCopy {
   switch (stage) {
     case "trigger_selection":
@@ -852,8 +868,11 @@ export function getStageCopy(
       // -- shown in this existing mantra/identity part of Encoding,
       // after the empowering interpretation, Value, and Identity Mantra.
       // Preserved as its own field/segment, never merged into the
-      // Identity Mantra text above.
-      const futureOrientedMantraLine = getFutureOrientedMantraLine(profile, layer);
+      // Identity Mantra text above. Suppressed only when the caller says
+      // it already showed this exact line once this session (see
+      // suppressFutureMantra's own doc above) -- every other session
+      // type leaves this false and sees it here exactly as before.
+      const futureOrientedMantraLine = suppressFutureMantra ? null : getFutureOrientedMantraLine(profile, layer);
       if (futureOrientedMantraLine) {
         segments.push({ text: futureOrientedMantraLine, durationSeconds: INSTRUCTION_TIMING.encodeFutureMantra });
         hasContinuityContent = true;

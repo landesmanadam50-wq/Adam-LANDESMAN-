@@ -68,10 +68,14 @@
  * that function's own output, so this "spine" is stable and final for
  * every step around it. presenceGateIndex is then computed directly from
  * the spine's own real content (the first index whose kind is
- * "state_desired_state_encoding"/"state_action"/"factor_action"/
+ * "state_desired_state_encoding"/"processing"/"state_action"/"factor_action"/
  * "terminal_boundary" -- i.e. the exact position a real "presence" step
- * would occupy) -- never a hardcoded/guessed count, so it self-corrects
- * against any future reordering of the steps before it. When the
+ * would occupy; "processing" is included because a no-State route's
+ * Encoding/New-Response-Practice content -- factor-specific replacement
+ * responses -- is the first thing that would follow Presence's own slot
+ * when there is no State block at all) -- never a hardcoded/guessed
+ * count, so it self-corrects against any future reordering of the steps
+ * before it. When the
  * controller's step cursor is about to cross that index and presenceMode
  * has not yet been resolved, arc/combinedRoute.ts's own resolvePresenceRoute
  * decides: "skip"/"embedded"/"full_required" resolve immediately with no
@@ -91,7 +95,7 @@
  */
 
 import type { InterferenceItem } from "./interferenceItem.ts";
-import type { PersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
+import type { BeneficialActionPolicy, PersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
 import type { StateProfile } from "./stateProfile.ts";
 import type { PresenceArc } from "./types.ts";
 import { resolveCombinedFactorPlan, resolveCombinedActionKinds, MINI_PRIMARY_FACTOR_QUESTION, STATE_DECISION_QUESTION } from "./combinedFactorPlan.ts";
@@ -123,6 +127,7 @@ import {
 } from "./postActionCompletion.ts";
 import type { MiniPostActionCompletionStage, PostActionCompletionStage, PostActionCompletionState } from "./postActionCompletion.ts";
 import { generateTimerRunId } from "./actionTimer.ts";
+import type { PersonalDevelopmentRouteStage } from "./personalDevelopmentRouteProgress.ts";
 
 /**
  * The three combined-action timer identities (data/storage.ts's own
@@ -157,6 +162,15 @@ export interface CreateCombinedLiveSessionInput {
   stateProfiles: StateProfile[];
   presenceArcs: PresenceArc[];
   startedAt: string;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+   * correction: the route's own current PersonalDevelopmentRouteProgress.stage
+   * (arc/personalDevelopmentRouteProgress.ts), read by the caller (the LIVE
+   * screen) once, right before session creation -- frozen onto
+   * CombinedLiveSessionState.stageAtStart for the rest of the session (see
+   * that field's own doc). Never re-read from storage mid-session.
+   */
+  stageAtStart: PersonalDevelopmentRouteStage;
   /** Injectable purely for deterministic tests -- production callers omit it (defaults to generateTimerRunId, the same "not cryptographically unique, session-scale" id every other LIVE session in this codebase already uses). */
   generateSessionId?: () => string;
 }
@@ -185,6 +199,17 @@ export interface ActionRoleProgress {
   timerType: CombinedActionTimerType;
   reached: boolean;
   completed: boolean;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: true
+   * only when this role was explicitly SKIPPED via skipActionCompleted
+   * below -- only ever possible when the route's own
+   * beneficialActionPolicy (arc/personalDevelopmentRouteConfig.ts) is
+   * "optional_in_live". Mutually exclusive with `completed` (never both
+   * true) -- a skip is never a fabricated completion. Optional/undefined
+   * (never a required field) so every existing construction site is
+   * unaffected; read as `entry.skipped ?? false`.
+   */
+  skipped?: boolean;
 }
 
 export interface CombinedLiveSessionState {
@@ -195,6 +220,9 @@ export interface CombinedLiveSessionState {
   snapshot: CombinedLiveSessionSnapshot;
   phase: CombinedLiveSessionPhase;
   invalidReason: CombinedFactorPlanInvalidReason | null;
+
+  /** See CreateCombinedLiveSessionInput.stageAtStart's own doc -- frozen once at construction, read only by arc/combinedLiveSessionFacts.ts's own toCombinedLiveSessionFacts. */
+  stageAtStart: PersonalDevelopmentRouteStage;
 
   // Awareness (Full only -- always [] for Mini)
   awarenessSteps: FullCombinedStep[];
@@ -256,6 +284,7 @@ function emptyState(input: CreateCombinedLiveSessionInput): CombinedLiveSessionS
     routeConfigId: input.config.id,
     mode: input.mode,
     cadence: "reactive",
+    stageAtStart: input.stageAtStart,
     // Adaptive ARC architecture task, Phase 14B-4: shallow-copied so later in-place
     // mutation of the caller's own config/items/stateProfiles/presenceArcs arrays
     // (or reassignment of the config object's own top-level fields) can never
@@ -322,9 +351,26 @@ function practicedItemIdsForPlan(plan: ResolvedCombinedFactorPlan): string[] {
   return plan.factors.map((factor) => factor.itemId);
 }
 
-/** The one findIndex-based, self-correcting computation described in this module's own header doc -- never a hardcoded count. */
+/**
+ * The one findIndex-based, self-correcting computation described in this
+ * module's own header doc -- never a hardcoded count.
+ *
+ * Method-completion correction (final ordering): "processing" (Encoding /
+ * New-Response Practice's own factor-specific content -- see
+ * arc/combinedFullPlan.ts's own header doc) now renders AFTER
+ * state_desired_state_encoding, so for a WITH-State route the first
+ * boundary kind found is still state_desired_state_encoding, unchanged.
+ * For a NO-State route, though, "processing" is now the first step that
+ * would immediately follow Presence's own slot (state_desired_state_encoding
+ * never renders at all there) -- so "processing" must be included in this
+ * search, or the gate index would overshoot past every factor's own
+ * replacement-response step to the next action/terminal_boundary,
+ * resolving Presence one or more steps later than its real position.
+ */
 function computePresenceGateIndex(spine: FullCombinedStep[]): number {
-  const index = spine.findIndex((step) => step.kind === "state_desired_state_encoding" || step.kind === "state_action" || step.kind === "factor_action" || step.kind === "terminal_boundary");
+  const index = spine.findIndex(
+    (step) => step.kind === "state_desired_state_encoding" || step.kind === "processing" || step.kind === "state_action" || step.kind === "factor_action" || step.kind === "terminal_boundary"
+  );
   return index === -1 ? spine.length : index;
 }
 
@@ -355,13 +401,47 @@ function resolveActionRoleProgress(outcome: ActionResolutionOutcome, stepKind: "
   }
 }
 
-function resolvePrimaryOutcome(plan: ResolvedCombinedFactorPlan): ActionResolutionOutcome | null {
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+ * correction: exported (was module-private) so arc/combinedLiveSessionFacts.ts's
+ * own toCombinedLiveSessionFacts can resolve actionOutcomeKind directly
+ * from the already-resolved plan, rather than only from
+ * state.actionOutcomeKind (which this module itself only ever WRITES once
+ * confirmActionCompleted runs -- see that function's own call to this one,
+ * a few lines below). The underlying resolution itself depends on nothing
+ * but `plan`, which is fully resolved and stable long before any action
+ * step is ever reached (see buildActionRoleProgress's own call to this
+ * same function, at plan-resolution time) -- so calling it early is never
+ * fabricating a completion, only reading a plan-level fact sooner.
+ */
+export function resolvePrimaryOutcome(plan: ResolvedCombinedFactorPlan): ActionResolutionOutcome | null {
   if (plan.primaryFactorId) return plan.factors.find((factor) => factor.itemId === plan.primaryFactorId)?.actionOutcome ?? null;
   return plan.presence?.actionOutcome ?? null;
 }
 
-/** Called once, the moment the plan resolves -- builds the ordered per-position action role list from resolveCombinedActionKinds' own step-kind order, never re-derived later. */
-function buildActionRoleProgress(plan: ResolvedCombinedFactorPlan): ActionRoleProgress[] {
+/**
+ * Called once, the moment the plan resolves -- builds the ordered
+ * per-position action role list from resolveCombinedActionKinds' own
+ * step-kind order, never re-derived later.
+ *
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8:
+ * `beneficialActionPolicy` "none" means the route's one Beneficial/
+ * Regulating Action role is absent ENTIRELY (arc/personalDevelopmentRouteConfig.ts's
+ * own doc) -- so this returns [] regardless of what the plan would
+ * otherwise resolve, and no state_action/factor_action step is ever
+ * built either (see buildFullStepsAfterPrimaryResolution/buildMiniCombinedSteps'
+ * own beneficialActionPolicy param). "required"/"optional_in_live" both
+ * resolve the role normally -- the policy only ever changes HOW it may be
+ * confirmed (see skipActionCompleted below), never WHICH action resolves.
+ *
+ * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
+ * task: exported (was module-private) so arc/personalDevelopmentRouteLink.ts's
+ * own much lighter Stage 3 controller can resolve the SAME real action
+ * role(s) this controller resolves for Full/Mini, rather than a second,
+ * divergent copy of this logic.
+ */
+export function buildActionRoleProgress(plan: ResolvedCombinedFactorPlan, beneficialActionPolicy: BeneficialActionPolicy): ActionRoleProgress[] {
+  if (beneficialActionPolicy === "none") return [];
   const outcome = resolvePrimaryOutcome(plan);
   if (!outcome) return [];
   const kinds = resolveCombinedActionKinds(plan);
@@ -399,11 +479,12 @@ function resolveDecisionsAndAdvance(state: CombinedLiveSessionState): CombinedLi
   // already has a real primary factor.
   const plan = result.plan;
   const practicedItemIds = practicedItemIdsForPlan(plan);
-  const actionRoleProgress = buildActionRoleProgress(plan);
+  const beneficialActionPolicy = state.snapshot.config.beneficialActionPolicy;
+  const actionRoleProgress = buildActionRoleProgress(plan, beneficialActionPolicy);
   const presenceSelectedForSession = plan.presence !== null;
 
   if (state.mode === "mini") {
-    const steps = buildMiniCombinedSteps(plan);
+    const steps = buildMiniCombinedSteps(plan, beneficialActionPolicy);
     return {
       ...state,
       primaryFactorId: plan.primaryFactorId,
@@ -423,7 +504,7 @@ function resolveDecisionsAndAdvance(state: CombinedLiveSessionState): CombinedLi
 
   // Full: build the spine with the neutral "skipped" placeholder -- see this
   // module's own header doc for why this is safe and final.
-  const spine = buildFullStepsAfterPrimaryResolution(plan, "skipped");
+  const spine = buildFullStepsAfterPrimaryResolution(plan, "skipped", state.snapshot.config.goalConnection, beneficialActionPolicy);
   const presenceGateIndex = computePresenceGateIndex(spine);
   return {
     ...state,
@@ -616,6 +697,33 @@ export function confirmActionCompleted(state: CombinedLiveSessionState): Combine
   return advanceStepCursor({ ...state, actionRoleProgress, actionOutcomeKind: outcome?.kind ?? state.actionOutcomeKind });
 }
 
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: the
+ * explicit, trainee-initiated skip for the current action role -- only
+ * ever a no-op unless the route's own beneficialActionPolicy is
+ * "optional_in_live" (arc/personalDevelopmentRouteConfig.ts's own doc:
+ * "optional_in_live" resolves to either "optional_completed" or
+ * "optional_skipped", never a free skip on a "required" route). Mirrors
+ * confirmActionCompleted's own shape exactly (idempotent, advances the
+ * cursor, resolves actionOutcomeKind the same way) except it sets
+ * `skipped: true` instead of `completed: true` -- a skip is never
+ * recorded as a fabricated completion. Idempotent both ways: a role
+ * already completed or already skipped is a no-op (never overwrites a
+ * genuine completion with a skip, and never re-skips).
+ */
+export function skipActionCompleted(state: CombinedLiveSessionState): CombinedLiveSessionState {
+  if (state.phase !== "steps") return state;
+  if (state.snapshot.config.beneficialActionPolicy !== "optional_in_live") return state;
+  const step = currentStep(state);
+  if (!step || (step.kind !== "state_action" && step.kind !== "factor_action")) return state;
+  const index = resolveActionRoleIndexForStep(state, step.kind);
+  if (index === -1) return state;
+  if (state.actionRoleProgress[index].completed || state.actionRoleProgress[index].skipped) return state; // idempotent
+  const actionRoleProgress = state.actionRoleProgress.map((entry, i) => (i === index ? { ...entry, reached: true, skipped: true } : entry));
+  const outcome = state.resolvedPlan ? resolvePrimaryOutcome(state.resolvedPlan) : null;
+  return advanceStepCursor({ ...state, actionRoleProgress, actionOutcomeKind: outcome?.kind ?? state.actionOutcomeKind });
+}
+
 /** Resolves which actionRoleProgress entry a given "state_action"/"factor_action" step-kind position corresponds to. For state_then_factor there are two distinct entries (role "state" then role "factor", built in that exact order by buildActionRoleProgress); for every other outcome kind there is exactly one entry regardless of the step-kind label. */
 function resolveActionRoleIndexForStep(state: CombinedLiveSessionState, stepKind: "state_action" | "factor_action"): number {
   if (state.actionRoleProgress.length === 2) {
@@ -624,7 +732,7 @@ function resolveActionRoleIndexForStep(state: CombinedLiveSessionState, stepKind
   return state.actionRoleProgress.length === 1 ? 0 : -1;
 }
 
-/** Generic advance for every step kind with no dedicated event above (recognition-after-primary is unreachable here -- Full's remaining steps never contain one; urge_preventive_stopping, shared_stay, shared_acceptance, state_regulation_anchor, state_desired_state_encoding, processing, combined_recognition, factor_intervention, presence_intervention[Mini]). Presence_intervention (Mini) is intentionally excluded -- see advanceEmbeddedPresenceStage below, which owns it. */
+/** Generic advance for every step kind with no dedicated event above (recognition-after-primary is unreachable here -- Full's remaining steps never contain one; urge_preventive_stopping, shared_stay, shared_acceptance, state_regulation_anchor, goal_connection, state_desired_state_encoding, processing, combined_recognition, factor_intervention, presence_intervention[Mini]). Presence_intervention (Mini) is intentionally excluded -- see advanceEmbeddedPresenceStage below, which owns it. */
 export function advanceStep(state: CombinedLiveSessionState): CombinedLiveSessionState {
   if (state.phase !== "steps") return state;
   const step = currentStep(state);

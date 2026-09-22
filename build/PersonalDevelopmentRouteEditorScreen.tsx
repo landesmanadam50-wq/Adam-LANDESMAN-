@@ -1,13 +1,15 @@
-import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
 import {
   getPersonalDevelopmentRouteConfig,
   loadInterferenceItems,
+  loadPersonalDevelopmentRouteProgressStore,
   loadPresenceArcs,
   loadStateProfiles,
+  savePersonalDevelopmentRouteProgressStore,
   upsertPersonalDevelopmentRouteConfig,
 } from "../data/storage.ts";
 import {
@@ -18,8 +20,9 @@ import {
   resolvePendingBuildNewStateReturn,
   validatePersonalDevelopmentRouteConfig,
 } from "../arc/personalDevelopmentRouteConfig.ts";
-import type { PersonalDevelopmentRouteConfig } from "../arc/personalDevelopmentRouteConfig.ts";
+import type { BeneficialActionPolicy, PersonalDevelopmentRouteConfig, PersonalDevelopmentRouteGoalConnection } from "../arc/personalDevelopmentRouteConfig.ts";
 import { isPersonalDevelopmentRouteConfigCompleteForPractice } from "../arc/personalDevelopmentRouteConfigReadiness.ts";
+import { reconcileRouteStageForPolicyChange } from "../arc/personalDevelopmentRouteProgress.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import type { ActionRelationship } from "../arc/factorAction.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
@@ -89,6 +92,9 @@ export default function PersonalDevelopmentRouteEditorScreen() {
   // "Build new State" -- see this screen's own header doc.
   const [pendingNewStateId, setPendingNewStateId] = useState<string | null>(null);
 
+  /** The beneficialActionPolicy this config was loaded with (null for a new, unsaved route) -- see handleSave's own reconcileRouteStageForPolicyChange call for why this is tracked separately from `config`. */
+  const loadedBeneficialActionPolicyRef = useRef<BeneficialActionPolicy | null>(null);
+
   useFocusEffect(
     useCallback(() => {
       loadInterferenceItems().then(setItems).catch(() => setItems([]));
@@ -120,6 +126,7 @@ export default function PersonalDevelopmentRouteEditorScreen() {
           return;
         }
         setConfig(existing);
+        loadedBeneficialActionPolicyRef.current = existing.beneficialActionPolicy;
         setStatus("ready");
       });
       return () => {
@@ -177,12 +184,42 @@ export default function PersonalDevelopmentRouteEditorScreen() {
     setConfig((current) => ({ ...current, linkedPresenceArcId: current.linkedPresenceArcId === presenceArcId ? null : presenceArcId }));
   }
 
+  function toggleGoalConnection() {
+    setConfig((current) => ({
+      ...current,
+      goalConnection: current.goalConnection ? null : { desiredResultText: "", valueText: "", personalReasonText: "" },
+    }));
+  }
+
+  function patchGoalConnection(patch: Partial<PersonalDevelopmentRouteGoalConnection>) {
+    setConfig((current) => (current.goalConnection ? { ...current, goalConnection: { ...current.goalConnection, ...patch } } : current));
+  }
+
   async function handleSave() {
     if (saving || !isPersonalDevelopmentRouteConfigSaveable(config, items, stateProfiles)) return;
     setSaveError(null);
     setSaving(true);
     try {
-      await upsertPersonalDevelopmentRouteConfig({ ...config, updatedAt: new Date().toISOString() });
+      const now = new Date().toISOString();
+      await upsertPersonalDevelopmentRouteConfig({ ...config, updatedAt: now });
+      // Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+      // correction: a coach changing beneficialActionPolicy on an EXISTING route
+      // (never a brand-new one -- there is no progress record yet) reconciles
+      // that route's own already-accumulated 4-stage-program stage immediately,
+      // via the same pure resolver LIVE's own stage-advancement path uses --
+      // zero replay of old sessions, only ever `stage`/`updatedAt` change (see
+      // reconcileRouteStageForPolicyChange's own doc). A route with no progress
+      // record yet has nothing to reconcile.
+      if (loadedBeneficialActionPolicyRef.current !== null && loadedBeneficialActionPolicyRef.current !== config.beneficialActionPolicy) {
+        const progressStore = await loadPersonalDevelopmentRouteProgressStore();
+        const existingProgress = progressStore[config.id];
+        if (existingProgress) {
+          const reconciled = reconcileRouteStageForPolicyChange(existingProgress, config.beneficialActionPolicy, now);
+          if (reconciled !== existingProgress) {
+            await savePersonalDevelopmentRouteProgressStore({ ...progressStore, [config.id]: reconciled });
+          }
+        }
+      }
       router.back();
     } catch {
       setSaveError("אירעה שגיאה בשמירת המסלול. נסה שוב.");
@@ -331,6 +368,62 @@ export default function PersonalDevelopmentRouteEditorScreen() {
           )}
         </Section>
 
+        <Section title="הפעולה המיטיבה / הפעולה לוויסות">
+          <Text style={styles.question}>מה מעמדה של הפעולה המיטיבה במסלול הזה?</Text>
+          <View style={styles.optionColumn}>
+            <Pressable style={[styles.optionButton, config.beneficialActionPolicy === "required" && styles.optionButtonSelected]} onPress={() => setConfig((current) => ({ ...current, beneficialActionPolicy: "required" }))}>
+              <Text style={styles.optionButtonText}>חובה -- יש לבצע אותה כדי לסיים את התרגול</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.optionButton, config.beneficialActionPolicy === "optional_in_live" && styles.optionButtonSelected]}
+              onPress={() => setConfig((current) => ({ ...current, beneficialActionPolicy: "optional_in_live" }))}
+            >
+              <Text style={styles.optionButtonText}>רשות -- אפשרות מפורשת לדלג עליה בזמן התרגול</Text>
+            </Pressable>
+            <Pressable style={[styles.optionButton, config.beneficialActionPolicy === "none" && styles.optionButtonSelected]} onPress={() => setConfig((current) => ({ ...current, beneficialActionPolicy: "none" }))}>
+              <Text style={styles.optionButtonText}>ללא -- המסלול הזה אינו כולל פעולה מיטיבה כלל</Text>
+            </Pressable>
+          </View>
+          {config.beneficialActionPolicy === "none" && (
+            <Text style={styles.helperText}>מסלול ללא פעולה מיטיבה אינו זמין לשלב 3 (ARC Link) ולשלב 4 (פעולה מיטיבה בלבד) בתוכנית ארבעת השלבים -- שלבים 1-2 נותרים זמינים במלואם.</Text>
+          )}
+        </Section>
+
+        <Section title="חיבור למטרה (Goal Connection)">
+          <Text style={styles.helperText}>
+            כשמוגדר, חיבור למטרה מוצג פעם אחת בלבד, בסוף שלב הוויסות ולפני קידוד התגובה החדשה -- דמיון קצר של התוצאה הרצויה, המנטרה מכוונת העתיד, הערך והסיבה האישית. מוצג רק כאשר המסלול כולל מצב רצוי.
+          </Text>
+          <Pressable style={styles.checkboxRow} onPress={toggleGoalConnection}>
+            <Text style={styles.checkboxMark}>{config.goalConnection !== null ? "☑" : "☐"}</Text>
+            <Text style={styles.checkboxLabel}>לכלול חיבור למטרה במסלול הזה</Text>
+          </Pressable>
+          {config.goalConnection !== null && !stateIncluded && (
+            <Text style={styles.helperText}>שים לב: המסלול הזה אינו כולל מצב רצוי כרגע, ולכן חיבור למטרה לא יוצג בזמן התרגול עד שייכלל מצב רצוי.</Text>
+          )}
+          {config.goalConnection !== null && (
+            <View>
+              <Text style={styles.question}>מהי התוצאה הרצויה של הפעולה?</Text>
+              <TextInput
+                style={styles.textInput}
+                value={config.goalConnection.desiredResultText}
+                onChangeText={(text) => patchGoalConnection({ desiredResultText: text })}
+                textAlign="right"
+              />
+
+              <Text style={styles.question}>מהו הערך שהיא מבטאת? (רשות)</Text>
+              <TextInput style={styles.textInput} value={config.goalConnection.valueText} onChangeText={(text) => patchGoalConnection({ valueText: text })} textAlign="right" />
+
+              <Text style={styles.question}>מהי הסיבה האישית שלך? (רשות)</Text>
+              <TextInput
+                style={styles.textInput}
+                value={config.goalConnection.personalReasonText}
+                onChangeText={(text) => patchGoalConnection({ personalReasonText: text })}
+                textAlign="right"
+              />
+            </View>
+          )}
+        </Section>
+
         <Text style={[styles.readinessBadge, ready ? styles.readinessBadge_ready : styles.readinessBadge_draft]}>{ready ? "מוכן לתרגול LIVE" : "טיוטה -- עדיין לא מוכן לתרגול LIVE"}</Text>
         {!validation.valid && validation.reason && <Text style={styles.errorText}>{VALIDATION_REASON_LABELS[validation.reason] ?? validation.reason}</Text>}
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}
@@ -379,6 +472,7 @@ const styles = StyleSheet.create({
   chip: { backgroundColor: "#E6F4FE", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
   chipSelected: { backgroundColor: "#0a7ea4" },
   chipText: { color: "#0a7ea4", fontSize: 14 },
+  textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 12 },
   readinessBadge: { fontSize: 14, fontWeight: "700", textAlign: "right", marginTop: 16 },
   readinessBadge_ready: { color: "#1a6b4a" },
   readinessBadge_draft: { color: "#8a6d1a" },

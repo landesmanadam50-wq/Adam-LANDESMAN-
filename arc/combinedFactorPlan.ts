@@ -45,9 +45,24 @@ import { resolveEmotionActionOutcome, resolveFactorActionOutcome, resolvePresenc
 import { isPreventiveStoppingRelevantForInterferenceItem } from "./arcStateComposer.ts";
 import { BASELINE_TIE_QUESTION } from "./factorRating.ts";
 
-export type CombinedFactorMode = "full" | "mini";
+/**
+ * Stage-based entry task: "route_link" and "action_only" are the two new
+ * entry modes Stage 3/4 of the combined route's own 4-stage progression
+ * use (arc/personalDevelopmentRouteProgress.ts's own
+ * RECOMMENDED_ENTRY_MODE_BY_STAGE) -- but unlike "full"/"mini", NEITHER
+ * one ever drives arc/combinedLiveSession.ts's own controller
+ * (createCombinedLiveSession/CombinedLiveSessionState). "route_link"
+ * (arc/personalDevelopmentRouteLink.ts) and "action_only" (built directly
+ * by live/PersonalDevelopmentRouteActionOnlyScreen.tsx) are their own,
+ * separate, much lighter step flows -- this type is shared with them only
+ * so resolveCombinedFactorPlan (this module's own primary-factor/action-
+ * outcome resolution) and CombinedLiveSessionFacts.mode can be reused
+ * verbatim for both, never a second parallel resolver or a second
+ * near-duplicate "which mode is this" type.
+ */
+export type CombinedFactorMode = "full" | "mini" | "route_link" | "action_only";
 
-/** Mini's own direct-selection question -- never a rating-derived tie (Mini has no ratings at all, see arc/combinedMiniPlan.ts's own header doc). */
+/** Mini's own direct-selection question -- never a rating-derived tie (Mini has no ratings at all, see arc/combinedMiniPlan.ts's own header doc). Reused verbatim by "route_link"/"action_only" (see CombinedFactorMode's own doc) -- both are also a direct trainee choice, never a rating-derived one. */
 export const MINI_PRIMARY_FACTOR_QUESTION = "במה היית רוצה להתמקד עכשיו?";
 
 /** The exact required decide_in_live question -- LIVE decides only whether to use the one configured candidate State, never which State to choose. */
@@ -215,6 +230,10 @@ export function resolveCombinedFactorPlan(input: CombinedFactorPlanInput): Combi
     return {
       kind: "needs_primary_factor",
       candidates: resolvedItems.map((item) => item.id),
+      // Stage-based entry task: "route_link"/"action_only" fall into the
+      // same direct-choice branch as "mini" -- neither has real baseline
+      // ratings to derive a tie from either (see CombinedFactorMode's own
+      // doc), so only "full" ever asks the rating-derived tie question.
       question: mode === "full" ? BASELINE_TIE_QUESTION : MINI_PRIMARY_FACTOR_QUESTION,
       context: buildUnresolvedContext(resolvedItems, config, presenceArcs),
     };

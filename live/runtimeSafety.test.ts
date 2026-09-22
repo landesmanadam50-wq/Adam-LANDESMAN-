@@ -34,6 +34,8 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityActionNeeded: false,
     goal: "להגיב לעצמי בצורה בונה יותר",
     presenceColor: null,
+    acceptanceColor: null,
+    identityMantraRepetitionConfig: null,
     interferingState: "ביקורת עצמית",
     supportiveState: "חמלה",
     challengeContext: "אחרי טעות",

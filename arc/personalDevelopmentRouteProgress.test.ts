@@ -3,10 +3,20 @@ import assert from "node:assert/strict";
 
 import {
   applyCombinedSessionCompletionToProgress,
+  applyStageProgressionToRouteProgress,
   createEmptyPersonalDevelopmentRouteProgress,
+  isAdvancementModeForStage,
+  isRequiredActionOutcomeValidForMode,
+  isValidRouteStageProjection,
+  normalizePersonalDevelopmentRouteProgress,
+  reconcileRouteStageForPolicyChange,
+  resolveAvailableEntryModes,
+  resolveBeneficialActionOutcomeForFacts,
+  resolveEligibleStageAdvancement,
+  resolvePolicyDemotion,
   validateCombinedSessionFactsForCompletion,
 } from "./personalDevelopmentRouteProgress.ts";
-import type { PersonalDevelopmentRouteProgress } from "./personalDevelopmentRouteProgress.ts";
+import type { BeneficialActionOutcome, PersonalDevelopmentRouteProgress, PersonalDevelopmentRouteStage } from "./personalDevelopmentRouteProgress.ts";
 import type { CombinedLiveSessionFacts } from "./combinedLiveSessionFacts.ts";
 
 const NOW = "2026-01-01T00:00:00.000Z";
@@ -37,7 +47,12 @@ function facts(overrides: Partial<CombinedLiveSessionFacts> = {}): CombinedLiveS
     factorActionReached: true,
     factorActionCompleted: true,
     sharedActionCompleted: false,
+    beneficialActionPolicy: "required",
+    stateActionSkipped: false,
+    factorActionSkipped: false,
+    sharedActionSkipped: false,
     terminalCompleted: true,
+    stageAtStart: 1,
     ...overrides,
   };
 }
@@ -112,6 +127,49 @@ test("legacy_shared_state_fallback validates as State-role completion -- never p
   const f = facts({ actionOutcomeKind: "legacy_shared_state_fallback", factorActionCompleted: false, stateActionCompleted: false });
   assert.deepEqual(validateCombinedSessionFactsForCompletion(f), { valid: false, reason: "state_action_not_completed" });
   assert.deepEqual(validateCombinedSessionFactsForCompletion({ ...f, stateActionCompleted: true }), { valid: true });
+});
+
+// --- beneficialActionPolicy-aware validation (Adaptive ARC architecture task, unified PD/ARC Goal, Phase 8) ---
+
+test("beneficialActionPolicy 'required' (default) preserves the exact original behavior -- a skip never satisfies a required role", () => {
+  const f = facts({ actionOutcomeKind: "factor_only", factorActionCompleted: false, factorActionSkipped: true, beneficialActionPolicy: "required" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(f), { valid: false, reason: "factor_action_not_completed" });
+});
+
+test("beneficialActionPolicy 'optional_in_live' accepts an explicit skip as satisfying the role, for every actionOutcomeKind", () => {
+  const factorOnly = facts({ actionOutcomeKind: "factor_only", factorActionCompleted: false, factorActionSkipped: true, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(factorOnly), { valid: true });
+
+  const stateOnly = facts({ actionOutcomeKind: "state_only", stateActionCompleted: false, stateActionSkipped: true, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(stateOnly), { valid: true });
+
+  const sharedExplicit = facts({ actionOutcomeKind: "shared_explicit", sharedActionCompleted: false, sharedActionSkipped: true, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(sharedExplicit), { valid: true });
+
+  const stateThenFactor = facts({ actionOutcomeKind: "state_then_factor", stateActionCompleted: false, stateActionSkipped: true, factorActionCompleted: false, factorActionSkipped: true, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(stateThenFactor), { valid: true });
+});
+
+test("beneficialActionPolicy 'optional_in_live' state_then_factor: a MIX of one genuine completion and one skip is valid, but neither role may be left entirely unaddressed", () => {
+  const mixed = facts({ actionOutcomeKind: "state_then_factor", stateActionCompleted: true, stateActionSkipped: false, factorActionCompleted: false, factorActionSkipped: true, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(mixed), { valid: true });
+
+  const oneUnaddressed = facts({ actionOutcomeKind: "state_then_factor", stateActionCompleted: true, stateActionSkipped: false, factorActionCompleted: false, factorActionSkipped: false, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(oneUnaddressed), { valid: false, reason: "factor_action_not_completed" });
+});
+
+test("beneficialActionPolicy 'none' skips every per-actionOutcomeKind check entirely -- the role is absent, not merely relaxed", () => {
+  const neverAddressed = facts({ actionOutcomeKind: "factor_only", factorActionCompleted: false, factorActionSkipped: false, beneficialActionPolicy: "none" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(neverAddressed), { valid: true });
+
+  const evenUnavailable = facts({ actionOutcomeKind: "unavailable", beneficialActionPolicy: "none" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(evenUnavailable), { valid: true }, "'none' bypasses even the unavailable-kind rejection -- there is no action to be unavailable" );
+});
+
+test("beneficialActionPolicy 'none' still enforces every session-level check that precedes the per-kind switch (terminalCompleted, session id, cadence, primary factor)", () => {
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(facts({ terminalCompleted: false, beneficialActionPolicy: "none" })), { valid: false, reason: "not_terminal" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(facts({ sessionId: "", beneficialActionPolicy: "none" })), { valid: false, reason: "missing_session_id" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(facts({ cadence: "proactive", beneficialActionPolicy: "none" })), { valid: false, reason: "proactive_not_yet_supported" });
 });
 
 // --- Apply: single session ---
@@ -252,6 +310,22 @@ test("Full and Mini totals stay separated", () => {
   assert.equal(miniOutcome.progress.completedSessions, 2);
 });
 
+test("Route Link and Action Only totals are tracked separately from Full/Mini, and a secondary-mode session still updates the general total", () => {
+  const routeLinkOutcome = applyCombinedSessionCompletionToProgress(emptyProgress(), facts({ mode: "route_link", sessionId: "s-route-link" }), LATER);
+  assert.equal(routeLinkOutcome.kind, "applied");
+  if (routeLinkOutcome.kind !== "applied") return;
+  assert.equal(routeLinkOutcome.progress.completedRouteLinkSessions, 1);
+  assert.equal(routeLinkOutcome.progress.completedActionOnlySessions, 0);
+  assert.equal(routeLinkOutcome.progress.completedSessions, 1, "a support/advancement session both write the normal route completion exactly once");
+
+  const actionOnlyOutcome = applyCombinedSessionCompletionToProgress(routeLinkOutcome.progress, facts({ mode: "action_only", sessionId: "s-action-only" }), LATER);
+  assert.equal(actionOnlyOutcome.kind, "applied");
+  if (actionOnlyOutcome.kind !== "applied") return;
+  assert.equal(actionOnlyOutcome.progress.completedActionOnlySessions, 1);
+  assert.equal(actionOnlyOutcome.progress.completedRouteLinkSessions, 1, "unaffected by the later action_only session");
+  assert.equal(actionOnlyOutcome.progress.completedSessions, 2);
+});
+
 // --- Idempotency ---
 
 test("duplicate sessionId is a no-op -- returns duplicate_session and changes nothing", () => {
@@ -308,5 +382,379 @@ test("createEmptyPersonalDevelopmentRouteProgress defaults every counter to zero
   assert.equal(empty.fullPresenceCompletions, 0);
   assert.equal(empty.completedFullSessions, 0);
   assert.equal(empty.completedMiniSessions, 0);
+  assert.equal(empty.completedRouteLinkSessions, 0);
+  assert.equal(empty.completedActionOnlySessions, 0);
   assert.deepEqual(empty.countedSessionIds, []);
+  assert.equal(empty.stage, 1);
+  assert.equal(empty.stage1ConfirmedCount, 0);
+  assert.equal(empty.stage2ConfirmedCount, 0);
+  assert.equal(empty.stage3ConfirmedCount, 0);
+  assert.equal(empty.stage4ConfirmedCount, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: the
+// 4-stage Personal Development mastery program.
+// ---------------------------------------------------------------------------
+
+// --- normalizePersonalDevelopmentRouteProgress ---
+
+test("normalize backfills every field on a record saved before the 4-stage program existed", () => {
+  const legacy = { ...emptyProgress() } as Partial<PersonalDevelopmentRouteProgress>;
+  delete legacy.stage;
+  delete legacy.stage1ConfirmedCount;
+  delete legacy.stage2ConfirmedCount;
+  delete legacy.stage3ConfirmedCount;
+  delete legacy.stage4ConfirmedCount;
+  const normalized = normalizePersonalDevelopmentRouteProgress(legacy as PersonalDevelopmentRouteProgress);
+  assert.equal(normalized.stage, 1);
+  assert.equal(normalized.stage1ConfirmedCount, 0);
+  assert.equal(normalized.stage2ConfirmedCount, 0);
+  assert.equal(normalized.stage3ConfirmedCount, 0);
+  assert.equal(normalized.stage4ConfirmedCount, 0);
+});
+
+test("normalize preserves an already-valid stage and its counters untouched", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage1ConfirmedCount: 10, stage2ConfirmedCount: 10, stage3ConfirmedCount: 4 };
+  const normalized = normalizePersonalDevelopmentRouteProgress(progress);
+  assert.equal(normalized.stage, 3);
+  assert.equal(normalized.stage1ConfirmedCount, 10);
+  assert.equal(normalized.stage2ConfirmedCount, 10);
+  assert.equal(normalized.stage3ConfirmedCount, 4);
+});
+
+test("normalize resets a corrupt/out-of-range stage value to 1 rather than trusting it", () => {
+  const progress = { ...emptyProgress(), stage: 7 } as unknown as PersonalDevelopmentRouteProgress;
+  assert.equal(normalizePersonalDevelopmentRouteProgress(progress).stage, 1);
+});
+
+test("isValidRouteStageProjection accepts only 1|2|3|4", () => {
+  assert.equal(isValidRouteStageProjection(1), true);
+  assert.equal(isValidRouteStageProjection(4), true);
+  assert.equal(isValidRouteStageProjection(0), false);
+  assert.equal(isValidRouteStageProjection(5), false);
+  assert.equal(isValidRouteStageProjection("1"), false);
+  assert.equal(isValidRouteStageProjection(null), false);
+});
+
+// --- isRequiredActionOutcomeValidForMode ---
+
+test("Stage 1/2 accept any action outcome, including null/disabled/skipped", () => {
+  const outcomes: (BeneficialActionOutcome | null)[] = [null, "disabled", "optional_skipped", "optional_completed", "required_completed", "unavailable_legacy"];
+  for (const outcome of outcomes) {
+    assert.equal(isRequiredActionOutcomeValidForMode(1, outcome), true);
+    assert.equal(isRequiredActionOutcomeValidForMode(2, outcome), true);
+  }
+});
+
+test("Stage 3/4 require the action to have been genuinely performed/confirmed -- required_completed and optional_completed both pass, everything else (including null) is rejected", () => {
+  const rejected: (BeneficialActionOutcome | null)[] = [null, "disabled", "optional_skipped", "unavailable_legacy"];
+  for (const outcome of rejected) {
+    assert.equal(isRequiredActionOutcomeValidForMode(3, outcome), false);
+    assert.equal(isRequiredActionOutcomeValidForMode(4, outcome), false);
+  }
+  assert.equal(isRequiredActionOutcomeValidForMode(3, "required_completed"), true);
+  assert.equal(isRequiredActionOutcomeValidForMode(4, "required_completed"), true);
+  assert.equal(isRequiredActionOutcomeValidForMode(3, "optional_completed"), true, "a route whose policy is optional_in_live can still genuinely perform and confirm the action");
+  assert.equal(isRequiredActionOutcomeValidForMode(4, "optional_completed"), true);
+});
+
+// --- resolveEligibleStageAdvancement ---
+
+test("stage advances exactly at the 10-completion threshold, never before", () => {
+  const nine: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1, stage1ConfirmedCount: 9 };
+  assert.equal(resolveEligibleStageAdvancement(nine, "required"), 1);
+  const ten: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1, stage1ConfirmedCount: 10 };
+  assert.equal(resolveEligibleStageAdvancement(ten, "required"), 2);
+});
+
+test("the same uniform threshold applies at every transition -- 1->2, 2->3, 3->4", () => {
+  const at2: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2, stage2ConfirmedCount: 10 };
+  assert.equal(resolveEligibleStageAdvancement(at2, "required"), 3);
+  const at3: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage3ConfirmedCount: 10 };
+  assert.equal(resolveEligibleStageAdvancement(at3, "required"), 4);
+});
+
+test("beneficialActionPolicy 'none' caps eligibility at Stage 2, however high stage2ConfirmedCount climbs", () => {
+  const at2: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2, stage2ConfirmedCount: 50 };
+  assert.equal(resolveEligibleStageAdvancement(at2, "none"), 2);
+});
+
+test("beneficialActionPolicy 'optional_in_live' permits the full 1-4 ladder like 'required'", () => {
+  const at3: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage3ConfirmedCount: 10 };
+  assert.equal(resolveEligibleStageAdvancement(at3, "optional_in_live"), 4);
+});
+
+test("resolveEligibleStageAdvancement is a pure read -- never mutates its input", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1, stage1ConfirmedCount: 10 };
+  const snapshot = JSON.parse(JSON.stringify(progress));
+  resolveEligibleStageAdvancement(progress, "required");
+  assert.deepEqual(progress, snapshot);
+});
+
+// --- resolvePolicyDemotion ---
+
+test("policy moving to 'none' while at Stage 3/4 demotes to Stage 2", () => {
+  assert.equal(resolvePolicyDemotion(3, "none"), 2);
+  assert.equal(resolvePolicyDemotion(4, "none"), 2);
+});
+
+test("policy moving to 'none' while already at Stage 1/2 is a no-op", () => {
+  assert.equal(resolvePolicyDemotion(1, "none"), 1);
+  assert.equal(resolvePolicyDemotion(2, "none"), 2);
+});
+
+test("a non-'none' policy never demotes, whatever the current stage", () => {
+  assert.equal(resolvePolicyDemotion(4, "required"), 4);
+  assert.equal(resolvePolicyDemotion(3, "optional_in_live"), 3);
+});
+
+// --- reconcileRouteStageForPolicyChange ---
+
+test("reconcile demotes Stage 4 -> Stage 2 on 'none', preserving stage3/4ConfirmedCount untouched", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 4, stage1ConfirmedCount: 10, stage2ConfirmedCount: 10, stage3ConfirmedCount: 10, stage4ConfirmedCount: 6 };
+  const reconciled = reconcileRouteStageForPolicyChange(progress, "none", LATER);
+  assert.equal(reconciled.stage, 2);
+  assert.equal(reconciled.stage3ConfirmedCount, 10, "history preserved, never reset");
+  assert.equal(reconciled.stage4ConfirmedCount, 6, "history preserved, never reset");
+  assert.equal(reconciled.updatedAt, LATER);
+});
+
+test("reconcile automatically restores a route's stage when policy is restored, from preserved history alone -- zero replay of old sessions", () => {
+  const demoted: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2, stage1ConfirmedCount: 10, stage2ConfirmedCount: 10, stage3ConfirmedCount: 10, stage4ConfirmedCount: 0 };
+  const restored = reconcileRouteStageForPolicyChange(demoted, "required", LATER);
+  assert.equal(restored.stage, 4, "stage2 and stage3 counts already justify jumping straight to Stage 4");
+  assert.equal(restored.stage3ConfirmedCount, 10, "no counter was touched by restoration");
+});
+
+test("reconcile is a no-op (same object identity) when the current stage already matches what the policy justifies", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1 };
+  const reconciled = reconcileRouteStageForPolicyChange(progress, "required", LATER);
+  assert.equal(reconciled, progress);
+});
+
+// --- applyStageProgressionToRouteProgress ---
+
+test("a session's own frozen stageAtStart increments that stage's counter, never the route's current stage", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2 };
+  const result = applyStageProgressionToRouteProgress(progress, 1, "full", null, "required", LATER);
+  assert.equal(result.progress.stage1ConfirmedCount, 1, "counts toward the stage actually practiced (1), not the route's current stage (2)");
+  assert.equal(result.progress.stage2ConfirmedCount, 0);
+});
+
+test("Stage 1/2 sessions count toward advancement regardless of action outcome", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1, stage1ConfirmedCount: 9 };
+  const result = applyStageProgressionToRouteProgress(progress, 1, "full", "optional_skipped", "optional_in_live", LATER);
+  assert.equal(result.progress.stage1ConfirmedCount, 10);
+  assert.equal(result.stageAdvanced, true);
+  assert.equal(result.progress.stage, 2);
+});
+
+test("Stage 1 accepts BOTH Full and Mini as valid advancement modes -- there is no earlier stage to demote either one to secondary support", () => {
+  const full = applyStageProgressionToRouteProgress(emptyProgress(), 1, "full", null, "required", LATER);
+  assert.equal(full.progress.stage1ConfirmedCount, 1, "Full counts toward Stage 1 advancement");
+  const mini = applyStageProgressionToRouteProgress(emptyProgress(), 1, "mini", null, "required", LATER);
+  assert.equal(mini.progress.stage1ConfirmedCount, 1, "Mini counts toward Stage 1 advancement exactly like Full");
+});
+
+test("a secondary/support-mode session at Stage 2 (Full, while Mini is the stage's own advancement mode) still never increments stage2ConfirmedCount", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2 };
+  const result = applyStageProgressionToRouteProgress(progress, 2, "full", "required_completed", "required", LATER);
+  assert.equal(result.progress.stage2ConfirmedCount, 0, "Full is support at Stage 2, never the advancement mode");
+  assert.equal(result.stageAdvanced, false);
+  assert.deepEqual(result.progress, progress);
+});
+
+test("Stage 3/4 sessions without a genuinely performed/confirmed action never increment the counter or advance", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage3ConfirmedCount: 9 };
+  const result = applyStageProgressionToRouteProgress(progress, 3, "route_link", "unavailable_legacy", "required", LATER);
+  assert.equal(result.progress.stage3ConfirmedCount, 9, "never incremented -- action outcome invalid for this stage");
+  assert.equal(result.stageAdvanced, false);
+  assert.deepEqual(result.progress, progress);
+});
+
+test("Stage 3/4 reject optional_skipped and disabled outcomes -- skip is never offered inside Route Link/Action Only, so these outcomes can only ever come from a misattributed secondary-mode session", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage3ConfirmedCount: 5 };
+  const skipped = applyStageProgressionToRouteProgress(progress, 3, "route_link", "optional_skipped", "optional_in_live", LATER);
+  assert.equal(skipped.progress.stage3ConfirmedCount, 5);
+  const disabled = applyStageProgressionToRouteProgress(progress, 3, "route_link", "disabled", "optional_in_live", LATER);
+  assert.equal(disabled.progress.stage3ConfirmedCount, 5);
+});
+
+test("Stage 3 session with required_completed increments and can advance to Stage 4 at threshold", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage3ConfirmedCount: 9 };
+  const result = applyStageProgressionToRouteProgress(progress, 3, "route_link", "required_completed", "required", LATER);
+  assert.equal(result.progress.stage3ConfirmedCount, 10);
+  assert.equal(result.stageAdvanced, true);
+  assert.equal(result.progress.stage, 4);
+});
+
+test("Stage 3/4 also accept optional_completed -- a route whose general policy is 'optional_in_live' can still genuinely perform and confirm the action", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage3ConfirmedCount: 9 };
+  const result = applyStageProgressionToRouteProgress(progress, 3, "route_link", "optional_completed", "optional_in_live", LATER);
+  assert.equal(result.progress.stage3ConfirmedCount, 10);
+  assert.equal(result.stageAdvanced, true);
+});
+
+test("Stage 4 practice continues to record stage4ConfirmedCount but never unlocks a Stage 5 -- Stage 4 is terminal", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 4, stage4ConfirmedCount: 20 };
+  const result = applyStageProgressionToRouteProgress(progress, 4, "action_only", "required_completed", "required", LATER);
+  assert.equal(result.progress.stage4ConfirmedCount, 21);
+  assert.equal(result.progress.stage, 4);
+  assert.equal(result.stageAdvanced, false);
+});
+
+test("a route capped by 'none' never advances past Stage 2 via applyStageProgressionToRouteProgress", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2, stage2ConfirmedCount: 9 };
+  const result = applyStageProgressionToRouteProgress(progress, 2, "mini", null, "none", LATER);
+  assert.equal(result.progress.stage2ConfirmedCount, 10);
+  assert.equal(result.stageAdvanced, false);
+  assert.equal(result.progress.stage, 2, "capped -- Stage 3 requires a real Beneficial Action this policy doesn't have");
+});
+
+test("applyStageProgressionToRouteProgress never mutates its input progress object", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1, stage1ConfirmedCount: 9 };
+  const snapshot = JSON.parse(JSON.stringify(progress));
+  applyStageProgressionToRouteProgress(progress, 1, "full", null, "required", LATER);
+  assert.deepEqual(progress, snapshot);
+});
+
+test("stage never regresses purely from applyStageProgressionToRouteProgress even if stageAtStart is behind the route's current stage", () => {
+  // A session frozen at Stage 1 (stageAtStart) completing after the route has already
+  // moved on to Stage 2 must never pull the route's own current stage backward.
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2, stage1ConfirmedCount: 5 };
+  const result = applyStageProgressionToRouteProgress(progress, 1, "full", null, "required", LATER);
+  assert.equal(result.progress.stage, 2, "route stage never regresses");
+});
+
+// --- isAdvancementModeForStage / resolveAvailableEntryModes ---
+
+test("isAdvancementModeForStage matches the approved per-stage mapping exactly", () => {
+  assert.equal(isAdvancementModeForStage(1, "full"), true);
+  assert.equal(isAdvancementModeForStage(1, "mini"), true);
+  assert.equal(isAdvancementModeForStage(1, "route_link"), false);
+  assert.equal(isAdvancementModeForStage(1, "action_only"), false);
+  assert.equal(isAdvancementModeForStage(2, "mini"), true);
+  assert.equal(isAdvancementModeForStage(2, "full"), false);
+  assert.equal(isAdvancementModeForStage(3, "route_link"), true);
+  assert.equal(isAdvancementModeForStage(3, "full"), false);
+  assert.equal(isAdvancementModeForStage(3, "mini"), false);
+  assert.equal(isAdvancementModeForStage(4, "action_only"), true);
+  assert.equal(isAdvancementModeForStage(4, "full"), false);
+  assert.equal(isAdvancementModeForStage(4, "mini"), false);
+  assert.equal(isAdvancementModeForStage(4, "route_link"), false);
+});
+
+test("resolveAvailableEntryModes offers every earlier stage's advancement mode(s) as cumulative secondary support", () => {
+  assert.deepEqual(resolveAvailableEntryModes(1), { recommended: "full", secondary: ["mini"] });
+  assert.deepEqual(resolveAvailableEntryModes(2), { recommended: "mini", secondary: ["full"] });
+  assert.deepEqual(resolveAvailableEntryModes(3), { recommended: "route_link", secondary: ["full", "mini"] });
+  assert.deepEqual(resolveAvailableEntryModes(4), { recommended: "action_only", secondary: ["full", "mini", "route_link"] });
+});
+
+// --- stage type export sanity ---
+
+test("PersonalDevelopmentRouteStage values are exactly 1|2|3|4", () => {
+  const stages: PersonalDevelopmentRouteStage[] = [1, 2, 3, 4];
+  for (const stage of stages) assert.equal(isValidRouteStageProjection(stage), true);
+});
+
+// --- Method-completion correction: resolveBeneficialActionOutcomeForFacts + end-to-end stage wiring ---
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'disabled' whenever beneficialActionPolicy is 'none', regardless of any role flags", () => {
+  const f = facts({ beneficialActionPolicy: "none", factorActionCompleted: false });
+  assert.equal(resolveBeneficialActionOutcomeForFacts(f), "disabled");
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'unavailable_legacy' when actionOutcomeKind is null or 'unavailable'", () => {
+  assert.equal(resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: null })), "unavailable_legacy");
+  assert.equal(resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: "unavailable" })), "unavailable_legacy");
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'required_completed' for every relevant actionOutcomeKind under policy 'required'", () => {
+  assert.equal(resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: "factor_only", beneficialActionPolicy: "required" })), "required_completed");
+  assert.equal(
+    resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: "state_only", beneficialActionPolicy: "required", stateActionCompleted: true })),
+    "required_completed"
+  );
+  assert.equal(
+    resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: "shared_explicit", beneficialActionPolicy: "required", sharedActionCompleted: true })),
+    "required_completed"
+  );
+  assert.equal(
+    resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: "legacy_shared_state_fallback", beneficialActionPolicy: "required", stateActionCompleted: true })),
+    "required_completed"
+  );
+  assert.equal(
+    resolveBeneficialActionOutcomeForFacts(
+      facts({ actionOutcomeKind: "state_then_factor", beneficialActionPolicy: "required", stateActionCompleted: true, factorActionCompleted: true })
+    ),
+    "required_completed"
+  );
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'optional_completed' under 'optional_in_live' only when every relevant role was genuinely completed, zero skips", () => {
+  const f = facts({ actionOutcomeKind: "factor_only", beneficialActionPolicy: "optional_in_live", factorActionCompleted: true, factorActionSkipped: false });
+  assert.equal(resolveBeneficialActionOutcomeForFacts(f), "optional_completed");
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'optional_skipped' under 'optional_in_live' when the single relevant role was skipped", () => {
+  const f = facts({ actionOutcomeKind: "factor_only", beneficialActionPolicy: "optional_in_live", factorActionCompleted: false, factorActionSkipped: true });
+  assert.equal(resolveBeneficialActionOutcomeForFacts(f), "optional_skipped");
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'optional_skipped' for state_then_factor when only ONE of the two roles was skipped -- a partial skip is never fabricated as a full completion", () => {
+  const f = facts({
+    actionOutcomeKind: "state_then_factor",
+    beneficialActionPolicy: "optional_in_live",
+    stateActionCompleted: true,
+    stateActionSkipped: false,
+    factorActionCompleted: false,
+    factorActionSkipped: true,
+  });
+  assert.equal(resolveBeneficialActionOutcomeForFacts(f), "optional_skipped");
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'optional_completed' for state_then_factor only when BOTH roles were genuinely completed", () => {
+  const f = facts({
+    actionOutcomeKind: "state_then_factor",
+    beneficialActionPolicy: "optional_in_live",
+    stateActionCompleted: true,
+    stateActionSkipped: false,
+    factorActionCompleted: true,
+    factorActionSkipped: false,
+  });
+  assert.equal(resolveBeneficialActionOutcomeForFacts(f), "optional_completed");
+});
+
+test("end-to-end: applyStageProgressionToRouteProgress + resolveBeneficialActionOutcomeForFacts together advance Stage 1 -> 2 at the uniform 10-completion threshold, using only facts a real completed session would carry", () => {
+  let progress = emptyProgress();
+  for (let i = 0; i < 10; i++) {
+    const f = facts({ sessionId: `s${i}`, actionOutcomeKind: "factor_only", beneficialActionPolicy: "required", factorActionCompleted: true, stageAtStart: 1 });
+    const outcome = resolveBeneficialActionOutcomeForFacts(f);
+    const result = applyStageProgressionToRouteProgress(progress, f.stageAtStart, f.mode, outcome, f.beneficialActionPolicy, LATER);
+    progress = result.progress;
+  }
+  assert.equal(progress.stage, 2);
+  assert.equal(progress.stage1ConfirmedCount, 10);
+});
+
+test("end-to-end: an 'optional_in_live' route's skipped completions never accumulate stage3/4 confirmed counts, since resolveBeneficialActionOutcomeForFacts never resolves 'required_completed' under that policy", () => {
+  let progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3 };
+  for (let i = 0; i < 10; i++) {
+    const f = facts({
+      sessionId: `s${i}`,
+      mode: "route_link",
+      actionOutcomeKind: "factor_only",
+      beneficialActionPolicy: "optional_in_live",
+      factorActionCompleted: false,
+      factorActionSkipped: true,
+      stageAtStart: 3,
+    });
+    const outcome = resolveBeneficialActionOutcomeForFacts(f);
+    const result = applyStageProgressionToRouteProgress(progress, f.stageAtStart, f.mode, outcome, f.beneficialActionPolicy, LATER);
+    progress = result.progress;
+  }
+  assert.equal(progress.stage3ConfirmedCount, 0, "a policy that can only ever produce optional_skipped can never accumulate Stage 3 credit");
+  assert.equal(progress.stage, 3, "stays exactly where it started");
 });

@@ -9,8 +9,8 @@
  * independent, distinguished only by their own stable id, never by name.
  */
 
-import type { ArcGoal, ArcGoalInterferingMapping, ArcGoalUrgeMapping } from "./types.ts";
-import { generateArcGoalMappingId, generateArcGoalUrgeMappingId } from "./types.ts";
+import type { ArcGoal, ArcGoalBeliefMapping, ArcGoalInterferingMapping, ArcGoalThoughtMapping, ArcGoalUrgeMapping } from "./types.ts";
+import { generateArcGoalBeliefMappingId, generateArcGoalMappingId, generateArcGoalThoughtMappingId, generateArcGoalUrgeMappingId } from "./types.ts";
 
 /** Updates the one goal matching `goal.id` in place if found, otherwise appends it as a new goal at the end. Never reorders or re-indexes the rest of the list, and never matches by anything other than id. */
 export function upsertArcGoalInList(goals: ArcGoal[], goal: ArcGoal): ArcGoal[] {
@@ -51,6 +51,17 @@ export function duplicateArcGoal(goal: ArcGoal, newId: string, now: string): Arc
     urgeMappings: goal.urgeMappings.map((mapping: ArcGoalUrgeMapping) => ({
       ...mapping,
       id: generateArcGoalUrgeMappingId(),
+    })),
+    // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: same
+    // "own new id per row, references copied as-is" treatment as
+    // interferingMappings/urgeMappings above.
+    thoughtMappings: (goal.thoughtMappings ?? []).map((mapping: ArcGoalThoughtMapping) => ({
+      ...mapping,
+      id: generateArcGoalThoughtMappingId(),
+    })),
+    beliefMappings: (goal.beliefMappings ?? []).map((mapping: ArcGoalBeliefMapping) => ({
+      ...mapping,
+      id: generateArcGoalBeliefMappingId(),
     })),
     // Four-Week Program task: a duplicate is a brand-new goal, never a
     // continuation -- it never inherits another goal's actual progress,
@@ -98,6 +109,10 @@ export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
     // field existed (the overwhelming majority) backfills to null --
     // "not linked to any Life Manifest Sub-goal," never invented.
     lifeManifestSubGoalId: goal.lifeManifestSubGoalId ?? null,
+    // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: every
+    // goal saved before this field existed backfills to null -- never
+    // invented, never conflated with Life Manifest's own MajorGoal.why.
+    personalReason: goal.personalReason ?? null,
     interferingMappings: (goal.interferingMappings ?? []).map((mapping) => ({
       ...mapping,
       miniArcId: mapping.miniArcId ?? null,
@@ -108,6 +123,10 @@ export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
       // before this field existed backfills to "legacy_unspecified" --
       // never guessed as "same_action"/"different_actions".
       actionRelationship: mapping.actionRelationship ?? "legacy_unspecified",
+      // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1:
+      // every mapping saved before this field existed backfills to null --
+      // Mini falls back to running both actions sequentially, unchanged.
+      miniCombinedActionOverride: mapping.miniCombinedActionOverride ?? null,
     })),
     urgeMappings: (goal.urgeMappings ?? []).map((mapping) => ({
       ...mapping,
@@ -116,6 +135,28 @@ export function normalizeArcGoal(goal: ArcGoal): ArcGoal {
       identityProtocolId: mapping.identityProtocolId ?? null,
       goalAction: mapping.goalAction ?? null,
       actionRelationship: mapping.actionRelationship ?? "legacy_unspecified",
+      miniCombinedActionOverride: mapping.miniCombinedActionOverride ?? null,
+    })),
+    // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: every
+    // goal saved before these fields existed backfills to [] -- no
+    // ArcGoal-level Thought/Belief mapping type existed before this phase.
+    thoughtMappings: (goal.thoughtMappings ?? []).map((mapping) => ({
+      ...mapping,
+      miniArcId: mapping.miniArcId ?? null,
+      executionMode: mapping.executionMode ?? "full",
+      identityProtocolId: mapping.identityProtocolId ?? null,
+      goalAction: mapping.goalAction ?? null,
+      actionRelationship: mapping.actionRelationship ?? "legacy_unspecified",
+      miniCombinedActionOverride: mapping.miniCombinedActionOverride ?? null,
+    })),
+    beliefMappings: (goal.beliefMappings ?? []).map((mapping) => ({
+      ...mapping,
+      miniArcId: mapping.miniArcId ?? null,
+      executionMode: mapping.executionMode ?? "full",
+      identityProtocolId: mapping.identityProtocolId ?? null,
+      goalAction: mapping.goalAction ?? null,
+      actionRelationship: mapping.actionRelationship ?? "legacy_unspecified",
+      miniCombinedActionOverride: mapping.miniCombinedActionOverride ?? null,
     })),
     // Four-Week Program task: every ArcGoal saved before this field
     // existed backfills to null -- "no four-week program configured,"

@@ -18,7 +18,12 @@
 
 import { loadPersonalDevelopmentRouteProgressStore, savePersonalDevelopmentRouteProgressStore } from "./storage.ts";
 import type { PersonalDevelopmentRouteProgressStore } from "./storage.ts";
-import { applyCombinedSessionCompletionToProgress, createEmptyPersonalDevelopmentRouteProgress } from "../arc/personalDevelopmentRouteProgress.ts";
+import {
+  applyCombinedSessionCompletionToProgress,
+  applyStageProgressionToRouteProgress,
+  createEmptyPersonalDevelopmentRouteProgress,
+  resolveBeneficialActionOutcomeForFacts,
+} from "../arc/personalDevelopmentRouteProgress.ts";
 import type { RecordCombinedSessionOutcome } from "../arc/personalDevelopmentRouteProgress.ts";
 import type { CombinedLiveSessionFacts } from "../arc/combinedLiveSessionFacts.ts";
 
@@ -39,6 +44,19 @@ const defaultPersonalDevelopmentRouteProgressStorageDependencies: PersonalDevelo
  * "applied" -- "duplicate_session"/"invalid_completion" never write.
  * A genuine AsyncStorage failure (load or save) propagates as a rejected
  * promise, never misreported as a successful/duplicate completion.
+ *
+ * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+ * correction: immediately after a genuinely new "applied" completion, also
+ * runs the 4-stage counters forward via applyStageProgressionToRouteProgress
+ * (arc/personalDevelopmentRouteProgress.ts) -- `facts.stageAtStart` (frozen
+ * at session creation) and the outcome resolved by
+ * resolveBeneficialActionOutcomeForFacts, so a session always counts toward
+ * the stage it was actually practiced at. The single store write below
+ * persists BOTH updates together (session counters + stage counters) in one
+ * save, never two separate writes. A "duplicate_session"/"invalid_completion"
+ * outcome never reaches stage progression either -- exactly the same "never
+ * double-count, never count an invalid session" guarantee
+ * applyCombinedSessionCompletionToProgress already provides.
  */
 export async function recordCombinedSessionCompletion(
   facts: CombinedLiveSessionFacts,
@@ -49,7 +67,10 @@ export async function recordCombinedSessionCompletion(
   const existing = store[facts.routeConfigId] ?? createEmptyPersonalDevelopmentRouteProgress(facts.routeConfigId, now);
   const outcome = applyCombinedSessionCompletionToProgress(existing, facts, now);
   if (outcome.kind === "applied") {
-    await deps.saveStore({ ...store, [facts.routeConfigId]: outcome.progress });
+    const beneficialActionOutcome = resolveBeneficialActionOutcomeForFacts(facts);
+    const { progress: withStageProgress } = applyStageProgressionToRouteProgress(outcome.progress, facts.stageAtStart, facts.mode, beneficialActionOutcome, facts.beneficialActionPolicy, now);
+    await deps.saveStore({ ...store, [facts.routeConfigId]: withStageProgress });
+    return { kind: "applied", progress: withStageProgress };
   }
   return outcome;
 }

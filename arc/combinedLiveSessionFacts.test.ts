@@ -15,6 +15,7 @@ import {
   recordAwarenessRating,
   recordDesiredStateRating,
   recordStepRating,
+  skipActionCompleted,
 } from "./combinedLiveSession.ts";
 import type { CombinedLiveSessionState, CreateCombinedLiveSessionInput } from "./combinedLiveSession.ts";
 import { createEmptyPersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
@@ -40,7 +41,7 @@ function completeState(overrides: Partial<StateProfile> = {}): StateProfile {
 }
 
 function baseInput(overrides: Partial<CreateCombinedLiveSessionInput> = {}): CreateCombinedLiveSessionInput {
-  return { mode: "full", config: config(), items: [], stateProfiles: [], presenceArcs: [], startedAt: NOW, generateSessionId: () => "session-1", ...overrides };
+  return { mode: "full", config: config(), items: [], stateProfiles: [], presenceArcs: [], startedAt: NOW, stageAtStart: 1, generateSessionId: () => "session-1", ...overrides };
 }
 
 function runFullToComplete(cfg: PersonalDevelopmentRouteConfig, items: InterferenceItem[], stateProfiles: StateProfile[] = []): CombinedLiveSessionState {
@@ -181,4 +182,59 @@ test("facts computed before terminalCompleted honestly report terminalCompleted:
   const facts = toCombinedLiveSessionFacts(state);
   assert.equal(facts.terminalCompleted, false);
   assert.equal(facts.practicedItemIds.length, 0, "nothing practiced yet -- the plan has not even resolved");
+});
+
+// --- beneficialActionPolicy + skip fields (Adaptive ARC architecture task, unified PD/ARC Goal, Phase 8) ---
+
+test("facts carry beneficialActionPolicy straight through from the route config, unchanged", () => {
+  const required = createCombinedLiveSession(baseInput({ items: [thought()], config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" }) }));
+  assert.equal(toCombinedLiveSessionFacts(required).beneficialActionPolicy, "required");
+
+  const optional = createCombinedLiveSession(
+    baseInput({ items: [thought()], config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none", beneficialActionPolicy: "optional_in_live" }) })
+  );
+  assert.equal(toCombinedLiveSessionFacts(optional).beneficialActionPolicy, "optional_in_live");
+});
+
+test("a skipped (never completed) factor action reports factorActionSkipped: true and factorActionCompleted: false in the terminal facts", () => {
+  const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none", beneficialActionPolicy: "optional_in_live" });
+  let state = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg }));
+  while (state.awarenessSteps[state.awarenessIndex]?.kind === "recognition") state = advanceAwarenessRecognition(state);
+  state = recordAwarenessRating(state, "t1", "thought", 6);
+  let guard = 0;
+  while (state.phase === "steps" && guard < 30) {
+    const step = state.remainingSteps[state.stepIndex];
+    if (!step) break;
+    if (step.kind === "factor_action") {
+      state = skipActionCompleted(markActionReached(state));
+    } else if (step.kind === "rating_checkpoint") {
+      for (const factor of state.resolvedPlan!.factors) state = recordStepRating(state, factor.itemId, factor.category, step.checkpoint!, 5);
+    } else if (step.kind === "cognitive_reassessment") {
+      state = answerReassessment(state, "not_stuck");
+    } else {
+      state = advanceStep(state);
+    }
+    guard++;
+  }
+  guard = 0;
+  while (state.phase === "tail" && guard < 10) {
+    state = advanceTail(state);
+    guard++;
+  }
+  assert.equal(state.phase, "complete");
+  const facts = toCombinedLiveSessionFacts(state);
+  assert.equal(facts.factorActionSkipped, true);
+  assert.equal(facts.factorActionCompleted, false);
+  assert.equal(facts.terminalCompleted, true);
+});
+
+// --- Method-completion correction: stageAtStart frozen at session creation, carried straight through to facts ---
+
+test("facts.stageAtStart carries the session's own frozen stageAtStart straight through, unchanged by anything that happens during the session", () => {
+  const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" });
+  const stage3State = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg, stageAtStart: 3 }));
+  assert.equal(toCombinedLiveSessionFacts(stage3State).stageAtStart, 3);
+
+  const stage1State = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg, stageAtStart: 1 }));
+  assert.equal(toCombinedLiveSessionFacts(stage1State).stageAtStart, 1);
 });

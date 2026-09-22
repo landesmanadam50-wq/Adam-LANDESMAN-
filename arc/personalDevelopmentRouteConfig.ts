@@ -41,6 +41,33 @@ import type { StateInclusionPolicy } from "./stateInclusion.ts";
 import { dedupeItemIdsPreservingOrder } from "./combinedInterferenceSelection.ts";
 import type { CombinedInterferenceSelection } from "./combinedInterferenceSelection.ts";
 
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: once per
+ * session, only when configured -- the desired result, the value it
+ * expresses, and the trainee's personal reason it matters. Never a
+ * Manifest contribution (PD-only content, distinct from ArcGoal's own,
+ * which reuses ArcGoal.desiredResult/value/personalReason plus the
+ * Manifest link instead of this record).
+ */
+export interface PersonalDevelopmentRouteGoalConnection {
+  desiredResultText: string;
+  valueText: string;
+  personalReasonText: string;
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: governs
+ * whether this route's one Beneficial/Regulating Action role is required,
+ * offered as an explicit optional choice in LIVE, or absent entirely.
+ * Default "required" preserves every existing route's current mandatory
+ * behavior exactly. "none" excludes the route from Stage 3 (ARC Link,
+ * whose own real action IS this same role) and Stage 4 (Beneficial
+ * Action only) of the 4-stage mastery program -- Stage 1/2 remain fully
+ * available. See arc/personalDevelopmentRouteProgress.ts's own stage
+ * resolvers for the exact eligibility/advancement rules.
+ */
+export type BeneficialActionPolicy = "required" | "optional_in_live" | "none";
+
 export interface PersonalDevelopmentRouteConfig extends OwnedLibraryRecord {
   interferenceItemIds: string[];
   /** Route-level -- see this module's own header doc. Never per-item. */
@@ -58,7 +85,11 @@ export interface PersonalDevelopmentRouteConfig extends OwnedLibraryRecord {
    * Never a second State-inclusion flag (see this module's own header
    * doc); never a copy of the item's own content.
    */
-  itemRelationships: Record<string, { actionRelationship: ActionRelationship }>;
+  itemRelationships: Record<string, { actionRelationship: ActionRelationship; miniCombinedActionOverride?: string | null }>;
+  /** Once per session, only when configured -- see PersonalDevelopmentRouteGoalConnection's own doc. null means Goal Connection is skipped entirely for this route. */
+  goalConnection: PersonalDevelopmentRouteGoalConnection | null;
+  /** See BeneficialActionPolicy's own doc. Default "required" for every route saved before this field existed. */
+  beneficialActionPolicy: BeneficialActionPolicy;
   presenceEnabled: boolean;
   linkedPresenceArcId: string | null;
   /** Only meaningful when presenceEnabled && stateInclusionPolicy !== "none" -- see arc/factorAction.ts's resolvePresenceActionOutcome. */
@@ -93,6 +124,8 @@ export function createEmptyPersonalDevelopmentRouteConfig(id: string, ownerProgr
     stateInclusionPolicy: "none",
     stateProfileId: null,
     itemRelationships: {},
+    goalConnection: null,
+    beneficialActionPolicy: "required",
     presenceEnabled: false,
     linkedPresenceArcId: null,
     presenceActionRelationship: null,
@@ -116,10 +149,12 @@ export function createEmptyPersonalDevelopmentRouteConfig(id: string, ownerProgr
 export function normalizePersonalDevelopmentRouteConfig(config: PersonalDevelopmentRouteConfig): PersonalDevelopmentRouteConfig {
   const dedupedItemIds = dedupeItemIdsPreservingOrder(Array.isArray(config.interferenceItemIds) ? config.interferenceItemIds : []);
   const existingRelationships = config.itemRelationships && typeof config.itemRelationships === "object" ? config.itemRelationships : {};
-  const itemRelationships: Record<string, { actionRelationship: ActionRelationship }> = {};
+  const itemRelationships: Record<string, { actionRelationship: ActionRelationship; miniCombinedActionOverride?: string | null }> = {};
   for (const itemId of dedupedItemIds) {
     const existing = existingRelationships[itemId];
-    itemRelationships[itemId] = existing?.actionRelationship ? existing : { actionRelationship: "legacy_unspecified" };
+    itemRelationships[itemId] = existing?.actionRelationship
+      ? { actionRelationship: existing.actionRelationship, miniCombinedActionOverride: existing.miniCombinedActionOverride ?? null }
+      : { actionRelationship: "legacy_unspecified", miniCombinedActionOverride: null };
   }
   return {
     ...config,
@@ -128,6 +163,13 @@ export function normalizePersonalDevelopmentRouteConfig(config: PersonalDevelopm
     stateInclusionPolicy: config.stateInclusionPolicy ?? "none",
     stateProfileId: config.stateProfileId ?? null,
     itemRelationships,
+    // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: every
+    // route saved before these fields existed backfills to their safe,
+    // inert defaults -- no Goal Connection configured, and "required"
+    // (preserving every existing route's current mandatory-action
+    // behavior exactly, never silently relaxed by migration).
+    goalConnection: config.goalConnection ?? null,
+    beneficialActionPolicy: config.beneficialActionPolicy ?? "required",
     presenceEnabled: config.presenceEnabled ?? false,
     linkedPresenceArcId: config.linkedPresenceArcId ?? null,
     presenceActionRelationship: config.presenceActionRelationship ?? null,
@@ -252,9 +294,9 @@ export function buildPersonalDevelopmentRouteConfigFromLegacySelection(
   generateId: () => string = generatePersonalDevelopmentRouteConfigId
 ): PersonalDevelopmentRouteConfig {
   const interferenceItemIds = dedupeItemIdsPreservingOrder(selection.configuredItemIds);
-  const itemRelationships: Record<string, { actionRelationship: ActionRelationship }> = {};
+  const itemRelationships: Record<string, { actionRelationship: ActionRelationship; miniCombinedActionOverride?: string | null }> = {};
   for (const itemId of interferenceItemIds) {
-    itemRelationships[itemId] = { actionRelationship: "legacy_unspecified" };
+    itemRelationships[itemId] = { actionRelationship: "legacy_unspecified", miniCombinedActionOverride: null };
   }
   return {
     ...createEmptyPersonalDevelopmentRouteConfig(generateId(), selection.ownerProgramId, now),

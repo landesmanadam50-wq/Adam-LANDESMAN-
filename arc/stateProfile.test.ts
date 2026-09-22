@@ -22,6 +22,10 @@ test("createEmptyStateProfile produces every optional field null/empty, status e
   assert.equal(profile.description, null);
   assert.equal(profile.purpose, null);
   assert.equal(profile.stateMantra, null);
+  assert.equal(profile.mantraRepetitionMode, "once");
+  assert.equal(profile.mantraFixedRepetitionCount, null);
+  assert.equal(profile.mantraSpeakingMode, "silent");
+  assert.equal(profile.mantraMinimumDwellSeconds, null);
   assert.equal(profile.regulationAnchor, null);
   assert.equal(profile.bodyLanguageCue, null);
   assert.equal(profile.gazeCue, null);
@@ -129,6 +133,31 @@ test("normalizeStateProfile never overwrites an already-configured field", () =>
   assert.equal(normalized.stateMantra, "אני רגוע");
   assert.equal(normalized.status, "archived");
   assert.equal(normalized.schemaVersion, 3);
+});
+
+// --- Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: mantra repetition fields ---
+
+test("normalizeStateProfile backfills a missing mantraRepetitionMode to 'once' and mantraSpeakingMode to 'silent', never a stronger invented value", () => {
+  const { mantraRepetitionMode, mantraFixedRepetitionCount, mantraSpeakingMode, mantraMinimumDwellSeconds, ...legacyShape } = stateProfile();
+  const normalized = normalizeStateProfile(legacyShape as StateProfile);
+  assert.equal(normalized.mantraRepetitionMode, "once");
+  assert.equal(normalized.mantraFixedRepetitionCount, null);
+  assert.equal(normalized.mantraSpeakingMode, "silent");
+  assert.equal(normalized.mantraMinimumDwellSeconds, null);
+});
+
+test("normalizeStateProfile preserves an already-configured mantra repetition setup unchanged", () => {
+  const configured = stateProfile({
+    mantraRepetitionMode: "fixed_count",
+    mantraFixedRepetitionCount: 5,
+    mantraSpeakingMode: "aloud",
+    mantraMinimumDwellSeconds: 20,
+  });
+  const normalized = normalizeStateProfile(configured);
+  assert.equal(normalized.mantraRepetitionMode, "fixed_count");
+  assert.equal(normalized.mantraFixedRepetitionCount, 5);
+  assert.equal(normalized.mantraSpeakingMode, "aloud");
+  assert.equal(normalized.mantraMinimumDwellSeconds, 20);
 });
 
 // --- Input is not mutated ---

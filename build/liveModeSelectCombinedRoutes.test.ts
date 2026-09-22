@@ -57,12 +57,39 @@ test("the section never renders when there are zero active routes -- no empty co
 });
 
 test("pressing a route in LIVE launches the existing combined LIVE flow with that route's own id and the chosen mode -- the exact route the management screen's own start buttons already use", () => {
+  // Stage-based entry task: CombinedRoutesSection no longer inlines the
+  // router.push call directly -- both the recommended and secondary
+  // buttons route through one shared pushCombinedRouteMode(routeConfigId, mode)
+  // helper (per-stage recommend/secondary design). This asserts that
+  // helper still pushes "full"/"mini" to the exact same existing combined
+  // LIVE route with the exact same params shape as before the refactor.
+  const helperIndex = screen.indexOf("function pushCombinedRouteMode");
+  assert.ok(helperIndex !== -1, "pushCombinedRouteMode must exist");
+  const helperBody = screen.slice(helperIndex, screen.indexOf("function CombinedRoutesSection"));
+  const liveRouteMatch = helperBody.match(/router\.push\(\{\s*pathname:\s*"\/personal-development-routes\/\[id\]\/live",\s*params:\s*\{\s*id:\s*routeConfigId,\s*mode\s*\}\s*\}\)/);
+  assert.ok(liveRouteMatch, "full/mini must push to the existing combined LIVE route with this route's own id and mode param");
+  assert.ok(helperBody.includes('mode === "full" || mode === "mini"'), "full and mini are the two modes routed to the existing combined LIVE screen");
+
   const sectionIndex = screen.indexOf("function CombinedRoutesSection");
   const sectionBody = screen.slice(sectionIndex);
-  const fullMatch = sectionBody.match(/router\.push\(\{\s*pathname:\s*"\/personal-development-routes\/\[id\]\/live",\s*params:\s*\{\s*id:\s*config\.id,\s*mode:\s*"full"\s*\}\s*\}\)/);
-  const miniMatch = sectionBody.match(/router\.push\(\{\s*pathname:\s*"\/personal-development-routes\/\[id\]\/live",\s*params:\s*\{\s*id:\s*config\.id,\s*mode:\s*"mini"\s*\}\s*\}\)/);
-  assert.ok(fullMatch, "the Full ARC start button must push to the existing combined LIVE route with this route's own id and mode: full");
-  assert.ok(miniMatch, "the Mini ARC start button must push to the existing combined LIVE route with this route's own id and mode: mini");
+  assert.ok(sectionBody.includes("pushCombinedRouteMode(config.id, recommended)"), "the recommended button must call the shared helper with this route's own id and its resolved recommended mode");
+  assert.ok(sectionBody.includes("pushCombinedRouteMode(config.id, mode)"), "each secondary button must call the shared helper with this route's own id and its own mode");
+});
+
+test("Stage 3/4 route through the new Route Link/Action Only screens, never the existing combined LIVE route", () => {
+  const helperIndex = screen.indexOf("function pushCombinedRouteMode");
+  const helperBody = screen.slice(helperIndex, screen.indexOf("function CombinedRoutesSection"));
+  assert.match(helperBody, /router\.push\(\{\s*pathname:\s*"\/personal-development-routes\/\[id\]\/route-link",\s*params:\s*\{\s*id:\s*routeConfigId\s*\}\s*\}\)/, "route_link must push to the new Stage 3 rehearsal screen");
+  assert.match(helperBody, /router\.push\(\{\s*pathname:\s*"\/personal-development-routes\/\[id\]\/action-only",\s*params:\s*\{\s*id:\s*routeConfigId\s*\}\s*\}\)/, "action_only must push to the new Stage 4 mark-as-done screen");
+});
+
+test("each route's recommended/secondary entry is resolved via resolveAvailableEntryModes, keyed by that route's own progress-store stage -- never a hardcoded full/mini pair", () => {
+  assert.match(screen, /import\s*{\s*resolveAvailableEntryModes\s*}\s*from\s*["']\.\.\/arc\/personalDevelopmentRouteProgress\.ts["']/);
+  assert.ok(screen.includes("loadPersonalDevelopmentRouteProgressStore()"), "the screen must load the per-route progress store");
+  const sectionIndex = screen.indexOf("function CombinedRoutesSection");
+  const sectionBody = screen.slice(sectionIndex);
+  assert.ok(sectionBody.includes("progressStore[config.id]?.stage ?? 1"), "a route with no recorded progress yet must default to Stage 1, matching createEmptyPersonalDevelopmentRouteProgress");
+  assert.ok(sectionBody.includes("resolveAvailableEntryModes(stage)"), "recommended/secondary must be resolved per route from its own current stage");
 });
 
 test("returning to / focusing the LIVE screen refreshes the combined-routes list -- reload is wired into useFocusEffect, not just initial mount", () => {

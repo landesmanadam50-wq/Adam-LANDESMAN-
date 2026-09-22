@@ -19,12 +19,15 @@
 
 import type { CombinedFactorMode } from "./combinedFactorPlan.ts";
 import type { CombinedLiveSessionState } from "./combinedLiveSession.ts";
+import { resolvePrimaryOutcome } from "./combinedLiveSession.ts";
 import { deriveCompletedInterferenceTypes } from "./combinedRoute.ts";
 import type { InterferenceCategory } from "./interferenceItem.ts";
 import type { ActionResolutionOutcome } from "./factorAction.ts";
 import type { FactorRating } from "./factorRating.ts";
 import { resolveStateInclusion } from "./stateInclusion.ts";
 import type { FinalPresenceMode } from "./combinedRoute.ts";
+import type { BeneficialActionPolicy } from "./personalDevelopmentRouteConfig.ts";
+import type { PersonalDevelopmentRouteStage } from "./personalDevelopmentRouteProgress.ts";
 
 export type CombinedLiveSessionCadence = "reactive" | "proactive";
 
@@ -55,13 +58,50 @@ export interface CombinedLiveSessionFacts {
   factorRatingHistory: FactorRating[];
   /** Mini: always null. */
   desiredStateRating: number | null;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+   * correction: resolved directly from the session's own already-resolved
+   * plan (via resolvePrimaryOutcome) whenever a plan exists, rather than
+   * only from CombinedLiveSessionState.actionOutcomeKind (which the
+   * controller itself only ever WRITES once confirmActionCompleted first
+   * runs) -- null only when no plan has resolved yet (awareness/
+   * primary_choice/state_decision). This is what makes a frozen snapshot
+   * captured the moment an action role's own timer begins (see
+   * arc/frozenCombinedActionRecovery.ts) already carry a valid
+   * actionOutcomeKind, well before that action is ever confirmed.
+   */
   actionOutcomeKind: ActionResolutionOutcome["kind"] | null;
   stateActionReached: boolean;
   stateActionCompleted: boolean;
   factorActionReached: boolean;
   factorActionCompleted: boolean;
   sharedActionCompleted: boolean;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: the
+   * route's own beneficialActionPolicy (arc/personalDevelopmentRouteConfig.ts),
+   * carried through so a persistence-layer caller (which sees only this
+   * facts object, never controller internals) can validate completion
+   * correctly for "optional_in_live"/"none" routes -- see
+   * arc/personalDevelopmentRouteProgress.ts's own
+   * validateCombinedSessionFactsForCompletion.
+   */
+  beneficialActionPolicy: BeneficialActionPolicy;
+  /** True only when that role was explicitly SKIPPED (arc/combinedLiveSession.ts's own skipActionCompleted) -- only ever possible on an "optional_in_live" route. Mutually exclusive with the matching *ActionCompleted flag. */
+  stateActionSkipped: boolean;
+  factorActionSkipped: boolean;
+  sharedActionSkipped: boolean;
   terminalCompleted: boolean;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+   * correction: the route's own 4-stage-program stage
+   * (arc/personalDevelopmentRouteProgress.ts) at the moment THIS session
+   * was created -- frozen once, at session-plan resolution
+   * (CombinedLiveSessionState.stageAtStart), never re-derived from the
+   * route's current stage, which may have already moved on mid-session.
+   * A session always counts toward the stage it was actually practiced
+   * at -- see applyStageProgressionToRouteProgress's own doc.
+   */
+  stageAtStart: PersonalDevelopmentRouteStage;
 }
 
 function resolveSessionStateProfileId(state: CombinedLiveSessionState): string | null {
@@ -112,12 +152,17 @@ export function toCombinedLiveSessionFacts(state: CombinedLiveSessionState, cade
     reassessmentAnswer: state.mode === "full" ? state.reassessmentAnswer : null,
     factorRatingHistory: state.mode === "mini" ? [] : state.factorRatingHistory,
     desiredStateRating: state.mode === "mini" ? null : state.desiredStateRating,
-    actionOutcomeKind: state.actionOutcomeKind,
+    actionOutcomeKind: state.resolvedPlan ? (resolvePrimaryOutcome(state.resolvedPlan)?.kind ?? null) : state.actionOutcomeKind,
     stateActionReached: stateAction?.reached ?? false,
     stateActionCompleted: stateAction?.completed ?? false,
     factorActionReached: factorAction?.reached ?? false,
     factorActionCompleted: factorAction?.completed ?? false,
     sharedActionCompleted: sharedAction?.completed ?? false,
+    beneficialActionPolicy: state.snapshot.config.beneficialActionPolicy,
+    stateActionSkipped: stateAction?.skipped ?? false,
+    factorActionSkipped: factorAction?.skipped ?? false,
+    sharedActionSkipped: sharedAction?.skipped ?? false,
     terminalCompleted: state.terminalCompleted,
+    stageAtStart: state.stageAtStart,
   };
 }

@@ -36,6 +36,7 @@ import {
   normalizeMajorGoal,
   normalizeSubGoal,
   normalizeTarget,
+  resolveLifeManifestContributionForArcGoal,
   resolveNextDeadlineReminder,
   resolveNextSubGoal,
   upsertLifeManifestInList,
@@ -737,4 +738,27 @@ test("normalizeLifeManifest normalizes every Major Goal on the manifest, and bac
   const m = manifest({ majorGoals: [legacyGoal] });
   const normalized = normalizeLifeManifest(m);
   assert.deepEqual(normalized.majorGoals[0].embodiedIdentityCue, createEmptyEmbodiedIdentityCue());
+});
+
+// --- Method-completion correction: ArcGoal <-> Life Manifest contribution (arc/arcGoalEngine.ts's getGoalConnectionStepCopy) ---
+
+test("resolveLifeManifestContributionForArcGoal returns null for a null/undefined lifeManifestSubGoalId -- never fabricates a contribution for an unlinked ArcGoal", () => {
+  const m = manifest({ majorGoals: [majorGoal({ subGoals: [subGoal({ id: "sg1" })] })] });
+  assert.equal(resolveLifeManifestContributionForArcGoal([m], null), null);
+  assert.equal(resolveLifeManifestContributionForArcGoal([m], undefined), null);
+});
+
+test("resolveLifeManifestContributionForArcGoal finds the owning Major Goal and returns both titles for a matching Sub-goal id, across manifests and major goals", () => {
+  const target = subGoal({ id: "sg-target", title: "לרוץ 5 קילומטר" });
+  const owningMajorGoal = majorGoal({ id: "mg-owner", title: "בריאות", subGoals: [subGoal({ id: "sg-other" }), target] });
+  const otherManifest = manifest({ id: "lm-other", majorGoals: [majorGoal({ id: "mg-unrelated", subGoals: [subGoal({ id: "sg-unrelated" })] })] });
+  const owningManifest = manifest({ id: "lm-owner", majorGoals: [owningMajorGoal] });
+
+  const contribution = resolveLifeManifestContributionForArcGoal([otherManifest, owningManifest], "sg-target");
+  assert.deepEqual(contribution, { majorGoalTitle: "בריאות", subGoalTitle: "לרוץ 5 קילומטר" });
+});
+
+test("resolveLifeManifestContributionForArcGoal returns null when the linked Sub-goal has since been deleted -- never a stale title", () => {
+  const m = manifest({ majorGoals: [majorGoal({ subGoals: [subGoal({ id: "sg1" })] })] });
+  assert.equal(resolveLifeManifestContributionForArcGoal([m], "sg-deleted"), null);
 });

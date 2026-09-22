@@ -29,8 +29,12 @@
  * nothing more than their concatenation (see
  * arc/combinedFullPlan.test.ts's own regression coverage).
  *
- * Exact order (approved architecture, supersedes WIP commit 60d70d7's
- * own unconditional "shared_regulation" ordering):
+ * Exact order (approved architecture; method-completion correction
+ * supersedes this module's own earlier "Factor-specific interventions"
+ * placement between State Regulation and cognitive reassessment --
+ * PROCESSING_CATEGORY_ORDER's fixed category grouping is retired for
+ * Full's own use of it, superseded by plain BUILD/config order, step 11
+ * below):
  *   1. Recognition, every selected factor (RECOGNITION_CATEGORY_ORDER).
  *   2. "afterAwareness" checkpoint.
  *   [Primary-factor resolution/tie choice happens HERE, chronologically
@@ -45,33 +49,69 @@
  *   6. "afterStayAcceptance" checkpoint.
  *   7. Only when State participates: State Regulation anchor, then
  *      "afterStateRegulation" checkpoint.
- *   8. Factor-specific interventions (PROCESSING_CATEGORY_ORDER).
- *   9. Cognitive reassessment, only when Thought and/or Belief selected.
- *   10. Presence (embedded or full), mutually exclusive -- supplied by
- *       the caller as `finalPresenceMode` (arc/combinedRoute.ts's own
- *       resolvePresenceRoute/resolveFinalPresenceMode, reused unmodified
- *       -- this deriver never recomputes that decision itself).
- *   11. Only when State participates: State desired-state Encoding, then
- *       the separate desired-state rating (never merged into a factor
- *       checkpoint -- a distinct step kind by construction).
- *   12. Resolved action(s) -- State action first, primary-factor action
+ *   8. Cognitive reassessment, only when Thought and/or Belief selected.
+ *   9. Presence (embedded or full), mutually exclusive -- supplied by
+ *      the caller as `finalPresenceMode` (arc/combinedRoute.ts's own
+ *      resolvePresenceRoute/resolveFinalPresenceMode, reused unmodified
+ *      -- this deriver never recomputes that decision itself).
+ *   10. Only when State participates AND the route has a configured
+ *       PersonalDevelopmentRouteGoalConnection (arc/personalDevelopmentRouteConfig.ts):
+ *       Goal Connection, immediately before Encoding -- "Acceptance ->
+ *       Regulation -> Goal Connection -> Encoding," Goal Connection at
+ *       the end of Regulation, before replacement-response practice
+ *       begins (Adaptive ARC architecture task, unified PD/ARC Goal,
+ *       method-completion correction). Full-only: Mini's own paired
+ *       Regulation/Encoding step (arc/combinedMiniPlan.ts) is explicitly
+ *       documented as having "no checkpoint or rating of any kind
+ *       between them," and Mini has no "Acceptance" step at all to
+ *       anchor this ordering against -- so this insertion is scoped to
+ *       Full, never silently extended to Mini. `goalConnection === null`
+ *       (the route has none configured) omits this step exactly like
+ *       every other optional block here, never rendering
+ *       placeholder/invented content.
+ *   11. Only when State participates: State desired-state Encoding (the
+ *       desired positive bodily sensation, State Mantra repetition, body
+ *       language).
+ *   12. Encoding / New-Response Practice's own factor-specific content --
+ *       the replacement thought, supportive belief, or alternative
+ *       movement/imagery for every selected factor, ONE per factor,
+ *       rendered in plain BUILD order (plan.factors -- already
+ *       config.interferenceItemIds order, see
+ *       arc/combinedFactorPlan.ts's own resolveCombinedFactorPlan),
+ *       never grouped/reordered by category. Always present when the
+ *       route has factors, regardless of whether State participates (a
+ *       no-State route still practices its own replacement responses,
+ *       just with no State content alongside them) -- this is the SAME
+ *       "processing" step kind this module has always emitted, only its
+ *       position (now inside Encoding, after State's own encoding
+ *       content) and its ordering (BUILD order, not
+ *       PROCESSING_CATEGORY_ORDER) changed; recognition/awareness work
+ *       with the interfering factor itself remains exactly where it was
+ *       (step 1, Awareness) -- "processing" never carried that content,
+ *       only the replacement response (see arc/combinedFactorPlanCopy.ts's
+ *       own getFactorProcessingStepCopy).
+ *   13. Only when State participates: the desired-state rating -- now a
+ *       check of the WHOLE Encoding/New-Response-Practice block (State
+ *       content + every factor's own replacement response), never merged
+ *       into a factor checkpoint -- a distinct step kind by construction.
+ *   14. Resolved action(s) -- State action first, primary-factor action
  *       second, ONE step only for a shared/legacy-fallback outcome (see
  *       arc/combinedFactorPlan.ts's own resolveCombinedActionKinds).
- *   13. Terminal boundary.
+ *   15. Terminal boundary.
  *
- * A no-State route (plan.stateIncluded === false) omits steps 7 and 11
- * entirely -- no fabricated "afterStateRegulation" checkpoint, no State
- * Regulation/Encoding, no desired-state rating, no State action. Factor
- * interventions, the Presence decision, and the primary-factor action
- * are always preserved regardless.
- *
- * Pure logic only -- nothing in this repository calls anything below yet.
+ * A no-State route (plan.stateIncluded === false) omits steps 7, 10, 11,
+ * and 13 entirely -- no fabricated "afterStateRegulation" checkpoint, no
+ * State Regulation/Goal Connection/Encoding, no desired-state rating, no
+ * State action. Step 12 (factor-specific replacement-response practice),
+ * the Presence decision, and the primary-factor action are always
+ * preserved regardless.
  */
 
 import type { InterferenceCategory } from "./interferenceItem.ts";
 import type { ResolvedCombinedFactorPlan, UnresolvedCombinedFactorContext } from "./combinedFactorPlan.ts";
 import { resolveCombinedActionKinds } from "./combinedFactorPlan.ts";
 import type { FinalPresenceMode } from "./combinedRoute.ts";
+import type { BeneficialActionPolicy, PersonalDevelopmentRouteGoalConnection } from "./personalDevelopmentRouteConfig.ts";
 
 export type FullCombinedStepKind =
   | "recognition"
@@ -80,6 +120,7 @@ export type FullCombinedStepKind =
   | "shared_stay"
   | "shared_acceptance"
   | "state_regulation_anchor"
+  | "goal_connection"
   | "state_desired_state_encoding"
   | "desired_state_rating"
   | "processing"
@@ -93,7 +134,7 @@ export type FullRatingCheckpoint = "afterAwareness" | "afterStayAcceptance" | "a
 
 export interface FullCombinedStep {
   kind: FullCombinedStepKind;
-  /** The factor this step concerns -- null for every session-level step (rating_checkpoint, shared_stay, shared_acceptance, the State block, cognitive_reassessment, presence, either action step, terminal_boundary). */
+  /** The factor this step concerns -- null for every session-level step (rating_checkpoint, shared_stay, shared_acceptance, the State block, goal_connection, cognitive_reassessment, presence, either action step, terminal_boundary). */
   itemId: string | null;
   category: InterferenceCategory | null;
   /** Only set for "rating_checkpoint". */
@@ -155,7 +196,14 @@ export function buildFullAwarenessSteps(context: UnresolvedCombinedFactorContext
  * "afterAwareness" checkpoint -- those belong exclusively to
  * buildFullAwarenessSteps above, called once, earlier, by the controller.
  */
-export function buildFullStepsAfterPrimaryResolution(plan: ResolvedCombinedFactorPlan, finalPresenceMode: FinalPresenceMode): FullCombinedStep[] {
+export function buildFullStepsAfterPrimaryResolution(
+  plan: ResolvedCombinedFactorPlan,
+  finalPresenceMode: FinalPresenceMode,
+  /** Adaptive ARC architecture task (unified PD/ARC Goal), Phase 7: the route's own configured Goal Connection, or null -- see this module's own header doc, step 10. Defaults to null so every existing caller (arc/combinedLiveSession.ts's own buildFullCombinedSteps test convenience call included) is unaffected until it explicitly opts in. */
+  goalConnection: PersonalDevelopmentRouteGoalConnection | null = null,
+  /** Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: the route's own beneficialActionPolicy (arc/personalDevelopmentRouteConfig.ts). Defaults to "required" -- every existing caller keeps today's unconditional action-step behavior exactly. "none" omits step 14 (the resolved action(s)) entirely, regardless of what resolveCombinedActionKinds would otherwise return -- see PersonalDevelopmentRouteConfig.beneficialActionPolicy's own doc ("absent entirely"). "optional_in_live" still emits the step normally; only HOW it may be confirmed changes (see arc/combinedLiveSession.ts's own skipActionCompleted), never whether it appears. */
+  beneficialActionPolicy: BeneficialActionPolicy = "required"
+): FullCombinedStep[] {
   const steps: FullCombinedStep[] = [];
   const byCategory = (category: InterferenceCategory) => plan.factors.filter((factor) => factor.category === category);
   const hasFactors = plan.factors.length > 0;
@@ -175,10 +223,6 @@ export function buildFullStepsAfterPrimaryResolution(plan: ResolvedCombinedFacto
     if (hasFactors) steps.push(checkpointStep("afterStateRegulation"));
   }
 
-  for (const category of PROCESSING_CATEGORY_ORDER) {
-    for (const factor of byCategory(category)) steps.push(factorStep("processing", factor.itemId, factor.category));
-  }
-
   const hasThought = byCategory("thought").length > 0;
   const hasBelief = byCategory("belief").length > 0;
   if (hasThought || hasBelief) steps.push(sessionStep("cognitive_reassessment"));
@@ -186,11 +230,39 @@ export function buildFullStepsAfterPrimaryResolution(plan: ResolvedCombinedFacto
   if (finalPresenceMode === "embedded" || finalPresenceMode === "full") steps.push(sessionStep("presence"));
 
   if (plan.stateIncluded) {
+    if (goalConnection !== null) steps.push(sessionStep("goal_connection"));
     steps.push(sessionStep("state_desired_state_encoding"));
+  }
+
+  // Method-completion correction (final ordering): the replacement
+  // thought/belief/movement ("processing," Encoding / New-Response
+  // Practice's own factor-specific content -- see this function's own
+  // header doc, step 8) now belongs INSIDE Encoding, immediately after
+  // State's own desired-state encoding and before the desired-state
+  // rating -- never before Regulation/Goal Connection. Always runs
+  // regardless of plan.stateIncluded (a no-State route still practices
+  // its own replacement responses, just with no State content around
+  // them -- exactly as before this correction). Iterates plan.factors
+  // DIRECTLY (already BUILD/config.interferenceItemIds order -- see
+  // arc/combinedFactorPlan.ts's own resolveCombinedFactorPlan, which
+  // builds both `resolvedItems` and `factors` by iterating
+  // config.interferenceItemIds in order) rather than
+  // PROCESSING_CATEGORY_ORDER's fixed category grouping -- "each
+  // replacement response appears once, in the factor order configured in
+  // BUILD," never re-grouped by category. PROCESSING_CATEGORY_ORDER
+  // itself is untouched and still exported -- arc/combinedMiniPlan.ts's
+  // own factor_intervention step still uses it unmodified (Mini's
+  // lighter, paired State Regulation/Encoding flow is deliberately out
+  // of scope for this correction).
+  for (const factor of plan.factors) steps.push(factorStep("processing", factor.itemId, factor.category));
+
+  if (plan.stateIncluded) {
     steps.push(sessionStep("desired_state_rating"));
   }
 
-  for (const actionKind of resolveCombinedActionKinds(plan)) steps.push(sessionStep(actionKind));
+  if (beneficialActionPolicy !== "none") {
+    for (const actionKind of resolveCombinedActionKinds(plan)) steps.push(sessionStep(actionKind));
+  }
 
   steps.push(sessionStep("terminal_boundary"));
 
@@ -206,6 +278,11 @@ export function buildFullStepsAfterPrimaryResolution(plan: ResolvedCombinedFacto
  * halves separately (see this module's own header doc) so Awareness is
  * rendered exactly once, never duplicated.
  */
-export function buildFullCombinedSteps(plan: ResolvedCombinedFactorPlan, finalPresenceMode: FinalPresenceMode): FullCombinedStep[] {
-  return [...buildFullAwarenessSteps({ factors: plan.factors, presence: plan.presence }), ...buildFullStepsAfterPrimaryResolution(plan, finalPresenceMode)];
+export function buildFullCombinedSteps(
+  plan: ResolvedCombinedFactorPlan,
+  finalPresenceMode: FinalPresenceMode,
+  goalConnection: PersonalDevelopmentRouteGoalConnection | null = null,
+  beneficialActionPolicy: BeneficialActionPolicy = "required"
+): FullCombinedStep[] {
+  return [...buildFullAwarenessSteps({ factors: plan.factors, presence: plan.presence }), ...buildFullStepsAfterPrimaryResolution(plan, finalPresenceMode, goalConnection, beneficialActionPolicy)];
 }

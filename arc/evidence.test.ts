@@ -18,6 +18,8 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityActionNeeded: false,
     goal: "לחיות בהתאם לערכים שלי",
     presenceColor: null,
+    acceptanceColor: null,
+    identityMantraRepetitionConfig: null,
     interferingState: "פחד",
     challengeContext: "אחרי טעות",
     statePreventiveAction: null,
