@@ -39,6 +39,7 @@ import {
   clearTimerRun,
   getArcGoal,
   loadArcBuilds,
+  loadLifeManifests,
   loadMiniArcBuilds,
   loadSessionLog,
   loadUrgeArcs,
@@ -46,6 +47,8 @@ import {
   updateLastSessionLogEntryGratitude,
   upsertWeeklyAction,
 } from "../data/storage.ts";
+import { resolveLifeManifestContributionForArcGoal } from "../arc/lifeManifest.ts";
+import type { LifeManifestContribution } from "../arc/lifeManifest.ts";
 import { markWeeklyActionCompletedToday } from "../arc/routineLinks.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
@@ -92,6 +95,8 @@ import {
   URGE_SELECT_TITLE,
   URGE_STOP_ACTION_DONE_LABEL,
   urgeArcToProfile,
+  getGoalConnectionStepCopy,
+  shouldInterceptOuterAtGoalConnection,
 } from "../arc/arcGoalEngine.ts";
 import type { ArcGoalLiveState, ArcGoalUiStage } from "../arc/arcGoalEngine.ts";
 import {
@@ -209,6 +214,16 @@ export default function ArcGoalSessionScreen() {
   const [urgeArcsById, setUrgeArcsById] = useState<Record<string, UrgeArc>>({});
   const [miniArcsById, setMiniArcsById] = useState<Record<string, MiniArcBuild>>({});
   const [evidenceIndex, setEvidenceIndex] = useState<EvidenceRecord[]>([]);
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+   * correction: resolved once per focus, from the already-loaded
+   * LifeManifest store + this goal's own lifeManifestSubGoalId -- see
+   * arc/lifeManifest.ts's own resolveLifeManifestContributionForArcGoal.
+   * null whenever this goal has no Manifest link at all, or the linked
+   * Sub-goal was since deleted -- getGoalConnectionStepCopy then simply
+   * omits the Manifest-contribution line, never inventing one.
+   */
+  const [manifestContribution, setManifestContribution] = useState<LifeManifestContribution | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState(() => new Date().toISOString());
   /**
    * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6: minted
@@ -313,13 +328,14 @@ export default function ArcGoalSessionScreen() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      Promise.all([getArcGoal(goalId), loadArcBuilds(), loadSessionLog(), loadUrgeArcs(), loadMiniArcBuilds()]).then(
-        ([loadedGoal, builds, sessionLog, urgeArcs, miniArcBuilds]) => {
+      Promise.all([getArcGoal(goalId), loadArcBuilds(), loadSessionLog(), loadUrgeArcs(), loadMiniArcBuilds(), loadLifeManifests()]).then(
+        ([loadedGoal, builds, sessionLog, urgeArcs, miniArcBuilds, manifests]) => {
         if (cancelled) return;
         if (!loadedGoal) {
           setStatus("notFound");
           return;
         }
+        setManifestContribution(resolveLifeManifestContributionForArcGoal(manifests, loadedGoal.lifeManifestSubGoalId));
         const byId: Record<string, ArcBuild> = {};
         for (const build of builds) byId[build.id] = build;
         setArcBuildsById(byId);
@@ -476,6 +492,19 @@ export default function ArcGoalSessionScreen() {
       setGoalState((current) => ({ ...current, uiStage: "reassessment" }));
       return;
     }
+    // Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+    // correction: intercept BEFORE "encode" ever renders -- the approved
+    // method's own "Acceptance -> Regulation -> Goal Connection ->
+    // Encoding" order, applied one stage boundary earlier than
+    // shouldInterceptOuterAtSuccessFocus below. Same already-advanced-
+    // underneath pattern: outerSession/outerStage are already updated to
+    // the real "encode" above; only goalState.uiStage diverts, and
+    // handleGoalConnectionContinue below simply returns uiStage to
+    // "outer" once the trainee continues.
+    if (shouldInterceptOuterAtGoalConnection(outerStage, nextStage)) {
+      setGoalState((current) => ({ ...current, uiStage: "goal_connection" }));
+      return;
+    }
     // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
     // correction: intercept BEFORE success_focus ever renders -- the Goal
     // Action must be explicitly confirmed first (see
@@ -623,6 +652,19 @@ export default function ArcGoalSessionScreen() {
   function handleGoalActionRoleConfirmed() {
     confirmArcGoalActionRole(GOAL_ACTION_ROLE);
     attemptArcGoalProgressCommit(outerSession, goalState);
+    setGoalState((current) => ({ ...current, uiStage: "outer" }));
+  }
+
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+   * correction: goal_connection's own "המשך" tap -- a passive imagery/
+   * mantra readthrough, never a confirmation gate (unlike goal_action_confirm's
+   * own "סיימתי", which confirms a real action role and writes progress).
+   * Simply resumes the outer run by returning uiStage to "outer", which
+   * then renders the ALREADY-ADVANCED outerStage ("encode") exactly like
+   * every other detour in this file.
+   */
+  function handleGoalConnectionContinue() {
     setGoalState((current) => ({ ...current, uiStage: "outer" }));
   }
 
@@ -1145,6 +1187,28 @@ export default function ArcGoalSessionScreen() {
           <Text style={styles.body}>{copy.body}</Text>
           <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleGoalActionRoleConfirmed}>
             <Text style={styles.buttonText}>סיימתי</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (goalState.uiStage === "goal_connection") {
+    // Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+    // correction: reached only when identityProfile/goal are both already
+    // resolved (this uiStage is only ever set from inside commitAdvanceOuter,
+    // which already requires both -- see that function's own early return).
+    const copy = getGoalConnectionStepCopy(goal!, identityProfile!, manifestContribution);
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ title: "ARC Goal LIVE" }} />
+        <View style={styles.content}>
+          <Text style={styles.title}>{copy.title}</Text>
+          {copy.lines.map((line, index) => (
+            <Text key={index} style={styles.body}>{line}</Text>
+          ))}
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleGoalConnectionContinue}>
+            <Text style={styles.buttonText}>המשך</Text>
           </Pressable>
         </View>
       </SafeAreaView>

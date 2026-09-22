@@ -60,6 +60,7 @@ import {
   resolveSelectedMapping,
   resolveSelectedUrgeMapping,
   shouldInterceptInnerAtAct,
+  shouldInterceptOuterAtGoalConnection,
   shouldInterceptOuterAtSuccessFocus,
   urgeArcToProfile,
 } from "../arc/arcGoalEngine.ts";
@@ -120,6 +121,7 @@ interface DriveResult {
   progressAfterIdentityActionConfirm: ArcGoalSessionProgressStore;
   progressAfterGoalActionConfirm: ArcGoalSessionProgressStore;
   visitedGoalActionConfirmBeforeSuccessFocus: boolean;
+  visitedGoalConnectionBeforeEncode: boolean;
   outerStage: ArcStage;
   outerSession: ArcLiveState;
 }
@@ -177,6 +179,7 @@ async function driveArcGoalSession(options: {
   let progressAfterBridgeConfirm: ArcGoalSessionProgressStore = {};
   let progressAfterIdentityActionConfirm: ArcGoalSessionProgressStore = {};
   let visitedGoalActionConfirmBeforeSuccessFocus = false;
+  let visitedGoalConnectionBeforeEncode = false;
 
   // Screen equivalent: a goal with no mappings at all never shows
   // reassessment, so the queue starts immediately.
@@ -214,18 +217,36 @@ async function driveArcGoalSession(options: {
         continue;
       }
 
-      const hop = advanceLiveSession(outerStage, outerSession, identity, ["identity"]);
-      outerSession = hop.session;
-      outerStage = hop.stage;
+      {
+        const previousOuterStage = outerStage;
+        const hop = advanceLiveSession(outerStage, outerSession, identity, ["identity"]);
+        outerSession = hop.session;
+        outerStage = hop.stage;
 
-      if (needsTriggerPrefixDetour(outerStage, goalState)) {
-        uiStage = "trigger_identification";
-        continue;
+        if (needsTriggerPrefixDetour(outerStage, goalState)) {
+          uiStage = "trigger_identification";
+          continue;
+        }
+        if (outerStage === "desired_state_check" && needsReassessmentDetour(g, goalState)) {
+          uiStage = "reassessment";
+          continue;
+        }
+        // Screen equivalent: commitAdvanceOuter's own shouldInterceptOuterAtGoalConnection branch.
+        if (shouldInterceptOuterAtGoalConnection(previousOuterStage, outerStage)) {
+          uiStage = "goal_connection";
+          continue;
+        }
       }
-      if (outerStage === "desired_state_check" && needsReassessmentDetour(g, goalState)) {
-        uiStage = "reassessment";
-        continue;
-      }
+      continue;
+    }
+
+    if (uiStage === "goal_connection") {
+      // Screen equivalent: handleGoalConnectionContinue -- a passive
+      // readthrough, never a confirmation gate; resumes into "outer",
+      // which then renders the already-advanced outerStage ("encode").
+      assert.equal(outerStage, "encode", "goal_connection must be visited exactly when outerStage has already advanced to encode, before it is ever rendered");
+      visitedGoalConnectionBeforeEncode = true;
+      uiStage = "outer";
       continue;
     }
 
@@ -303,7 +324,15 @@ async function driveArcGoalSession(options: {
   }
 
   const progressAfterGoalActionConfirm = await progressDeps.loadStore();
-  return { progressAfterBridgeConfirm, progressAfterIdentityActionConfirm, progressAfterGoalActionConfirm, visitedGoalActionConfirmBeforeSuccessFocus, outerStage, outerSession };
+  return {
+    progressAfterBridgeConfirm,
+    progressAfterIdentityActionConfirm,
+    progressAfterGoalActionConfirm,
+    visitedGoalActionConfirmBeforeSuccessFocus,
+    visitedGoalConnectionBeforeEncode,
+    outerStage,
+    outerSession,
+  };
 }
 
 // --- The corrected scenario: three distinct required roles, ordered ---
@@ -330,6 +359,7 @@ test("Beneficial Action and Identity Action confirmed alone still write no progr
   assert.deepEqual(result.progressAfterBridgeConfirm["goal-1"], undefined, "Beneficial Action alone must never write progress");
   assert.deepEqual(result.progressAfterIdentityActionConfirm["goal-1"], undefined, "Identity Action alone (with Beneficial Action already confirmed) must still never write progress");
   assert.equal(result.visitedGoalActionConfirmBeforeSuccessFocus, true, "goal_action_confirm was actually visited, before success_focus");
+  assert.equal(result.visitedGoalConnectionBeforeEncode, true, "goal_connection was visited exactly once, right before the outer run reached encode");
   assert.equal(result.outerStage, "complete");
   assert.equal(result.progressAfterGoalActionConfirm["goal-1"]?.completedSessions, 1, "progress is written exactly once, at the Goal Action confirmation");
 });
@@ -343,6 +373,7 @@ test("a direct-route session (no bridge) requires Identity Action + Goal Action,
   const result = await driveArcGoalSession({ g, identity, reassessmentChoice: "direct", arcGoalId: "goal-2", sessionId: "session-2", pendingDeps, progressDeps });
 
   assert.equal(result.visitedGoalActionConfirmBeforeSuccessFocus, true);
+  assert.equal(result.visitedGoalConnectionBeforeEncode, true, "goal_connection must be visited on the direct route too, not only the bridge route");
   assert.equal(result.outerStage, "complete");
   assert.equal(result.progressAfterGoalActionConfirm["goal-2"]?.completedSessions, 1);
   const execution = await loadPendingSharedActionExecution("arc_goal", "goal-2", pendingDeps);
@@ -362,6 +393,7 @@ test("a goal with no mappings at all starts its queue immediately (reassessment 
   const result = await driveArcGoalSession({ g, identity, reassessmentChoice: "direct", arcGoalId: "goal-3", sessionId: "session-3", pendingDeps, progressDeps });
 
   assert.equal(result.outerStage, "complete");
+  assert.equal(result.visitedGoalConnectionBeforeEncode, true, "goal_connection must be visited even when reassessment never shows");
   assert.equal(result.progressAfterGoalActionConfirm["goal-3"]?.completedSessions, 1);
 });
 

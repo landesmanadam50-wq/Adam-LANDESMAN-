@@ -107,6 +107,8 @@ import { getFreeBreathingLine } from "./naturalBreathing.ts";
 import { getUrgeLiveStageCopy, getUrgeRepresentationOptions } from "./urgeLive.ts";
 import type { UrgeLiveStageCopy } from "./urgeLive.ts";
 import { createEmptyPostActionCompletionState } from "./postActionCompletion.ts";
+import { getFutureOrientedMantraLine } from "./futureOrientedMantra.ts";
+import type { LifeManifestContribution } from "./lifeManifest.ts";
 
 export type ArcGoalUiStage =
   | "state_clarification_decision"
@@ -124,6 +126,17 @@ export type ArcGoalUiStage =
   | "urge_action_confirm"
   | "supportive_action_confirm"
   | "goal_action_confirm"
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+   * correction: reached at most once per outer run, via
+   * shouldInterceptOuterAtGoalConnection -- the approved method's own
+   * "Acceptance -> Regulation -> Goal Connection -> Encoding" order,
+   * applied one step before the outer run's own "encode" ArcStage.
+   * Distinct from "goal_action_confirm" above (a later, different
+   * screen -- the Goal Action's own explicit confirmation, right before
+   * Success Focus).
+   */
+  | "goal_connection"
   /**
    * Phase 3 (Full + Mini ARC Urge representation encoding), spec
    * section 4: "כיצד הדחף מופיע אצלך עכשיו?" -- reached ONLY on the urge
@@ -528,6 +541,64 @@ export function shouldInterceptInnerAtAct(innerNextStage: ArcStage): boolean {
  */
 export function shouldInterceptOuterAtSuccessFocus(previousOuterStage: ArcStage, nextOuterStage: ArcStage): boolean {
   return previousOuterStage === "act" && nextOuterStage === "success_focus";
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+ * correction: whether the OUTER run's own transition away from
+ * "desired_state_check" should be intercepted into the goal_connection
+ * screen, before ever reaching "encode" -- mirrors
+ * shouldInterceptOuterAtSuccessFocus's own interception shape exactly,
+ * one boundary earlier. The approved method's own order is "Acceptance
+ * -> Regulation -> Goal Connection -> Encoding," once per session, never
+ * repeated -- arc/arcEngine.ts's own stage order is
+ * regulate -> desired_state_check -> encode, so this is the exact analog
+ * of arc/combinedFullPlan.ts's own goal_connection insertion (immediately
+ * before the Encoding-equivalent stage) applied to the outer run's own
+ * stage sequence instead of the combined PD spine. Never intercepts a
+ * non-ArcGoal identity/state/habit ArcBuild run -- this function is only
+ * ever consulted from live/ArcGoalSessionScreen.tsx's own
+ * commitAdvanceOuter, never from the standalone live/LiveSessionScreen.tsx.
+ */
+export function shouldInterceptOuterAtGoalConnection(previousOuterStage: ArcStage, nextOuterStage: ArcStage): boolean {
+  return previousOuterStage === "desired_state_check" && nextOuterStage === "encode";
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+ * correction: the "goal_connection" screen's own content -- brief imagery
+ * of the goal's own desired result, the Future Mantra (identityFutureOrientedMantra
+ * on the linked identity ArcBuildProfile -- arc/futureOrientedMantra.ts's
+ * own function, reused verbatim, never a second future-mantra concept),
+ * the goal's own value, the personal reason, and -- when this ArcGoal is
+ * linked to a Life Manifest Sub-goal -- how the result contributes to the
+ * Manifest (caller-resolved via arc/lifeManifest.ts's own
+ * resolveLifeManifestContributionForArcGoal, since this module never
+ * imports data/ and cannot load the Manifest store itself). Shown exactly
+ * once per session (this screen is reached at most once, via
+ * shouldInterceptOuterAtGoalConnection above) -- never repeated, and never
+ * confused with getGoalActionConfirmCopy's own, later, DIFFERENT screen
+ * (the Goal Action's own explicit confirmation, right before Success
+ * Focus).
+ */
+export function getGoalConnectionStepCopy(
+  goal: ArcGoal,
+  identityProfile: ArcBuildProfile,
+  manifestContribution: LifeManifestContribution | null
+): { title: string; lines: string[] } {
+  const lines: string[] = [];
+  const desiredResult = goal.desiredResult.trim();
+  if (desiredResult) lines.push(`העלה בדמיונך את התוצאה הרצויה: ${desiredResult}.`);
+  const futureMantraLine = getFutureOrientedMantraLine(identityProfile, "identity");
+  if (futureMantraLine) lines.push(futureMantraLine);
+  const value = goal.value?.trim();
+  if (value) lines.push(`הערך שהיא מבטאת: ${value}.`);
+  const personalReason = goal.personalReason?.trim();
+  if (personalReason) lines.push(`הסיבה האישית שלך: ${personalReason}.`);
+  if (manifestContribution) {
+    lines.push(`זה תורם לתת-המטרה "${manifestContribution.subGoalTitle}" מתוך המטרה הגדולה "${manifestContribution.majorGoalTitle}" במניפסט החיים שלך.`);
+  }
+  return { title: "חיבור למטרה", lines };
 }
 
 /**

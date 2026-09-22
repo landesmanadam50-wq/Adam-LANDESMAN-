@@ -8,6 +8,7 @@ import {
   createEmptyArcGoalLiveState,
   findUrgeArcForNeed,
   getGoalActionConfirmCopy,
+  getGoalConnectionStepCopy,
   getStateClarificationDecisionCopy,
   getSupportiveActionConfirmCopy,
   getThirdPersonImageryCopy,
@@ -39,6 +40,7 @@ import {
   shouldInterceptInnerAfterRegulate,
   shouldInterceptInnerAfterSensationCheck,
   shouldInterceptInnerAtAct,
+  shouldInterceptOuterAtGoalConnection,
   STATE_CLARIFICATION_DECISION_TITLE,
   TRIGGER_DESCRIPTION_UNSPECIFIED,
   URGE_STOP_ACTION_DONE_LABEL,
@@ -51,6 +53,7 @@ import { createEmptyArcGoal, createEmptyUrgeArc, IDENTIFIED_NEED_UNKNOWN } from 
 import type { ArcBuildProfile, ArcGoal, ArcGoalInterferingMapping, ArcGoalUrgeMapping, ArcStage, UrgeArc } from "./types.ts";
 import { advanceLiveSession } from "../live/liveEventAdapter.ts";
 import { createEmptyArcBuildProfile } from "./types.ts";
+import type { LifeManifestContribution } from "./lifeManifest.ts";
 
 function mapping(overrides: Partial<ArcGoalInterferingMapping> = {}): ArcGoalInterferingMapping {
   return {
@@ -1088,4 +1091,68 @@ test("Phase 3 full ordering: driving a real urge inner run through sensation_che
   // urge_stop_action first.
   assert.equal(hop.stage, "stay");
   assert.equal(shouldInterceptInnerAfterSensationCheck("urge", "sensation_check"), true);
+});
+
+// --- Method-completion correction: Goal Connection (Acceptance -> Regulation -> Goal Connection -> Encoding) ---
+
+test("shouldInterceptOuterAtGoalConnection is true only for the desired_state_check -> encode transition", () => {
+  assert.equal(shouldInterceptOuterAtGoalConnection("desired_state_check", "encode"), true);
+});
+
+test("shouldInterceptOuterAtGoalConnection is false for every other transition, including a later loop-back through encode", () => {
+  const stages: ArcStage[] = ["regulate", "desired_state_check", "encode", "act", "success_focus", "complete"];
+  for (const previous of stages) {
+    for (const next of stages) {
+      if (previous === "desired_state_check" && next === "encode") continue;
+      assert.equal(shouldInterceptOuterAtGoalConnection(previous, next), false, `${previous} -> ${next} must never intercept`);
+    }
+  }
+});
+
+test("getGoalConnectionStepCopy includes the desired result, value, and personal reason lines when the goal has them", () => {
+  const g = goal({ value: "יצירתיות", personalReason: "כי זה חשוב לי" });
+  const copy = getGoalConnectionStepCopy(g, identityProfile({ identityFutureOrientedMantra: null }), null);
+  assert.equal(copy.title, "חיבור למטרה");
+  assert.ok(copy.lines.some((l) => l.includes(g.desiredResult)), "desired result line must appear");
+  assert.ok(copy.lines.some((l) => l.includes("יצירתיות")), "value line must appear");
+  assert.ok(copy.lines.some((l) => l.includes("כי זה חשוב לי")), "personal reason line must appear");
+});
+
+test("getGoalConnectionStepCopy omits the value/personal-reason lines entirely when the goal leaves them blank -- never renders an empty line", () => {
+  const g = goal({ value: null, personalReason: null });
+  const copy = getGoalConnectionStepCopy(g, identityProfile({ identityFutureOrientedMantra: null }), null);
+  assert.equal(copy.lines.some((l) => l.trim() === ""), false);
+  assert.equal(copy.lines.length, 1, "only the desired-result line should remain");
+});
+
+test("getGoalConnectionStepCopy includes the identity layer's own Future Mantra line (arc/futureOrientedMantra.ts) when configured, reusing it verbatim rather than a second concept", () => {
+  const g = goal();
+  const withMantra = identityProfile({ identityFutureOrientedMantra: "אני הופך למי שאני רוצה להיות" });
+  const copy = getGoalConnectionStepCopy(g, withMantra, null);
+  assert.ok(copy.lines.some((l) => l.includes("אני הופך למי שאני רוצה להיות")), "Future Mantra line must appear");
+});
+
+test("getGoalConnectionStepCopy has no Future Mantra line when identityFutureOrientedMantra is unset -- never fabricates one", () => {
+  const g = goal();
+  const copy = getGoalConnectionStepCopy(g, identityProfile({ identityFutureOrientedMantra: null }), null);
+  assert.equal(copy.lines.some((l) => l.includes("אני הופך")), false);
+});
+
+test("getGoalConnectionStepCopy adds the Manifest-contribution line only when a non-null LifeManifestContribution is passed -- naming both the sub-goal and the major goal", () => {
+  const g = goal();
+  const contribution: LifeManifestContribution = { majorGoalTitle: "בריאות", subGoalTitle: "לרוץ 5 קילומטר" };
+  const withContribution = getGoalConnectionStepCopy(g, identityProfile({ identityFutureOrientedMantra: null }), contribution);
+  assert.ok(withContribution.lines.some((l) => l.includes("בריאות") && l.includes("לרוץ 5 קילומטר")), "must name both the major goal and the sub-goal");
+
+  const withoutContribution = getGoalConnectionStepCopy(g, identityProfile({ identityFutureOrientedMantra: null }), null);
+  assert.equal(withoutContribution.lines.some((l) => l.includes("במניפסט החיים")), false, "must never fabricate a Manifest line when there is no link");
+});
+
+test("getGoalConnectionStepCopy's every line passes containsInductionPattern's safety check -- never asks the trainee to evoke/intensify/suppress/replace anything", () => {
+  const g = goal({ value: "יצירתיות", personalReason: "כי זה חשוב לי" });
+  const contribution: LifeManifestContribution = { majorGoalTitle: "בריאות", subGoalTitle: "לרוץ 5 קילומטר" };
+  const copy = getGoalConnectionStepCopy(g, identityProfile({ identityFutureOrientedMantra: "אני הופך למי שאני רוצה להיות" }), contribution);
+  for (const line of copy.lines) {
+    assert.equal(containsInductionPattern(line), false, `line must be safe: ${line}`);
+  }
 });

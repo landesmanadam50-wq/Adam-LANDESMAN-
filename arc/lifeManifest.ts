@@ -780,3 +780,30 @@ export function upsertTargetInList(targets: Target[], target: Target): Target[] 
 export function deleteTargetFromList(targets: Target[], id: string): Target[] {
   return targets.filter((target) => target.id !== id);
 }
+
+// ---------------------------------------------------------------------------
+// ArcGoal <-> Life Manifest Sub-goal contribution (Adaptive ARC
+// architecture task, unified PD/ARC Goal, method-completion correction):
+// "how the result contributes to the Manifest," resolved for
+// arc/arcGoalEngine.ts's own getGoalConnectionStepCopy. Pure -- takes the
+// already-loaded LifeManifest[] (this module never imports data/) and
+// the goal's own ArcGoal.lifeManifestSubGoalId; returns null whenever
+// there is no link at all, or the linked Sub-goal has since been
+// deleted -- never a stale/fabricated title.
+// ---------------------------------------------------------------------------
+
+export interface LifeManifestContribution {
+  majorGoalTitle: string;
+  subGoalTitle: string;
+}
+
+export function resolveLifeManifestContributionForArcGoal(manifests: LifeManifest[], lifeManifestSubGoalId: string | null | undefined): LifeManifestContribution | null {
+  if (!lifeManifestSubGoalId) return null;
+  for (const manifest of manifests) {
+    for (const majorGoal of manifest.majorGoals) {
+      const subGoal = majorGoal.subGoals.find((candidate) => candidate.id === lifeManifestSubGoalId);
+      if (subGoal) return { majorGoalTitle: majorGoal.title, subGoalTitle: subGoal.title };
+    }
+  }
+  return null;
+}
