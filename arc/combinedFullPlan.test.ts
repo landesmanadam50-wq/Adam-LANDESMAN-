@@ -164,6 +164,35 @@ test("Emotion, when selected, always resolves with a required complete State (st
   assert.equal(kinds(steps).includes("state_action"), true);
 });
 
+test("method-completion correction: Emotion's own replacement-response step (always neutral content -- see arc/combinedFactorPlanCopy.ts's own getEmotionProcessingStepCopy) still takes its BUILD-order place inside Encoding, after State's own desired-state encoding, alongside another factor", () => {
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["e1", "t1"],
+      itemRelationships: { e1: { actionRelationship: "legacy_unspecified" }, t1: { actionRelationship: "same_action" } },
+      stateInclusionPolicy: "linked",
+      stateProfileId: "s1",
+    }),
+    items: [emotion(), thought()],
+    stateProfiles: [completeState()],
+    primaryFactorId: "e1",
+  });
+  const steps = buildFullCombinedSteps(plan, "skipped", goalConnection());
+  const k = kinds(steps);
+  const encodingIdx = k.indexOf("state_desired_state_encoding");
+  const processingSteps = steps.filter((s) => s.kind === "processing");
+
+  assert.deepEqual(
+    processingSteps.map((s) => ({ itemId: s.itemId, category: s.category })),
+    [
+      { itemId: "e1", category: "emotion" },
+      { itemId: "t1", category: "thought" },
+    ],
+    "Emotion's own replacement-response step appears exactly once, in BUILD order alongside Thought's"
+  );
+  const emotionProcessingIdx = steps.findIndex((s) => s.kind === "processing" && s.category === "emotion");
+  assert.ok(encodingIdx >= 0 && emotionProcessingIdx > encodingIdx, "Emotion's replacement-response step still follows State's own Encoding content, exactly like every other category");
+});
+
 // --- Checkpoint boundaries ---
 
 test("checkpoint 1 (afterAwareness) precedes recognition-adjacent preventive stopping and Stay/Acceptance", () => {
