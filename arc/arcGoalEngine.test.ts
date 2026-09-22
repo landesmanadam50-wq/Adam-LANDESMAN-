@@ -177,6 +177,10 @@ test("createEmptyArcGoalLiveState now starts at the state-clarification decision
   assert.equal(createEmptyArcGoalLiveState().uiStage, "state_clarification_decision");
 });
 
+test("final-review correction: createEmptyArcGoalLiveState starts with goalConnectionShown false -- a fresh session has never shown its own Future Mantra yet", () => {
+  assert.equal(createEmptyArcGoalLiveState().goalConnectionShown, false);
+});
+
 test("getStateClarificationDecisionCopy returns the exact required Hebrew title", () => {
   assert.equal(getStateClarificationDecisionCopy().title, "האם יש כרגע רגש או דחף שצריך לעבוד עליו?");
   assert.equal(getStateClarificationDecisionCopy().title, STATE_CLARIFICATION_DECISION_TITLE);
@@ -210,6 +214,7 @@ test("resolveAfterStateClarificationDecision('לא') resets every temporary stat
     miniArcStage: "encoding",
     urgeRepresentation: "visual",
     pendingInnerResumeStage: "stay",
+    goalConnectionShown: false,
   };
   const result = resolveAfterStateClarificationDecision(false, dirty);
   assert.equal(result.triggerDescription, null);

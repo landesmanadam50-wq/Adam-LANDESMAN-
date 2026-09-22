@@ -209,6 +209,22 @@ export interface ArcGoalLiveState {
    * detour is currently pending.
    */
   pendingInnerResumeStage: ArcStage | null;
+
+  /**
+   * Final-review correction: true once the outer run's own "goal_connection"
+   * screen has been shown this session -- set the moment
+   * shouldInterceptOuterAtGoalConnection fires (that screen is reached
+   * exactly once per outer run, unconditionally, unlike Personal
+   * Development's own optional PersonalDevelopmentRouteGoalConnection --
+   * see arc/arcGoalEngine.ts's own getGoalConnectionStepCopy doc). The
+   * caller (live/ArcGoalSessionScreen.tsx) reads this to suppress the
+   * shared "encode" ArcStage's own Future Mantra line
+   * (arc/stageCopy.ts's getStageCopy, its optional suppressFutureMantra
+   * param) once goal_connection has already shown it -- never touches
+   * any OTHER ArcBuild session type's own Future Mantra behavior, which
+   * never sets this flag at all (it stays false, the safe default).
+   */
+  goalConnectionShown: boolean;
 }
 
 export function createEmptyArcGoalLiveState(): ArcGoalLiveState {
@@ -225,6 +241,7 @@ export function createEmptyArcGoalLiveState(): ArcGoalLiveState {
     miniArcStage: null,
     urgeRepresentation: null,
     pendingInnerResumeStage: null,
+    goalConnectionShown: false,
   };
 }
 

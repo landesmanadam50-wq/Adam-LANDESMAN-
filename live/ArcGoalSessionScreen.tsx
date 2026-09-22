@@ -502,7 +502,11 @@ export default function ArcGoalSessionScreen() {
     // handleGoalConnectionContinue below simply returns uiStage to
     // "outer" once the trainee continues.
     if (shouldInterceptOuterAtGoalConnection(outerStage, nextStage)) {
-      setGoalState((current) => ({ ...current, uiStage: "goal_connection" }));
+      // Final-review correction: mark the Future Mantra as already shown
+      // this session, the moment goal_connection is reached -- read by
+      // the outer getStageCopy call below to suppress its own repeat
+      // appearance at the shared "encode" ArcStage.
+      setGoalState((current) => ({ ...current, uiStage: "goal_connection", goalConnectionShown: true }));
       return;
     }
     // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
@@ -1277,7 +1281,7 @@ export default function ArcGoalSessionScreen() {
     // match what it actually does.
     weeklyActionId ? "סיום וחזרה לשגרה" : "סיום"
   );
-  const copy = getStageCopy(outerStage, identityProfile, outerSession, ["identity"], evidenceIndex);
+  const copy = getStageCopy(outerStage, identityProfile, outerSession, ["identity"], evidenceIndex, goalState.goalConnectionShown);
   return (
     <SafeAreaView style={styles.safeArea}>
       <Stack.Screen options={{ title: `ARC Goal LIVE — ${copy.title}` }} />

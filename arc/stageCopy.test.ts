@@ -514,6 +514,42 @@ test("encode shows the empowering interpretation (Bridge Belief), Value, and Fut
   assert.ok(!copy.body.includes("אין טעם להתחיל"), "the interfering thought (Limiting Belief) must never appear during Encoding");
 });
 
+// Final-review correction: suppressFutureMantra -- ArcGoal's own escape
+// hatch for the case where its "goal_connection" screen already showed
+// this exact line once this session (arc/arcGoalEngine.ts's own
+// getGoalConnectionStepCopy), so it must never repeat at "encode". Every
+// other ArcBuild session type (regular ARC included) never sets this
+// flag, so its own default (false) must leave their Future Mantra
+// behavior completely untouched.
+
+test("suppressFutureMantra omits the Future Mantra line at encode -- the one new escape hatch ArcGoal's own goal_connection screen uses, once it already showed this exact line", () => {
+  const p = profile({
+    internalAction: "סריקת גוף",
+    stateBridgeBelief: "כל צעד קטן נחשב",
+    value: "בריאות וחופש",
+    stateFutureOrientedMantra: "אני נושם ומתקדם",
+  });
+  const suppressed = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"], [], true);
+  assert.ok(!suppressed.body.includes("אני נושם ומתקדם"), "Future Mantra must not repeat once the caller says it already showed it");
+  // Everything else in Encoding is untouched -- suppression is scoped to exactly one segment.
+  assert.match(suppressed.body, /כל צעד קטן נחשב/);
+  assert.match(suppressed.body, /בריאות וחופש/);
+});
+
+test("a regular ARC session (suppressFutureMantra left at its default false) shows Future Mantra at encode exactly as before this correction -- never affected by ArcGoal's own new suppression flag", () => {
+  const p = profile({
+    internalAction: "סריקת גוף",
+    stateBridgeBelief: "כל צעד קטן נחשב",
+    value: "בריאות וחופש",
+    stateFutureOrientedMantra: "אני נושם ומתקדם",
+  });
+  const withDefault = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  const withExplicitFalse = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"], [], false);
+  assert.match(withDefault.body, /אני נושם ומתקדם/);
+  assert.match(withExplicitFalse.body, /אני נושם ומתקדם/);
+  assert.deepEqual(withDefault, withExplicitFalse, "the default and an explicit false must produce identical copy");
+});
+
 test("encode shows Value even when neither the interfering thought nor the empowering interpretation is configured", () => {
   const p = profile({ internalAction: "סריקת גוף", value: "ידע, סקרנות וחוכמה" });
   const copy = getStageCopy("encode", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
