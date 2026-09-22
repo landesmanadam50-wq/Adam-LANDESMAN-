@@ -73,7 +73,7 @@ test("Thought without State: no state_regulation_anchor/afterStateRegulation/sta
 
 // --- With-State Thought ---
 
-test("Thought with State: Regulation, afterStateRegulation, Encoding, desired-state measurement, and resolved actions all present in the exact required boundary order", () => {
+test("Thought with State: Regulation, afterStateRegulation, Encoding (State content then the factor's own replacement response), desired-state measurement, and resolved actions all present in the exact required boundary order", () => {
   const plan = resolve({
     config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "different_actions" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
     items: [thought()],
@@ -84,14 +84,19 @@ test("Thought with State: Regulation, afterStateRegulation, Encoding, desired-st
   const regIdx = k.indexOf("state_regulation_anchor");
   const checkpointIdx = steps.findIndex((s) => s.kind === "rating_checkpoint" && s.checkpoint === "afterStateRegulation");
   const encIdx = k.indexOf("state_desired_state_encoding");
+  const processingIdx = k.indexOf("processing");
   const ratingIdx = k.indexOf("desired_state_rating");
   const stateActionIdx = k.indexOf("state_action");
   const factorActionIdx = k.indexOf("factor_action");
 
-  assert.ok(regIdx >= 0 && checkpointIdx >= 0 && encIdx >= 0 && ratingIdx >= 0 && stateActionIdx >= 0 && factorActionIdx >= 0, "every required component present");
+  assert.ok(
+    regIdx >= 0 && checkpointIdx >= 0 && encIdx >= 0 && processingIdx >= 0 && ratingIdx >= 0 && stateActionIdx >= 0 && factorActionIdx >= 0,
+    "every required component present"
+  );
   assert.ok(regIdx < checkpointIdx, "Regulation before its own checkpoint");
   assert.ok(checkpointIdx < encIdx, "checkpoint before Encoding -- the required boundary");
-  assert.ok(encIdx < ratingIdx, "desired-state rating right after Encoding");
+  assert.ok(encIdx < processingIdx, "the factor's own replacement response (New-Response Practice) follows State's own desired-state encoding, both inside Encoding");
+  assert.ok(processingIdx < ratingIdx, "desired-state rating follows the whole Encoding/New-Response-Practice block, State content and replacement response alike");
   assert.ok(stateActionIdx < factorActionIdx, "State action first, factor action second");
 });
 
@@ -187,7 +192,7 @@ test("checkpoint 2 (afterStayAcceptance) follows both shared_stay and shared_acc
 
 // --- Factor interventions precede State Encoding ---
 
-test("factor-specific interventions precede State desired-state Encoding", () => {
+test("method-completion correction: factor-specific interventions (replacement thought/belief/movement) now FOLLOW State desired-state Encoding, as part of the Encoding / New-Response Practice block, never before Regulation/Goal Connection", () => {
   const plan = resolve({
     config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
     items: [thought()],
@@ -196,7 +201,7 @@ test("factor-specific interventions precede State desired-state Encoding", () =>
   const steps = buildFullCombinedSteps(plan, "skipped");
   const processingIdx = steps.findIndex((s) => s.kind === "processing");
   const encodingIdx = steps.findIndex((s) => s.kind === "state_desired_state_encoding");
-  assert.ok(processingIdx < encodingIdx);
+  assert.ok(encodingIdx < processingIdx, "State's own desired-state encoding comes first, then the factor's own replacement response");
 });
 
 // --- Presence precedes State Encoding when Presence runs ---
@@ -398,4 +403,143 @@ test("buildFullCombinedSteps threads goalConnection through to the same effect a
   });
   const steps = buildFullCombinedSteps(plan, "skipped", goalConnection());
   assert.equal(kinds(steps).includes("goal_connection"), true);
+});
+
+// ---------------------------------------------------------------------------
+// Method-completion correction (final ordering): Regulation -> Goal
+// Connection -> Encoding (State content, then every factor's own
+// replacement response in BUILD order) -> Action. New comprehensive
+// coverage per the approved correction: multiple factors in a
+// deliberately category-scrambling BUILD order, every optional step
+// omitted in turn, and no duplicate replacement content anywhere.
+// ---------------------------------------------------------------------------
+
+test("multiple factors' own replacement responses appear in plain BUILD (config.interferenceItemIds) order -- never RECOGNITION_CATEGORY_ORDER's or PROCESSING_CATEGORY_ORDER's fixed category grouping", () => {
+  // u1/t1/b1 deliberately does not match either fixed category order:
+  // RECOGNITION_CATEGORY_ORDER would give t1,b1,u1; PROCESSING_CATEGORY_ORDER
+  // (Mini's own, still unused by Full for this step) would give u1,b1,t1.
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["u1", "t1", "b1"],
+      itemRelationships: { u1: { actionRelationship: "same_action" }, t1: { actionRelationship: "same_action" }, b1: { actionRelationship: "same_action" } },
+      stateInclusionPolicy: "linked",
+      stateProfileId: "s1",
+    }),
+    items: [urge(), thought(), belief()],
+    stateProfiles: [completeState()],
+    primaryFactorId: "u1",
+  });
+  const steps = buildFullCombinedSteps(plan, "skipped");
+  const processingItemIds = steps.filter((s) => s.kind === "processing").map((s) => s.itemId);
+  assert.deepEqual(processingItemIds, ["u1", "t1", "b1"], "replacement responses render in exactly config.interferenceItemIds order");
+});
+
+test("every factor's own replacement response appears exactly once -- no duplicate replacement content anywhere in the spine", () => {
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["t1", "b1", "u1"],
+      itemRelationships: { t1: { actionRelationship: "same_action" }, b1: { actionRelationship: "same_action" }, u1: { actionRelationship: "same_action" } },
+      stateInclusionPolicy: "linked",
+      stateProfileId: "s1",
+    }),
+    items: [thought(), belief(), urge()],
+    stateProfiles: [completeState()],
+    primaryFactorId: "t1",
+  });
+  const steps = buildFullCombinedSteps(plan, "embedded", goalConnection());
+  const processingSteps = steps.filter((s) => s.kind === "processing");
+  assert.equal(processingSteps.length, 3, "exactly one processing step per factor, never more");
+  assert.deepEqual(
+    processingSteps.map((s) => s.itemId).sort(),
+    ["b1", "t1", "u1"],
+    "every factor's own replacement response appears, none duplicated, none missing"
+  );
+});
+
+test("replacement-response steps still appear, in BUILD order, on a no-State route -- Goal Connection/State Encoding/desired-state rating are all correctly absent, but factor-specific Encoding content is not", () => {
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["t1", "u1"],
+      itemRelationships: { t1: { actionRelationship: "legacy_unspecified" }, u1: { actionRelationship: "legacy_unspecified" } },
+      stateInclusionPolicy: "none",
+    }),
+    items: [thought(), urge()],
+    primaryFactorId: "t1",
+  });
+  const steps = buildFullCombinedSteps(plan, "skipped", goalConnection());
+  const k = kinds(steps);
+  assert.equal(k.includes("goal_connection"), false, "Goal Connection never renders without State");
+  assert.equal(k.includes("state_desired_state_encoding"), false);
+  assert.equal(k.includes("desired_state_rating"), false);
+  assert.deepEqual(
+    steps.filter((s) => s.kind === "processing").map((s) => s.itemId),
+    ["t1", "u1"],
+    "factor-specific replacement-response practice still happens, in BUILD order, even with no State at all"
+  );
+});
+
+test("replacement-response steps still appear when beneficialActionPolicy is 'none' -- the action step is skipped, Encoding's own replacement-response content is not", () => {
+  const plan = resolve({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
+    items: [thought()],
+    stateProfiles: [completeState()],
+  });
+  const steps = buildFullCombinedSteps(plan, "skipped", null, "none");
+  const k = kinds(steps);
+  assert.equal(k.includes("state_action"), false);
+  assert.equal(k.includes("factor_action"), false);
+  assert.equal(k.includes("processing"), true, "the replacement response is never skipped just because the action step is absent");
+  const processingIdx = k.indexOf("processing");
+  const terminalIdx = k.indexOf("terminal_boundary");
+  assert.ok(processingIdx < terminalIdx, "processing still precedes terminal_boundary");
+});
+
+test("replacement-response steps still appear, correctly positioned after Encoding, when Presence is skipped (finalPresenceMode 'skipped')", () => {
+  const plan = resolve({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
+    items: [thought()],
+    stateProfiles: [completeState()],
+  });
+  const steps = buildFullCombinedSteps(plan, "skipped");
+  const k = kinds(steps);
+  assert.equal(k.includes("presence"), false);
+  const encodingIdx = k.indexOf("state_desired_state_encoding");
+  const processingIdx = k.indexOf("processing");
+  assert.ok(encodingIdx >= 0 && processingIdx > encodingIdx, "processing still follows Encoding even with Presence entirely absent");
+});
+
+test("the full approved order holds end to end: Acceptance -> Regulation -> Goal Connection -> Encoding (State content, then every replacement response in BUILD order) -> Action, for a multi-factor with-State with-Presence with-Goal-Connection route", () => {
+  const plan = resolve({
+    config: config({
+      interferenceItemIds: ["b1", "u1", "t1"],
+      itemRelationships: { b1: { actionRelationship: "same_action" }, u1: { actionRelationship: "same_action" }, t1: { actionRelationship: "same_action" } },
+      stateInclusionPolicy: "linked",
+      stateProfileId: "s1",
+    }),
+    items: [belief(), urge(), thought()],
+    stateProfiles: [completeState()],
+    primaryFactorId: "b1",
+  });
+  const steps = buildFullCombinedSteps(plan, "embedded", goalConnection());
+  const k = kinds(steps);
+  const acceptanceIdx = k.indexOf("shared_acceptance");
+  const regulationIdx = k.indexOf("state_regulation_anchor");
+  const goalConnectionIdx = k.indexOf("goal_connection");
+  const encodingIdx = k.indexOf("state_desired_state_encoding");
+  const processingIndices = steps.map((s, i) => (s.kind === "processing" ? i : -1)).filter((i) => i !== -1);
+  const ratingIdx = k.indexOf("desired_state_rating");
+  const actionIndices = [k.indexOf("state_action"), k.indexOf("factor_action")].filter((i) => i !== -1);
+  const firstActionIdx = Math.min(...actionIndices);
+
+  assert.ok(acceptanceIdx < regulationIdx, "Acceptance before Regulation");
+  assert.ok(regulationIdx < goalConnectionIdx, "Regulation before Goal Connection");
+  assert.ok(goalConnectionIdx < encodingIdx, "Goal Connection at the end of Regulation, before Encoding begins");
+  assert.ok(encodingIdx < processingIndices[0], "State's own Encoding content before any replacement response");
+  assert.deepEqual(
+    processingIndices.map((i) => steps[i].itemId),
+    ["b1", "u1", "t1"],
+    "every replacement response appears once, in BUILD order, immediately as part of Encoding"
+  );
+  assert.ok(processingIndices[processingIndices.length - 1] < ratingIdx, "the desired-state rating follows the whole Encoding/New-Response-Practice block");
+  assert.ok(ratingIdx < firstActionIdx, "Action begins only after the whole Encoding block is complete");
 });

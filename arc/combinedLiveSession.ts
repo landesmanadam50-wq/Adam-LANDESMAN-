@@ -68,10 +68,14 @@
  * that function's own output, so this "spine" is stable and final for
  * every step around it. presenceGateIndex is then computed directly from
  * the spine's own real content (the first index whose kind is
- * "state_desired_state_encoding"/"state_action"/"factor_action"/
+ * "state_desired_state_encoding"/"processing"/"state_action"/"factor_action"/
  * "terminal_boundary" -- i.e. the exact position a real "presence" step
- * would occupy) -- never a hardcoded/guessed count, so it self-corrects
- * against any future reordering of the steps before it. When the
+ * would occupy; "processing" is included because a no-State route's
+ * Encoding/New-Response-Practice content -- factor-specific replacement
+ * responses -- is the first thing that would follow Presence's own slot
+ * when there is no State block at all) -- never a hardcoded/guessed
+ * count, so it self-corrects against any future reordering of the steps
+ * before it. When the
  * controller's step cursor is about to cross that index and presenceMode
  * has not yet been resolved, arc/combinedRoute.ts's own resolvePresenceRoute
  * decides: "skip"/"embedded"/"full_required" resolve immediately with no
@@ -347,9 +351,26 @@ function practicedItemIdsForPlan(plan: ResolvedCombinedFactorPlan): string[] {
   return plan.factors.map((factor) => factor.itemId);
 }
 
-/** The one findIndex-based, self-correcting computation described in this module's own header doc -- never a hardcoded count. */
+/**
+ * The one findIndex-based, self-correcting computation described in this
+ * module's own header doc -- never a hardcoded count.
+ *
+ * Method-completion correction (final ordering): "processing" (Encoding /
+ * New-Response Practice's own factor-specific content -- see
+ * arc/combinedFullPlan.ts's own header doc) now renders AFTER
+ * state_desired_state_encoding, so for a WITH-State route the first
+ * boundary kind found is still state_desired_state_encoding, unchanged.
+ * For a NO-State route, though, "processing" is now the first step that
+ * would immediately follow Presence's own slot (state_desired_state_encoding
+ * never renders at all there) -- so "processing" must be included in this
+ * search, or the gate index would overshoot past every factor's own
+ * replacement-response step to the next action/terminal_boundary,
+ * resolving Presence one or more steps later than its real position.
+ */
 function computePresenceGateIndex(spine: FullCombinedStep[]): number {
-  const index = spine.findIndex((step) => step.kind === "state_desired_state_encoding" || step.kind === "state_action" || step.kind === "factor_action" || step.kind === "terminal_boundary");
+  const index = spine.findIndex(
+    (step) => step.kind === "state_desired_state_encoding" || step.kind === "processing" || step.kind === "state_action" || step.kind === "factor_action" || step.kind === "terminal_boundary"
+  );
   return index === -1 ? spine.length : index;
 }
 

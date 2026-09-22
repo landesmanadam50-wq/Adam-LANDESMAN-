@@ -728,3 +728,93 @@ test("createCombinedLiveSession omits goal_connection when the route's own confi
   const kinds = state.remainingSteps.map((s) => s.kind);
   assert.equal(kinds.includes("goal_connection"), false);
 });
+
+// ---------------------------------------------------------------------------
+// Method-completion correction (final ordering): drives a real
+// CombinedLiveSessionState (not just the static plan array) through the
+// actual LIVE sequence -- Regulation -> Goal Connection -> Encoding (State
+// content, then every factor's own replacement response in BUILD order) ->
+// Action -- confirming the CONTROLLER, not only the plan builder, walks
+// this order, including multiple factors and every optional step skipped.
+// ---------------------------------------------------------------------------
+
+/** Drives a real session forward, recording the kind of every step actually encountered, in the order the controller presents them -- the real LIVE sequence, not the static plan array. */
+function driveAndRecordSequence(state: CombinedLiveSessionState, ratingValue = 5): { finalState: CombinedLiveSessionState; encountered: string[] } {
+  let s = state;
+  const encountered: string[] = [];
+  let guard = 0;
+  while (s.phase === "steps" && guard < 40) {
+    const step = s.remainingSteps[s.stepIndex];
+    if (!step) break;
+    encountered.push(step.kind === "rating_checkpoint" ? `rating_checkpoint:${step.checkpoint}` : step.kind === "processing" ? `processing:${step.itemId}` : step.kind);
+    if (step.kind === "state_action" || step.kind === "factor_action") break;
+    if (step.kind === "rating_checkpoint") {
+      for (const factor of s.resolvedPlan!.factors) s = recordStepRating(s, factor.itemId, factor.category, step.checkpoint!, ratingValue);
+    } else if (step.kind === "cognitive_reassessment") {
+      s = answerReassessment(s, "not_stuck");
+    } else if (step.kind === "desired_state_rating") {
+      s = recordDesiredStateRating(s, ratingValue);
+    } else {
+      s = advanceStep(s);
+    }
+    guard++;
+  }
+  return { finalState: s, encountered };
+}
+
+test("real LIVE sequence, multiple factors, full route: Regulation -> Goal Connection -> Encoding (State content, then every replacement response in BUILD order) -> Action, exactly once each, no duplicates", () => {
+  const cfg = config({
+    interferenceItemIds: ["u1", "t1", "b1"],
+    itemRelationships: { u1: { actionRelationship: "same_action" }, t1: { actionRelationship: "same_action" }, b1: { actionRelationship: "same_action" } },
+    stateInclusionPolicy: "linked",
+    stateProfileId: "s1",
+    goalConnection: { desiredResultText: "תוצאה", valueText: "ערך", personalReasonText: "סיבה" },
+  });
+  let state = completeAwareness(createCombinedLiveSession(baseInput({ items: [urge(), thought(), belief()], config: cfg, stateProfiles: [completeState()] })), [
+    { itemId: "u1", factorType: "urge", value: 7 },
+    { itemId: "t1", factorType: "thought", value: 5 },
+    { itemId: "b1", factorType: "belief", value: 3 },
+  ]);
+  const { finalState, encountered } = driveAndRecordSequence(state);
+
+  const regIdx = encountered.indexOf("state_regulation_anchor");
+  const goalConnectionIdx = encountered.indexOf("goal_connection");
+  const encodingIdx = encountered.indexOf("state_desired_state_encoding");
+  const processingIndices = ["u1", "t1", "b1"].map((id) => encountered.indexOf(`processing:${id}`));
+  const ratingIdx = encountered.indexOf("desired_state_rating");
+
+  assert.ok(regIdx >= 0 && goalConnectionIdx >= 0 && encodingIdx >= 0 && ratingIdx >= 0, "every required step was actually encountered by the controller");
+  assert.ok(processingIndices.every((i) => i >= 0), "every factor's own replacement response was actually encountered");
+  assert.ok(regIdx < goalConnectionIdx, "Regulation before Goal Connection, as actually walked");
+  assert.ok(goalConnectionIdx < encodingIdx, "Goal Connection before Encoding, as actually walked");
+  assert.ok(encodingIdx < processingIndices[0], "State's own Encoding content before any replacement response, as actually walked");
+  assert.deepEqual(processingIndices, [...processingIndices].sort((a, b) => a - b), "replacement responses were encountered in BUILD order: u1, t1, b1");
+  assert.ok(processingIndices[2] < ratingIdx, "desired-state rating follows every replacement response, as actually walked");
+  assert.equal(encountered.filter((k) => k.startsWith("processing:")).length, 3, "no duplicate replacement content anywhere in the actual walked sequence");
+  const finalStepKind = finalState.remainingSteps[finalState.stepIndex]?.kind;
+  assert.ok(finalStepKind === "state_action" || finalStepKind === "factor_action", `expected an action step, got ${finalStepKind}`);
+});
+
+test("real LIVE sequence, no-State route (two Urge factors, no Thought/Belief so cognitive_reassessment is correctly skipped): replacement responses still walked, in BUILD order, with no Goal Connection/Encoding/rating at all", () => {
+  const u2 = urge({ id: "u2", urgeName: "דחף שני", preventiveStoppingAction: null });
+  const cfg = config({
+    interferenceItemIds: ["u2", "u1"],
+    itemRelationships: { u1: { actionRelationship: "legacy_unspecified" }, u2: { actionRelationship: "legacy_unspecified" } },
+    stateInclusionPolicy: "none",
+  });
+  let state = completeAwareness(createCombinedLiveSession(baseInput({ items: [urge(), u2], config: cfg })), [
+    { itemId: "u2", factorType: "urge", value: 7 },
+    { itemId: "u1", factorType: "urge", value: 4 },
+  ]);
+  const { encountered } = driveAndRecordSequence(state);
+
+  assert.equal(encountered.includes("goal_connection"), false);
+  assert.equal(encountered.includes("state_desired_state_encoding"), false);
+  assert.equal(encountered.includes("desired_state_rating"), false);
+  assert.equal(encountered.includes("cognitive_reassessment"), false, "no Thought/Belief selected -- the optional reassessment step is correctly skipped");
+  // Both Urge factors' own replacement responses still appear, in BUILD order -- u2 before u1, matching config.interferenceItemIds, not creation order.
+  assert.deepEqual(
+    encountered.filter((k) => k.startsWith("processing:")),
+    ["processing:u2", "processing:u1"]
+  );
+});
