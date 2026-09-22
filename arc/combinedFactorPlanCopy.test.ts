@@ -180,7 +180,18 @@ test("resolveCognitiveReassessmentVariant/getCognitiveReassessmentCopy return th
 
 test("getGoalConnectionCopy reads back exactly the coach-authored desiredResultText/valueText/personalReasonText -- never invented or rephrased", () => {
   const copy = getGoalConnectionCopy({ desiredResultText: "תוצאה רצויה", valueText: "ערך מרכזי", personalReasonText: "סיבה אישית" });
-  assert.ok(copy.desiredResultLine.includes("תוצאה רצויה"));
-  assert.ok(copy.valueLine.includes("ערך מרכזי"));
-  assert.ok(copy.personalReasonLine.includes("סיבה אישית"));
+  assert.equal(copy.lines.length, 3);
+  assert.ok(copy.lines.some((l) => l.includes("תוצאה רצויה")));
+  assert.ok(copy.lines.some((l) => l.includes("ערך מרכזי")));
+  assert.ok(copy.lines.some((l) => l.includes("סיבה אישית")));
+});
+
+test("final-review correction: getGoalConnectionCopy omits blank optional fields (valueText/personalReasonText) entirely -- never renders an empty 'label: ' line, matching arc/arcGoalEngine.ts's own getGoalConnectionStepCopy", () => {
+  const onlyRequired = getGoalConnectionCopy({ desiredResultText: "תוצאה רצויה", valueText: "", personalReasonText: null as unknown as string });
+  assert.deepEqual(onlyRequired.lines, ["התוצאה הרצויה: תוצאה רצויה"]);
+  assert.equal(
+    onlyRequired.lines.some((l) => l.trim().endsWith(":")),
+    false,
+    "never a label with nothing after it"
+  );
 });

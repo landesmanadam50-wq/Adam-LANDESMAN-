@@ -309,14 +309,24 @@ export function getStateDesiredStateEncodingCopy(state: StateProfile, mode: Comb
  * expresses, and their personal reason it matters, in that order,
  * immediately before Encoding (see arc/combinedFullPlan.ts's own header
  * doc, step 11).
+ *
+ * Final-review correction: valueText/personalReasonText are BUILD-optional
+ * (see build/PersonalDevelopmentRouteEditorScreen.tsx's own "(רשות)"
+ * labels) -- a blank optional field is omitted entirely, never rendered
+ * as an empty "label: " line. Mirrors arc/arcGoalEngine.ts's own
+ * getGoalConnectionStepCopy exactly (same {title, lines} shape, same
+ * omit-when-blank rule), so the two tracks' Goal Connection screens never
+ * drift into two different blank-field behaviors.
  */
-export function getGoalConnectionCopy(goalConnection: PersonalDevelopmentRouteGoalConnection): { title: string; desiredResultLine: string; valueLine: string; personalReasonLine: string } {
-  return {
-    title: "חיבור למטרה",
-    desiredResultLine: `התוצאה הרצויה: ${safeText(goalConnection.desiredResultText)}`,
-    valueLine: `הערך שהיא מבטאת: ${safeText(goalConnection.valueText)}`,
-    personalReasonLine: `הסיבה האישית שלך: ${safeText(goalConnection.personalReasonText)}`,
-  };
+export function getGoalConnectionCopy(goalConnection: PersonalDevelopmentRouteGoalConnection): { title: string; lines: string[] } {
+  const lines: string[] = [];
+  const desiredResult = safeText(goalConnection.desiredResultText);
+  if (desiredResult) lines.push(`התוצאה הרצויה: ${desiredResult}`);
+  const value = safeText(goalConnection.valueText);
+  if (value) lines.push(`הערך שהיא מבטאת: ${value}`);
+  const personalReason = safeText(goalConnection.personalReasonText);
+  if (personalReason) lines.push(`הסיבה האישית שלך: ${personalReason}`);
+  return { title: "חיבור למטרה", lines };
 }
 
 // ---------------------------------------------------------------------------

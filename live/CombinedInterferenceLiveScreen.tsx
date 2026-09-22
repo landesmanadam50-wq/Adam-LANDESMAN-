@@ -696,9 +696,9 @@ function renderStep(state: CombinedLiveSessionState, update: (next: CombinedLive
       return (
         <View>
           <Text style={styles.title}>{copy.title}</Text>
-          <Text style={styles.body}>{copy.desiredResultLine}</Text>
-          <Text style={styles.body}>{copy.valueLine}</Text>
-          <Text style={styles.body}>{copy.personalReasonLine}</Text>
+          {copy.lines.map((line, index) => (
+            <Text key={index} style={styles.body}>{line}</Text>
+          ))}
           <PrimaryButton label="המשך" onPress={() => update(advanceStep(state))} />
         </View>
       );
