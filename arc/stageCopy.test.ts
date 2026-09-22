@@ -23,6 +23,8 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityActionNeeded: false,
     goal: "להגיב לעצמי בצורה בונה יותר",
     presenceColor: null,
+    acceptanceColor: null,
+    identityMantraRepetitionConfig: null,
     interferingState: "פחד",
     challengeContext: "אחרי טעות",
     statePreventiveAction: null,
@@ -1493,6 +1495,8 @@ test("Presence Color: two different ArcBuild profiles with different saved color
 test("Presence Color: a legacy/unanswered build (presenceColor: null) produces safe, neutral copy across every stage this task touches -- never 'undefined'/'null'/'[object Object]', never an invented color", () => {
   const p = profile({
     presenceColor: null,
+    acceptanceColor: null,
+    identityMantraRepetitionConfig: null,
     regulationTool: "נשימה 4-7-8",
     stateEncoding: { target: "חמלה", bodySensationCue: null, breathCue: null, bodyLanguageCue: "כתפיים משוחררות", mantra: "אני בטוח כאן" },
   });

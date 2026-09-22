@@ -19,6 +19,8 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
     identityActionNeeded: false,
     goal: null,
     presenceColor: null,
+    acceptanceColor: null,
+    identityMantraRepetitionConfig: null,
     interferingState: null,
     challengeContext: null,
     statePreventiveAction: null,

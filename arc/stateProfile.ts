@@ -64,6 +64,18 @@ export interface StateProfile extends OwnedLibraryRecord {
   /** "Functional purpose: what this State helps the trainee do" -- distinct from `description` (a general note) and from `name` (a short label). */
   purpose: string | null;
   stateMantra: string | null;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: how
+   * stateMantra is practiced during Desired-State Creation. Missing
+   * legacy value normalizes to "once" -- never invented as "fixed_count".
+   */
+  mantraRepetitionMode: "once" | "fixed_count" | "until_change_noticed";
+  /** Meaningful only when mantraRepetitionMode is "fixed_count" -- validated 2-10 at BUILD-save time; null otherwise, never auto-converted from a missing legacy value. */
+  mantraFixedRepetitionCount: number | null;
+  /** Missing legacy value normalizes to "silent" -- the closest existing precedent (every pre-existing mantra-like line in this codebase, e.g. arc/proactiveStatePractice.ts's own state_mantra step, is silent). */
+  mantraSpeakingMode: "aloud" | "silent" | "choose_in_live";
+  /** null means no minimum dwell enforced -- mirrors arc/actionTimer.ts's own null-means-untimed convention, never an invented positive default. */
+  mantraMinimumDwellSeconds: number | null;
   regulationAnchor: string | null;
   /** Posture cue -- reuses the same concept as EncodingProfile.bodyLanguageCue (arc/types.ts), never a duplicate mechanism. */
   bodyLanguageCue: string | null;
@@ -109,6 +121,10 @@ export function createEmptyStateProfile(id: string, name: string, ownerProgramId
     description: null,
     purpose: null,
     stateMantra: null,
+    mantraRepetitionMode: "once",
+    mantraFixedRepetitionCount: null,
+    mantraSpeakingMode: "silent",
+    mantraMinimumDwellSeconds: null,
     regulationAnchor: null,
     bodyLanguageCue: null,
     gazeCue: null,
@@ -143,6 +159,10 @@ export function normalizeStateProfile(profile: StateProfile): StateProfile {
     description: profile.description ?? null,
     purpose: profile.purpose ?? null,
     stateMantra: profile.stateMantra ?? null,
+    mantraRepetitionMode: profile.mantraRepetitionMode ?? "once",
+    mantraFixedRepetitionCount: profile.mantraFixedRepetitionCount ?? null,
+    mantraSpeakingMode: profile.mantraSpeakingMode ?? "silent",
+    mantraMinimumDwellSeconds: profile.mantraMinimumDwellSeconds ?? null,
     regulationAnchor: profile.regulationAnchor ?? null,
     bodyLanguageCue: profile.bodyLanguageCue ?? null,
     gazeCue: profile.gazeCue ?? null,

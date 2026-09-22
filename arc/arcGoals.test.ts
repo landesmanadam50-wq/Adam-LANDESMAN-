@@ -263,3 +263,76 @@ test("duplicateArcGoal never carries over another goal's four-week program -- a 
   const copy = duplicateArcGoal(g, "g2", "2025-02-01T00:00:00.000Z");
   assert.equal(copy.fourWeekProgram, null);
 });
+
+// --- Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1:
+// personalReason, thoughtMappings/beliefMappings, miniCombinedActionOverride.
+
+test("createEmptyArcGoal starts with personalReason null and empty thoughtMappings/beliefMappings arrays", () => {
+  const g = createEmptyArcGoal("g1", "מטרה", "2024-01-01T00:00:00.000Z");
+  assert.equal(g.personalReason, null);
+  assert.deepEqual(g.thoughtMappings, []);
+  assert.deepEqual(g.beliefMappings, []);
+});
+
+test("normalizeArcGoal backfills a missing personalReason to null and missing thoughtMappings/beliefMappings to []", () => {
+  const legacyGoal = { ...goal(), personalReason: undefined, thoughtMappings: undefined, beliefMappings: undefined } as unknown as ArcGoal;
+  const normalized = normalizeArcGoal(legacyGoal);
+  assert.equal(normalized.personalReason, null);
+  assert.deepEqual(normalized.thoughtMappings, []);
+  assert.deepEqual(normalized.beliefMappings, []);
+});
+
+test("normalizeArcGoal preserves an already-set personalReason", () => {
+  const g = goal({ personalReason: "כי חשוב לי" });
+  assert.equal(normalizeArcGoal(g).personalReason, "כי חשוב לי");
+});
+
+test("normalizeArcGoal backfills every thought/belief mapping's optional fields to the same safe defaults as interfering/urge mappings", () => {
+  const g = goal({
+    thoughtMappings: [{ id: "tm1", thoughtArcId: "thought-1" } as never],
+    beliefMappings: [{ id: "bm1", beliefArcId: "belief-1" } as never],
+  });
+  const normalized = normalizeArcGoal(g);
+  assert.equal(normalized.thoughtMappings[0].miniArcId, null);
+  assert.equal(normalized.thoughtMappings[0].executionMode, "full");
+  assert.equal(normalized.thoughtMappings[0].identityProtocolId, null);
+  assert.equal(normalized.thoughtMappings[0].goalAction, null);
+  assert.equal(normalized.thoughtMappings[0].actionRelationship, "legacy_unspecified");
+  assert.equal(normalized.thoughtMappings[0].miniCombinedActionOverride, null);
+  assert.equal(normalized.thoughtMappings[0].thoughtArcId, "thought-1");
+  assert.equal(normalized.beliefMappings[0].beliefArcId, "belief-1");
+  assert.equal(normalized.beliefMappings[0].actionRelationship, "legacy_unspecified");
+  assert.equal(normalized.beliefMappings[0].miniCombinedActionOverride, null);
+});
+
+test("normalizeArcGoal backfills a missing miniCombinedActionOverride on interfering/urge mappings to null, preserving an already-set one", () => {
+  const g = goal({
+    interferingMappings: [{ id: "m1", interferingState: "x", supportiveProtocolId: "s1", supportiveAction: "a1" }],
+    urgeMappings: [{ id: "um1", urgeArcId: "urge-1", need: null, miniCombinedActionOverride: "פעולה משולבת" } as never],
+  });
+  const normalized = normalizeArcGoal(g);
+  assert.equal(normalized.interferingMappings[0].miniCombinedActionOverride, null);
+  assert.equal(normalized.urgeMappings[0].miniCombinedActionOverride, "פעולה משולבת", "already-set override preserved unchanged");
+});
+
+test("duplicateArcGoal gives each thought/belief mapping its OWN new id, copying thoughtArcId/beliefArcId as references", () => {
+  const original = goal({
+    thoughtMappings: [{ id: "tm1", thoughtArcId: "thought-1" } as never],
+    beliefMappings: [{ id: "bm1", beliefArcId: "belief-1" } as never],
+  });
+  const copy = duplicateArcGoal(original, "g-copy", "2024-06-01T00:00:00.000Z");
+  assert.notEqual(copy.thoughtMappings[0].id, "tm1");
+  assert.equal(copy.thoughtMappings[0].thoughtArcId, "thought-1", "the SAME referenced ThoughtArc, not a duplicate of it");
+  assert.notEqual(copy.beliefMappings[0].id, "bm1");
+  assert.equal(copy.beliefMappings[0].beliefArcId, "belief-1", "the SAME referenced BeliefArc, not a duplicate of it");
+  // The original goal's own mapping ids are completely untouched.
+  assert.equal(original.thoughtMappings[0].id, "tm1");
+  assert.equal(original.beliefMappings[0].id, "bm1");
+});
+
+test("duplicateArcGoal defaults missing thoughtMappings/beliefMappings to [] rather than throwing on a pre-Phase-1 goal", () => {
+  const legacyOriginal = { ...goal(), thoughtMappings: undefined, beliefMappings: undefined } as unknown as ArcGoal;
+  const copy = duplicateArcGoal(legacyOriginal, "g-copy", "2024-06-01T00:00:00.000Z");
+  assert.deepEqual(copy.thoughtMappings, []);
+  assert.deepEqual(copy.beliefMappings, []);
+});

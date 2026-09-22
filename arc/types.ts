@@ -237,6 +237,34 @@ export interface EncodingProfile {
 }
 
 /**
+ * Adaptive ARC architecture task (unified PD/ARC Goal): ARC Goal's own
+ * Identity Mantra repetition configuration -- a sibling field to
+ * ArcBuildProfile.identityEncoding below, deliberately never a field on
+ * EncodingProfile itself. EncodingProfile is shared by three consumers
+ * (stateEncoding/identityEncoding/habitEncoding, all resolved through the
+ * same arc/arcEngine.ts "encode" ArcStage via resolveEncodingTarget) --
+ * putting repetition fields there would let a State- or habit-target
+ * ArcBuild structurally carry Identity-Mantra-repetition data it can
+ * never legitimately use. Keeping this on its own sibling field means a
+ * State/habit-target profile has no field to even accidentally populate.
+ * Rendered only by ArcGoal's own live session call site -- the standalone
+ * identity-target ArcBuild flow never reads this field, even when it
+ * happens to be populated on a profile also linked to an ArcGoal.
+ */
+export interface IdentityEncodingRepetitionConfig {
+  mantraRepetitionMode: "once" | "fixed_count" | "until_change_noticed";
+  /** Meaningful only when mantraRepetitionMode is "fixed_count" -- validated 2-10 at BUILD-save time; null otherwise. */
+  mantraFixedRepetitionCount: number | null;
+  mantraSpeakingMode: "aloud" | "silent" | "choose_in_live";
+  /** null means no minimum dwell enforced -- mirrors arc/actionTimer.ts's own null-means-untimed convention. */
+  mantraMinimumDwellSeconds: number | null;
+}
+
+export function createEmptyIdentityEncodingRepetitionConfig(): IdentityEncodingRepetitionConfig {
+  return { mantraRepetitionMode: "once", mantraFixedRepetitionCount: null, mantraSpeakingMode: "silent", mantraMinimumDwellSeconds: null };
+}
+
+/**
  * Personal, per-ARC-state dwell times (see arc/dwellTimes.ts) -- how
  * long, in seconds, a trainee wants to remain in each of five
  * experiential LIVE stages AFTER that stage's own instruction has
@@ -353,6 +381,18 @@ export interface ArcBuildProfile {
   presenceColor: string | null;
 
   /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal): the passive
+   * Presence-Awareness-Acceptance support layer's own Acceptance color --
+   * genuinely separate from presenceColor above. Verified: Stay and
+   * Accept both currently read the SAME single presenceColor field via
+   * arc/presenceColor.ts's getEnergyColorLine -- no distinct Acceptance
+   * color concept existed before this field. Defaults to a fixed pink
+   * constant at render time when unset (see arc/passiveSupportLayer.ts);
+   * null for every profile saved before this field existed.
+   */
+  acceptanceColor: string | null;
+
+  /**
    * The ARC Map around the state-layer Desired State (supportiveState
    * below): where it's especially relevant (challengeContext), what
    * commonly interferes with it (interferingState), and what to do
@@ -418,6 +458,8 @@ export interface ArcBuildProfile {
   /** The identity layer's own lightweight Encoding regulation anchor, parallel to stateEncodingRegulationCue -- never mixed with it. The habit layer still has no regulation-cue equivalent of its own (a habit-targeted Encoding session always uses regulationTool directly, unchanged) -- only its optional body-language-cue/mantra Encoding content is configurable, via habitEncoding below. */
   identityEncodingRegulationCue: string | null;
   identityEncoding: EncodingProfile | null;
+  /** See IdentityEncodingRepetitionConfig's own doc -- ArcGoal-only, never read by the standalone identity-target ArcBuild flow, structurally distinct from EncodingProfile so state/habit consumers can never carry this data. */
+  identityMantraRepetitionConfig: IdentityEncodingRepetitionConfig | null;
   identityAction: string | null;
   /** The identity layer's own Action Body Cue, parallel to internalActionBodyCue -- never mixed with it or with beneficialActionBodyCue. Like identityAction itself, not asked as its own BUILD question: derived from beneficialActionBodyCue (see build/profileWizard.ts's module doc on why identityAction shares beneficialAction). */
   identityActionBodyCue: string | null;
@@ -781,6 +823,7 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     identityActionNeeded: false,
     goal: null,
     presenceColor: null,
+    acceptanceColor: null,
     interferingState: null,
     supportiveState: null,
     challengeContext: null,
@@ -796,6 +839,7 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     identityPreventiveAction: null,
     identityEncodingRegulationCue: null,
     identityEncoding: null,
+    identityMantraRepetitionConfig: null,
     identityAction: null,
     identityActionBodyCue: null,
     identityDwellTimes: null,
@@ -944,6 +988,61 @@ export interface ArcGoalInterferingMapping {
    * before this field existed.
    */
   actionRelationship?: ActionRelationship;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal): meaningful only
+   * when actionRelationship is "different_actions" (Full's own
+   * state_then_factor outcome) -- an explicit coach override letting
+   * Mini treat this mapping's factor and State actions as ONE combined
+   * Mini-specific action, even though Full keeps them distinct. null
+   * (the default) means Mini falls back to running both actions
+   * sequentially, exactly like Full. Never inferred from actionRelationship
+   * alone -- this is a deliberate, separate Mini-only decision.
+   */
+  miniCombinedActionOverride?: string | null;
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: one row
+ * of ARC Goal's Thought mapping -- connects a trigger/interfering thought
+ * to its ThoughtArc protocol, exactly parallel to ArcGoalUrgeMapping's
+ * own reference-only shape. Genuinely new: no ArcGoal-level Thought
+ * mapping type existed before this field (confirmed by inspection -- the
+ * only prior reference was a comment in live/ThoughtArcLiveScreen.tsx
+ * noting it was explicitly out of scope for an earlier phase). Added
+ * here, before any adapter/composition logic that would reference it, so
+ * every later phase compiles against fields that already exist.
+ */
+export interface ArcGoalThoughtMapping {
+  id: string;
+  thoughtArcId: string;
+  miniArcId?: string | null;
+  executionMode?: ExecutionMode;
+  identityProtocolId?: string | null;
+  goalAction?: string | null;
+  actionRelationship?: ActionRelationship;
+  miniCombinedActionOverride?: string | null;
+}
+
+/** Same rationale as ArcGoalThoughtMapping above, for ARC Goal's Belief route. Also genuinely new. */
+export interface ArcGoalBeliefMapping {
+  id: string;
+  beliefArcId: string;
+  miniArcId?: string | null;
+  executionMode?: ExecutionMode;
+  identityProtocolId?: string | null;
+  goalAction?: string | null;
+  actionRelationship?: ActionRelationship;
+  miniCombinedActionOverride?: string | null;
+}
+
+/** Same id-pattern as generateArcGoalMappingId/generateArcGoalUrgeMappingId, its own distinct prefix. */
+export function generateArcGoalThoughtMappingId(): string {
+  return `arcgoalthoughtmap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Same id-pattern, its own distinct prefix. */
+export function generateArcGoalBeliefMappingId(): string {
+  return `arcgoalbeliefmap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /**
@@ -967,6 +1066,8 @@ export interface ArcGoalUrgeMapping {
   goalAction?: string | null;
   /** Adaptive ARC architecture task, Phase 14B-1: same rationale as ArcGoalInterferingMapping.actionRelationship above -- kept per-mapping, never on the reused UrgeArc itself. */
   actionRelationship?: ActionRelationship;
+  /** Same rationale as ArcGoalInterferingMapping.miniCombinedActionOverride above. */
+  miniCombinedActionOverride?: string | null;
 }
 
 /**
@@ -1956,12 +2057,26 @@ export interface ArcGoal {
   name: string;
   description: string | null;
   value: string | null;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: the
+   * trainee's personal reason the result matters -- distinct from `value`
+   * (the value the result expresses) and distinct from Life Manifest's
+   * own MajorGoal.why (a different record, never conflated with this
+   * one). Genuinely new: no ArcGoal-level "reason" field existed before
+   * this (confirmed by inspection). null for every goal saved before this
+   * field existed.
+   */
+  personalReason: string | null;
   goalAction: string;
   desiredResult: string;
   identityProtocolId: string | null;
   interferingMappings: ArcGoalInterferingMapping[];
   /** ARC Goal task (Urge route): parallel to interferingMappings above, one row per mapped urge. Defaults to [] for every ArcGoal saved before this field existed -- see arc/arcGoals.ts's normalizeArcGoal. */
   urgeMappings: ArcGoalUrgeMapping[];
+  /** Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: parallel to interferingMappings/urgeMappings, one row per mapped interfering thought. Defaults to [] for every ArcGoal saved before this field existed. */
+  thoughtMappings: ArcGoalThoughtMapping[];
+  /** Same rationale as thoughtMappings above, for ARC Goal's Belief route. */
+  beliefMappings: ArcGoalBeliefMapping[];
   /**
    * Four-Week Program task: null for every ArcGoal saved before this
    * field existed, and for every new ArcGoal until the trainee
@@ -2143,11 +2258,14 @@ export function createEmptyArcGoal(id: string, name: string, now: string): ArcGo
     name,
     description: null,
     value: null,
+    personalReason: null,
     goalAction: "",
     desiredResult: "",
     identityProtocolId: null,
     interferingMappings: [],
     urgeMappings: [],
+    thoughtMappings: [],
+    beliefMappings: [],
     fourWeekProgram: null,
     createdAt: now,
     updatedAt: now,

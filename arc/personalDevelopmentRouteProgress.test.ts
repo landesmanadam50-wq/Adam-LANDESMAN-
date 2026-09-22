@@ -3,10 +3,17 @@ import assert from "node:assert/strict";
 
 import {
   applyCombinedSessionCompletionToProgress,
+  applyStageProgressionToRouteProgress,
   createEmptyPersonalDevelopmentRouteProgress,
+  isRequiredActionOutcomeValidForMode,
+  isValidRouteStageProjection,
+  normalizePersonalDevelopmentRouteProgress,
+  reconcileRouteStageForPolicyChange,
+  resolveEligibleStageAdvancement,
+  resolvePolicyDemotion,
   validateCombinedSessionFactsForCompletion,
 } from "./personalDevelopmentRouteProgress.ts";
-import type { PersonalDevelopmentRouteProgress } from "./personalDevelopmentRouteProgress.ts";
+import type { BeneficialActionOutcome, PersonalDevelopmentRouteProgress, PersonalDevelopmentRouteStage } from "./personalDevelopmentRouteProgress.ts";
 import type { CombinedLiveSessionFacts } from "./combinedLiveSessionFacts.ts";
 
 const NOW = "2026-01-01T00:00:00.000Z";
@@ -309,4 +316,211 @@ test("createEmptyPersonalDevelopmentRouteProgress defaults every counter to zero
   assert.equal(empty.completedFullSessions, 0);
   assert.equal(empty.completedMiniSessions, 0);
   assert.deepEqual(empty.countedSessionIds, []);
+  assert.equal(empty.stage, 1);
+  assert.equal(empty.stage1ConfirmedCount, 0);
+  assert.equal(empty.stage2ConfirmedCount, 0);
+  assert.equal(empty.stage3ConfirmedCount, 0);
+  assert.equal(empty.stage4ConfirmedCount, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: the
+// 4-stage Personal Development mastery program.
+// ---------------------------------------------------------------------------
+
+// --- normalizePersonalDevelopmentRouteProgress ---
+
+test("normalize backfills every field on a record saved before the 4-stage program existed", () => {
+  const legacy = { ...emptyProgress() } as Partial<PersonalDevelopmentRouteProgress>;
+  delete legacy.stage;
+  delete legacy.stage1ConfirmedCount;
+  delete legacy.stage2ConfirmedCount;
+  delete legacy.stage3ConfirmedCount;
+  delete legacy.stage4ConfirmedCount;
+  const normalized = normalizePersonalDevelopmentRouteProgress(legacy as PersonalDevelopmentRouteProgress);
+  assert.equal(normalized.stage, 1);
+  assert.equal(normalized.stage1ConfirmedCount, 0);
+  assert.equal(normalized.stage2ConfirmedCount, 0);
+  assert.equal(normalized.stage3ConfirmedCount, 0);
+  assert.equal(normalized.stage4ConfirmedCount, 0);
+});
+
+test("normalize preserves an already-valid stage and its counters untouched", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage1ConfirmedCount: 10, stage2ConfirmedCount: 10, stage3ConfirmedCount: 4 };
+  const normalized = normalizePersonalDevelopmentRouteProgress(progress);
+  assert.equal(normalized.stage, 3);
+  assert.equal(normalized.stage1ConfirmedCount, 10);
+  assert.equal(normalized.stage2ConfirmedCount, 10);
+  assert.equal(normalized.stage3ConfirmedCount, 4);
+});
+
+test("normalize resets a corrupt/out-of-range stage value to 1 rather than trusting it", () => {
+  const progress = { ...emptyProgress(), stage: 7 } as unknown as PersonalDevelopmentRouteProgress;
+  assert.equal(normalizePersonalDevelopmentRouteProgress(progress).stage, 1);
+});
+
+test("isValidRouteStageProjection accepts only 1|2|3|4", () => {
+  assert.equal(isValidRouteStageProjection(1), true);
+  assert.equal(isValidRouteStageProjection(4), true);
+  assert.equal(isValidRouteStageProjection(0), false);
+  assert.equal(isValidRouteStageProjection(5), false);
+  assert.equal(isValidRouteStageProjection("1"), false);
+  assert.equal(isValidRouteStageProjection(null), false);
+});
+
+// --- isRequiredActionOutcomeValidForMode ---
+
+test("Stage 1/2 accept any action outcome, including null/disabled/skipped", () => {
+  const outcomes: (BeneficialActionOutcome | null)[] = [null, "disabled", "optional_skipped", "optional_completed", "required_completed", "unavailable_legacy"];
+  for (const outcome of outcomes) {
+    assert.equal(isRequiredActionOutcomeValidForMode(1, outcome), true);
+    assert.equal(isRequiredActionOutcomeValidForMode(2, outcome), true);
+  }
+});
+
+test("Stage 3/4 require exactly required_completed -- every other outcome, including null, is rejected", () => {
+  const rejected: (BeneficialActionOutcome | null)[] = [null, "disabled", "optional_skipped", "optional_completed", "unavailable_legacy"];
+  for (const outcome of rejected) {
+    assert.equal(isRequiredActionOutcomeValidForMode(3, outcome), false);
+    assert.equal(isRequiredActionOutcomeValidForMode(4, outcome), false);
+  }
+  assert.equal(isRequiredActionOutcomeValidForMode(3, "required_completed"), true);
+  assert.equal(isRequiredActionOutcomeValidForMode(4, "required_completed"), true);
+});
+
+// --- resolveEligibleStageAdvancement ---
+
+test("stage advances exactly at the 10-completion threshold, never before", () => {
+  const nine: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1, stage1ConfirmedCount: 9 };
+  assert.equal(resolveEligibleStageAdvancement(nine, "required"), 1);
+  const ten: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1, stage1ConfirmedCount: 10 };
+  assert.equal(resolveEligibleStageAdvancement(ten, "required"), 2);
+});
+
+test("the same uniform threshold applies at every transition -- 1->2, 2->3, 3->4", () => {
+  const at2: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2, stage2ConfirmedCount: 10 };
+  assert.equal(resolveEligibleStageAdvancement(at2, "required"), 3);
+  const at3: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage3ConfirmedCount: 10 };
+  assert.equal(resolveEligibleStageAdvancement(at3, "required"), 4);
+});
+
+test("beneficialActionPolicy 'none' caps eligibility at Stage 2, however high stage2ConfirmedCount climbs", () => {
+  const at2: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2, stage2ConfirmedCount: 50 };
+  assert.equal(resolveEligibleStageAdvancement(at2, "none"), 2);
+});
+
+test("beneficialActionPolicy 'optional_in_live' permits the full 1-4 ladder like 'required'", () => {
+  const at3: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage3ConfirmedCount: 10 };
+  assert.equal(resolveEligibleStageAdvancement(at3, "optional_in_live"), 4);
+});
+
+test("resolveEligibleStageAdvancement is a pure read -- never mutates its input", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1, stage1ConfirmedCount: 10 };
+  const snapshot = JSON.parse(JSON.stringify(progress));
+  resolveEligibleStageAdvancement(progress, "required");
+  assert.deepEqual(progress, snapshot);
+});
+
+// --- resolvePolicyDemotion ---
+
+test("policy moving to 'none' while at Stage 3/4 demotes to Stage 2", () => {
+  assert.equal(resolvePolicyDemotion(3, "none"), 2);
+  assert.equal(resolvePolicyDemotion(4, "none"), 2);
+});
+
+test("policy moving to 'none' while already at Stage 1/2 is a no-op", () => {
+  assert.equal(resolvePolicyDemotion(1, "none"), 1);
+  assert.equal(resolvePolicyDemotion(2, "none"), 2);
+});
+
+test("a non-'none' policy never demotes, whatever the current stage", () => {
+  assert.equal(resolvePolicyDemotion(4, "required"), 4);
+  assert.equal(resolvePolicyDemotion(3, "optional_in_live"), 3);
+});
+
+// --- reconcileRouteStageForPolicyChange ---
+
+test("reconcile demotes Stage 4 -> Stage 2 on 'none', preserving stage3/4ConfirmedCount untouched", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 4, stage1ConfirmedCount: 10, stage2ConfirmedCount: 10, stage3ConfirmedCount: 10, stage4ConfirmedCount: 6 };
+  const reconciled = reconcileRouteStageForPolicyChange(progress, "none", LATER);
+  assert.equal(reconciled.stage, 2);
+  assert.equal(reconciled.stage3ConfirmedCount, 10, "history preserved, never reset");
+  assert.equal(reconciled.stage4ConfirmedCount, 6, "history preserved, never reset");
+  assert.equal(reconciled.updatedAt, LATER);
+});
+
+test("reconcile automatically restores a route's stage when policy is restored, from preserved history alone -- zero replay of old sessions", () => {
+  const demoted: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2, stage1ConfirmedCount: 10, stage2ConfirmedCount: 10, stage3ConfirmedCount: 10, stage4ConfirmedCount: 0 };
+  const restored = reconcileRouteStageForPolicyChange(demoted, "required", LATER);
+  assert.equal(restored.stage, 4, "stage2 and stage3 counts already justify jumping straight to Stage 4");
+  assert.equal(restored.stage3ConfirmedCount, 10, "no counter was touched by restoration");
+});
+
+test("reconcile is a no-op (same object identity) when the current stage already matches what the policy justifies", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1 };
+  const reconciled = reconcileRouteStageForPolicyChange(progress, "required", LATER);
+  assert.equal(reconciled, progress);
+});
+
+// --- applyStageProgressionToRouteProgress ---
+
+test("a session's own frozen stageAtStart increments that stage's counter, never the route's current stage", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2 };
+  const result = applyStageProgressionToRouteProgress(progress, 1, null, "required", LATER);
+  assert.equal(result.progress.stage1ConfirmedCount, 1, "counts toward the stage actually practiced (1), not the route's current stage (2)");
+  assert.equal(result.progress.stage2ConfirmedCount, 0);
+});
+
+test("Stage 1/2 sessions count toward advancement regardless of action outcome", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1, stage1ConfirmedCount: 9 };
+  const result = applyStageProgressionToRouteProgress(progress, 1, "optional_skipped", "optional_in_live", LATER);
+  assert.equal(result.progress.stage1ConfirmedCount, 10);
+  assert.equal(result.stageAdvanced, true);
+  assert.equal(result.progress.stage, 2);
+});
+
+test("Stage 3/4 sessions without required_completed never increment the counter or advance", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage3ConfirmedCount: 9 };
+  const result = applyStageProgressionToRouteProgress(progress, 3, "unavailable_legacy", "required", LATER);
+  assert.equal(result.progress.stage3ConfirmedCount, 9, "never incremented -- action outcome invalid for this stage");
+  assert.equal(result.stageAdvanced, false);
+  assert.deepEqual(result.progress, progress);
+});
+
+test("Stage 3 session with required_completed increments and can advance to Stage 4 at threshold", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3, stage3ConfirmedCount: 9 };
+  const result = applyStageProgressionToRouteProgress(progress, 3, "required_completed", "required", LATER);
+  assert.equal(result.progress.stage3ConfirmedCount, 10);
+  assert.equal(result.stageAdvanced, true);
+  assert.equal(result.progress.stage, 4);
+});
+
+test("a route capped by 'none' never advances past Stage 2 via applyStageProgressionToRouteProgress", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2, stage2ConfirmedCount: 9 };
+  const result = applyStageProgressionToRouteProgress(progress, 2, null, "none", LATER);
+  assert.equal(result.progress.stage2ConfirmedCount, 10);
+  assert.equal(result.stageAdvanced, false);
+  assert.equal(result.progress.stage, 2, "capped -- Stage 3 requires a real Beneficial Action this policy doesn't have");
+});
+
+test("applyStageProgressionToRouteProgress never mutates its input progress object", () => {
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 1, stage1ConfirmedCount: 9 };
+  const snapshot = JSON.parse(JSON.stringify(progress));
+  applyStageProgressionToRouteProgress(progress, 1, null, "required", LATER);
+  assert.deepEqual(progress, snapshot);
+});
+
+test("stage never regresses purely from applyStageProgressionToRouteProgress even if stageAtStart is behind the route's current stage", () => {
+  // A session frozen at Stage 1 (stageAtStart) completing after the route has already
+  // moved on to Stage 2 must never pull the route's own current stage backward.
+  const progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 2, stage1ConfirmedCount: 5 };
+  const result = applyStageProgressionToRouteProgress(progress, 1, null, "required", LATER);
+  assert.equal(result.progress.stage, 2, "route stage never regresses");
+});
+
+// --- stage type export sanity ---
+
+test("PersonalDevelopmentRouteStage values are exactly 1|2|3|4", () => {
+  const stages: PersonalDevelopmentRouteStage[] = [1, 2, 3, 4];
+  for (const stage of stages) assert.equal(isValidRouteStageProjection(stage), true);
 });

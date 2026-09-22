@@ -76,6 +76,7 @@ import {
 } from "../arc/libraryItemStatus.ts";
 import type { MappingProgressionStore } from "../arc/reactiveProactiveProgression.ts";
 import type { PersonalDevelopmentRouteProgress } from "../arc/personalDevelopmentRouteProgress.ts";
+import { normalizePersonalDevelopmentRouteProgress } from "../arc/personalDevelopmentRouteProgress.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
 const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
@@ -1562,7 +1563,18 @@ export async function loadPersonalDevelopmentRouteProgressStore(): Promise<Perso
   try {
     const parsed: unknown = JSON.parse(raw);
     const isPlainObject = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
-    return isPlainObject ? (parsed as PersonalDevelopmentRouteProgressStore) : {};
+    if (!isPlainObject) return {};
+    const store = parsed as PersonalDevelopmentRouteProgressStore;
+    // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: every
+    // record backfills its new 4-stage-program fields (and every other
+    // defensive default normalizePersonalDevelopmentRouteProgress already
+    // covers) at read time -- no migration step, mirrors every other
+    // normalize-on-load store in this module.
+    const normalized: PersonalDevelopmentRouteProgressStore = {};
+    for (const [routeConfigId, progress] of Object.entries(store)) {
+      normalized[routeConfigId] = normalizePersonalDevelopmentRouteProgress(progress);
+    }
+    return normalized;
   } catch (error) {
     console.warn("[storage] Stored Personal Development route progress store is not valid JSON -- returning an empty store rather than crashing.", error);
     return {};

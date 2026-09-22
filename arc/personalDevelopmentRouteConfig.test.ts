@@ -108,7 +108,10 @@ test("normalizePersonalDevelopmentRouteConfig backfills missing fields safely, d
   assert.equal(normalized.presenceEnabled, false);
   assert.equal(normalized.schemaVersion, 1);
   assert.deepEqual(normalized.interferenceItemIds, ["t1", "t2"]);
-  assert.deepEqual(normalized.itemRelationships, { t1: { actionRelationship: "legacy_unspecified" }, t2: { actionRelationship: "legacy_unspecified" } });
+  assert.deepEqual(normalized.itemRelationships, {
+    t1: { actionRelationship: "legacy_unspecified", miniCombinedActionOverride: null },
+    t2: { actionRelationship: "legacy_unspecified", miniCombinedActionOverride: null },
+  });
 });
 
 test("normalizePersonalDevelopmentRouteConfig never overwrites an already-configured itemRelationships entry", () => {
@@ -136,7 +139,7 @@ test("a PersonalDevelopmentRouteConfig survives a JSON round trip with its no-St
   const normalized = normalizePersonalDevelopmentRouteConfig(roundTripped);
   assert.equal(normalized.stateInclusionPolicy, "none");
   assert.equal(normalized.stateProfileId, null);
-  assert.deepEqual(normalized.itemRelationships, { t1: { actionRelationship: "different_actions" } });
+  assert.deepEqual(normalized.itemRelationships, { t1: { actionRelationship: "different_actions", miniCombinedActionOverride: null } });
 });
 
 // --- validatePersonalDevelopmentRouteConfig ---
@@ -262,7 +265,10 @@ test("buildPersonalDevelopmentRouteConfigFromLegacySelection prefills linked pol
   assert.equal(built.stateInclusionPolicy, "linked");
   assert.equal(built.stateProfileId, "state1");
   assert.deepEqual(built.interferenceItemIds, ["t1", "b1"]);
-  assert.deepEqual(built.itemRelationships, { t1: { actionRelationship: "legacy_unspecified" }, b1: { actionRelationship: "legacy_unspecified" } });
+  assert.deepEqual(built.itemRelationships, {
+    t1: { actionRelationship: "legacy_unspecified", miniCombinedActionOverride: null },
+    b1: { actionRelationship: "legacy_unspecified", miniCombinedActionOverride: null },
+  });
   assert.equal(built.presenceEnabled, true);
   assert.equal(built.linkedPresenceArcId, "presence1");
   assert.equal(built.presenceActionRelationship, "legacy_unspecified");
@@ -274,6 +280,45 @@ test("buildPersonalDevelopmentRouteConfigFromLegacySelection never reads or muta
   const before = JSON.parse(JSON.stringify(selection));
   buildPersonalDevelopmentRouteConfigFromLegacySelection(selection, NOW, () => "new-route-id");
   assert.deepEqual(selection, before);
+});
+
+// --- Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1:
+// goalConnection, beneficialActionPolicy, miniCombinedActionOverride.
+
+test("createEmptyPersonalDevelopmentRouteConfig defaults goalConnection to null and beneficialActionPolicy to 'required'", () => {
+  const c = createEmptyPersonalDevelopmentRouteConfig("route1", "prog1", NOW);
+  assert.equal(c.goalConnection, null);
+  assert.equal(c.beneficialActionPolicy, "required");
+});
+
+test("normalizePersonalDevelopmentRouteConfig backfills a missing goalConnection to null and a missing beneficialActionPolicy to 'required' -- every existing route's current mandatory-action behavior preserved exactly", () => {
+  const { goalConnection, beneficialActionPolicy, ...legacyShape } = config();
+  const normalized = normalizePersonalDevelopmentRouteConfig(legacyShape as PersonalDevelopmentRouteConfig);
+  assert.equal(normalized.goalConnection, null);
+  assert.equal(normalized.beneficialActionPolicy, "required");
+});
+
+test("normalizePersonalDevelopmentRouteConfig preserves an already-configured goalConnection and beneficialActionPolicy untouched", () => {
+  const c = config({
+    goalConnection: { desiredResultText: "תוצאה", valueText: "ערך", personalReasonText: "סיבה" },
+    beneficialActionPolicy: "optional_in_live",
+  });
+  const normalized = normalizePersonalDevelopmentRouteConfig(c);
+  assert.deepEqual(normalized.goalConnection, { desiredResultText: "תוצאה", valueText: "ערך", personalReasonText: "סיבה" });
+  assert.equal(normalized.beneficialActionPolicy, "optional_in_live");
+});
+
+test("normalizePersonalDevelopmentRouteConfig preserves an already-set itemRelationships miniCombinedActionOverride, and backfills a missing one to null", () => {
+  const c = config({
+    interferenceItemIds: ["t1", "t2"],
+    itemRelationships: {
+      t1: { actionRelationship: "same_action", miniCombinedActionOverride: "פעולה מותאמת" },
+      t2: { actionRelationship: "different_actions" },
+    },
+  });
+  const normalized = normalizePersonalDevelopmentRouteConfig(c);
+  assert.equal(normalized.itemRelationships.t1.miniCombinedActionOverride, "פעולה מותאמת");
+  assert.equal(normalized.itemRelationships.t2.miniCombinedActionOverride, null);
 });
 
 test("resolvePersonalDevelopmentRouteConfigForLegacySelection finds the one route matching sourceLegacyCombinedSelectionId, never by translated text or array position", () => {

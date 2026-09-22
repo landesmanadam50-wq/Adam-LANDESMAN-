@@ -1047,6 +1047,11 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     // non-empty by the time buildProfileFromDraft is reachable -- same
     // pattern as goal, right above.
     presenceColor: draft.presenceColor.trim(),
+    // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: not yet
+    // collected by this wizard -- null, same "not configured here" default
+    // every other not-yet-wired field on this profile already uses.
+    acceptanceColor: null,
+    identityMantraRepetitionConfig: null,
 
     // null (not "") until the STATE/IDENTITY ARC phase actually maps something -- a fresh
     // the GOAL phase-only save has no ARC Map yet for either target, which

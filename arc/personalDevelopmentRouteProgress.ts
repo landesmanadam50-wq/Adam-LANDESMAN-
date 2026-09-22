@@ -50,6 +50,7 @@
  */
 
 import type { CombinedLiveSessionFacts } from "./combinedLiveSessionFacts.ts";
+import type { BeneficialActionPolicy } from "./personalDevelopmentRouteConfig.ts";
 
 // ---------------------------------------------------------------------------
 // The durable route-level progress record
@@ -76,6 +77,23 @@ export interface PersonalDevelopmentRouteProgress {
   completedMiniSessions: number;
   /** The authoritative per-route idempotency ledger -- a sessionId already present here is never re-counted. */
   countedSessionIds: string[];
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: the
+   * route's own current position in the 4-stage Personal Development
+   * mastery program -- Stage 1 (Full or Mini) -> Stage 2 (Mini only) ->
+   * Stage 3 (ARC Link only, culminating in the SAME real, timed, confirmed
+   * Beneficial Action -- never a separate Link action) -> Stage 4
+   * (Beneficial Action only). One LIVE entry point serves all four stages;
+   * this field alone is what a caller reads to decide which of them a
+   * given route currently offers. See this module's own stage-resolver
+   * section below for the exact advancement/demotion rules.
+   */
+  stage: PersonalDevelopmentRouteStage;
+  /** Uniform 10-valid-completions threshold at every one of the three transitions -- explicitly NOT the old arc/reactiveProactiveProgression.ts ladder's asymmetric "10 reactive / 5 proactive". Each counter only ever increments for a session whose own frozen `stageAtStart` matches it AND whose action outcome is valid for that stage (see isRequiredActionOutcomeValidForMode) -- never for a session practiced at a different stage. */
+  stage1ConfirmedCount: number;
+  stage2ConfirmedCount: number;
+  stage3ConfirmedCount: number;
+  stage4ConfirmedCount: number;
   createdAt: string;
   updatedAt: string;
   schemaVersion: number;
@@ -93,9 +111,47 @@ export function createEmptyPersonalDevelopmentRouteProgress(routeConfigId: strin
     completedFullSessions: 0,
     completedMiniSessions: 0,
     countedSessionIds: [],
+    stage: 1,
+    stage1ConfirmedCount: 0,
+    stage2ConfirmedCount: 0,
+    stage3ConfirmedCount: 0,
+    stage4ConfirmedCount: 0,
     createdAt: now,
     updatedAt: now,
     schemaVersion: CURRENT_SCHEMA_VERSION,
+  };
+}
+
+/**
+ * Defensive backfill for a PersonalDevelopmentRouteProgress parsed from
+ * storage -- mirrors arc/stateProfile.ts's own normalizeStateProfile
+ * exactly (safe defaults, never invented content, never overwrites an
+ * already-valid field). Every record saved before the 4-stage program
+ * existed backfills to Stage 1 with all four confirmed-counts at 0 --
+ * "no stage progress yet," never a guessed higher stage from
+ * completedSessions or any other pre-existing counter.
+ */
+export function normalizePersonalDevelopmentRouteProgress(progress: PersonalDevelopmentRouteProgress): PersonalDevelopmentRouteProgress {
+  return {
+    ...progress,
+    completedByInterferenceType: {
+      thought: progress.completedByInterferenceType?.thought ?? 0,
+      belief: progress.completedByInterferenceType?.belief ?? 0,
+      emotion: progress.completedByInterferenceType?.emotion ?? 0,
+      urge: progress.completedByInterferenceType?.urge ?? 0,
+      presence: progress.completedByInterferenceType?.presence ?? 0,
+    },
+    embeddedPresenceUses: progress.embeddedPresenceUses ?? 0,
+    fullPresenceCompletions: progress.fullPresenceCompletions ?? 0,
+    completedFullSessions: progress.completedFullSessions ?? 0,
+    completedMiniSessions: progress.completedMiniSessions ?? 0,
+    countedSessionIds: Array.isArray(progress.countedSessionIds) ? progress.countedSessionIds : [],
+    stage: isValidRouteStageProjection(progress.stage) ? progress.stage : 1,
+    stage1ConfirmedCount: progress.stage1ConfirmedCount ?? 0,
+    stage2ConfirmedCount: progress.stage2ConfirmedCount ?? 0,
+    stage3ConfirmedCount: progress.stage3ConfirmedCount ?? 0,
+    stage4ConfirmedCount: progress.stage4ConfirmedCount ?? 0,
+    schemaVersion: progress.schemaVersion ?? 1,
   };
 }
 
@@ -216,4 +272,169 @@ export function applyCombinedSessionCompletionToProgress(
   };
 
   return { kind: "applied", progress: updated };
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: the 4-stage
+// Personal Development mastery program -- one LIVE entry point, uniform
+// 10-valid-completions threshold at every transition, single authoritative
+// store (this record), zero replay of old sessions on a policy change.
+// ---------------------------------------------------------------------------
+
+export type PersonalDevelopmentRouteStage = 1 | 2 | 3 | 4;
+
+/** Same threshold at all three transitions (1->2, 2->3, 3->4) -- deliberately uniform, not the old ladder's asymmetric split. */
+const STAGE_ADVANCEMENT_THRESHOLD = 10;
+
+/**
+ * beneficialActionPolicy "none" means this route has no real Beneficial
+ * Action for Stage 3's Link to culminate in and no action for Stage 4 to
+ * practice -- so a route configured this way can never sit above Stage 2,
+ * however high its stage2ConfirmedCount climbs.
+ */
+const MAX_STAGE_WITHOUT_BENEFICIAL_ACTION: PersonalDevelopmentRouteStage = 2;
+
+export function isValidRouteStageProjection(value: unknown): value is PersonalDevelopmentRouteStage {
+  return value === 1 || value === 2 || value === 3 || value === 4;
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: the
+ * per-session outcome of the route's one Beneficial/Regulating Action
+ * role, governed by PersonalDevelopmentRouteConfig.beneficialActionPolicy
+ * (arc/personalDevelopmentRouteConfig.ts). "required" can only ever
+ * resolve to "required_completed" (the action is never skippable when
+ * required); "optional_in_live" resolves to either "optional_completed" or
+ * "optional_skipped"; "none" always resolves to "disabled". "unavailable_legacy"
+ * is reserved for a session whose action outcome could not be resolved at
+ * all (mirrors arc/factorAction.ts's own ActionResolutionOutcome
+ * "unavailable") -- distinct from "disabled", which is a deliberate policy
+ * choice, never a resolution failure.
+ */
+export type BeneficialActionOutcome = "required_completed" | "optional_completed" | "optional_skipped" | "disabled" | "unavailable_legacy";
+
+/**
+ * Whether a just-completed session's own action outcome counts as a VALID
+ * confirmed completion for stage-advancement purposes at the stage it was
+ * actually practiced (`stageAtStart`) -- distinct from
+ * validateCombinedSessionFactsForCompletion above, which governs whether a
+ * session counts toward completedSessions AT ALL. Stage 3 and Stage 4 both
+ * culminate in the SAME real, timed, explicitly confirmed Beneficial
+ * Action (never a separate "Link action"), so both require exactly
+ * "required_completed". Stage 1/2 carry no such requirement: any
+ * already-validated terminal completion counts toward them regardless of
+ * its own action outcome, since a route may run with beneficialActionPolicy
+ * "optional_in_live" or "none" and still practice Stage 1/2 normally.
+ */
+export function isRequiredActionOutcomeValidForMode(stage: PersonalDevelopmentRouteStage, beneficialActionOutcome: BeneficialActionOutcome | null): boolean {
+  if (stage === 3 || stage === 4) return beneficialActionOutcome === "required_completed";
+  return true;
+}
+
+/**
+ * The highest stage `progress`'s OWN counters justify right now, capped by
+ * `beneficialActionPolicy`. Shared verbatim by both the normal
+ * post-session advancement path (applyStageProgressionToRouteProgress
+ * below) and the policy-restoration path (reconcileRouteStageForPolicyChange
+ * below) -- one cascade, one source of truth for "what stage does this
+ * route's own history justify." A route can only ever have accumulated a
+ * stage-N confirmed count by having actually practiced at stage N, which
+ * requires the policy cap to have permitted stage N at the time -- so this
+ * can never fabricate a jump across a stage the route never actually
+ * reached.
+ */
+export function resolveEligibleStageAdvancement(progress: PersonalDevelopmentRouteProgress, beneficialActionPolicy: BeneficialActionPolicy): PersonalDevelopmentRouteStage {
+  const cap: PersonalDevelopmentRouteStage = beneficialActionPolicy === "none" ? MAX_STAGE_WITHOUT_BENEFICIAL_ACTION : 4;
+
+  let stage = progress.stage;
+  if (stage === 1 && progress.stage1ConfirmedCount >= STAGE_ADVANCEMENT_THRESHOLD && cap >= 2) stage = 2;
+  if (stage === 2 && progress.stage2ConfirmedCount >= STAGE_ADVANCEMENT_THRESHOLD && cap >= 3) stage = 3;
+  if (stage === 3 && progress.stage3ConfirmedCount >= STAGE_ADVANCEMENT_THRESHOLD && cap >= 4) stage = 4;
+  return stage;
+}
+
+/**
+ * The reverse of resolveEligibleStageAdvancement -- when
+ * `beneficialActionPolicy` moves to "none" while a route already sits at
+ * Stage 3 or 4, this returns the safe demotion target
+ * (MAX_STAGE_WITHOUT_BENEFICIAL_ACTION). "Preserving all historical
+ * counters" means exactly that: this function only ever proposes a new
+ * `stage` value, never resets or clears stage3ConfirmedCount/
+ * stage4ConfirmedCount, so a later policy restoration has the untouched
+ * history to cascade back up from. A no-op (returns `currentStage`
+ * unchanged) whenever the policy isn't "none" or the route is already at
+ * or below Stage 2.
+ */
+export function resolvePolicyDemotion(currentStage: PersonalDevelopmentRouteStage, beneficialActionPolicy: BeneficialActionPolicy): PersonalDevelopmentRouteStage {
+  if (beneficialActionPolicy !== "none") return currentStage;
+  return currentStage > MAX_STAGE_WITHOUT_BENEFICIAL_ACTION ? MAX_STAGE_WITHOUT_BENEFICIAL_ACTION : currentStage;
+}
+
+/**
+ * The one entry point a BUILD-side policy-change caller (the route config
+ * editor) needs -- handles both directions symmetrically: a demotion
+ * (resolvePolicyDemotion) when the new policy is "none" and the route sits
+ * above Stage 2, or an automatic restoration cascade
+ * (resolveEligibleStageAdvancement) when the new policy re-enables Stage
+ * 3/4 and the route's own already-accumulated counters justify moving back
+ * up immediately -- zero replay of old sessions either way. Never touches
+ * any *ConfirmedCount field, only `stage` and `updatedAt`. Returns the
+ * exact same `progress` object (no new identity) when the current stage
+ * already matches what the new policy justifies.
+ */
+export function reconcileRouteStageForPolicyChange(
+  progress: PersonalDevelopmentRouteProgress,
+  newBeneficialActionPolicy: BeneficialActionPolicy,
+  now: string
+): PersonalDevelopmentRouteProgress {
+  const demoted = resolvePolicyDemotion(progress.stage, newBeneficialActionPolicy);
+  const target = demoted !== progress.stage ? demoted : resolveEligibleStageAdvancement(progress, newBeneficialActionPolicy);
+  if (target === progress.stage) return progress;
+  return { ...progress, stage: target, updatedAt: now };
+}
+
+export interface StageProgressionApplyResult {
+  progress: PersonalDevelopmentRouteProgress;
+  stageAdvanced: boolean;
+}
+
+/**
+ * The single write path for the 4-stage counters -- called once per
+ * newly-applied (never duplicate) combined session completion, immediately
+ * after applyCombinedSessionCompletionToProgress above. `stageAtStart` is
+ * the session's OWN frozen stage (captured once at session-plan
+ * resolution, never re-derived from the route's current stage, which may
+ * have already moved on mid-session) -- a session always counts toward the
+ * stage it was actually practiced at, never the route's stage at
+ * completion time.
+ *
+ * A session whose action outcome fails isRequiredActionOutcomeValidForMode
+ * for `stageAtStart` still counts toward completedSessions (already
+ * applied by the caller before this is ever called) but never toward
+ * stage advancement -- so a Stage 3/4 run that never reached a real
+ * confirmed Beneficial Action can never quietly advance the route.
+ */
+export function applyStageProgressionToRouteProgress(
+  progress: PersonalDevelopmentRouteProgress,
+  stageAtStart: PersonalDevelopmentRouteStage,
+  beneficialActionOutcome: BeneficialActionOutcome | null,
+  beneficialActionPolicy: BeneficialActionPolicy,
+  now: string
+): StageProgressionApplyResult {
+  if (!isRequiredActionOutcomeValidForMode(stageAtStart, beneficialActionOutcome)) {
+    return { progress, stageAdvanced: false };
+  }
+
+  const incremented: PersonalDevelopmentRouteProgress = {
+    ...progress,
+    stage1ConfirmedCount: progress.stage1ConfirmedCount + (stageAtStart === 1 ? 1 : 0),
+    stage2ConfirmedCount: progress.stage2ConfirmedCount + (stageAtStart === 2 ? 1 : 0),
+    stage3ConfirmedCount: progress.stage3ConfirmedCount + (stageAtStart === 3 ? 1 : 0),
+    stage4ConfirmedCount: progress.stage4ConfirmedCount + (stageAtStart === 4 ? 1 : 0),
+    updatedAt: now,
+  };
+
+  const eligibleStage = resolveEligibleStageAdvancement(incremented, beneficialActionPolicy);
+  if (eligibleStage === incremented.stage) return { progress: incremented, stageAdvanced: false };
+  return { progress: { ...incremented, stage: eligibleStage, updatedAt: now }, stageAdvanced: true };
 }
