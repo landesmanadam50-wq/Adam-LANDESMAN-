@@ -136,12 +136,17 @@ import {
 import { toArcGoalSharedFacts } from "../arc/sharedLiveSessionFacts.ts";
 import { recordSharedLiveSessionCompletion } from "../data/sharedLiveSessionCompletion.ts";
 import { confirmActionRoleAndPersist, startPendingSharedActionExecution } from "../data/pendingSharedActionExecutionPersistence.ts";
+import { shouldInterceptOuterAtSuccessFocus } from "../arc/arcGoalEngine.ts";
 
 /**
- * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6: the two
- * required PendingSharedActionExecution roles for an ArcGoal session --
- * see this file's own beginPendingActionExecution/confirmArcGoalActionRole/
- * attemptArcGoalProgressCommit for exactly where each is started/confirmed.
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+ * correction: the THREE required PendingSharedActionExecution roles for
+ * an ArcGoal session -- corrected from an earlier, wrong two-role model
+ * that silently treated the outer run's own "act" confirmation AS the
+ * confirmation of ArcGoal.goalAction. getGoalActionConfirmCopy's own doc
+ * is explicit that the two are DISTINCT real actions ("distinct from the
+ * identity protocol's own identityAction") -- both are now preserved and
+ * tracked separately.
  *
  * BENEFICIAL_ACTION_ROLE = the urge/supportive bridge's own action
  * (confirmed at urge_action_confirm/supportive_action_confirm -- see
@@ -151,28 +156,27 @@ import { confirmActionRoleAndPersist, startPendingSharedActionExecution } from "
  * urge/interfering mappings at all -- in either case there is no bridge
  * action to confirm, so this role is never added to the queue).
  *
- * IDENTITY_GOAL_ACTION_ROLE = the outer (identity) run's own "act" stage
+ * IDENTITY_ACTION_ROLE = the outer (identity) run's own "act" stage
  * confirmation (ArcLiveState.realActionCompleted becoming true via
- * onActionCompleted below) -- verified against arc/arcEngine.ts's own
- * native ArcStage sequence (act -> success_focus -> ...) and
- * ArcLiveRenderer.tsx's own "act" case (ActionScreen's onCompleted is the
- * ONLY way to leave "act"): Success Focus can structurally never render
- * before this confirmation, so gating progress on it here also
- * automatically satisfies "Success Focus only after explicit Identity/
- * Goal Action confirmation" with no change to the shared engine.
+ * onActionCompleted below) -- the identityProfile's own action content,
+ * never the goal's own.
  *
- * Distinct from the separate, pre-existing "goal_action_confirm" stage
- * (getGoalActionConfirmCopy's own doc: "distinct from the identity
- * protocol's own identityAction") -- that stage confirms ArcGoal.goalAction
- * specifically, reached only much later (after the outer run's own
- * gratitude/reflection tail), and continues to gate ONLY the existing
- * routine-completion marking (handleGoalActionConfirmDone), unchanged by
- * this integration. It is not one of the two roles gating the new
- * progress write -- see this file's own module doc / the integration
- * report for why.
+ * GOAL_ACTION_ROLE = the separate, pre-existing "goal_action_confirm"
+ * stage's own confirmation (ArcGoal.goalAction + desiredResult, via
+ * getGoalActionConfirmCopy). Now RELOCATED (see
+ * shouldInterceptOuterAtSuccessFocus's own doc and commitAdvanceOuter
+ * below) to fire immediately after the Identity Action is confirmed and
+ * BEFORE the outer run is ever allowed to continue into success_focus --
+ * so "Success Focus only after explicit Identity/Goal Action
+ * confirmation" covers BOTH roles, in order, never either alone. Its own
+ * "סיימתי" tap now resumes the outer run (into success_focus) rather than
+ * exiting the screen -- the routine-completion marking that used to fire
+ * here has moved to the true end of the tail (see handleCompleteContinue's
+ * own doc for exactly where and why).
  */
 const BENEFICIAL_ACTION_ROLE = "beneficial_action";
-const IDENTITY_GOAL_ACTION_ROLE = "identity_goal_action";
+const IDENTITY_ACTION_ROLE = "identity_action";
+const GOAL_ACTION_ROLE = "goal_action";
 
 function generateArcGoalSessionId(): string {
   return `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -270,7 +274,7 @@ export default function ArcGoalSessionScreen() {
     });
   }
 
-  /** Persists one role's explicit confirmation -- see this file's own BENEFICIAL_ACTION_ROLE/IDENTITY_GOAL_ACTION_ROLE doc for exactly which UI event calls this with which role. */
+  /** Persists one role's explicit confirmation -- see this file's own BENEFICIAL_ACTION_ROLE/IDENTITY_ACTION_ROLE/GOAL_ACTION_ROLE doc for exactly which UI event calls this with which role. */
   function confirmArcGoalActionRole(roleId: string) {
     confirmActionRoleAndPersist("arc_goal", goalId, roleId, new Date().toISOString()).catch((error) => {
       console.warn("[ArcGoalSessionScreen] Failed to persist action role confirmation.", error);
@@ -349,7 +353,7 @@ export default function ArcGoalSessionScreen() {
         // chance to start the queue for such a session, since
         // resolveAfterReassessment's own onSelect (below) will never fire.
         if (loadedGoal.urgeMappings.length === 0 && loadedGoal.interferingMappings.length === 0) {
-          beginPendingActionExecution(freshSessionId, [IDENTITY_GOAL_ACTION_ROLE]);
+          beginPendingActionExecution(freshSessionId, [IDENTITY_ACTION_ROLE, GOAL_ACTION_ROLE]);
         }
         setPresenceObjectGroundingDone(false);
         clearPendingFields();
@@ -436,20 +440,20 @@ export default function ArcGoalSessionScreen() {
     const { session: nextSession, stage: nextStage } = advanceLiveSession(transitionStage, patchedSession, identityProfile, ["identity"]);
     if (outerStage === "act" && nextStage !== "act") {
       clearTimerRun("beneficialAction");
-      // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6: the
-      // ONLY way the outer run ever leaves "act" is via ActionScreen's own
-      // onCompleted (onActionCompleted above applies realActionCompleted:
-      // true before ever calling commitAdvance) -- so this transition IS
-      // the Identity/Goal Action role's explicit confirmation. Defensive
-      // guard on nextSession.realActionCompleted anyway, mirroring this
-      // codebase's general "never trust reached alone" convention. Always
-      // followed by an attempt at the progress write -- safe even though
-      // this role is structurally always the LAST one confirmed (the
-      // bridge, if any, always resolves earlier in the outer run's own
-      // stage sequence), since the commit is a no-op until BOTH roles are
-      // confirmed.
+      // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+      // correction: the ONLY way the outer run ever leaves "act" is via
+      // ActionScreen's own onCompleted (onActionCompleted above applies
+      // realActionCompleted: true before ever calling commitAdvance) --
+      // so this transition IS the Identity Action role's explicit
+      // confirmation. Defensive guard on nextSession.realActionCompleted
+      // anyway, mirroring this codebase's general "never trust reached
+      // alone" convention. This is NEVER the Goal Action's own
+      // confirmation (see IDENTITY_ACTION_ROLE/GOAL_ACTION_ROLE's own
+      // doc) and never writes progress by itself -- the attempt below is
+      // still a safe no-op, since Goal Action (confirmed later, at
+      // goal_action_confirm's own "סיימתי") has not been confirmed yet.
       if (nextSession.realActionCompleted) {
-        confirmArcGoalActionRole(IDENTITY_GOAL_ACTION_ROLE);
+        confirmArcGoalActionRole(IDENTITY_ACTION_ROLE);
         attemptArcGoalProgressCommit(nextSession, goalState);
       }
     }
@@ -470,6 +474,19 @@ export default function ArcGoalSessionScreen() {
       setInnerSession(createArcGoalInnerInitialSession());
       setInnerStage("sensation_check");
       setGoalState((current) => ({ ...current, uiStage: "reassessment" }));
+      return;
+    }
+    // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+    // correction: intercept BEFORE success_focus ever renders -- the Goal
+    // Action must be explicitly confirmed first (see
+    // shouldInterceptOuterAtSuccessFocus's own doc). outerSession/outerStage
+    // are already updated to the real "success_focus" above (mirrors
+    // needsTriggerPrefixDetour's own already-advanced-underneath pattern);
+    // only goalState.uiStage diverts, and the render logic resumes reading
+    // the real outerStage once goal_action_confirm's own handler routes
+    // back to "outer" (see handleGoalActionRoleConfirmed below).
+    if (shouldInterceptOuterAtSuccessFocus(outerStage, nextStage)) {
+      setGoalState((current) => ({ ...current, uiStage: "goal_action_confirm" }));
       return;
     }
     if (nextStage === "complete") {
@@ -551,7 +568,17 @@ export default function ArcGoalSessionScreen() {
     setInnerStage(nextStage);
   }
 
-  function handleCompleteContinue() {
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+   * correction: this is now the TRUE final exit of the session --
+   * goal_action_confirm no longer follows it (it was RELOCATED, see
+   * handleGoalActionRoleConfirmed and commitAdvanceOuter's own
+   * shouldInterceptOuterAtSuccessFocus branch, to fire before
+   * success_focus instead of after this reflection step). Made async
+   * because it now also performs the routine-completion side effect that
+   * used to live in handleGoalActionConfirmDone.
+   */
+  async function handleCompleteContinue() {
     const trimmedGratitude = gratitudeText.trim();
     const trimmedMemoryDetail = gratitudeMemoryDetailText.trim();
     const trimmedProgressEvidence = progressEvidenceText.trim();
@@ -577,7 +604,26 @@ export default function ArcGoalSessionScreen() {
     setGratitudeMemoryDetailText("");
     setProgressEvidenceText("");
     setImprovementText("");
-    setGoalState((current) => ({ ...current, uiStage: "goal_action_confirm" }));
+    await handleSessionExit();
+  }
+
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+   * correction: goal_action_confirm's own "סיימתי" tap, now reached
+   * BEFORE success_focus (see commitAdvanceOuter's own
+   * shouldInterceptOuterAtSuccessFocus branch) -- this is the Goal
+   * Action role's explicit confirmation, distinct from the Identity
+   * Action confirmed earlier at "act" itself. Never exits the screen:
+   * resumes the outer run by returning goalState.uiStage to "outer",
+   * which then renders the ALREADY-ADVANCED outerStage
+   * ("success_focus") exactly like every other detour in this file
+   * (needsTriggerPrefixDetour's own doc explains the same
+   * already-advanced-underneath pattern).
+   */
+  function handleGoalActionRoleConfirmed() {
+    confirmArcGoalActionRole(GOAL_ACTION_ROLE);
+    attemptArcGoalProgressCommit(outerSession, goalState);
+    setGoalState((current) => ({ ...current, uiStage: "outer" }));
   }
 
   /**
@@ -585,17 +631,18 @@ export default function ArcGoalSessionScreen() {
    * the ARC Goal session is completed, return automatically to the
    * routine. Mark the routine action as completed only after the
    * connected goal action is completed." -- reached exclusively from
-   * goal_action_confirm's own "סיימתי" tap (never earlier: leaving/
-   * canceling the session at any point before this, including the whole
-   * urge/supportive bridge and the outer run itself, never marks
-   * anything complete). Reuses arc/routineLinks.ts's own
+   * handleCompleteContinue above, the screen's own true final step
+   * (never earlier: leaving/canceling the session at any point before
+   * this, including the whole urge/supportive bridge, the outer run's
+   * own Identity Action, and the Goal Action confirmation itself, never
+   * marks anything complete). Reuses arc/routineLinks.ts's own
    * markWeeklyActionCompletedToday -- the SAME completion rule
    * WeeklyActionsSection's own no-linked-protocol plain check-off
    * already uses, never a separate one. Every other entry point into
    * this screen (weeklyActionId absent) keeps the original "back to
    * Home" behavior unchanged.
    */
-  async function handleGoalActionConfirmDone() {
+  async function handleSessionExit() {
     if (weeklyActionId) {
       const weeklyActions = await loadWeeklyActions();
       const target = weeklyActions.find((action) => action.id === weeklyActionId);
@@ -859,7 +906,10 @@ export default function ArcGoalSessionScreen() {
               // session's queue is ever started -- see this file's own
               // beginPendingActionExecution doc for the complementary
               // zero-mapping case.
-              beginPendingActionExecution(sessionId, choice === "direct" ? [IDENTITY_GOAL_ACTION_ROLE] : [BENEFICIAL_ACTION_ROLE, IDENTITY_GOAL_ACTION_ROLE]);
+              beginPendingActionExecution(
+                sessionId,
+                choice === "direct" ? [IDENTITY_ACTION_ROLE, GOAL_ACTION_ROLE] : [BENEFICIAL_ACTION_ROLE, IDENTITY_ACTION_ROLE, GOAL_ACTION_ROLE]
+              );
               applyGoalHop(resolveAfterReassessment(choice, goal, goalState, urgeArcsById));
             }}
           />
@@ -1093,7 +1143,7 @@ export default function ArcGoalSessionScreen() {
         <View style={styles.content}>
           <Text style={styles.title}>{copy.title}</Text>
           <Text style={styles.body}>{copy.body}</Text>
-          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleGoalActionConfirmDone}>
+          <Pressable style={[styles.button, styles.fullWidthButton]} onPress={handleGoalActionRoleConfirmed}>
             <Text style={styles.buttonText}>סיימתי</Text>
           </Pressable>
         </View>
@@ -1154,7 +1204,14 @@ export default function ArcGoalSessionScreen() {
       commitAdvance: commitAdvanceOuter,
     },
     handleCompleteContinue,
-    "המשך לפעולת המטרה"
+    // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+    // correction: this label used to read "המשך לפעולת המטרה" ("continue
+    // to the goal action"), because goal_action_confirm used to follow
+    // this exact screen. It no longer does (relocated to before
+    // success_focus -- see this file's own module doc) -- handleCompleteContinue
+    // is now the screen's true final step, so the label is corrected to
+    // match what it actually does.
+    weeklyActionId ? "סיום וחזרה לשגרה" : "סיום"
   );
   const copy = getStageCopy(outerStage, identityProfile, outerSession, ["identity"], evidenceIndex);
   return (

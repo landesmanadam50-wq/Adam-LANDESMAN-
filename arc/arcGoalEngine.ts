@@ -506,6 +506,31 @@ export function shouldInterceptInnerAtAct(innerNextStage: ArcStage): boolean {
 }
 
 /**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+ * correction: whether the OUTER run's own transition away from "act"
+ * should be intercepted into the goal_action_confirm screen, before ever
+ * reaching success_focus -- mirrors shouldInterceptInnerAtAct's own
+ * interception pattern, applied to the outer run's post-act tail instead
+ * of the inner run's bridge.
+ *
+ * getGoalActionConfirmCopy's own doc is explicit that the Goal Action
+ * (ArcGoal.goalAction + desiredResult) is "distinct from the identity
+ * protocol's own identityAction" -- the outer run's own "act" stage
+ * confirms the IDENTITY action (identityProfile's own content), never the
+ * goal's own action. Both are real, separately-confirmed roles (see
+ * live/ArcGoalSessionScreen.tsx's own IDENTITY_ACTION_ROLE/GOAL_ACTION_ROLE
+ * doc): the Identity Action is confirmed first, at "act" itself (the
+ * ActionScreen's own onCompleted); this interception then routes to the
+ * Goal Action's own explicit confirmation (goal_action_confirm's own
+ * "סיימתי") BEFORE the outer run is ever allowed to continue into
+ * success_focus -- so "Success Focus only after Identity/Goal Action is
+ * confirmed" covers both, in order, never either one alone.
+ */
+export function shouldInterceptOuterAtSuccessFocus(previousOuterStage: ArcStage, nextOuterStage: ArcStage): boolean {
+  return previousOuterStage === "act" && nextOuterStage === "success_focus";
+}
+
+/**
  * Mini ARC integration task (spec section 12, "handle deleted or
  * missing referenced protocols safely"): resolves a mapping's
  * CONFIGURED executionMode against whether its referenced Mini ARC
