@@ -187,3 +187,23 @@ test("both new screens' completion returns to the same unified Personal Developm
   assert.ok(routeLinkScreen.includes('router.replace("/personal-development-routes")'), "Route Link completion must return to the same unified destination");
   assert.ok(actionOnlyScreen.includes('router.replace("/personal-development-routes")'), "Action Only completion must return to the same unified destination");
 });
+
+test("correction round 4: Route Link's own short reinforcement/gratitude line renders ONLY in the completion screen's 'done' branch -- never while 'saving', never on 'error', so it can never be shown before every required action role is actually confirmed and the one completion record has landed", () => {
+  const constIndex = routeLinkScreen.indexOf("const ROUTE_LINK_REINFORCEMENT_LINE");
+  assert.ok(constIndex !== -1, "the reinforcement line constant must exist");
+
+  const savingBranchIndex = routeLinkScreen.indexOf('if (status === "saving")');
+  const errorBranchIndex = routeLinkScreen.indexOf('if (status === "error")');
+  // "יציאה" (exit) is the error branch's own second button, appearing nowhere
+  // else in this component -- everything up to and including it is the
+  // saving/error branches; the reinforcement line must appear strictly after.
+  const errorExitButtonIndex = routeLinkScreen.indexOf('label="יציאה"');
+  assert.ok(savingBranchIndex !== -1 && errorBranchIndex !== -1 && errorExitButtonIndex !== -1, "saving/error branches and the error branch's own exit button must exist");
+  assert.ok(savingBranchIndex < errorBranchIndex && errorBranchIndex < errorExitButtonIndex, "branches appear in the expected source order: saving, then error (ending in its own exit button)");
+
+  const savingAndErrorBody = routeLinkScreen.slice(savingBranchIndex, errorExitButtonIndex);
+  const usageIndex = routeLinkScreen.indexOf("{ROUTE_LINK_REINFORCEMENT_LINE}");
+  assert.ok(usageIndex !== -1, "the reinforcement line must actually be rendered (JSX usage), not just declared");
+  assert.ok(!savingAndErrorBody.includes("ROUTE_LINK_REINFORCEMENT_LINE"), "the reinforcement line must never render on 'saving' or 'error'");
+  assert.ok(usageIndex > errorExitButtonIndex, "the reinforcement line's own rendering must come after the error branch -- i.e. only in the final 'done' branch, after the completion record has landed");
+});

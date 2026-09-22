@@ -24,23 +24,38 @@
  * Structural mirror of arc/combinedFullPlan.ts's own corrected method
  * order (Adaptive ARC architecture task, unified PD/ARC Goal,
  * method-completion correction), extended per correction round 3's own
- * "Acceptance -> neutral Regulation -> Encoding -> Action" requirement --
+ * "Acceptance -> neutral Regulation -> Encoding -> Action" requirement and
+ * correction round 4's own "Recognition before Acceptance" requirement --
  * reusing the EXACT SAME content resolvers
- * (arc/combinedFactorPlanCopy.ts's getAcceptanceStepCopy/
- * getNeutralRegulationCueCopy/getStateRegulationAnchorCopy/
- * getStateDesiredStateEncodingCopy/getFactorProcessingStepCopy/
- * getRecognitionStepCopy) rather than inventing a second, divergent set
- * of method content:
- *   1. Urge preventive stopping, one per urge factor with
+ * (arc/combinedFactorPlanCopy.ts's getRecognitionStepCopy/
+ * getAcceptanceStepCopy/getNeutralRegulationCueCopy/
+ * getStateRegulationAnchorCopy/getStateDesiredStateEncodingCopy/
+ * getFactorProcessingStepCopy) rather than inventing a second, divergent
+ * set of method content:
+ *   1. Recognition, per-factor -- one compact, purely observational cue
+ *      per SELECTED factor, BUILD order (plan.factors, never re-grouped
+ *      by category), first in the spine (getRecognitionStepCopy: a fixed
+ *      "notice X" framing line plus the item's own trigger/context/
+ *      description text when configured -- so a configured trigger/context
+ *      cue is folded into this same step, never a separate one). Never
+ *      asks the trainee to evoke, intensify, recreate, or hold the
+ *      disturbance -- "notice what is already present," exactly like
+ *      Full's own Awareness/recognition step, and verified against
+ *      arc/instructions.ts's containsInductionPattern by this module's
+ *      own tests. Genuinely separate from step 7's Encoding cue -- this
+ *      module previously (correction rounds 1-3) folded recognition
+ *      framing into the SAME step as the replacement content; that
+ *      compacting merge is now undone per correction round 4.
+ *   2. Urge preventive stopping, one per urge factor with
  *      preventiveStoppingRelevant, BUILD order (mirrors Full's own
  *      earliest placement -- interrupting the urge from acting is a
- *      distinct, urgent beat, never folded into the later replacement
- *      cue).
- *   2. Acceptance (once, shared) -- names the disturbing factor(s)
+ *      distinct, urgent beat, never folded into Recognition or the later
+ *      Encoding cue).
+ *   3. Acceptance (once, shared) -- names the disturbing factor(s)
  *      generically alongside the neutral anchor (getAcceptanceStepCopy);
  *      never asks the trainee to evoke or intensify the disturbance,
  *      exactly like Full/Mini's own Acceptance.
- *   3. Neutral Regulation (once, shared) -- ALWAYS present whenever there
+ *   4. Neutral Regulation (once, shared) -- ALWAYS present whenever there
  *      is a disturbing factor to accept (same gate as Acceptance itself),
  *      regardless of whether State participates (getNeutralRegulationCueCopy):
  *      gradually directing more attention to the neutral anchor, using
@@ -49,26 +64,23 @@
  *      step kind ("neutral_regulation"), never a reuse of
  *      "state_regulation_anchor"'s name or content -- that one stays
  *      genuinely State-specific (StateProfile's own configured fields)
- *      and conditional on stateIncluded, see step 4.
- *   4. State creation/encoding (once each, shared, ONLY when State
+ *      and conditional on stateIncluded, see step 5.
+ *   5. State creation/encoding (once each, shared, ONLY when State
  *      participates) -- "state_regulation_anchor"
  *      (getStateRegulationAnchorCopy, the State's own configured
  *      regulation content) then "state_desired_state_encoding"
  *      (getStateDesiredStateEncodingCopy, the desired positive
  *      sensation). A no-State route omits both entirely -- it already
- *      received its universal neutral Regulation cue at step 3, never a
+ *      received its universal neutral Regulation cue at step 4, never a
  *      fabricated State cue in its place.
- *   5. Encoding, per-factor -- one compact cue per SELECTED factor,
- *      BUILD order (plan.factors, never re-grouped by category) -- the
- *      factor's own replacement thought, supportive belief, or
- *      alternative movement/sensory encoding (getFactorProcessingStepCopy),
- *      alongside a brief recognition framing so the cue reads as "notice
- *      X -> here is your response," never a bare fragment. This is the
- *      one deliberate compacting merge this module makes (recognition +
- *      replacement folded into ONE step per factor, instead of Full's two
- *      separate Awareness/Encoding passes) -- flagged here, not left
- *      implicit.
- *   6. The real resolved action role(s) -- resolveCombinedActionKinds/
+ *   6. Encoding, per-factor -- one compact cue per SELECTED factor, BUILD
+ *      order (plan.factors, never re-grouped by category) -- the factor's
+ *      own replacement thought, supportive belief, or alternative
+ *      movement/sensory encoding ALONE (getFactorProcessingStepCopy) --
+ *      no recognition framing here any more (see step 1 above; the
+ *      screen renders this step's own category label as its title
+ *      instead, mirroring Full's own "processing" step exactly).
+ *   7. The real resolved action role(s) -- resolveCombinedActionKinds/
  *      resolvePrimaryOutcome/buildActionRoleProgress (arc/combinedLiveSession.ts),
  *      the SAME shared action-role resolver Full/Mini/Action Only all
  *      use, keyed off the resolved PRIMARY factor (or, State-only, State
@@ -83,7 +95,13 @@
  *      upstream, by resolveCombinedFactorPlan itself (returns kind
  *      "invalid" before this module ever builds a step list), so Route
  *      Link never invents Beneficial Action content for it.
- *   7. Terminal boundary.
+ *   8. Terminal boundary -- the screen's own completion renderer
+ *      (live/PersonalDevelopmentRouteLinkScreen.tsx's RouteLinkCompletionScreen)
+ *      shows a short, non-interactive success reinforcement/gratitude
+ *      line once every required action role is confirmed, immediately
+ *      before the one route-progress write -- see that screen's own doc
+ *      for the exact guarantees (never after timer expiry alone, never a
+ *      second completion record, restart-safe).
  *
  * Deliberately compacted relative to Full: no Stay, no rating checkpoints,
  * no cognitive reassessment, no Presence, no Goal Connection (Full's own
@@ -137,6 +155,7 @@ import { generateTimerRunId } from "./actionTimer.ts";
 // ---------------------------------------------------------------------------
 
 export type RouteLinkStepKind =
+  | "factor_recognition"
   | "urge_preventive_stopping"
   | "acceptance"
   | "neutral_regulation"
@@ -149,7 +168,7 @@ export type RouteLinkStepKind =
 
 export interface RouteLinkStep {
   kind: RouteLinkStepKind;
-  /** Set for "urge_preventive_stopping" and "factor_replacement_cue" -- the ONE factor that step concerns. null for every session-level step. */
+  /** Set for "factor_recognition", "urge_preventive_stopping" and "factor_replacement_cue" -- the ONE factor that step concerns. null for every session-level step. */
   itemId: string | null;
   category: InterferenceCategory | null;
 }
@@ -167,14 +186,25 @@ function sessionStep(kind: RouteLinkStepKind): RouteLinkStep {
  * header doc for the exact method-order rationale. Every selected factor
  * (`plan.factors`, already BUILD/config.interferenceItemIds order -- see
  * arc/combinedFactorPlan.ts's own resolveCombinedFactorPlan) gets its own
- * compact cue; `plan.primaryFactorId` is consulted only by
- * resolveCombinedActionKinds below, never to drop a factor from this
- * spine.
+ * compact Recognition cue AND its own compact Encoding cue; `plan.primaryFactorId`
+ * is consulted only by resolveCombinedActionKinds below, never to drop a
+ * factor from this spine.
+ *
+ * Correction round 4: Recognition must occur BEFORE Acceptance, not folded
+ * into the post-Regulation Encoding step -- "factor_recognition" is now its
+ * own step kind, one per selected factor in plain BUILD order, placed
+ * first (even before urge_preventive_stopping, since noticing the urge is
+ * itself part of recognizing it). "factor_replacement_cue" is now
+ * Encoding-ONLY content (see live/PersonalDevelopmentRouteLinkScreen.tsx's
+ * own rendering, which used to fold recognition.framing into that step's
+ * title and no longer does).
  */
 export function buildRouteLinkSteps(plan: ResolvedCombinedFactorPlan, beneficialActionPolicy: BeneficialActionPolicy): RouteLinkStep[] {
   const steps: RouteLinkStep[] = [];
   const hasFactors = plan.factors.length > 0;
   const byCategory = (category: InterferenceCategory) => plan.factors.filter((factor) => factor.category === category);
+
+  for (const factor of plan.factors) steps.push(factorStep("factor_recognition", factor.itemId, factor.category));
 
   for (const factor of byCategory("urge")) {
     if (factor.preventiveStoppingRelevant) steps.push(factorStep("urge_preventive_stopping", factor.itemId, factor.category));
@@ -361,7 +391,7 @@ function resolveActionRoleIndexForStep(state: RouteLinkState, stepKind: "state_a
   return state.actionRoleProgress.length === 1 ? 0 : -1;
 }
 
-/** Generic advance for every non-action step ("urge_preventive_stopping", "acceptance", "neutral_regulation", "state_regulation_anchor", "state_desired_state_encoding", "factor_replacement_cue"). A no-op on an action step or once already complete. */
+/** Generic advance for every non-action step ("factor_recognition", "urge_preventive_stopping", "acceptance", "neutral_regulation", "state_regulation_anchor", "state_desired_state_encoding", "factor_replacement_cue"). A no-op on an action step or once already complete. */
 export function advanceRouteLinkStep(state: RouteLinkState): RouteLinkState {
   if (state.phase !== "steps") return state;
   const step = currentStep(state);

@@ -22,6 +22,7 @@ import { createEmptyStateProfile } from "./stateProfile.ts";
 import type { StateProfile } from "./stateProfile.ts";
 import { getAcceptanceStepCopy, getFactorProcessingStepCopy, getNeutralRegulationCueCopy, getRecognitionStepCopy } from "./combinedFactorPlanCopy.ts";
 import { containsInductionPattern } from "./instructions.ts";
+import { allActionRolesConfirmed, resolveNextUnconfirmedActionRole } from "./frozenCombinedActionRecovery.ts";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 
@@ -72,17 +73,17 @@ function genId(): string {
 
 // --- buildRouteLinkSteps: EVERY selected factor is cued, in BUILD order ---
 
-test("a single-factor, no-State Thought route resolves to [acceptance, neutral_regulation, factor_replacement_cue, factor_action, terminal_boundary] -- Acceptance -> neutral Regulation -> Encoding cue -> Action; a no-State route still gets a real Regulation cue, no State creation/encoding, no Presence", () => {
+test("a single-factor, no-State Thought route resolves to [factor_recognition, acceptance, neutral_regulation, factor_replacement_cue, factor_action, terminal_boundary] -- Recognition -> Acceptance -> neutral Regulation -> Encoding cue -> Action; a no-State route still gets a real Regulation cue, no State creation/encoding, no Presence", () => {
   const plan = resolve({
     config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } } }),
     items: [thought()],
     primaryFactorId: "t1",
   });
   const steps = buildRouteLinkSteps(plan, "required");
-  assert.deepEqual(kinds(steps), ["acceptance", "neutral_regulation", "factor_replacement_cue", "factor_action", "terminal_boundary"]);
+  assert.deepEqual(kinds(steps), ["factor_recognition", "acceptance", "neutral_regulation", "factor_replacement_cue", "factor_action", "terminal_boundary"]);
 });
 
-test("a State-included route keeps neutral Regulation AND State creation/encoding as separate, correctly ordered steps: Acceptance -> neutral Regulation -> State Regulation -> State Encoding -> factor Encoding -> Action", () => {
+test("a State-included route keeps neutral Regulation AND State creation/encoding as separate, correctly ordered steps: Recognition -> Acceptance -> neutral Regulation -> State Regulation -> State Encoding -> factor Encoding -> Action", () => {
   const plan = resolve({
     config: config({
       interferenceItemIds: ["t1"],
@@ -96,6 +97,7 @@ test("a State-included route keeps neutral Regulation AND State creation/encodin
   });
   const steps = buildRouteLinkSteps(plan, "required");
   assert.deepEqual(kinds(steps), [
+    "factor_recognition",
     "acceptance",
     "neutral_regulation",
     "state_regulation_anchor",
@@ -114,10 +116,10 @@ test("beneficialActionPolicy 'none' omits the action step entirely, same as Full
     primaryFactorId: "t1",
   });
   const steps = buildRouteLinkSteps(plan, "none");
-  assert.deepEqual(kinds(steps), ["acceptance", "neutral_regulation", "factor_replacement_cue", "terminal_boundary"]);
+  assert.deepEqual(kinds(steps), ["factor_recognition", "acceptance", "neutral_regulation", "factor_replacement_cue", "terminal_boundary"]);
 });
 
-test("a multi-factor route cues EVERY selected factor, one factor_replacement_cue each, in plain BUILD (config.interferenceItemIds) order -- primaryFactorId only affects the action, never which factors are cued", () => {
+test("a multi-factor route cues EVERY selected factor, one factor_recognition AND one factor_replacement_cue each, in plain BUILD (config.interferenceItemIds) order -- primaryFactorId only affects the action, never which factors are cued", () => {
   const plan = resolve({
     config: config({
       interferenceItemIds: ["b1", "t1"], // BUILD order: belief first, thought second
@@ -127,7 +129,13 @@ test("a multi-factor route cues EVERY selected factor, one factor_replacement_cu
     primaryFactorId: "t1", // primary is the SECOND factor in BUILD order
   });
   const steps = buildRouteLinkSteps(plan, "required");
+  const recognitionSteps = steps.filter((s) => s.kind === "factor_recognition");
   const cueSteps = steps.filter((s) => s.kind === "factor_replacement_cue");
+  assert.deepEqual(
+    recognitionSteps.map((s) => s.itemId),
+    ["b1", "t1"],
+    "both factors get their own Recognition cue, in BUILD order"
+  );
   assert.deepEqual(
     cueSteps.map((s) => s.itemId),
     ["b1", "t1"],
@@ -135,15 +143,16 @@ test("a multi-factor route cues EVERY selected factor, one factor_replacement_cu
   );
 });
 
-test("a no-State Urge route: preventive stop -> Acceptance -> neutral Regulation -> replacement movement -- a distinct beat from its later factor_replacement_cue, never folded together", () => {
+test("a no-State Urge route: Recognition -> preventive stop -> Acceptance -> neutral Regulation -> replacement movement -- a distinct beat from its earlier Recognition and its later factor_replacement_cue, never folded together", () => {
   const plan = resolve({
     config: config({ interferenceItemIds: ["u1"], itemRelationships: { u1: { actionRelationship: "legacy_unspecified" } } }),
     items: [urge()],
     primaryFactorId: "u1",
   });
   const steps = buildRouteLinkSteps(plan, "required");
-  assert.deepEqual(kinds(steps), ["urge_preventive_stopping", "acceptance", "neutral_regulation", "factor_replacement_cue", "factor_action", "terminal_boundary"]);
+  assert.deepEqual(kinds(steps), ["factor_recognition", "urge_preventive_stopping", "acceptance", "neutral_regulation", "factor_replacement_cue", "factor_action", "terminal_boundary"]);
   assert.equal(steps[0].itemId, "u1");
+  assert.equal(steps.find((s) => s.kind === "urge_preventive_stopping")?.itemId, "u1");
   assert.equal(steps.find((s) => s.kind === "factor_replacement_cue")?.itemId, "u1");
 });
 
@@ -245,6 +254,8 @@ test("advanceRouteLinkStep walks non-action steps in the correct method order bu
     stageAtStart: 3,
     generateSessionId: genId,
   });
+  assert.equal(state.remainingSteps[state.stepIndex].kind, "factor_recognition");
+  state = advanceRouteLinkStep(state);
   assert.equal(state.remainingSteps[state.stepIndex].kind, "acceptance");
   state = advanceRouteLinkStep(state);
   assert.equal(state.remainingSteps[state.stepIndex].kind, "neutral_regulation");
@@ -271,6 +282,7 @@ test("confirmRouteLinkActionCompleted is idempotent and marks terminalCompleted 
     stageAtStart: 3,
     generateSessionId: genId,
   });
+  state = advanceRouteLinkStep(state); // factor_recognition -> acceptance
   state = advanceRouteLinkStep(state); // acceptance -> neutral_regulation
   state = advanceRouteLinkStep(state); // neutral_regulation -> factor_replacement_cue
   state = advanceRouteLinkStep(state); // factor_replacement_cue -> factor_action
@@ -382,6 +394,7 @@ test("state_then_factor outcome (different_actions): TWO roles, state first then
   assert.equal(state.actionRoleProgress[1].action, "פעולת גורם");
 
   // Walk to the state_action step and confirm it -- the factor role must remain untouched.
+  state = advanceRouteLinkStep(state); // factor_recognition -> acceptance
   state = advanceRouteLinkStep(state); // acceptance -> neutral_regulation
   state = advanceRouteLinkStep(state); // neutral_regulation -> state_regulation_anchor
   state = advanceRouteLinkStep(state); // state_regulation_anchor -> state_desired_state_encoding
@@ -427,6 +440,7 @@ test("toRouteLinkSessionFacts always reports mode 'route_link', presenceMode nul
     stageAtStart: 3,
     generateSessionId: genId,
   });
+  state = advanceRouteLinkStep(state); // factor_recognition -> acceptance
   state = advanceRouteLinkStep(state); // acceptance -> neutral_regulation
   state = advanceRouteLinkStep(state); // neutral_regulation -> factor_replacement_cue
   state = advanceRouteLinkStep(state); // factor_replacement_cue -> factor_action
@@ -446,26 +460,76 @@ test("toRouteLinkSessionFacts always reports mode 'route_link', presenceMode nul
 
 // --- Correction round 3: dedicated method-order + no-evoke coverage ---
 
-test("no-State Thought Route Link: Acceptance -> neutral Regulation -> Thought replacement, in that exact order, and Acceptance/Regulation appear exactly once", () => {
+test("no-State Thought Route Link: Recognition -> Acceptance -> neutral Regulation -> Thought replacement, in that exact order, and Recognition/Acceptance/Regulation each appear exactly once", () => {
   const plan = resolve({
     config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } } }),
     items: [thought()],
     primaryFactorId: "t1",
   });
   const steps = buildRouteLinkSteps(plan, "required");
-  assert.deepEqual(kinds(steps).filter((k) => k !== "factor_action" && k !== "terminal_boundary"), ["acceptance", "neutral_regulation", "factor_replacement_cue"]);
+  assert.deepEqual(kinds(steps).filter((k) => k !== "factor_action" && k !== "terminal_boundary"), ["factor_recognition", "acceptance", "neutral_regulation", "factor_replacement_cue"]);
+  assert.equal(kinds(steps).filter((k) => k === "factor_recognition").length, 1);
   assert.equal(kinds(steps).filter((k) => k === "acceptance").length, 1);
   assert.equal(kinds(steps).filter((k) => k === "neutral_regulation").length, 1);
 });
 
-test("no-State Urge Route Link: preventive stop -> Acceptance -> neutral Regulation -> replacement movement, in that exact order", () => {
+test("no-State Urge Route Link: Recognition -> preventive stop -> Acceptance -> neutral Regulation -> replacement movement, in that exact order", () => {
   const plan = resolve({
     config: config({ interferenceItemIds: ["u1"], itemRelationships: { u1: { actionRelationship: "legacy_unspecified" } } }),
     items: [urge()],
     primaryFactorId: "u1",
   });
   const steps = buildRouteLinkSteps(plan, "required");
-  assert.deepEqual(kinds(steps).filter((k) => k !== "factor_action" && k !== "terminal_boundary"), ["urge_preventive_stopping", "acceptance", "neutral_regulation", "factor_replacement_cue"]);
+  assert.deepEqual(kinds(steps).filter((k) => k !== "factor_action" && k !== "terminal_boundary"), [
+    "factor_recognition",
+    "urge_preventive_stopping",
+    "acceptance",
+    "neutral_regulation",
+    "factor_replacement_cue",
+  ]);
+});
+
+test("trigger/recognition occurs BEFORE Acceptance for every category, never after -- correction round 4's own ordering requirement", () => {
+  for (const item of [thought(), belief(), urge()]) {
+    const plan = resolve({
+      config: config({ interferenceItemIds: [item.id], itemRelationships: { [item.id]: { actionRelationship: "legacy_unspecified" } } }),
+      items: [item],
+      primaryFactorId: item.id,
+    });
+    const steps = buildRouteLinkSteps(plan, "required");
+    const recognitionIndex = kinds(steps).indexOf("factor_recognition");
+    const acceptanceIndex = kinds(steps).indexOf("acceptance");
+    assert.notEqual(recognitionIndex, -1, `${item.category} route has a Recognition step`);
+    assert.notEqual(acceptanceIndex, -1, `${item.category} route has an Acceptance step`);
+    assert.ok(recognitionIndex < acceptanceIndex, `${item.category} Recognition must precede Acceptance`);
+  }
+  // Emotion always requires State to resolve a real (state_only) outcome -- tested separately, with a linked State.
+  const emotionPlan = resolve({
+    config: config({ interferenceItemIds: ["e1"], itemRelationships: { e1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
+    items: [emotion()],
+    stateProfiles: [completeState()],
+    primaryFactorId: "e1",
+  });
+  const emotionSteps = buildRouteLinkSteps(emotionPlan, "required");
+  const emotionRecognitionIndex = kinds(emotionSteps).indexOf("factor_recognition");
+  const emotionAcceptanceIndex = kinds(emotionSteps).indexOf("acceptance");
+  assert.notEqual(emotionRecognitionIndex, -1, "emotion route has a Recognition step");
+  assert.notEqual(emotionAcceptanceIndex, -1, "emotion route has an Acceptance step");
+  assert.ok(emotionRecognitionIndex < emotionAcceptanceIndex, "emotion Recognition must precede Acceptance");
+});
+
+test("Recognition is a genuinely separate step from Encoding -- factor_recognition and factor_replacement_cue never collapse into one step for the same factor", () => {
+  const plan = resolve({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } } }),
+    items: [thought()],
+    primaryFactorId: "t1",
+  });
+  const steps = buildRouteLinkSteps(plan, "required");
+  const recognitionSteps = steps.filter((s) => s.kind === "factor_recognition" && s.itemId === "t1");
+  const encodingSteps = steps.filter((s) => s.kind === "factor_replacement_cue" && s.itemId === "t1");
+  assert.equal(recognitionSteps.length, 1, "exactly one Recognition step for this factor");
+  assert.equal(encodingSteps.length, 1, "exactly one Encoding step for this factor");
+  assert.notEqual(steps.indexOf(recognitionSteps[0]), steps.indexOf(encodingSteps[0]), "Recognition and Encoding are two distinct steps, never merged");
 });
 
 test("State-included Route Link keeps neutral Regulation and State creation/encoding as separate steps, both present, correctly ordered relative to each other", () => {
@@ -490,7 +554,7 @@ test("State-included Route Link keeps neutral Regulation and State creation/enco
   assert.ok(stateRegIndex < stateEncIndex, "State Regulation precedes State Encoding, unchanged");
 });
 
-test("multiple selected factors share Acceptance and neutral Regulation exactly once, and each receives its own factor-specific Encoding cue, in BUILD order", () => {
+test("multiple selected factors share Acceptance and neutral Regulation exactly once, and each receives its own factor-specific Recognition cue AND its own factor-specific Encoding cue, both in BUILD order", () => {
   const plan = resolve({
     config: config({
       interferenceItemIds: ["b1", "u1", "t1"], // BUILD order
@@ -502,8 +566,22 @@ test("multiple selected factors share Acceptance and neutral Regulation exactly 
   const steps = buildRouteLinkSteps(plan, "required");
   assert.equal(kinds(steps).filter((k) => k === "acceptance").length, 1, "Acceptance appears exactly once, regardless of factor count");
   assert.equal(kinds(steps).filter((k) => k === "neutral_regulation").length, 1, "neutral Regulation appears exactly once, regardless of factor count");
+  const recognitionItemIds = steps.filter((s) => s.kind === "factor_recognition").map((s) => s.itemId);
+  assert.deepEqual(recognitionItemIds, ["b1", "u1", "t1"], "each selected factor gets its own Recognition cue, in plain BUILD order");
   const cueItemIds = steps.filter((s) => s.kind === "factor_replacement_cue").map((s) => s.itemId);
   assert.deepEqual(cueItemIds, ["b1", "u1", "t1"], "each selected factor gets its own Encoding cue, in plain BUILD order");
+  // Every Recognition step precedes the shared Acceptance step, which precedes every Encoding step.
+  const acceptanceIndex = kinds(steps).indexOf("acceptance");
+  const recognitionIndexes = steps.map((s, i) => (s.kind === "factor_recognition" ? i : -1)).filter((i) => i !== -1);
+  const encodingIndexes = steps.map((s, i) => (s.kind === "factor_replacement_cue" ? i : -1)).filter((i) => i !== -1);
+  assert.ok(
+    recognitionIndexes.every((i) => i < acceptanceIndex),
+    "every factor's Recognition cue precedes the shared Acceptance step"
+  );
+  assert.ok(
+    encodingIndexes.every((i) => i > acceptanceIndex),
+    "every factor's Encoding cue follows the shared Acceptance step"
+  );
 });
 
 test("neither Acceptance nor the universal neutral Regulation cue ever asks the trainee to evoke, intensify, suppress, or replace the disturbance, for realistic multi-category fixtures", () => {
@@ -512,9 +590,21 @@ test("neither Acceptance nor the universal neutral Regulation cue ever asks the 
   const regulationCopy = getNeutralRegulationCueCopy(anchor);
   assert.equal(containsInductionPattern(acceptanceCopy.body), false);
   assert.equal(containsInductionPattern(regulationCopy.body), false);
-  // The per-factor recognition framing (reused verbatim for factor_replacement_cue's own title) must also pass.
-  for (const item of [thought(), belief(), urge(), emotion()]) {
-    assert.equal(containsInductionPattern(getRecognitionStepCopy(item).framing), false);
+});
+
+test("Recognition copy (framing AND resolved trigger/context text) never contains an induction/intensification pattern -- it stays purely observational, 'notice what is already present', for every category", () => {
+  const itemsWithContext = [
+    thought({ situationContext: "בישיבת צוות", triggerInfo: "כשמישהו מבקר את העבודה שלי", description: "מחשבה חוזרת על כישלון" }),
+    belief({ situationContext: "לפני הצגה", triggerInfo: "כשצריך לדבר מול קהל" }),
+    urge({ situationContext: "בערב", triggerInfo: "כשמרגיש לחץ" }),
+    emotion({ situationContext: "אחרי ביקורת", triggerInfo: "כשמישהו מעיר לי" }),
+  ];
+  for (const item of itemsWithContext) {
+    const copy = getRecognitionStepCopy(item);
+    assert.equal(containsInductionPattern(copy.framing), false, `${item.category} Recognition framing must never induce/intensify`);
+    if (copy.context) {
+      assert.equal(containsInductionPattern(copy.context), false, `${item.category} Recognition resolved trigger/context text must never induce/intensify`);
+    }
   }
 });
 
@@ -568,4 +658,88 @@ test("the linked State action still participates according to the explicit Actio
   assert.equal(chosen.actionRoleProgress[0].action, "פעולת מצב");
   // The secondary Thought factor's own configured action is never separately surfaced.
   assert.ok(!chosen.actionRoleProgress.some((role) => role.action === "פעולת מחשבה"), "the secondary Thought factor's own action never appears as an extra role");
+});
+
+// --- Correction round 4: the ending -- reinforcement only after every confirmation, restart never re-prompts, never a second write ---
+
+test("terminalCompleted becomes true exactly when allActionRolesConfirmed(actionRoleProgress) becomes true, for a single-role outcome -- the same guard live/PersonalDevelopmentRouteLinkScreen.tsx's own restart-recovery (findResumableRouteLinkAction) relies on to never re-offer an already-confirmed action", () => {
+  let state = createRouteLinkSession({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } } }),
+    items: [thought()],
+    stateProfiles: [],
+    presenceArcs: [],
+    startedAt: NOW,
+    stageAtStart: 3,
+    generateSessionId: genId,
+  });
+  assert.equal(allActionRolesConfirmed(state.actionRoleProgress), false);
+  assert.equal(resolveNextUnconfirmedActionRole(state.actionRoleProgress)?.role, "factor", "before confirmation, the pending action role is still the next unconfirmed one -- a restart here would correctly resume the action");
+
+  state = advanceRouteLinkStep(state); // factor_recognition -> acceptance
+  state = advanceRouteLinkStep(state); // acceptance -> neutral_regulation
+  state = advanceRouteLinkStep(state); // neutral_regulation -> factor_replacement_cue
+  state = advanceRouteLinkStep(state); // factor_replacement_cue -> factor_action
+  state = confirmRouteLinkActionCompleted(state);
+
+  assert.equal(state.terminalCompleted, true);
+  assert.equal(allActionRolesConfirmed(state.actionRoleProgress), true, "every required role is confirmed exactly when terminalCompleted flips");
+  assert.equal(resolveNextUnconfirmedActionRole(state.actionRoleProgress), null, "once confirmed, a restart can never re-prompt for this action -- it would resume at the ending, not the action");
+});
+
+test("terminalCompleted for a state_then_factor (two-role) outcome only flips once BOTH roles are confirmed -- a restart after only the first confirm still correctly resumes at the remaining action, never the ending", () => {
+  let state = createRouteLinkSession({
+    config: config({
+      interferenceItemIds: ["t1"],
+      itemRelationships: { t1: { actionRelationship: "different_actions" } },
+      stateInclusionPolicy: "linked",
+      stateProfileId: "s1",
+    }),
+    items: [thought({ beneficialActionAgainstFactor: "פעולת גורם" })],
+    stateProfiles: [completeState({ action: "פעולת מצב" })],
+    presenceArcs: [],
+    startedAt: NOW,
+    stageAtStart: 3,
+    generateSessionId: genId,
+  });
+  state = advanceRouteLinkStep(state); // factor_recognition -> acceptance
+  state = advanceRouteLinkStep(state); // acceptance -> neutral_regulation
+  state = advanceRouteLinkStep(state); // neutral_regulation -> state_regulation_anchor
+  state = advanceRouteLinkStep(state); // state_regulation_anchor -> state_desired_state_encoding
+  state = advanceRouteLinkStep(state); // state_desired_state_encoding -> factor_replacement_cue
+  state = advanceRouteLinkStep(state); // factor_replacement_cue -> state_action
+  state = confirmRouteLinkActionCompleted(state); // confirms the state role only
+
+  assert.equal(state.terminalCompleted, false, "one required role still unconfirmed -- never a premature ending");
+  assert.equal(allActionRolesConfirmed(state.actionRoleProgress), false);
+  assert.equal(resolveNextUnconfirmedActionRole(state.actionRoleProgress)?.role, "factor", "a restart here correctly resumes at the remaining factor action, not the ending");
+
+  state = confirmRouteLinkActionCompleted(state); // confirms the factor role
+  assert.equal(state.terminalCompleted, true);
+  assert.equal(allActionRolesConfirmed(state.actionRoleProgress), true);
+  assert.equal(resolveNextUnconfirmedActionRole(state.actionRoleProgress), null, "only once both roles are confirmed does a restart resume at the ending");
+});
+
+test("the ending never double-writes: repeated confirmRouteLinkActionCompleted calls after terminalCompleted produce byte-identical state and byte-identical projected facts, never a second completion record", () => {
+  let state = createRouteLinkSession({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } } }),
+    items: [thought()],
+    stateProfiles: [],
+    presenceArcs: [],
+    startedAt: NOW,
+    stageAtStart: 3,
+    generateSessionId: genId,
+  });
+  state = advanceRouteLinkStep(state); // factor_recognition -> acceptance
+  state = advanceRouteLinkStep(state); // acceptance -> neutral_regulation
+  state = advanceRouteLinkStep(state); // neutral_regulation -> factor_replacement_cue
+  state = advanceRouteLinkStep(state); // factor_replacement_cue -> factor_action
+  state = confirmRouteLinkActionCompleted(state);
+  assert.equal(state.terminalCompleted, true);
+
+  const factsAfterFirstConfirm = toRouteLinkSessionFacts(state);
+  const stateAfterRepeat = confirmRouteLinkActionCompleted(state);
+  const factsAfterRepeat = toRouteLinkSessionFacts(stateAfterRepeat);
+
+  assert.deepEqual(stateAfterRepeat, state, "a repeated confirm after completion is a true no-op -- never advances the cursor, never re-marks a role, never mutates actionOutcomeKind");
+  assert.deepEqual(factsAfterRepeat, factsAfterFirstConfirm, "the projected facts (what data/personalDevelopmentRouteProgressPersistence.ts's own countedSessionIds ledger would key off) never change on a repeated confirm -- one write, ever");
 });

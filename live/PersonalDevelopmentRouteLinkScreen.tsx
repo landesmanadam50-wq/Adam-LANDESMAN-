@@ -319,14 +319,25 @@ function renderStep(state: RouteLinkState, update: (next: RouteLinkState) => voi
         </View>
       );
     }
-    case "factor_replacement_cue": {
+    case "factor_recognition": {
       const item = step.itemId ? state.snapshot.items.find((i) => i.id === step.itemId) : null;
       if (!item) return null;
       const recognition = getRecognitionStepCopy(item);
-      const processing = getFactorProcessingStepCopy(item);
       return (
         <View>
           <Text style={styles.title}>{recognition.framing}</Text>
+          {recognition.context ? <Text style={styles.body}>{recognition.context}</Text> : null}
+          <PrimaryButton label="המשך" onPress={() => update(advanceRouteLinkStep(state))} />
+        </View>
+      );
+    }
+    case "factor_replacement_cue": {
+      const item = step.itemId ? state.snapshot.items.find((i) => i.id === step.itemId) : null;
+      if (!item) return null;
+      const processing = getFactorProcessingStepCopy(item);
+      return (
+        <View>
+          <Text style={styles.title}>{recognitionHeading(item.category)}</Text>
           <Text style={styles.body}>{processing.text ?? NEUTRAL_PROCESSING_CONTINUATION_LINE}</Text>
           <PrimaryButton label="המשך" onPress={() => update(advanceRouteLinkStep(state))} />
         </View>
@@ -400,6 +411,28 @@ function renderStep(state: RouteLinkState, update: (next: RouteLinkState) => voi
 
 type RouteLinkSaveStatus = "saving" | "done" | "error";
 
+/**
+ * Correction round 4: the short, non-interactive success
+ * reinforcement/gratitude line the terminal boundary was missing (unlike
+ * Full/Mini's own interactive gratitude question, arc/postActionCompletion.ts --
+ * Route Link deliberately stays a single static line, never a second
+ * prompt). Rendered by RouteLinkCompletionScreen below ONLY once `status
+ * === "done"` -- i.e. only after arc/personalDevelopmentRouteLink.ts's own
+ * terminalCompleted (every required action role already confirmed, see
+ * confirmRouteLinkActionCompleted) AND the one completion record has
+ * actually landed (recordSharedLiveSessionCompletion resolved
+ * "applied"/"duplicate_session"). Never shown on "saving" or "error" --
+ * this is deliberately NOT a second completion trigger, just reinforcement
+ * copy attached to the same one write. A restart before this point simply
+ * re-shows "saving"/resumes the pending action (see
+ * findResumableRouteLinkAction above); resolveNextUnconfirmedActionRole
+ * returning null once every role is confirmed is what guarantees a
+ * restart can never re-prompt for an already-confirmed action, so this
+ * line is never at risk of being shown, then re-triggering a second
+ * confirmation.
+ */
+const ROUTE_LINK_REINFORCEMENT_LINE = "כל הכבוד על התרגול. הפעולה שעשית עכשיו מחזקת את היכולת שלך לפעול כך גם בפעם הבאה.";
+
 function RouteLinkCompletionScreen({ facts }: { facts: PersonalDevelopmentSharedFacts }) {
   const [status, setStatus] = useState<RouteLinkSaveStatus>("saving");
   const mountedRef = useRef(true);
@@ -458,6 +491,7 @@ function RouteLinkCompletionScreen({ facts }: { facts: PersonalDevelopmentShared
     <View>
       <Text style={styles.title}>סיום</Text>
       <Text style={styles.body}>תרגול הקישור הושלם.</Text>
+      <Text style={styles.body}>{ROUTE_LINK_REINFORCEMENT_LINE}</Text>
       <PrimaryButton label="סיום" onPress={() => router.replace("/personal-development-routes")} />
     </View>
   );
