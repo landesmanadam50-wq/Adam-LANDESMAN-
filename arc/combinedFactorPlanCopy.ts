@@ -169,14 +169,82 @@ export function getSharedStageCopy(kind: SharedStageKind): { title: string; body
 // in that case) -- never a repeat of any factor's own processing content.
 // ---------------------------------------------------------------------------
 
-export function getStateRegulationAnchorCopy(state: StateProfile): { title: string; anchor: string | null } {
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+ * correction: "full" surfaces StateProfile's own already-real,
+ * already-BUILD-configured breathing/posture/gaze content (naturalBreathingAwareness/
+ * bodyLanguageCue/gazeCue) alongside the regulation anchor, mirroring
+ * regular ARC's own "regulate" ArcStage (arc/stageCopy.ts) reading the
+ * equivalent ArcBuildProfile fields -- these StateProfile fields already
+ * existed for exactly this purpose (see StateProfile's own doc) but were
+ * never actually read here until now. "mini" stays deliberately light --
+ * anchor + one merged body-language line, no separate breathing/gaze
+ * lines -- mirroring arc/combinedMiniPlan.ts's own documented "no
+ * checkpoint or rating of any kind" simplicity for this pair; never the
+ * Full richness transplanted onto Mini.
+ */
+export type CombinedStateCopyMode = "full" | "mini";
+
+export function getStateRegulationAnchorCopy(state: StateProfile, mode: CombinedStateCopyMode = "full"): { title: string; lines: string[] } {
   const anchor = safeText(state.regulationAnchor);
-  return { title: "ויסות מהמצב הרצוי", anchor: anchor.length > 0 ? anchor : null };
+  const bodyLanguage = safeText(state.bodyLanguageCue);
+  const lines: string[] = [];
+  if (anchor) lines.push(anchor);
+  if (mode === "full") {
+    const breathing = safeText(state.naturalBreathingAwareness);
+    const gaze = safeText(state.gazeCue);
+    if (breathing) lines.push(breathing);
+    if (bodyLanguage) lines.push(`תנוחת הגוף: ${bodyLanguage}`);
+    if (gaze) lines.push(`מבט: ${gaze}`);
+  } else if (bodyLanguage) {
+    lines.push(bodyLanguage);
+  }
+  return { title: "ויסות מהמצב הרצוי", lines };
 }
 
-export function getStateDesiredStateEncodingCopy(state: StateProfile): { title: string; cue: string | null } {
+/**
+ * The State Mantra's own repetition instruction -- "full" honors the
+ * saved mantraRepetitionMode (StateProfile's own field, already
+ * BUILD-configured, never read by this module until now): "fixed_count"
+ * names the saved count, "until_change_noticed" instructs repeating
+ * until a change is noticed, "once" (and the mini path, unconditionally)
+ * states it plainly once. Distinct from Future Mantra
+ * (arc/futureOrientedMantra.ts, an ArcBuildProfile-only concept with no
+ * StateProfile equivalent yet -- PD has no per-goal Future Mantra field
+ * to read) and from Identity Mantra (EncodingProfile.mantra, regular
+ * ARC/ArcGoal only) -- this is State Mantra alone, never conflated with
+ * either.
+ */
+function resolveStateMantraLine(state: StateProfile, mode: CombinedStateCopyMode): string | null {
+  const text = safeText(state.stateMantra);
+  if (!text) return null;
+  if (mode === "mini") return `מנטרת המצב: "${text}".`;
+  if (state.mantraRepetitionMode === "fixed_count" && state.mantraFixedRepetitionCount) {
+    return `חזור על מנטרת המצב ${state.mantraFixedRepetitionCount} פעמים: "${text}".`;
+  }
+  if (state.mantraRepetitionMode === "until_change_noticed") {
+    return `חזור על מנטרת המצב עד שתבחין בשינוי: "${text}".`;
+  }
+  return `מנטרת המצב: "${text}".`;
+}
+
+export function getStateDesiredStateEncodingCopy(state: StateProfile, mode: CombinedStateCopyMode = "full"): { title: string; lines: string[] } {
   const cue = safeText(state.encodingCue);
-  return { title: "קידוד המצב הרצוי", cue: cue.length > 0 ? cue : null };
+  const bodyLanguage = safeText(state.bodyLanguageCue);
+  const mantraLine = resolveStateMantraLine(state, mode);
+  const lines: string[] = [];
+  if (cue) lines.push(cue);
+  if (mode === "full") {
+    const sensation = safeText(state.desiredBodySensation);
+    const location = safeText(state.bodySensationLocation);
+    if (sensation) lines.push(location ? `${sensation} (${location})` : sensation);
+    if (bodyLanguage) lines.push(`תנוחת הגוף: ${bodyLanguage}`);
+  } else {
+    const sensation = safeText(state.desiredBodySensation);
+    if (sensation) lines.push(sensation);
+  }
+  if (mantraLine) lines.push(mantraLine);
+  return { title: "קידוד המצב הרצוי", lines };
 }
 
 /**

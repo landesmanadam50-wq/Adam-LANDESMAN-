@@ -88,14 +88,54 @@ test("getSharedStageCopy is fixed and State-independent for shared_stay/shared_a
 
 test("getStateRegulationAnchorCopy/getStateDesiredStateEncodingCopy read the resolved StateProfile's own fields", () => {
   const state = { ...createEmptyStateProfile("s1", "מצב", null, NOW), regulationAnchor: "עוגן", encodingCue: "קידוד" };
-  assert.equal(getStateRegulationAnchorCopy(state).anchor, "עוגן");
-  assert.equal(getStateDesiredStateEncodingCopy(state).cue, "קידוד");
+  assert.deepEqual(getStateRegulationAnchorCopy(state).lines, ["עוגן"]);
+  assert.deepEqual(getStateDesiredStateEncodingCopy(state).lines, ["קידוד"]);
 });
 
 test("State block copy never appears sourced from a factor's own field -- distinct functions, distinct data source", () => {
   const state = createEmptyStateProfile("s1", "מצב", null, NOW);
-  assert.equal(getStateRegulationAnchorCopy(state).anchor, null);
-  assert.equal(getStateDesiredStateEncodingCopy(state).cue, null);
+  assert.deepEqual(getStateRegulationAnchorCopy(state).lines, []);
+  assert.deepEqual(getStateDesiredStateEncodingCopy(state).lines, []);
+});
+
+// --- Full reads the richer, already-BUILD-configured StateProfile fields; Mini stays light ---
+
+test("Full Regulation includes breathing/body-language/gaze alongside the anchor -- these StateProfile fields already existed and are now actually read", () => {
+  const state = { ...createEmptyStateProfile("s1", "מצב", null, NOW), regulationAnchor: "עוגן", naturalBreathingAwareness: "נשימה טבעית", bodyLanguageCue: "כתפיים רפויות", gazeCue: "מבט רך" };
+  const copy = getStateRegulationAnchorCopy(state, "full");
+  assert.deepEqual(copy.lines, ["עוגן", "נשימה טבעית", "תנוחת הגוף: כתפיים רפויות", "מבט: מבט רך"]);
+});
+
+test("Mini Regulation stays light -- anchor + one merged body-language line, no separate breathing/gaze lines", () => {
+  const state = { ...createEmptyStateProfile("s1", "מצב", null, NOW), regulationAnchor: "עוגן", naturalBreathingAwareness: "נשימה טבעית", bodyLanguageCue: "כתפיים רפויות", gazeCue: "מבט רך" };
+  const copy = getStateRegulationAnchorCopy(state, "mini");
+  assert.deepEqual(copy.lines, ["עוגן", "כתפיים רפויות"], "no separate breathing/gaze lines in Mini");
+});
+
+test("Full Encoding includes desired body sensation (with location) and body language alongside the encoding cue", () => {
+  const state = { ...createEmptyStateProfile("s1", "מצב", null, NOW), encodingCue: "קידוד", desiredBodySensation: "חום", bodySensationLocation: "בחזה", bodyLanguageCue: "יציבה זקופה" };
+  const copy = getStateDesiredStateEncodingCopy(state, "full");
+  assert.deepEqual(copy.lines, ["קידוד", "חום (בחזה)", "תנוחת הגוף: יציבה זקופה"]);
+});
+
+test("State Mantra: 'once' states it plainly, 'fixed_count' names the saved count, 'until_change_noticed' instructs repeating until a change is noticed -- Full only", () => {
+  const base = { ...createEmptyStateProfile("s1", "מצב", null, NOW), stateMantra: "אני יציב" };
+  assert.equal(getStateDesiredStateEncodingCopy({ ...base, mantraRepetitionMode: "once" }, "full").lines.at(-1), 'מנטרת המצב: "אני יציב".');
+  assert.equal(getStateDesiredStateEncodingCopy({ ...base, mantraRepetitionMode: "fixed_count", mantraFixedRepetitionCount: 3 }, "full").lines.at(-1), 'חזור על מנטרת המצב 3 פעמים: "אני יציב".');
+  assert.equal(getStateDesiredStateEncodingCopy({ ...base, mantraRepetitionMode: "until_change_noticed" }, "full").lines.at(-1), 'חזור על מנטרת המצב עד שתבחין בשינוי: "אני יציב".');
+});
+
+test("State Mantra in Mini is always spoken once, regardless of the saved repetition mode -- no Full-only elaboration leaks into Mini", () => {
+  const state = { ...createEmptyStateProfile("s1", "מצב", null, NOW), stateMantra: "אני יציב", mantraRepetitionMode: "fixed_count" as const, mantraFixedRepetitionCount: 5 };
+  assert.equal(getStateDesiredStateEncodingCopy(state, "mini").lines.at(-1), 'מנטרת המצב: "אני יציב".');
+});
+
+test("no StateProfile content at all: both copy functions return an empty lines array, never fabricated placeholder text", () => {
+  const state = createEmptyStateProfile("s1", "מצב", null, NOW);
+  assert.deepEqual(getStateRegulationAnchorCopy(state, "full").lines, []);
+  assert.deepEqual(getStateDesiredStateEncodingCopy(state, "full").lines, []);
+  assert.deepEqual(getStateRegulationAnchorCopy(state, "mini").lines, []);
+  assert.deepEqual(getStateDesiredStateEncodingCopy(state, "mini").lines, []);
 });
 
 // --- Cognitive reassessment ---

@@ -663,11 +663,13 @@ function renderStep(state: CombinedLiveSessionState, update: (next: CombinedLive
     }
     case "state_regulation_anchor": {
       const stateProfile = resolveSessionState(state);
-      const copy = stateProfile ? getStateRegulationAnchorCopy(stateProfile) : { title: "ויסות מהמצב הרצוי", anchor: null };
+      const copy = stateProfile ? getStateRegulationAnchorCopy(stateProfile, state.mode) : { title: "ויסות מהמצב הרצוי", lines: [] };
       return (
         <View>
           <Text style={styles.title}>{copy.title}</Text>
-          {copy.anchor && <Text style={styles.body}>{copy.anchor}</Text>}
+          {copy.lines.map((line, index) => (
+            <Text key={index} style={styles.body}>{line}</Text>
+          ))}
           <PrimaryButton label="המשך" onPress={() => update(advanceStep(state))} />
         </View>
       );
@@ -752,11 +754,13 @@ function renderStep(state: CombinedLiveSessionState, update: (next: CombinedLive
     }
     case "state_desired_state_encoding": {
       const stateProfile = resolveSessionState(state);
-      const copy = stateProfile ? getStateDesiredStateEncodingCopy(stateProfile) : { title: "קידוד המצב הרצוי", cue: null };
+      const copy = stateProfile ? getStateDesiredStateEncodingCopy(stateProfile, state.mode) : { title: "קידוד המצב הרצוי", lines: [] };
       return (
         <View>
           <Text style={styles.title}>{copy.title}</Text>
-          {copy.cue && <Text style={styles.body}>{copy.cue}</Text>}
+          {copy.lines.map((line, index) => (
+            <Text key={index} style={styles.body}>{line}</Text>
+          ))}
           <PrimaryButton label="המשך" onPress={() => update(advanceStep(state))} />
         </View>
       );
