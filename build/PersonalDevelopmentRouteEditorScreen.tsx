@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
@@ -18,7 +18,7 @@ import {
   resolvePendingBuildNewStateReturn,
   validatePersonalDevelopmentRouteConfig,
 } from "../arc/personalDevelopmentRouteConfig.ts";
-import type { PersonalDevelopmentRouteConfig } from "../arc/personalDevelopmentRouteConfig.ts";
+import type { PersonalDevelopmentRouteConfig, PersonalDevelopmentRouteGoalConnection } from "../arc/personalDevelopmentRouteConfig.ts";
 import { isPersonalDevelopmentRouteConfigCompleteForPractice } from "../arc/personalDevelopmentRouteConfigReadiness.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import type { ActionRelationship } from "../arc/factorAction.ts";
@@ -175,6 +175,17 @@ export default function PersonalDevelopmentRouteEditorScreen() {
 
   function selectPresenceArc(presenceArcId: string) {
     setConfig((current) => ({ ...current, linkedPresenceArcId: current.linkedPresenceArcId === presenceArcId ? null : presenceArcId }));
+  }
+
+  function toggleGoalConnection() {
+    setConfig((current) => ({
+      ...current,
+      goalConnection: current.goalConnection ? null : { desiredResultText: "", valueText: "", personalReasonText: "" },
+    }));
+  }
+
+  function patchGoalConnection(patch: Partial<PersonalDevelopmentRouteGoalConnection>) {
+    setConfig((current) => (current.goalConnection ? { ...current, goalConnection: { ...current.goalConnection, ...patch } } : current));
   }
 
   async function handleSave() {
@@ -352,6 +363,41 @@ export default function PersonalDevelopmentRouteEditorScreen() {
           )}
         </Section>
 
+        <Section title="חיבור למטרה (Goal Connection)">
+          <Text style={styles.helperText}>
+            כשמוגדר, חיבור למטרה מוצג פעם אחת בלבד, בסוף שלב הוויסות ולפני קידוד התגובה החדשה -- דמיון קצר של התוצאה הרצויה, המנטרה מכוונת העתיד, הערך והסיבה האישית. מוצג רק כאשר המסלול כולל מצב רצוי.
+          </Text>
+          <Pressable style={styles.checkboxRow} onPress={toggleGoalConnection}>
+            <Text style={styles.checkboxMark}>{config.goalConnection !== null ? "☑" : "☐"}</Text>
+            <Text style={styles.checkboxLabel}>לכלול חיבור למטרה במסלול הזה</Text>
+          </Pressable>
+          {config.goalConnection !== null && !stateIncluded && (
+            <Text style={styles.helperText}>שים לב: המסלול הזה אינו כולל מצב רצוי כרגע, ולכן חיבור למטרה לא יוצג בזמן התרגול עד שייכלל מצב רצוי.</Text>
+          )}
+          {config.goalConnection !== null && (
+            <View>
+              <Text style={styles.question}>מהי התוצאה הרצויה של הפעולה?</Text>
+              <TextInput
+                style={styles.textInput}
+                value={config.goalConnection.desiredResultText}
+                onChangeText={(text) => patchGoalConnection({ desiredResultText: text })}
+                textAlign="right"
+              />
+
+              <Text style={styles.question}>מהו הערך שהיא מבטאת? (רשות)</Text>
+              <TextInput style={styles.textInput} value={config.goalConnection.valueText} onChangeText={(text) => patchGoalConnection({ valueText: text })} textAlign="right" />
+
+              <Text style={styles.question}>מהי הסיבה האישית שלך? (רשות)</Text>
+              <TextInput
+                style={styles.textInput}
+                value={config.goalConnection.personalReasonText}
+                onChangeText={(text) => patchGoalConnection({ personalReasonText: text })}
+                textAlign="right"
+              />
+            </View>
+          )}
+        </Section>
+
         <Text style={[styles.readinessBadge, ready ? styles.readinessBadge_ready : styles.readinessBadge_draft]}>{ready ? "מוכן לתרגול LIVE" : "טיוטה -- עדיין לא מוכן לתרגול LIVE"}</Text>
         {!validation.valid && validation.reason && <Text style={styles.errorText}>{VALIDATION_REASON_LABELS[validation.reason] ?? validation.reason}</Text>}
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}
@@ -400,6 +446,7 @@ const styles = StyleSheet.create({
   chip: { backgroundColor: "#E6F4FE", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
   chipSelected: { backgroundColor: "#0a7ea4" },
   chipText: { color: "#0a7ea4", fontSize: 14 },
+  textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 12 },
   readinessBadge: { fontSize: 14, fontWeight: "700", textAlign: "right", marginTop: 16 },
   readinessBadge_ready: { color: "#1a6b4a" },
   readinessBadge_draft: { color: "#8a6d1a" },
