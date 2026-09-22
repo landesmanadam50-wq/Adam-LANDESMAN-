@@ -68,7 +68,7 @@ export async function recordCombinedSessionCompletion(
   const outcome = applyCombinedSessionCompletionToProgress(existing, facts, now);
   if (outcome.kind === "applied") {
     const beneficialActionOutcome = resolveBeneficialActionOutcomeForFacts(facts);
-    const { progress: withStageProgress } = applyStageProgressionToRouteProgress(outcome.progress, facts.stageAtStart, beneficialActionOutcome, facts.beneficialActionPolicy, now);
+    const { progress: withStageProgress } = applyStageProgressionToRouteProgress(outcome.progress, facts.stageAtStart, facts.mode, beneficialActionOutcome, facts.beneficialActionPolicy, now);
     await deps.saveStore({ ...store, [facts.routeConfigId]: withStageProgress });
     return { kind: "applied", progress: withStageProgress };
   }

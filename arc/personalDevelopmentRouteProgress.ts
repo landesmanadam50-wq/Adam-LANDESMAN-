@@ -51,6 +51,7 @@
 
 import type { CombinedLiveSessionFacts } from "./combinedLiveSessionFacts.ts";
 import type { BeneficialActionPolicy } from "./personalDevelopmentRouteConfig.ts";
+import type { CombinedFactorMode } from "./combinedFactorPlan.ts";
 
 // ---------------------------------------------------------------------------
 // The durable route-level progress record
@@ -75,18 +76,39 @@ export interface PersonalDevelopmentRouteProgress {
   fullPresenceCompletions: number;
   completedFullSessions: number;
   completedMiniSessions: number;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
+   * task: mirrors completedFullSessions/completedMiniSessions for the two
+   * new Stage 3/4 entry modes (arc/combinedFactorPlan.ts's own
+   * CombinedFactorMode). Incremented for EVERY validated completion in that
+   * mode, support or advancement alike -- never gated by
+   * isAdvancementModeForStage below, which governs only the separate
+   * stageNConfirmedCount ledger.
+   */
+  completedRouteLinkSessions: number;
+  completedActionOnlySessions: number;
   /** The authoritative per-route idempotency ledger -- a sessionId already present here is never re-counted. */
   countedSessionIds: string[];
   /**
-   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: the
-   * route's own current position in the 4-stage Personal Development
-   * mastery program -- Stage 1 (Full or Mini) -> Stage 2 (Mini only) ->
-   * Stage 3 (ARC Link only, culminating in the SAME real, timed, confirmed
-   * Beneficial Action -- never a separate Link action) -> Stage 4
-   * (Beneficial Action only). One LIVE entry point serves all four stages;
-   * this field alone is what a caller reads to decide which of them a
-   * given route currently offers. See this module's own stage-resolver
-   * section below for the exact advancement/demotion rules.
+   * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
+   * task: the route's own current position in the 4-stage Personal
+   * Development mastery program -- Stage 1 (Full OR Mini both count toward
+   * advancement -- see ADVANCEMENT_MODES_BY_STAGE below) -> Stage 2 (Mini
+   * is the advancement mode; Full remains available as a secondary support
+   * session) -> Stage 3 (Route Link is the advancement mode -- a real,
+   * route-specific rehearsal sourced from the route's own StateProfile and
+   * selected interference items, culminating in the SAME real, timed,
+   * confirmed Beneficial Action, never a separate Link action -- Full/Mini
+   * remain available as support) -> Stage 4 (Action Only is the
+   * advancement mode -- Full/Mini/Route Link remain available as support).
+   * A support-mode session at any stage still writes the normal route
+   * completion and updates every per-mode statistic; it just never
+   * increments that stage's own confirmed count (see
+   * isAdvancementModeForStage below). One LIVE entry point offers every
+   * currently-available mode (resolveAvailableEntryModes); this field
+   * alone is what a caller reads to decide which stage's modes a given
+   * route currently offers. See this module's own stage-resolver section
+   * below for the exact advancement/demotion rules.
    */
   stage: PersonalDevelopmentRouteStage;
   /** Uniform 10-valid-completions threshold at every one of the three transitions -- explicitly NOT the old arc/reactiveProactiveProgression.ts ladder's asymmetric "10 reactive / 5 proactive". Each counter only ever increments for a session whose own frozen `stageAtStart` matches it AND whose action outcome is valid for that stage (see isRequiredActionOutcomeValidForMode) -- never for a session practiced at a different stage. */
@@ -110,6 +132,8 @@ export function createEmptyPersonalDevelopmentRouteProgress(routeConfigId: strin
     fullPresenceCompletions: 0,
     completedFullSessions: 0,
     completedMiniSessions: 0,
+    completedRouteLinkSessions: 0,
+    completedActionOnlySessions: 0,
     countedSessionIds: [],
     stage: 1,
     stage1ConfirmedCount: 0,
@@ -145,6 +169,8 @@ export function normalizePersonalDevelopmentRouteProgress(progress: PersonalDeve
     fullPresenceCompletions: progress.fullPresenceCompletions ?? 0,
     completedFullSessions: progress.completedFullSessions ?? 0,
     completedMiniSessions: progress.completedMiniSessions ?? 0,
+    completedRouteLinkSessions: progress.completedRouteLinkSessions ?? 0,
+    completedActionOnlySessions: progress.completedActionOnlySessions ?? 0,
     countedSessionIds: Array.isArray(progress.countedSessionIds) ? progress.countedSessionIds : [],
     stage: isValidRouteStageProjection(progress.stage) ? progress.stage : 1,
     stage1ConfirmedCount: progress.stage1ConfirmedCount ?? 0,
@@ -282,6 +308,8 @@ export function applyCombinedSessionCompletionToProgress(
     fullPresenceCompletions: progress.fullPresenceCompletions + (facts.presenceMode === "full" ? 1 : 0),
     completedFullSessions: progress.completedFullSessions + (facts.mode === "full" ? 1 : 0),
     completedMiniSessions: progress.completedMiniSessions + (facts.mode === "mini" ? 1 : 0),
+    completedRouteLinkSessions: progress.completedRouteLinkSessions + (facts.mode === "route_link" ? 1 : 0),
+    completedActionOnlySessions: progress.completedActionOnlySessions + (facts.mode === "action_only" ? 1 : 0),
     countedSessionIds: [...progress.countedSessionIds, facts.sessionId],
     updatedAt: now,
   };
@@ -313,6 +341,65 @@ export function isValidRouteStageProjection(value: unknown): value is PersonalDe
   return value === 1 || value === 2 || value === 3 || value === 4;
 }
 
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
+// task: which entry mode(s) genuinely count toward a given stage's own
+// advancement counter. Stage 1 is the one stage with TWO valid advancement
+// modes (Full or Mini both count -- there is no earlier stage to demote
+// either one to "support"); every later stage has exactly one advancement
+// mode, with every earlier stage's own advancement mode(s) remaining
+// available as secondary support. Never a scalar "the one recommended mode"
+// equality check -- see isAdvancementModeForStage below, the sole gate
+// applyStageProgressionToRouteProgress uses.
+// ---------------------------------------------------------------------------
+
+export const ADVANCEMENT_MODES_BY_STAGE: Record<PersonalDevelopmentRouteStage, readonly CombinedFactorMode[]> = {
+  1: ["full", "mini"],
+  2: ["mini"],
+  3: ["route_link"],
+  4: ["action_only"],
+};
+
+/** Whether a session practiced in `mode` at `stageAtStart` counts toward that stage's own confirmed-advancement count -- the sole mode-gate applyStageProgressionToRouteProgress uses. A session in any other mode still writes the normal route completion and updates every per-mode statistic (see applyCombinedSessionCompletionToProgress); it simply never increments stageNConfirmedCount. */
+export function isAdvancementModeForStage(stage: PersonalDevelopmentRouteStage, mode: CombinedFactorMode): boolean {
+  return (ADVANCEMENT_MODES_BY_STAGE[stage] as readonly CombinedFactorMode[]).includes(mode);
+}
+
+/**
+ * UI-only: the one entry the LIVE entry screen visually foregrounds for a
+ * given stage -- Full at Stage 1 (Mini remains equally valid for
+ * advancement there, see ADVANCEMENT_MODES_BY_STAGE, but the screen still
+ * needs a single prominent default). Never used for advancement gating --
+ * isAdvancementModeForStage above is the only function that governs
+ * counting.
+ */
+export const RECOMMENDED_ENTRY_MODE_BY_STAGE: Record<PersonalDevelopmentRouteStage, CombinedFactorMode> = {
+  1: "full",
+  2: "mini",
+  3: "route_link",
+  4: "action_only",
+};
+
+export interface AvailableEntryModes {
+  recommended: CombinedFactorMode;
+  /** Every earlier stage's own advancement mode(s), offered as secondary support -- cumulative, never just the immediately-prior stage's mode alone (e.g. Stage 4's secondary includes Full, Mini, AND Route Link). */
+  secondary: CombinedFactorMode[];
+}
+
+/** The full set of entry modes a route at `stage` currently offers -- one prominent recommended mode plus every earlier stage's own advancement mode(s) as secondary support (per the approved "recommend, don't hard-lock" design). Stage 1 has no secondary mode: there is no earlier stage to draw one from, so Mini's own Stage-1 validity is expressed via `recommended`'s sibling advancement mode in ADVANCEMENT_MODES_BY_STAGE, never fabricated here as a second "secondary" entry. */
+export function resolveAvailableEntryModes(stage: PersonalDevelopmentRouteStage): AvailableEntryModes {
+  switch (stage) {
+    case 1:
+      return { recommended: "full", secondary: ["mini"] };
+    case 2:
+      return { recommended: "mini", secondary: ["full"] };
+    case 3:
+      return { recommended: "route_link", secondary: ["full", "mini"] };
+    case 4:
+      return { recommended: "action_only", secondary: ["full", "mini", "route_link"] };
+  }
+}
+
 /**
  * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 1: the
  * per-session outcome of the route's one Beneficial/Regulating Action
@@ -335,14 +422,22 @@ export type BeneficialActionOutcome = "required_completed" | "optional_completed
  * validateCombinedSessionFactsForCompletion above, which governs whether a
  * session counts toward completedSessions AT ALL. Stage 3 and Stage 4 both
  * culminate in the SAME real, timed, explicitly confirmed Beneficial
- * Action (never a separate "Link action"), so both require exactly
- * "required_completed". Stage 1/2 carry no such requirement: any
- * already-validated terminal completion counts toward them regardless of
- * its own action outcome, since a route may run with beneficialActionPolicy
- * "optional_in_live" or "none" and still practice Stage 1/2 normally.
+ * Action (never a separate "Link action"), so both require the action to
+ * have genuinely been PERFORMED and explicitly confirmed -- "required_completed"
+ * (policy "required") or "optional_completed" (policy "optional_in_live",
+ * completed rather than skipped) both satisfy that; "optional_skipped",
+ * "disabled", and "unavailable_legacy" never do, since Route Link and
+ * Action Only never offer a skip control at all (a route whose action is
+ * skippable in its OTHER modes still cannot skip inside these two -- see
+ * arc/personalDevelopmentRouteLink.ts's and
+ * live/PersonalDevelopmentRouteActionOnlyScreen.tsx's own docs). Stage 1/2
+ * carry no such requirement: any already-validated terminal completion
+ * counts toward them regardless of its own action outcome, since a route
+ * may run with beneficialActionPolicy "optional_in_live" or "none" and
+ * still practice Stage 1/2 normally.
  */
 export function isRequiredActionOutcomeValidForMode(stage: PersonalDevelopmentRouteStage, beneficialActionOutcome: BeneficialActionOutcome | null): boolean {
-  if (stage === 3 || stage === 4) return beneficialActionOutcome === "required_completed";
+  if (stage === 3 || stage === 4) return beneficialActionOutcome === "required_completed" || beneficialActionOutcome === "optional_completed";
   return true;
 }
 
@@ -474,14 +569,31 @@ export interface StageProgressionApplyResult {
  * applied by the caller before this is ever called) but never toward
  * stage advancement -- so a Stage 3/4 run that never reached a real
  * confirmed Beneficial Action can never quietly advance the route.
+ *
+ * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
+ * task: `mode` is the session's OWN frozen entry mode (CombinedLiveSessionFacts.mode,
+ * captured once at session-plan resolution, exactly like `stageAtStart`
+ * itself). Gated through isAdvancementModeForStage(stageAtStart, mode) --
+ * a session practiced in a SECONDARY/support mode at its own stage
+ * (e.g. Full practiced while the route sits at Stage 2, whose own
+ * advancement mode is Mini) still counted toward completedSessions and
+ * every per-mode statistic via applyCombinedSessionCompletionToProgress,
+ * but never reaches this increment: it can never advance the stage it was
+ * practiced at, however many times it repeats. Never reclassified after
+ * the fact if the route's own stage later changes -- both `stageAtStart`
+ * and `mode` are frozen facts of the session that was actually practiced.
  */
 export function applyStageProgressionToRouteProgress(
   progress: PersonalDevelopmentRouteProgress,
   stageAtStart: PersonalDevelopmentRouteStage,
+  mode: CombinedFactorMode,
   beneficialActionOutcome: BeneficialActionOutcome | null,
   beneficialActionPolicy: BeneficialActionPolicy,
   now: string
 ): StageProgressionApplyResult {
+  if (!isAdvancementModeForStage(stageAtStart, mode)) {
+    return { progress, stageAdvanced: false };
+  }
   if (!isRequiredActionOutcomeValidForMode(stageAtStart, beneficialActionOutcome)) {
     return { progress, stageAdvanced: false };
   }

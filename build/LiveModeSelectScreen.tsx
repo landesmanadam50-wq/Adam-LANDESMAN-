@@ -3,13 +3,16 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 
-import { loadArcBuilds, loadInterferenceItems, loadPersonalDevelopmentRouteConfigs, loadPresenceArcs, loadStateProfiles } from "../data/storage.ts";
+import { loadArcBuilds, loadInterferenceItems, loadPersonalDevelopmentRouteConfigs, loadPersonalDevelopmentRouteProgressStore, loadPresenceArcs, loadStateProfiles } from "../data/storage.ts";
+import type { PersonalDevelopmentRouteProgressStore } from "../data/storage.ts";
 import { FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL } from "../arc/futureArcLink.ts";
 import type { ArcBuild, PresenceArc } from "../arc/types.ts";
 import type { PersonalDevelopmentRouteConfig } from "../arc/personalDevelopmentRouteConfig.ts";
 import { selectActiveCombinedRoutesForLive } from "../arc/personalDevelopmentRouteConfigReadiness.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
+import { resolveAvailableEntryModes } from "../arc/personalDevelopmentRouteProgress.ts";
+import type { CombinedFactorMode } from "../arc/combinedFactorPlan.ts";
 
 const STATE_INCLUSION_LABELS = {
   linked: "עם מצב רצוי",
@@ -82,6 +85,7 @@ export default function LiveModeSelectScreen() {
   const [routeInterferenceItems, setRouteInterferenceItems] = useState<InterferenceItem[]>([]);
   const [routeStateProfiles, setRouteStateProfiles] = useState<StateProfile[]>([]);
   const [routePresenceArcs, setRoutePresenceArcs] = useState<PresenceArc[]>([]);
+  const [routeProgressStore, setRouteProgressStore] = useState<PersonalDevelopmentRouteProgressStore>({});
   const [combinedRoutesLoaded, setCombinedRoutesLoaded] = useState(false);
 
   const reload = useCallback(() => {
@@ -102,12 +106,13 @@ export default function LiveModeSelectScreen() {
   }, [buildId]);
 
   const reloadCombinedRoutes = useCallback(() => {
-    Promise.all([loadPersonalDevelopmentRouteConfigs(), loadInterferenceItems(), loadStateProfiles(), loadPresenceArcs()])
-      .then(([configs, items, states, presence]) => {
+    Promise.all([loadPersonalDevelopmentRouteConfigs(), loadInterferenceItems(), loadStateProfiles(), loadPresenceArcs(), loadPersonalDevelopmentRouteProgressStore()])
+      .then(([configs, items, states, presence, progressStore]) => {
         setRouteConfigs(configs);
         setRouteInterferenceItems(items);
         setRouteStateProfiles(states);
         setRoutePresenceArcs(presence);
+        setRouteProgressStore(progressStore);
         setCombinedRoutesLoaded(true);
       })
       .catch((error) => {
@@ -158,7 +163,7 @@ export default function LiveModeSelectScreen() {
           <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.push("/arc-goal/select")}>
             <Text style={styles.buttonText}>ARC Goal</Text>
           </Pressable>
-          <CombinedRoutesSection routes={readyCombinedRoutes} />
+          <CombinedRoutesSection routes={readyCombinedRoutes} progressStore={routeProgressStore} />
         </ScrollView>
       </SafeAreaView>
     );
@@ -186,7 +191,7 @@ export default function LiveModeSelectScreen() {
               ))}
             </>
           )}
-          <CombinedRoutesSection routes={readyCombinedRoutes} />
+          <CombinedRoutesSection routes={readyCombinedRoutes} progressStore={routeProgressStore} />
           {builds.length === 0 && (
             <Pressable style={styles.backButton} onPress={() => router.back()}>
               <Text style={styles.backButtonText}>חזרה</Text>
@@ -217,7 +222,7 @@ export default function LiveModeSelectScreen() {
           <Text style={styles.buttonText}>{FUTURE_ARC_LINK_PRACTICE_BUTTON_LABEL}</Text>
         </Pressable>
 
-        <CombinedRoutesSection routes={readyCombinedRoutes} />
+        <CombinedRoutesSection routes={readyCombinedRoutes} progressStore={routeProgressStore} />
 
         {builds.length > 1 && (
           <Pressable style={styles.backButton} onPress={() => setSelectedBuild(null)}>
@@ -236,33 +241,77 @@ export default function LiveModeSelectScreen() {
  * build/PersonalDevelopmentRouteListScreen.tsx's own identifying summary
  * ("3 גורמים + נוכחות") and starts the EXACT SAME existing combined LIVE
  * route/screen that screen's own start buttons already use.
+ *
+ * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
+ * task: per the approved "recommend, don't hard-lock" design, each route
+ * now shows its own current stage's ONE prominent recommended entry
+ * (arc/personalDevelopmentRouteProgress.ts's own resolveAvailableEntryModes)
+ * plus every earlier stage's own advancement mode as a smaller secondary
+ * button -- never a hard lock to a single mode. A route with no recorded
+ * progress yet (absent from `progressStore`) defaults to Stage 1 (Full
+ * recommended, Mini secondary), matching
+ * createEmptyPersonalDevelopmentRouteProgress's own default. Mode ->
+ * route mapping: "full"/"mini" push the existing combined LIVE route with
+ * their own `mode` param (unchanged); "route_link" pushes the new
+ * Stage 3 rehearsal screen; "action_only" pushes the new Stage 4
+ * mark-as-done screen -- both reusing this SAME route config, never a
+ * parallel flow.
  */
-function CombinedRoutesSection({ routes }: { routes: PersonalDevelopmentRouteConfig[] }) {
+function resolveModeLabel(mode: CombinedFactorMode): string {
+  switch (mode) {
+    case "full":
+      return "ARC מלא";
+    case "mini":
+      return "Mini ARC";
+    case "route_link":
+      return "קישור ARC למסלול";
+    case "action_only":
+      return "סימון פעולה מיטיבה כבוצעה";
+  }
+}
+
+function pushCombinedRouteMode(routeConfigId: string, mode: CombinedFactorMode) {
+  if (mode === "full" || mode === "mini") {
+    router.push({ pathname: "/personal-development-routes/[id]/live", params: { id: routeConfigId, mode } });
+    return;
+  }
+  if (mode === "route_link") {
+    router.push({ pathname: "/personal-development-routes/[id]/route-link", params: { id: routeConfigId } });
+    return;
+  }
+  router.push({ pathname: "/personal-development-routes/[id]/action-only", params: { id: routeConfigId } });
+}
+
+function CombinedRoutesSection({ routes, progressStore }: { routes: PersonalDevelopmentRouteConfig[]; progressStore: PersonalDevelopmentRouteProgressStore }) {
   if (routes.length === 0) return null;
 
   return (
     <View style={styles.combinedRoutesSection}>
       <Text style={styles.sectionTitle}>מסלולי תרגול משולבים</Text>
-      {routes.map((config) => (
-        <View key={config.id} style={styles.routeCard}>
-          <Text style={styles.routeCardTitle}>{`${config.interferenceItemIds.length} גורמים${config.presenceEnabled ? " + נוכחות" : ""}`}</Text>
-          <Text style={styles.routeCardSubtitle}>{STATE_INCLUSION_LABELS[config.stateInclusionPolicy]}</Text>
-          <View style={styles.routeCardActions}>
-            <Pressable
-              style={styles.routeStartButton}
-              onPress={() => router.push({ pathname: "/personal-development-routes/[id]/live", params: { id: config.id, mode: "full" } })}
-            >
-              <Text style={styles.routeStartButtonText}>▶ ARC מלא</Text>
-            </Pressable>
-            <Pressable
-              style={styles.routeStartButton}
-              onPress={() => router.push({ pathname: "/personal-development-routes/[id]/live", params: { id: config.id, mode: "mini" } })}
-            >
-              <Text style={styles.routeStartButtonText}>▶ Mini ARC</Text>
-            </Pressable>
+      {routes.map((config) => {
+        const stage = progressStore[config.id]?.stage ?? 1;
+        const { recommended, secondary } = resolveAvailableEntryModes(stage);
+        return (
+          <View key={config.id} style={styles.routeCard}>
+            <Text style={styles.routeCardTitle}>{`${config.interferenceItemIds.length} גורמים${config.presenceEnabled ? " + נוכחות" : ""}`}</Text>
+            <Text style={styles.routeCardSubtitle}>{STATE_INCLUSION_LABELS[config.stateInclusionPolicy]}</Text>
+            <View style={styles.routeCardActions}>
+              <Pressable style={styles.routeStartButton} onPress={() => pushCombinedRouteMode(config.id, recommended)}>
+                <Text style={styles.routeStartButtonText}>{`▶ ${resolveModeLabel(recommended)}`}</Text>
+              </Pressable>
+            </View>
+            {secondary.length > 0 && (
+              <View style={styles.routeCardActions}>
+                {secondary.map((mode) => (
+                  <Pressable key={mode} style={styles.routeSecondaryButton} onPress={() => pushCombinedRouteMode(config.id, mode)}>
+                    <Text style={styles.routeSecondaryButtonText}>{resolveModeLabel(mode)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
           </View>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -293,4 +342,6 @@ const styles = StyleSheet.create({
   routeCardActions: { flexDirection: "row-reverse", gap: 12, marginTop: 10, justifyContent: "flex-end" },
   routeStartButton: { backgroundColor: "#0a7ea4", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
   routeStartButtonText: { color: "#fff", fontWeight: "600", fontSize: 14 },
+  routeSecondaryButton: { backgroundColor: "#E6F4FE", paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8 },
+  routeSecondaryButtonText: { color: "#0a7ea4", fontWeight: "600", fontSize: 12 },
 });

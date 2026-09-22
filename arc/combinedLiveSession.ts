@@ -433,8 +433,14 @@ export function resolvePrimaryOutcome(plan: ResolvedCombinedFactorPlan): ActionR
  * own beneficialActionPolicy param). "required"/"optional_in_live" both
  * resolve the role normally -- the policy only ever changes HOW it may be
  * confirmed (see skipActionCompleted below), never WHICH action resolves.
+ *
+ * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
+ * task: exported (was module-private) so arc/personalDevelopmentRouteLink.ts's
+ * own much lighter Stage 3 controller can resolve the SAME real action
+ * role(s) this controller resolves for Full/Mini, rather than a second,
+ * divergent copy of this logic.
  */
-function buildActionRoleProgress(plan: ResolvedCombinedFactorPlan, beneficialActionPolicy: BeneficialActionPolicy): ActionRoleProgress[] {
+export function buildActionRoleProgress(plan: ResolvedCombinedFactorPlan, beneficialActionPolicy: BeneficialActionPolicy): ActionRoleProgress[] {
   if (beneficialActionPolicy === "none") return [];
   const outcome = resolvePrimaryOutcome(plan);
   if (!outcome) return [];

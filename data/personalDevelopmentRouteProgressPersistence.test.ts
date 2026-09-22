@@ -176,9 +176,9 @@ test("a duplicate session never advances stage progression a second time", async
 });
 
 test("a Stage 3 session under policy 'optional_in_live' whose action was SKIPPED counts toward completedSessions but never toward stage3ConfirmedCount", async () => {
-  const deps = fakeDeps({ "route-1": { routeConfigId: "route-1", completedSessions: 0, completedByInterferenceType: { thought: 0, belief: 0, emotion: 0, urge: 0, presence: 0 }, embeddedPresenceUses: 0, fullPresenceCompletions: 0, completedFullSessions: 0, completedMiniSessions: 0, countedSessionIds: [], stage: 3, stage1ConfirmedCount: 10, stage2ConfirmedCount: 10, stage3ConfirmedCount: 0, stage4ConfirmedCount: 0, createdAt: NOW, updatedAt: NOW, schemaVersion: 1 } });
+  const deps = fakeDeps({ "route-1": { routeConfigId: "route-1", completedSessions: 0, completedByInterferenceType: { thought: 0, belief: 0, emotion: 0, urge: 0, presence: 0 }, embeddedPresenceUses: 0, fullPresenceCompletions: 0, completedFullSessions: 0, completedMiniSessions: 0, completedRouteLinkSessions: 0, completedActionOnlySessions: 0, countedSessionIds: [], stage: 3, stage1ConfirmedCount: 10, stage2ConfirmedCount: 10, stage3ConfirmedCount: 0, stage4ConfirmedCount: 0, createdAt: NOW, updatedAt: NOW, schemaVersion: 1 } });
   const outcome = await recordCombinedSessionCompletion(
-    facts({ stageAtStart: 3, beneficialActionPolicy: "optional_in_live", factorActionCompleted: false, factorActionSkipped: true }),
+    facts({ stageAtStart: 3, mode: "route_link", beneficialActionPolicy: "optional_in_live", factorActionCompleted: false, factorActionSkipped: true }),
     NOW,
     deps
   );
@@ -186,4 +186,45 @@ test("a Stage 3 session under policy 'optional_in_live' whose action was SKIPPED
   if (outcome.kind !== "applied") return;
   assert.equal(outcome.progress.completedSessions, 1, "the session itself still counts");
   assert.equal(outcome.progress.stage3ConfirmedCount, 0, "a skipped Beneficial Action never counts toward Stage 3 credit");
+});
+
+test("a Full session practiced while the route sits at Stage 2 (a secondary/support session, Mini being Stage 2's own advancement mode) still writes the normal completion and Full-session statistic, but never increments stage2ConfirmedCount", async () => {
+  const deps = fakeDeps({
+    "route-1": {
+      routeConfigId: "route-1",
+      completedSessions: 0,
+      completedByInterferenceType: { thought: 0, belief: 0, emotion: 0, urge: 0, presence: 0 },
+      embeddedPresenceUses: 0,
+      fullPresenceCompletions: 0,
+      completedFullSessions: 0,
+      completedMiniSessions: 0,
+      completedRouteLinkSessions: 0,
+      completedActionOnlySessions: 0,
+      countedSessionIds: [],
+      stage: 2,
+      stage1ConfirmedCount: 10,
+      stage2ConfirmedCount: 3,
+      stage3ConfirmedCount: 0,
+      stage4ConfirmedCount: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      schemaVersion: 1,
+    },
+  });
+  const outcome = await recordCombinedSessionCompletion(facts({ stageAtStart: 2, mode: "full" }), NOW, deps);
+  assert.equal(outcome.kind, "applied");
+  if (outcome.kind !== "applied") return;
+  assert.equal(outcome.progress.completedSessions, 1, "the normal route completion is still written exactly once");
+  assert.equal(outcome.progress.completedFullSessions, 1, "the general per-mode statistic still updates");
+  assert.equal(outcome.progress.stage2ConfirmedCount, 3, "a support-mode session never increments the current stage's advancement counter");
+  assert.equal(outcome.progress.stage, 2, "the route's stage is unaffected");
+});
+
+test("Stage 1 counts both Full and Mini toward the SAME stage1ConfirmedCount, since Stage 1 has no earlier stage to demote either one to secondary support", async () => {
+  const deps = fakeDeps();
+  await recordCombinedSessionCompletion(facts({ sessionId: "s-full", stageAtStart: 1, mode: "full" }), NOW, deps);
+  const outcome = await recordCombinedSessionCompletion(facts({ sessionId: "s-mini", stageAtStart: 1, mode: "mini" }), NOW, deps);
+  assert.equal(outcome.kind, "applied");
+  if (outcome.kind !== "applied") return;
+  assert.equal(outcome.progress.stage1ConfirmedCount, 2, "both Full and Mini completions counted toward Stage 1 advancement");
 });

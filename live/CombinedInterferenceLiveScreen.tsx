@@ -102,6 +102,13 @@ async function findResumableCombinedAction(routeConfigId: string): Promise<Timer
     const run = await loadTimerRun(timerType);
     if (!run?.frozenCombinedActionSnapshot) continue;
     if (run.frozenCombinedActionSnapshot.facts.routeConfigId !== routeConfigId) continue;
+    // Stage-based entry task: "route_link"/"action_only" write into these
+    // same three timer slots (see arc/combinedFactorPlan.ts's own
+    // CombinedFactorMode doc) but are resumed by their own dedicated
+    // screens (live/PersonalDevelopmentRouteLinkScreen.tsx,
+    // live/PersonalDevelopmentRouteActionOnlyScreen.tsx) -- this screen
+    // must never intercept one of theirs.
+    if (run.frozenCombinedActionSnapshot.facts.mode !== "full" && run.frozenCombinedActionSnapshot.facts.mode !== "mini") continue;
     if (allActionRolesConfirmed(run.frozenCombinedActionSnapshot.actionRoleProgress)) continue;
     return run;
   }
