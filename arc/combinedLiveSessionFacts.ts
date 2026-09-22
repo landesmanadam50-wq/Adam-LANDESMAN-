@@ -26,6 +26,7 @@ import type { ActionResolutionOutcome } from "./factorAction.ts";
 import type { FactorRating } from "./factorRating.ts";
 import { resolveStateInclusion } from "./stateInclusion.ts";
 import type { FinalPresenceMode } from "./combinedRoute.ts";
+import type { BeneficialActionPolicy } from "./personalDevelopmentRouteConfig.ts";
 
 export type CombinedLiveSessionCadence = "reactive" | "proactive";
 
@@ -74,6 +75,20 @@ export interface CombinedLiveSessionFacts {
   factorActionReached: boolean;
   factorActionCompleted: boolean;
   sharedActionCompleted: boolean;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: the
+   * route's own beneficialActionPolicy (arc/personalDevelopmentRouteConfig.ts),
+   * carried through so a persistence-layer caller (which sees only this
+   * facts object, never controller internals) can validate completion
+   * correctly for "optional_in_live"/"none" routes -- see
+   * arc/personalDevelopmentRouteProgress.ts's own
+   * validateCombinedSessionFactsForCompletion.
+   */
+  beneficialActionPolicy: BeneficialActionPolicy;
+  /** True only when that role was explicitly SKIPPED (arc/combinedLiveSession.ts's own skipActionCompleted) -- only ever possible on an "optional_in_live" route. Mutually exclusive with the matching *ActionCompleted flag. */
+  stateActionSkipped: boolean;
+  factorActionSkipped: boolean;
+  sharedActionSkipped: boolean;
   terminalCompleted: boolean;
 }
 
@@ -131,6 +146,10 @@ export function toCombinedLiveSessionFacts(state: CombinedLiveSessionState, cade
     factorActionReached: factorAction?.reached ?? false,
     factorActionCompleted: factorAction?.completed ?? false,
     sharedActionCompleted: sharedAction?.completed ?? false,
+    beneficialActionPolicy: state.snapshot.config.beneficialActionPolicy,
+    stateActionSkipped: stateAction?.skipped ?? false,
+    factorActionSkipped: factorAction?.skipped ?? false,
+    sharedActionSkipped: sharedAction?.skipped ?? false,
     terminalCompleted: state.terminalCompleted,
   };
 }

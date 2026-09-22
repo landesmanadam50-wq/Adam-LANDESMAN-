@@ -44,6 +44,10 @@ function facts(overrides: Partial<CombinedLiveSessionFacts> = {}): CombinedLiveS
     factorActionReached: true,
     factorActionCompleted: true,
     sharedActionCompleted: false,
+    beneficialActionPolicy: "required",
+    stateActionSkipped: false,
+    factorActionSkipped: false,
+    sharedActionSkipped: false,
     terminalCompleted: true,
     ...overrides,
   };
@@ -119,6 +123,49 @@ test("legacy_shared_state_fallback validates as State-role completion -- never p
   const f = facts({ actionOutcomeKind: "legacy_shared_state_fallback", factorActionCompleted: false, stateActionCompleted: false });
   assert.deepEqual(validateCombinedSessionFactsForCompletion(f), { valid: false, reason: "state_action_not_completed" });
   assert.deepEqual(validateCombinedSessionFactsForCompletion({ ...f, stateActionCompleted: true }), { valid: true });
+});
+
+// --- beneficialActionPolicy-aware validation (Adaptive ARC architecture task, unified PD/ARC Goal, Phase 8) ---
+
+test("beneficialActionPolicy 'required' (default) preserves the exact original behavior -- a skip never satisfies a required role", () => {
+  const f = facts({ actionOutcomeKind: "factor_only", factorActionCompleted: false, factorActionSkipped: true, beneficialActionPolicy: "required" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(f), { valid: false, reason: "factor_action_not_completed" });
+});
+
+test("beneficialActionPolicy 'optional_in_live' accepts an explicit skip as satisfying the role, for every actionOutcomeKind", () => {
+  const factorOnly = facts({ actionOutcomeKind: "factor_only", factorActionCompleted: false, factorActionSkipped: true, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(factorOnly), { valid: true });
+
+  const stateOnly = facts({ actionOutcomeKind: "state_only", stateActionCompleted: false, stateActionSkipped: true, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(stateOnly), { valid: true });
+
+  const sharedExplicit = facts({ actionOutcomeKind: "shared_explicit", sharedActionCompleted: false, sharedActionSkipped: true, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(sharedExplicit), { valid: true });
+
+  const stateThenFactor = facts({ actionOutcomeKind: "state_then_factor", stateActionCompleted: false, stateActionSkipped: true, factorActionCompleted: false, factorActionSkipped: true, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(stateThenFactor), { valid: true });
+});
+
+test("beneficialActionPolicy 'optional_in_live' state_then_factor: a MIX of one genuine completion and one skip is valid, but neither role may be left entirely unaddressed", () => {
+  const mixed = facts({ actionOutcomeKind: "state_then_factor", stateActionCompleted: true, stateActionSkipped: false, factorActionCompleted: false, factorActionSkipped: true, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(mixed), { valid: true });
+
+  const oneUnaddressed = facts({ actionOutcomeKind: "state_then_factor", stateActionCompleted: true, stateActionSkipped: false, factorActionCompleted: false, factorActionSkipped: false, beneficialActionPolicy: "optional_in_live" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(oneUnaddressed), { valid: false, reason: "factor_action_not_completed" });
+});
+
+test("beneficialActionPolicy 'none' skips every per-actionOutcomeKind check entirely -- the role is absent, not merely relaxed", () => {
+  const neverAddressed = facts({ actionOutcomeKind: "factor_only", factorActionCompleted: false, factorActionSkipped: false, beneficialActionPolicy: "none" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(neverAddressed), { valid: true });
+
+  const evenUnavailable = facts({ actionOutcomeKind: "unavailable", beneficialActionPolicy: "none" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(evenUnavailable), { valid: true }, "'none' bypasses even the unavailable-kind rejection -- there is no action to be unavailable" );
+});
+
+test("beneficialActionPolicy 'none' still enforces every session-level check that precedes the per-kind switch (terminalCompleted, session id, cadence, primary factor)", () => {
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(facts({ terminalCompleted: false, beneficialActionPolicy: "none" })), { valid: false, reason: "not_terminal" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(facts({ sessionId: "", beneficialActionPolicy: "none" })), { valid: false, reason: "missing_session_id" });
+  assert.deepEqual(validateCombinedSessionFactsForCompletion(facts({ cadence: "proactive", beneficialActionPolicy: "none" })), { valid: false, reason: "proactive_not_yet_supported" });
 });
 
 // --- Apply: single session ---

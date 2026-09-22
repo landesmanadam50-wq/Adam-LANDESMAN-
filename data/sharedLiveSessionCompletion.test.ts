@@ -42,6 +42,10 @@ function pdFacts(overrides: Partial<CombinedLiveSessionFacts> = {}): CombinedLiv
     factorActionReached: true,
     factorActionCompleted: true,
     sharedActionCompleted: false,
+    beneficialActionPolicy: "required",
+    stateActionSkipped: false,
+    factorActionSkipped: false,
+    sharedActionSkipped: false,
     terminalCompleted: true,
     ...overrides,
   };

@@ -91,7 +91,7 @@
  */
 
 import type { InterferenceItem } from "./interferenceItem.ts";
-import type { PersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
+import type { BeneficialActionPolicy, PersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
 import type { StateProfile } from "./stateProfile.ts";
 import type { PresenceArc } from "./types.ts";
 import { resolveCombinedFactorPlan, resolveCombinedActionKinds, MINI_PRIMARY_FACTOR_QUESTION, STATE_DECISION_QUESTION } from "./combinedFactorPlan.ts";
@@ -185,6 +185,17 @@ export interface ActionRoleProgress {
   timerType: CombinedActionTimerType;
   reached: boolean;
   completed: boolean;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: true
+   * only when this role was explicitly SKIPPED via skipActionCompleted
+   * below -- only ever possible when the route's own
+   * beneficialActionPolicy (arc/personalDevelopmentRouteConfig.ts) is
+   * "optional_in_live". Mutually exclusive with `completed` (never both
+   * true) -- a skip is never a fabricated completion. Optional/undefined
+   * (never a required field) so every existing construction site is
+   * unaffected; read as `entry.skipped ?? false`.
+   */
+  skipped?: boolean;
 }
 
 export interface CombinedLiveSessionState {
@@ -373,8 +384,23 @@ export function resolvePrimaryOutcome(plan: ResolvedCombinedFactorPlan): ActionR
   return plan.presence?.actionOutcome ?? null;
 }
 
-/** Called once, the moment the plan resolves -- builds the ordered per-position action role list from resolveCombinedActionKinds' own step-kind order, never re-derived later. */
-function buildActionRoleProgress(plan: ResolvedCombinedFactorPlan): ActionRoleProgress[] {
+/**
+ * Called once, the moment the plan resolves -- builds the ordered
+ * per-position action role list from resolveCombinedActionKinds' own
+ * step-kind order, never re-derived later.
+ *
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8:
+ * `beneficialActionPolicy` "none" means the route's one Beneficial/
+ * Regulating Action role is absent ENTIRELY (arc/personalDevelopmentRouteConfig.ts's
+ * own doc) -- so this returns [] regardless of what the plan would
+ * otherwise resolve, and no state_action/factor_action step is ever
+ * built either (see buildFullStepsAfterPrimaryResolution/buildMiniCombinedSteps'
+ * own beneficialActionPolicy param). "required"/"optional_in_live" both
+ * resolve the role normally -- the policy only ever changes HOW it may be
+ * confirmed (see skipActionCompleted below), never WHICH action resolves.
+ */
+function buildActionRoleProgress(plan: ResolvedCombinedFactorPlan, beneficialActionPolicy: BeneficialActionPolicy): ActionRoleProgress[] {
+  if (beneficialActionPolicy === "none") return [];
   const outcome = resolvePrimaryOutcome(plan);
   if (!outcome) return [];
   const kinds = resolveCombinedActionKinds(plan);
@@ -412,11 +438,12 @@ function resolveDecisionsAndAdvance(state: CombinedLiveSessionState): CombinedLi
   // already has a real primary factor.
   const plan = result.plan;
   const practicedItemIds = practicedItemIdsForPlan(plan);
-  const actionRoleProgress = buildActionRoleProgress(plan);
+  const beneficialActionPolicy = state.snapshot.config.beneficialActionPolicy;
+  const actionRoleProgress = buildActionRoleProgress(plan, beneficialActionPolicy);
   const presenceSelectedForSession = plan.presence !== null;
 
   if (state.mode === "mini") {
-    const steps = buildMiniCombinedSteps(plan);
+    const steps = buildMiniCombinedSteps(plan, beneficialActionPolicy);
     return {
       ...state,
       primaryFactorId: plan.primaryFactorId,
@@ -436,7 +463,7 @@ function resolveDecisionsAndAdvance(state: CombinedLiveSessionState): CombinedLi
 
   // Full: build the spine with the neutral "skipped" placeholder -- see this
   // module's own header doc for why this is safe and final.
-  const spine = buildFullStepsAfterPrimaryResolution(plan, "skipped", state.snapshot.config.goalConnection);
+  const spine = buildFullStepsAfterPrimaryResolution(plan, "skipped", state.snapshot.config.goalConnection, beneficialActionPolicy);
   const presenceGateIndex = computePresenceGateIndex(spine);
   return {
     ...state,
@@ -625,6 +652,33 @@ export function confirmActionCompleted(state: CombinedLiveSessionState): Combine
   if (index === -1) return state;
   if (state.actionRoleProgress[index].completed) return state; // idempotent
   const actionRoleProgress = state.actionRoleProgress.map((entry, i) => (i === index ? { ...entry, reached: true, completed: true } : entry));
+  const outcome = state.resolvedPlan ? resolvePrimaryOutcome(state.resolvedPlan) : null;
+  return advanceStepCursor({ ...state, actionRoleProgress, actionOutcomeKind: outcome?.kind ?? state.actionOutcomeKind });
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: the
+ * explicit, trainee-initiated skip for the current action role -- only
+ * ever a no-op unless the route's own beneficialActionPolicy is
+ * "optional_in_live" (arc/personalDevelopmentRouteConfig.ts's own doc:
+ * "optional_in_live" resolves to either "optional_completed" or
+ * "optional_skipped", never a free skip on a "required" route). Mirrors
+ * confirmActionCompleted's own shape exactly (idempotent, advances the
+ * cursor, resolves actionOutcomeKind the same way) except it sets
+ * `skipped: true` instead of `completed: true` -- a skip is never
+ * recorded as a fabricated completion. Idempotent both ways: a role
+ * already completed or already skipped is a no-op (never overwrites a
+ * genuine completion with a skip, and never re-skips).
+ */
+export function skipActionCompleted(state: CombinedLiveSessionState): CombinedLiveSessionState {
+  if (state.phase !== "steps") return state;
+  if (state.snapshot.config.beneficialActionPolicy !== "optional_in_live") return state;
+  const step = currentStep(state);
+  if (!step || (step.kind !== "state_action" && step.kind !== "factor_action")) return state;
+  const index = resolveActionRoleIndexForStep(state, step.kind);
+  if (index === -1) return state;
+  if (state.actionRoleProgress[index].completed || state.actionRoleProgress[index].skipped) return state; // idempotent
+  const actionRoleProgress = state.actionRoleProgress.map((entry, i) => (i === index ? { ...entry, reached: true, skipped: true } : entry));
   const outcome = state.resolvedPlan ? resolvePrimaryOutcome(state.resolvedPlan) : null;
   return advanceStepCursor({ ...state, actionRoleProgress, actionOutcomeKind: outcome?.kind ?? state.actionOutcomeKind });
 }

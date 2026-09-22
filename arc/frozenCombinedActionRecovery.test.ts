@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   allActionRolesConfirmed,
   applyActionRoleConfirmedToSnapshot,
+  applyActionRoleSkippedToSnapshot,
   resolveNextUnconfirmedActionRole,
   resolveTerminalFactsForSnapshot,
 } from "./frozenCombinedActionRecovery.ts";
@@ -36,6 +37,10 @@ function facts(overrides: Partial<CombinedLiveSessionFacts> = {}): CombinedLiveS
     factorActionReached: false,
     factorActionCompleted: false,
     sharedActionCompleted: false,
+    beneficialActionPolicy: "required",
+    stateActionSkipped: false,
+    factorActionSkipped: false,
+    sharedActionSkipped: false,
     terminalCompleted: false,
     ...overrides,
   };
@@ -147,4 +152,50 @@ test("resolveTerminalFactsForSnapshot is a pure projection -- never mutates the 
   const terminal = resolveTerminalFactsForSnapshot(snapshot);
   assert.equal(terminal.terminalCompleted, true, "this function alone never checks readiness -- callers must check allActionRolesConfirmed first");
   assert.deepEqual(snapshot, before);
+});
+
+// --- applyActionRoleSkippedToSnapshot (Adaptive ARC architecture task, unified PD/ARC Goal, Phase 8) ---
+
+test("applyActionRoleSkippedToSnapshot marks the role skipped (never completed) only when the frozen policy is 'optional_in_live'", () => {
+  const snapshot: FrozenCombinedActionSnapshot = { ...factorOnlySnapshot(), facts: { ...factorOnlySnapshot().facts, beneficialActionPolicy: "optional_in_live" } };
+  const patched = applyActionRoleSkippedToSnapshot(snapshot, "factor");
+  assert.equal(patched.facts.factorActionSkipped, true);
+  assert.equal(patched.facts.factorActionCompleted, false);
+  assert.equal(patched.actionRoleProgress[0].skipped, true);
+  assert.equal(patched.actionRoleProgress[0].completed, false);
+});
+
+test("applyActionRoleSkippedToSnapshot is a no-op when the frozen policy is 'required' (the default) -- mirrors skipActionCompleted's own defensive check, never relying on the caller alone", () => {
+  const snapshot = factorOnlySnapshot(); // beneficialActionPolicy: "required" by default
+  assert.equal(snapshot.facts.beneficialActionPolicy, "required");
+  const patched = applyActionRoleSkippedToSnapshot(snapshot, "factor");
+  assert.equal(patched, snapshot, "same reference -- nothing changed");
+});
+
+test("a skipped role is treated as addressed by resolveNextUnconfirmedActionRole/allActionRolesConfirmed, exactly like a completed one", () => {
+  const snapshot: FrozenCombinedActionSnapshot = { ...factorOnlySnapshot(), facts: { ...factorOnlySnapshot().facts, beneficialActionPolicy: "optional_in_live" } };
+  assert.equal(resolveNextUnconfirmedActionRole(snapshot.actionRoleProgress)?.role, "factor");
+  const patched = applyActionRoleSkippedToSnapshot(snapshot, "factor");
+  assert.equal(resolveNextUnconfirmedActionRole(patched.actionRoleProgress), null, "a skipped role is no longer 'next unconfirmed'");
+  assert.equal(allActionRolesConfirmed(patched.actionRoleProgress), true);
+});
+
+test("applyActionRoleSkippedToSnapshot never mutates its input", () => {
+  const snapshot: FrozenCombinedActionSnapshot = { ...stateThenFactorSnapshot(), facts: { ...stateThenFactorSnapshot().facts, beneficialActionPolicy: "optional_in_live" } };
+  const before = JSON.parse(JSON.stringify(snapshot));
+  applyActionRoleSkippedToSnapshot(snapshot, "state");
+  assert.deepEqual(snapshot, before);
+});
+
+test("state_then_factor: one role skipped, the other confirmed -- resolveTerminalFactsForSnapshot is reachable once both are addressed, mixing completed and skipped correctly", () => {
+  const base = stateThenFactorSnapshot();
+  const snapshot: FrozenCombinedActionSnapshot = { ...base, facts: { ...base.facts, beneficialActionPolicy: "optional_in_live" } };
+  const afterSkipState = applyActionRoleSkippedToSnapshot(snapshot, "state");
+  assert.equal(allActionRolesConfirmed(afterSkipState.actionRoleProgress), false, "factor role still pending");
+  const afterBoth = applyActionRoleConfirmedToSnapshot(afterSkipState, "factor");
+  assert.equal(allActionRolesConfirmed(afterBoth.actionRoleProgress), true);
+  const terminal = resolveTerminalFactsForSnapshot(afterBoth);
+  assert.equal(terminal.stateActionSkipped, true);
+  assert.equal(terminal.stateActionCompleted, false);
+  assert.equal(terminal.factorActionCompleted, true);
 });

@@ -331,6 +331,27 @@ export default function PersonalDevelopmentRouteEditorScreen() {
           )}
         </Section>
 
+        <Section title="הפעולה המיטיבה / הפעולה לוויסות">
+          <Text style={styles.question}>מה מעמדה של הפעולה המיטיבה במסלול הזה?</Text>
+          <View style={styles.optionColumn}>
+            <Pressable style={[styles.optionButton, config.beneficialActionPolicy === "required" && styles.optionButtonSelected]} onPress={() => setConfig((current) => ({ ...current, beneficialActionPolicy: "required" }))}>
+              <Text style={styles.optionButtonText}>חובה -- יש לבצע אותה כדי לסיים את התרגול</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.optionButton, config.beneficialActionPolicy === "optional_in_live" && styles.optionButtonSelected]}
+              onPress={() => setConfig((current) => ({ ...current, beneficialActionPolicy: "optional_in_live" }))}
+            >
+              <Text style={styles.optionButtonText}>רשות -- אפשרות מפורשת לדלג עליה בזמן התרגול</Text>
+            </Pressable>
+            <Pressable style={[styles.optionButton, config.beneficialActionPolicy === "none" && styles.optionButtonSelected]} onPress={() => setConfig((current) => ({ ...current, beneficialActionPolicy: "none" }))}>
+              <Text style={styles.optionButtonText}>ללא -- המסלול הזה אינו כולל פעולה מיטיבה כלל</Text>
+            </Pressable>
+          </View>
+          {config.beneficialActionPolicy === "none" && (
+            <Text style={styles.helperText}>מסלול ללא פעולה מיטיבה אינו זמין לשלב 3 (ARC Link) ולשלב 4 (פעולה מיטיבה בלבד) בתוכנית ארבעת השלבים -- שלבים 1-2 נותרים זמינים במלואם.</Text>
+          )}
+        </Section>
+
         <Text style={[styles.readinessBadge, ready ? styles.readinessBadge_ready : styles.readinessBadge_draft]}>{ready ? "מוכן לתרגול LIVE" : "טיוטה -- עדיין לא מוכן לתרגול LIVE"}</Text>
         {!validation.valid && validation.reason && <Text style={styles.errorText}>{VALIDATION_REASON_LABELS[validation.reason] ?? validation.reason}</Text>}
         {saveError && <Text style={styles.errorText}>{saveError}</Text>}

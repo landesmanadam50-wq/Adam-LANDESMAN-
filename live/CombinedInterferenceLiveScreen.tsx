@@ -38,6 +38,7 @@ import {
   recordTailImprovementText,
   resolveCurrentAwarenessRatingFactor,
   resolveCurrentStepRatingFactor,
+  skipActionCompleted,
 } from "../arc/combinedLiveSession.ts";
 import type { CombinedFactorMode } from "../arc/combinedFactorPlan.ts";
 import type { CombinedLiveSessionState } from "../arc/combinedLiveSession.ts";
@@ -65,6 +66,7 @@ import { toCombinedLiveSessionFacts } from "../arc/combinedLiveSessionFacts.ts";
 import {
   allActionRolesConfirmed,
   applyActionRoleConfirmedToSnapshot,
+  applyActionRoleSkippedToSnapshot,
   resolveNextUnconfirmedActionRole,
   resolveTerminalFactsForSnapshot,
 } from "../arc/frozenCombinedActionRecovery.ts";
@@ -237,6 +239,30 @@ export default function CombinedInterferenceLiveScreen() {
     });
   }
 
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: the
+   * restart-recovery equivalent of handleBypassActionConfirmed above, for
+   * the explicit optional-skip choice -- only ever rendered (see
+   * renderBypassAction below) when the frozen snapshot's own
+   * beneficialActionPolicy is "optional_in_live", and
+   * applyActionRoleSkippedToSnapshot defensively no-ops otherwise anyway.
+   */
+  function handleBypassActionSkipped() {
+    setBypassSnapshot((current) => {
+      if (!current) return current;
+      const role = resolveNextUnconfirmedActionRole(current.actionRoleProgress);
+      if (!role) return current;
+      const patched = applyActionRoleSkippedToSnapshot(current, role.role);
+      clearTimerRun(role.timerType);
+      if (allActionRolesConfirmed(patched.actionRoleProgress)) {
+        setResumedTerminalFacts({ track: "personal_development", facts: resolveTerminalFactsForSnapshot(patched) });
+        setResumedActionRun(null);
+        return null;
+      }
+      return patched;
+    });
+  }
+
   function update(next: CombinedLiveSessionState) {
     if (!mountedRef.current) return;
     setSession(next);
@@ -279,7 +305,7 @@ export default function CombinedInterferenceLiveScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content}>
-          {renderBypassAction(bypassSnapshot, resumedActionRun, handleBypassActionConfirmed)}
+          {renderBypassAction(bypassSnapshot, resumedActionRun, handleBypassActionConfirmed, handleBypassActionSkipped)}
         </ScrollView>
       </SafeAreaView>
     );
@@ -336,21 +362,25 @@ interface PresenceHandles {
  * from a persisted TimerRun (every role reached afterward within this
  * same mount starts, and persists, a fresh run of its own).
  */
-function renderBypassAction(snapshot: FrozenCombinedActionSnapshot, resumedRun: TimerRun | null, onConfirmed: () => void) {
+function renderBypassAction(snapshot: FrozenCombinedActionSnapshot, resumedRun: TimerRun | null, onConfirmed: () => void, onSkipped: () => void) {
   const role = resolveNextUnconfirmedActionRole(snapshot.actionRoleProgress);
   if (!role) return null; // Guarded by the caller (resumedTerminalFacts takes over once every role is confirmed) -- defensive only.
   const runToResume = resumedRun && resumedRun.timerType === role.timerType ? resumedRun : null;
+  const canSkip = snapshot.facts.beneficialActionPolicy === "optional_in_live";
   return (
-    <ActionScreen
-      key={role.role}
-      copy={{ title: "פעולה מיטיבה", body: role.action, segments: null }}
-      durationMinutes={role.role === "state" ? snapshot.stateActionDurationMinutes : null}
-      timerType={role.timerType}
-      relatedCombinedSessionId={snapshot.facts.sessionId}
-      resumedRun={runToResume}
-      frozenCombinedActionSnapshot={snapshot}
-      onCompleted={onConfirmed}
-    />
+    <View>
+      <ActionScreen
+        key={role.role}
+        copy={{ title: "פעולה מיטיבה", body: role.action, segments: null }}
+        durationMinutes={role.role === "state" ? snapshot.stateActionDurationMinutes : null}
+        timerType={role.timerType}
+        relatedCombinedSessionId={snapshot.facts.sessionId}
+        resumedRun={runToResume}
+        frozenCombinedActionSnapshot={snapshot}
+        onCompleted={onConfirmed}
+      />
+      {canSkip && <PrimaryButton label="לדלג על הפעולה הפעם" onPress={onSkipped} />}
+    </View>
   );
 }
 
@@ -752,19 +782,39 @@ function renderStep(state: CombinedLiveSessionState, update: (next: CombinedLive
         );
       }
       if (!entry.reached) update(markActionReached(state));
+      // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: the
+      // explicit optional-skip choice only ever appears when the route's
+      // own beneficialActionPolicy is "optional_in_live" -- a "required"
+      // route (every route saved before this policy existed included)
+      // renders exactly as before, with no skip option at all. Wrapped
+      // externally rather than added inside ActionScreen itself, which is
+      // shared with regular ARC/ARC Goal's own required-only action stage
+      // and stays completely unaffected.
+      const canSkip = state.snapshot.config.beneficialActionPolicy === "optional_in_live";
       return (
-        <ActionScreen
-          key={entry.role}
-          copy={{ title: "פעולה מיטיבה", body: entry.action, segments: null }}
-          durationMinutes={entry.role === "state" ? resolveStateActionDuration(state) : null}
-          timerType={entry.timerType}
-          relatedCombinedSessionId={state.sessionId}
-          frozenCombinedActionSnapshot={{ facts: toCombinedLiveSessionFacts(state), actionRoleProgress: state.actionRoleProgress, stateActionDurationMinutes: resolveStateActionDuration(state) }}
-          onCompleted={() => {
-            clearTimerRun(entry.timerType); // this role is now explicitly confirmed -- never a valid restart-recovery match again
-            update(confirmActionCompleted(state));
-          }}
-        />
+        <View>
+          <ActionScreen
+            key={entry.role}
+            copy={{ title: "פעולה מיטיבה", body: entry.action, segments: null }}
+            durationMinutes={entry.role === "state" ? resolveStateActionDuration(state) : null}
+            timerType={entry.timerType}
+            relatedCombinedSessionId={state.sessionId}
+            frozenCombinedActionSnapshot={{ facts: toCombinedLiveSessionFacts(state), actionRoleProgress: state.actionRoleProgress, stateActionDurationMinutes: resolveStateActionDuration(state) }}
+            onCompleted={() => {
+              clearTimerRun(entry.timerType); // this role is now explicitly confirmed -- never a valid restart-recovery match again
+              update(confirmActionCompleted(state));
+            }}
+          />
+          {canSkip && (
+            <PrimaryButton
+              label="לדלג על הפעולה הפעם"
+              onPress={() => {
+                clearTimerRun(entry.timerType); // this role is now explicitly skipped -- never a valid restart-recovery match again
+                update(skipActionCompleted(state));
+              }}
+            />
+          )}
+        </View>
       );
     }
     case "presence": {

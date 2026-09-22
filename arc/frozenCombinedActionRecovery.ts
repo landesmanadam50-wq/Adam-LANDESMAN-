@@ -52,15 +52,16 @@ export interface FrozenCombinedActionSnapshot {
 }
 
 /**
- * The one role in `actionRoleProgress` that is not yet completed and
- * should be shown/resumed next, or null once every role this outcome
- * kind needs is already confirmed. Always resolves in the array's own
- * order (state before factor, for state_then_factor) -- never a
- * different order than the real, live session would have reached them
- * in.
+ * The one role in `actionRoleProgress` that is not yet addressed (neither
+ * completed nor explicitly skipped -- Adaptive ARC architecture task,
+ * unified PD/ARC Goal, Phase 8) and should be shown/resumed next, or null
+ * once every role this outcome kind needs has been addressed. Always
+ * resolves in the array's own order (state before factor, for
+ * state_then_factor) -- never a different order than the real, live
+ * session would have reached them in.
  */
 export function resolveNextUnconfirmedActionRole(actionRoleProgress: ActionRoleProgress[]): ActionRoleProgress | null {
-  return actionRoleProgress.find((entry) => !entry.completed) ?? null;
+  return actionRoleProgress.find((entry) => !entry.completed && !entry.skipped) ?? null;
 }
 
 /**
@@ -83,9 +84,33 @@ export function applyActionRoleConfirmedToSnapshot(snapshot: FrozenCombinedActio
   return { ...snapshot, facts: patchedFacts, actionRoleProgress: patchedRoleProgress };
 }
 
-/** Whether every action role this outcome kind needs has now been confirmed -- the moment terminalCompleted may finally become true. */
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: the
+ * restart-recovery equivalent of arc/combinedLiveSession.ts's own
+ * skipActionCompleted -- patches the snapshot to reflect `role` now being
+ * explicitly SKIPPED, never a fabricated completion (mutually exclusive
+ * with `completed`). A no-op (returns `snapshot` unchanged) unless the
+ * route's own frozen beneficialActionPolicy is "optional_in_live" --
+ * mirrors skipActionCompleted's own defensive policy check, never relying
+ * on the caller (the skip button's own visibility) alone.
+ */
+export function applyActionRoleSkippedToSnapshot(snapshot: FrozenCombinedActionSnapshot, role: ActionRole): FrozenCombinedActionSnapshot {
+  if (snapshot.facts.beneficialActionPolicy !== "optional_in_live") return snapshot;
+  const patchedFacts: CombinedLiveSessionFacts = {
+    ...snapshot.facts,
+    stateActionReached: role === "state" ? true : snapshot.facts.stateActionReached,
+    stateActionSkipped: role === "state" ? true : snapshot.facts.stateActionSkipped,
+    factorActionReached: role === "factor" ? true : snapshot.facts.factorActionReached,
+    factorActionSkipped: role === "factor" ? true : snapshot.facts.factorActionSkipped,
+    sharedActionSkipped: role === "shared" ? true : snapshot.facts.sharedActionSkipped,
+  };
+  const patchedRoleProgress = snapshot.actionRoleProgress.map((entry) => (entry.role === role ? { ...entry, reached: true, skipped: true } : entry));
+  return { ...snapshot, facts: patchedFacts, actionRoleProgress: patchedRoleProgress };
+}
+
+/** Whether every action role this outcome kind needs has now been addressed (completed OR explicitly skipped) -- the moment terminalCompleted may finally become true. */
 export function allActionRolesConfirmed(actionRoleProgress: ActionRoleProgress[]): boolean {
-  return actionRoleProgress.every((entry) => entry.completed);
+  return actionRoleProgress.every((entry) => entry.completed || entry.skipped);
 }
 
 /**

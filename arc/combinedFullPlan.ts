@@ -85,7 +85,7 @@ import type { InterferenceCategory } from "./interferenceItem.ts";
 import type { ResolvedCombinedFactorPlan, UnresolvedCombinedFactorContext } from "./combinedFactorPlan.ts";
 import { resolveCombinedActionKinds } from "./combinedFactorPlan.ts";
 import type { FinalPresenceMode } from "./combinedRoute.ts";
-import type { PersonalDevelopmentRouteGoalConnection } from "./personalDevelopmentRouteConfig.ts";
+import type { BeneficialActionPolicy, PersonalDevelopmentRouteGoalConnection } from "./personalDevelopmentRouteConfig.ts";
 
 export type FullCombinedStepKind =
   | "recognition"
@@ -174,7 +174,9 @@ export function buildFullStepsAfterPrimaryResolution(
   plan: ResolvedCombinedFactorPlan,
   finalPresenceMode: FinalPresenceMode,
   /** Adaptive ARC architecture task (unified PD/ARC Goal), Phase 7: the route's own configured Goal Connection, or null -- see this module's own header doc, step 11. Defaults to null so every existing caller (arc/combinedLiveSession.ts's own buildFullCombinedSteps test convenience call included) is unaffected until it explicitly opts in. */
-  goalConnection: PersonalDevelopmentRouteGoalConnection | null = null
+  goalConnection: PersonalDevelopmentRouteGoalConnection | null = null,
+  /** Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: the route's own beneficialActionPolicy (arc/personalDevelopmentRouteConfig.ts). Defaults to "required" -- every existing caller keeps today's unconditional action-step behavior exactly. "none" omits step 13 (the resolved action(s)) entirely, regardless of what resolveCombinedActionKinds would otherwise return -- see PersonalDevelopmentRouteConfig.beneficialActionPolicy's own doc ("absent entirely"). "optional_in_live" still emits the step normally; only HOW it may be confirmed changes (see arc/combinedLiveSession.ts's own skipActionCompleted), never whether it appears. */
+  beneficialActionPolicy: BeneficialActionPolicy = "required"
 ): FullCombinedStep[] {
   const steps: FullCombinedStep[] = [];
   const byCategory = (category: InterferenceCategory) => plan.factors.filter((factor) => factor.category === category);
@@ -211,7 +213,9 @@ export function buildFullStepsAfterPrimaryResolution(
     steps.push(sessionStep("desired_state_rating"));
   }
 
-  for (const actionKind of resolveCombinedActionKinds(plan)) steps.push(sessionStep(actionKind));
+  if (beneficialActionPolicy !== "none") {
+    for (const actionKind of resolveCombinedActionKinds(plan)) steps.push(sessionStep(actionKind));
+  }
 
   steps.push(sessionStep("terminal_boundary"));
 
@@ -230,7 +234,8 @@ export function buildFullStepsAfterPrimaryResolution(
 export function buildFullCombinedSteps(
   plan: ResolvedCombinedFactorPlan,
   finalPresenceMode: FinalPresenceMode,
-  goalConnection: PersonalDevelopmentRouteGoalConnection | null = null
+  goalConnection: PersonalDevelopmentRouteGoalConnection | null = null,
+  beneficialActionPolicy: BeneficialActionPolicy = "required"
 ): FullCombinedStep[] {
-  return [...buildFullAwarenessSteps({ factors: plan.factors, presence: plan.presence }), ...buildFullStepsAfterPrimaryResolution(plan, finalPresenceMode, goalConnection)];
+  return [...buildFullAwarenessSteps({ factors: plan.factors, presence: plan.presence }), ...buildFullStepsAfterPrimaryResolution(plan, finalPresenceMode, goalConnection, beneficialActionPolicy)];
 }

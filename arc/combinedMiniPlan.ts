@@ -76,6 +76,8 @@ import type { InterferenceCategory } from "./interferenceItem.ts";
 import type { ResolvedCombinedFactorPlan } from "./combinedFactorPlan.ts";
 import { resolveCombinedActionKinds } from "./combinedFactorPlan.ts";
 import { PROCESSING_CATEGORY_ORDER } from "./combinedFullPlan.ts";
+/** Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8: beneficialActionPolicy "none" omits step 6 (resolved action) entirely -- see buildMiniCombinedSteps's own call site below and arc/combinedFullPlan.ts's identical treatment. */
+import type { BeneficialActionPolicy } from "./personalDevelopmentRouteConfig.ts";
 
 export type MiniCombinedStepKind =
   | "combined_recognition"
@@ -103,7 +105,7 @@ function sessionStep(kind: MiniCombinedStepKind): MiniCombinedStep {
   return { kind, itemId: null, category: null };
 }
 
-export function buildMiniCombinedSteps(plan: ResolvedCombinedFactorPlan): MiniCombinedStep[] {
+export function buildMiniCombinedSteps(plan: ResolvedCombinedFactorPlan, beneficialActionPolicy: BeneficialActionPolicy = "required"): MiniCombinedStep[] {
   const steps: MiniCombinedStep[] = [];
   const byCategory = (category: InterferenceCategory) => plan.factors.filter((factor) => factor.category === category);
 
@@ -124,7 +126,9 @@ export function buildMiniCombinedSteps(plan: ResolvedCombinedFactorPlan): MiniCo
     steps.push(sessionStep("state_desired_state_encoding"));
   }
 
-  for (const actionKind of resolveCombinedActionKinds(plan)) steps.push(sessionStep(actionKind));
+  if (beneficialActionPolicy !== "none") {
+    for (const actionKind of resolveCombinedActionKinds(plan)) steps.push(sessionStep(actionKind));
+  }
 
   steps.push(sessionStep("terminal_boundary"));
 

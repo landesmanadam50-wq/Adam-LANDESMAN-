@@ -33,6 +33,10 @@ function facts(overrides: Partial<CombinedLiveSessionFacts> = {}): CombinedLiveS
     factorActionReached: true,
     factorActionCompleted: true,
     sharedActionCompleted: false,
+    beneficialActionPolicy: "required",
+    stateActionSkipped: false,
+    factorActionSkipped: false,
+    sharedActionSkipped: false,
     terminalCompleted: true,
     ...overrides,
   };

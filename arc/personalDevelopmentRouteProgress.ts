@@ -185,6 +185,18 @@ function isBlank(value: string | null | undefined): boolean {
  * per-actionOutcomeKind table below is the one thing this validator must
  * still check independently, since the facts object -- not controller
  * internals -- is all a persistence-layer caller ever sees.
+ *
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 8:
+ * beneficialActionPolicy-aware. "required" (the default, every route
+ * saved before this policy existed) preserves the exact original
+ * behavior below -- only genuine completion satisfies a role.
+ * "optional_in_live" additionally accepts an explicit skip
+ * (arc/combinedLiveSession.ts's own skipActionCompleted) as satisfying a
+ * role -- never a silent default, always the trainee's own explicit
+ * choice. "none" means the route's one Beneficial/Regulating Action role
+ * is absent ENTIRELY (PersonalDevelopmentRouteConfig.beneficialActionPolicy's
+ * own doc) -- once the ordinary session-level checks above pass, there is
+ * nothing further to validate about an action that was never offered.
  */
 export function validateCombinedSessionFactsForCompletion(facts: CombinedLiveSessionFacts): ValidateCombinedSessionFactsResult {
   if (!facts.terminalCompleted) return { valid: false, reason: "not_terminal" };
@@ -193,28 +205,31 @@ export function validateCombinedSessionFactsForCompletion(facts: CombinedLiveSes
   if (facts.cadence !== "reactive") return { valid: false, reason: "proactive_not_yet_supported" };
   if (facts.primaryFactorId === null && facts.selectedItemIds.length > 0) return { valid: false, reason: "unresolved_primary_factor" };
   if (facts.actionOutcomeKind === null) return { valid: false, reason: "action_outcome_missing" };
+  if (facts.beneficialActionPolicy === "none") return { valid: true };
+
+  const satisfied = (completed: boolean, skipped: boolean) => completed || (facts.beneficialActionPolicy === "optional_in_live" && skipped);
 
   switch (facts.actionOutcomeKind) {
     case "unavailable":
       return { valid: false, reason: "action_outcome_unavailable" };
     case "factor_only":
-      if (!facts.factorActionCompleted) return { valid: false, reason: "factor_action_not_completed" };
+      if (!satisfied(facts.factorActionCompleted, facts.factorActionSkipped)) return { valid: false, reason: "factor_action_not_completed" };
       break;
     case "state_only":
-      if (!facts.stateActionCompleted) return { valid: false, reason: "state_action_not_completed" };
+      if (!satisfied(facts.stateActionCompleted, facts.stateActionSkipped)) return { valid: false, reason: "state_action_not_completed" };
       break;
     case "shared_explicit":
-      if (!facts.sharedActionCompleted) return { valid: false, reason: "shared_action_not_completed" };
+      if (!satisfied(facts.sharedActionCompleted, facts.sharedActionSkipped)) return { valid: false, reason: "shared_action_not_completed" };
       break;
     case "state_then_factor":
-      if (!facts.stateActionCompleted) return { valid: false, reason: "state_action_not_completed" };
-      if (!facts.factorActionCompleted) return { valid: false, reason: "factor_action_not_completed" };
+      if (!satisfied(facts.stateActionCompleted, facts.stateActionSkipped)) return { valid: false, reason: "state_action_not_completed" };
+      if (!satisfied(facts.factorActionCompleted, facts.factorActionSkipped)) return { valid: false, reason: "factor_action_not_completed" };
       break;
     case "legacy_shared_state_fallback":
       // Renders and completes as role "state" (arc/combinedLiveSession.ts's own
       // resolveActionRoleProgress) -- "record the legacy fallback kind" never
       // "pretend a new explicit relationship was configured."
-      if (!facts.stateActionCompleted) return { valid: false, reason: "state_action_not_completed" };
+      if (!satisfied(facts.stateActionCompleted, facts.stateActionSkipped)) return { valid: false, reason: "state_action_not_completed" };
       break;
   }
 

@@ -22,6 +22,7 @@ import {
   recordAwarenessRating,
   recordDesiredStateRating,
   recordStepRating,
+  skipActionCompleted,
 } from "./combinedLiveSession.ts";
 import type { CombinedLiveSessionState, CreateCombinedLiveSessionInput } from "./combinedLiveSession.ts";
 import { createEmptyPersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
@@ -564,6 +565,158 @@ test("createCombinedLiveSession includes goal_connection in the real Full sessio
   assert.equal(state.phase, "steps");
   const kinds = state.remainingSteps.map((s) => s.kind);
   assert.ok(kinds.includes("goal_connection"), "the real session's own step list includes goal_connection");
+});
+
+// ---------------------------------------------------------------------------
+// 32. beneficialActionPolicy (Adaptive ARC architecture task, unified
+// PD/ARC Goal, Phase 8) -- "required"/"optional_in_live"/"none".
+// ---------------------------------------------------------------------------
+
+test("beneficialActionPolicy 'none': no state_action/factor_action step is ever built, and actionRoleProgress is empty -- the role is absent entirely", () => {
+  const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none", beneficialActionPolicy: "none" });
+  let state = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg }));
+  while (state.awarenessSteps[state.awarenessIndex]?.kind === "recognition") state = advanceAwarenessRecognition(state);
+  state = recordAwarenessRating(state, "t1", "thought", 6);
+  assert.equal(state.phase, "steps");
+  const kinds = state.remainingSteps.map((s) => s.kind);
+  assert.equal(kinds.includes("state_action"), false);
+  assert.equal(kinds.includes("factor_action"), false);
+  assert.deepEqual(state.actionRoleProgress, []);
+});
+
+test("beneficialActionPolicy 'none': the session still reaches 'complete' with no action ever confirmed or skipped", () => {
+  const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none", beneficialActionPolicy: "none" });
+  let state = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg }));
+  while (state.awarenessSteps[state.awarenessIndex]?.kind === "recognition") state = advanceAwarenessRecognition(state);
+  state = recordAwarenessRating(state, "t1", "thought", 6);
+  let guard = 0;
+  while (state.phase === "steps" && guard < 30) {
+    const step = state.remainingSteps[state.stepIndex];
+    if (!step) break;
+    if (step.kind === "rating_checkpoint") {
+      for (const factor of state.resolvedPlan!.factors) state = recordStepRating(state, factor.itemId, factor.category, step.checkpoint!, 5);
+    } else if (step.kind === "cognitive_reassessment") {
+      state = answerReassessment(state, "not_stuck");
+    } else if (step.kind === "desired_state_rating") {
+      state = recordDesiredStateRating(state, 8);
+    } else {
+      state = advanceStep(state);
+    }
+    guard++;
+  }
+  while (state.phase === "tail") state = advanceTail(state);
+  assert.equal(state.phase, "complete");
+  assert.equal(state.terminalCompleted, true);
+});
+
+/** Drives an in-progress Full session forward until the current step is state_action/factor_action, handling every intervening step kind exactly like walkFullToComplete in the sibling completion test file. */
+function driveToActionStep(state: CombinedLiveSessionState): CombinedLiveSessionState {
+  let s = state;
+  let guard = 0;
+  while (s.phase === "steps" && guard < 30) {
+    const step = s.remainingSteps[s.stepIndex];
+    if (!step || step.kind === "state_action" || step.kind === "factor_action") return s;
+    if (step.kind === "rating_checkpoint") {
+      for (const factor of s.resolvedPlan!.factors) s = recordStepRating(s, factor.itemId, factor.category, step.checkpoint!, 5);
+    } else if (step.kind === "cognitive_reassessment") {
+      s = answerReassessment(s, "not_stuck");
+    } else if (step.kind === "desired_state_rating") {
+      s = recordDesiredStateRating(s, 8);
+    } else {
+      s = advanceStep(s);
+    }
+    guard++;
+  }
+  return s;
+}
+
+test("beneficialActionPolicy 'required' (default): skipActionCompleted is always a no-op -- the role can only ever be genuinely confirmed", () => {
+  const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" });
+  let state = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg }));
+  while (state.awarenessSteps[state.awarenessIndex]?.kind === "recognition") state = advanceAwarenessRecognition(state);
+  state = recordAwarenessRating(state, "t1", "thought", 6);
+  state = driveToActionStep(state);
+  assert.equal(state.remainingSteps[state.stepIndex]?.kind, "factor_action");
+  const before = state;
+  const afterSkipAttempt = skipActionCompleted(state);
+  assert.equal(afterSkipAttempt, before, "no-op: same reference, nothing changed");
+  assert.equal(afterSkipAttempt.actionRoleProgress[0].skipped ?? false, false);
+});
+
+test("beneficialActionPolicy 'optional_in_live': skipActionCompleted marks the role skipped (never completed) and the session still reaches 'complete'", () => {
+  const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none", beneficialActionPolicy: "optional_in_live" });
+  let state = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg }));
+  while (state.awarenessSteps[state.awarenessIndex]?.kind === "recognition") state = advanceAwarenessRecognition(state);
+  state = recordAwarenessRating(state, "t1", "thought", 6);
+  state = driveToActionStep(state);
+  state = markActionReached(state);
+  state = skipActionCompleted(state);
+  assert.equal(state.actionRoleProgress[0].skipped, true);
+  assert.equal(state.actionRoleProgress[0].completed, false, "a skip is never recorded as a fabricated completion");
+  let guard = 0;
+  while (state.phase === "tail" && guard < 10) {
+    state = advanceTail(state);
+    guard++;
+  }
+  assert.equal(state.phase, "complete");
+});
+
+test("beneficialActionPolicy 'optional_in_live': skipActionCompleted is idempotent -- a duplicate skip and a skip attempt after genuine confirmation are both no-ops", () => {
+  const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none", beneficialActionPolicy: "optional_in_live" });
+  let state = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg }));
+  while (state.awarenessSteps[state.awarenessIndex]?.kind === "recognition") state = advanceAwarenessRecognition(state);
+  state = recordAwarenessRating(state, "t1", "thought", 6);
+  state = driveToActionStep(state);
+  state = markActionReached(state);
+  const confirmed = confirmActionCompleted(state);
+  assert.equal(confirmed.actionRoleProgress[0].completed, true);
+  const skipAfterConfirm = skipActionCompleted(confirmed);
+  assert.equal(skipAfterConfirm, confirmed, "a skip attempt after genuine confirmation is a no-op -- never demotes a real completion to a skip");
+});
+
+test("beneficialActionPolicy 'optional_in_live' state_then_factor: one role skipped, the other genuinely confirmed -- the mix is preserved through to facts", () => {
+  const cfg = config({
+    interferenceItemIds: ["t1"],
+    itemRelationships: { t1: { actionRelationship: "different_actions" } },
+    stateInclusionPolicy: "linked",
+    stateProfileId: "s1",
+    beneficialActionPolicy: "optional_in_live",
+  });
+  let state = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg, stateProfiles: [completeState()] }));
+  while (state.awarenessSteps[state.awarenessIndex]?.kind === "recognition") state = advanceAwarenessRecognition(state);
+  state = recordAwarenessRating(state, "t1", "thought", 6);
+  let guard = 0;
+  while (state.phase === "steps" && guard < 30) {
+    const step = state.remainingSteps[state.stepIndex];
+    if (step?.kind === "state_action") {
+      state = markActionReached(state);
+      state = skipActionCompleted(state); // trainee skips the State action
+    } else if (step?.kind === "factor_action") {
+      state = markActionReached(state);
+      state = confirmActionCompleted(state); // trainee genuinely performs the factor action
+    } else if (step?.kind === "rating_checkpoint") {
+      for (const factor of state.resolvedPlan!.factors) state = recordStepRating(state, factor.itemId, factor.category, step.checkpoint!, 5);
+    } else if (step?.kind === "cognitive_reassessment") {
+      state = answerReassessment(state, "not_stuck");
+    } else if (step?.kind === "desired_state_rating") {
+      state = recordDesiredStateRating(state, 8);
+    } else {
+      state = advanceStep(state);
+    }
+    guard++;
+  }
+  guard = 0;
+  while (state.phase === "tail" && guard < 10) {
+    state = advanceTail(state);
+    guard++;
+  }
+  assert.equal(state.phase, "complete");
+  const stateEntry = state.actionRoleProgress.find((r) => r.role === "state");
+  const factorEntry = state.actionRoleProgress.find((r) => r.role === "factor");
+  assert.equal(stateEntry?.skipped, true);
+  assert.equal(stateEntry?.completed, false);
+  assert.equal(factorEntry?.completed, true);
+  assert.equal(factorEntry?.skipped ?? false, false);
 });
 
 test("createCombinedLiveSession omits goal_connection when the route's own config.goalConnection is null -- unaffected by default", () => {
