@@ -355,7 +355,20 @@ function resolveActionRoleProgress(outcome: ActionResolutionOutcome, stepKind: "
   }
 }
 
-function resolvePrimaryOutcome(plan: ResolvedCombinedFactorPlan): ActionResolutionOutcome | null {
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+ * correction: exported (was module-private) so arc/combinedLiveSessionFacts.ts's
+ * own toCombinedLiveSessionFacts can resolve actionOutcomeKind directly
+ * from the already-resolved plan, rather than only from
+ * state.actionOutcomeKind (which this module itself only ever WRITES once
+ * confirmActionCompleted runs -- see that function's own call to this one,
+ * a few lines below). The underlying resolution itself depends on nothing
+ * but `plan`, which is fully resolved and stable long before any action
+ * step is ever reached (see buildActionRoleProgress's own call to this
+ * same function, at plan-resolution time) -- so calling it early is never
+ * fabricating a completion, only reading a plan-level fact sooner.
+ */
+export function resolvePrimaryOutcome(plan: ResolvedCombinedFactorPlan): ActionResolutionOutcome | null {
   if (plan.primaryFactorId) return plan.factors.find((factor) => factor.itemId === plan.primaryFactorId)?.actionOutcome ?? null;
   return plan.presence?.actionOutcome ?? null;
 }

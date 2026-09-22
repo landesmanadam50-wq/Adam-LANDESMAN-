@@ -236,12 +236,15 @@ test("once phase reaches 'complete', the screen's own two calls record progress 
 test("a fresh session started after an earlier one was abandoned (never reached 'complete') gets its own independent sessionId and never inherits or double-counts the abandoned one", async () => {
   const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" });
 
-  // Session A: started, never reaches "complete" -- mirrors
-  // live/CombinedInterferenceLiveScreen.tsx's own module doc: "nothing
-  // was ever persisted, so there is nothing to reconcile" -- a real app
-  // restart mid-session simply abandons it; there is no cross-restart
-  // resume for an in-progress PD session (verified: no persistence of
-  // CombinedLiveSessionState itself anywhere in that screen or data/storage.ts).
+  // Session A: started, never reaches "complete" -- abandoned before any
+  // action role's own timer ever began (still "awareness"/"steps"), so
+  // nothing was ever persisted for it and there is nothing to resume (see
+  // live/CombinedInterferenceLiveScreen.tsx's own module doc). Adaptive
+  // ARC architecture task (unified PD/ARC Goal), Phase 6 correction: a
+  // restart AFTER an action role's own wall-clock timer has begun IS now
+  // recoverable (see live/combinedInterferenceLiveScreenRestart.test.ts) --
+  // this test's own scenario is deliberately the case that predates that
+  // point and stays genuinely unrecoverable either way.
   const abandoned = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg, generateSessionId: () => "session-A" }));
   assert.notEqual(abandoned.phase, "complete");
 

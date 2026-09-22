@@ -19,6 +19,7 @@
 
 import type { CombinedFactorMode } from "./combinedFactorPlan.ts";
 import type { CombinedLiveSessionState } from "./combinedLiveSession.ts";
+import { resolvePrimaryOutcome } from "./combinedLiveSession.ts";
 import { deriveCompletedInterferenceTypes } from "./combinedRoute.ts";
 import type { InterferenceCategory } from "./interferenceItem.ts";
 import type { ActionResolutionOutcome } from "./factorAction.ts";
@@ -55,6 +56,18 @@ export interface CombinedLiveSessionFacts {
   factorRatingHistory: FactorRating[];
   /** Mini: always null. */
   desiredStateRating: number | null;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+   * correction: resolved directly from the session's own already-resolved
+   * plan (via resolvePrimaryOutcome) whenever a plan exists, rather than
+   * only from CombinedLiveSessionState.actionOutcomeKind (which the
+   * controller itself only ever WRITES once confirmActionCompleted first
+   * runs) -- null only when no plan has resolved yet (awareness/
+   * primary_choice/state_decision). This is what makes a frozen snapshot
+   * captured the moment an action role's own timer begins (see
+   * arc/frozenCombinedActionRecovery.ts) already carry a valid
+   * actionOutcomeKind, well before that action is ever confirmed.
+   */
   actionOutcomeKind: ActionResolutionOutcome["kind"] | null;
   stateActionReached: boolean;
   stateActionCompleted: boolean;
@@ -112,7 +125,7 @@ export function toCombinedLiveSessionFacts(state: CombinedLiveSessionState, cade
     reassessmentAnswer: state.mode === "full" ? state.reassessmentAnswer : null,
     factorRatingHistory: state.mode === "mini" ? [] : state.factorRatingHistory,
     desiredStateRating: state.mode === "mini" ? null : state.desiredStateRating,
-    actionOutcomeKind: state.actionOutcomeKind,
+    actionOutcomeKind: state.resolvedPlan ? (resolvePrimaryOutcome(state.resolvedPlan)?.kind ?? null) : state.actionOutcomeKind,
     stateActionReached: stateAction?.reached ?? false,
     stateActionCompleted: stateAction?.completed ?? false,
     factorActionReached: factorAction?.reached ?? false,

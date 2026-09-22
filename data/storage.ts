@@ -25,6 +25,7 @@ import type {
   UrgeArc,
 } from "../arc/types.ts";
 import { deletePersonalDevelopmentProgramFromList, normalizePersonalDevelopmentProgram, upsertPersonalDevelopmentProgramInList } from "../arc/personalDevelopmentProgram.ts";
+import type { FrozenCombinedActionSnapshot } from "../arc/frozenCombinedActionRecovery.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
 import { deleteArcBuildFromList, upsertArcBuildInList } from "../arc/arcBuilds.ts";
 import { deleteMiniArcFromList, upsertMiniArcInList } from "../arc/miniArc.ts";
@@ -1224,6 +1225,22 @@ export interface TimerRun {
    * record-safety reason as relatedRoutineId.
    */
   relatedCombinedSessionId?: string | null;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+   * correction: only ever set for the three "combined*Action" timer
+   * types above -- the frozen terminal facts + action-role-progress
+   * array captured the moment THIS action role's timer began (see
+   * arc/frozenCombinedActionRecovery.ts's own header doc for why this is
+   * sufficient to resume, confirm, chain to a second required action,
+   * and finish recording progress after a restart, without ever
+   * reconstructing the full, never-persisted CombinedLiveSessionState).
+   * Optional/nullable for the same legacy-record-safety reason as
+   * relatedCombinedSessionId -- a record persisted before this field
+   * existed simply parses with it undefined, never resumed as this kind
+   * of restart (falls back to the pre-existing "abandoned, start fresh"
+   * behavior).
+   */
+  frozenCombinedActionSnapshot?: FrozenCombinedActionSnapshot | null;
 }
 
 function timerRunKey(timerType: TimerType): string {

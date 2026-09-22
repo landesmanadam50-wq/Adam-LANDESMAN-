@@ -39,6 +39,7 @@ import { playContinueAvailableCue, playTimerCompletionSound } from "../data/time
 import { saveTimerRun } from "../data/storage.ts";
 import type { TimerRun, TimerType } from "../data/storage.ts";
 import type { DeferralOption } from "../data/reminders.ts";
+import type { FrozenCombinedActionSnapshot } from "../arc/frozenCombinedActionRecovery.ts";
 
 /**
  * Live elapsed-seconds clock, started fresh on mount (never on a prop
@@ -125,7 +126,9 @@ function useTimerRun(
   resumedRun?: TimerRun | null,
   relatedRoutineId?: string | null,
   /** Adaptive ARC architecture task, Phase 14B-4: only meaningful alongside a "combined*Action" timerType -- see data/storage.ts's TimerRun.relatedCombinedSessionId. */
-  relatedCombinedSessionId?: string | null
+  relatedCombinedSessionId?: string | null,
+  /** Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6 correction: only meaningful alongside a "combined*Action" timerType -- captured once at mount (never re-read), persisted on the run so a restart can resume this exact action role -- see data/storage.ts's TimerRun.frozenCombinedActionSnapshot. */
+  frozenCombinedActionSnapshot?: FrozenCombinedActionSnapshot | null
 ): { status: ActionTimerStatus; actionStartedAt: string } {
   const [runId] = useState(() => resumedRun?.runId ?? generateTimerRunId());
   const [actionStartedAt] = useState(() => resumedRun?.actionStartedAt ?? new Date().toISOString());
@@ -145,6 +148,7 @@ function useTimerRun(
       completedAt: null,
       relatedRoutineId: relatedRoutineId ?? null,
       relatedCombinedSessionId: relatedCombinedSessionId ?? null,
+      frozenCombinedActionSnapshot: frozenCombinedActionSnapshot ?? null,
     };
     saveTimerRun(baseRun); // Persisted immediately, before the notification round-trip below resolves.
     if (durationMinutes !== null) {
@@ -176,6 +180,7 @@ function useTimerRun(
       completedAt: new Date().toISOString(),
       relatedRoutineId: resumedRun?.relatedRoutineId ?? relatedRoutineId ?? null,
       relatedCombinedSessionId: resumedRun?.relatedCombinedSessionId ?? relatedCombinedSessionId ?? null,
+      frozenCombinedActionSnapshot: resumedRun?.frozenCombinedActionSnapshot ?? frozenCombinedActionSnapshot ?? null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.complete]);
@@ -1698,6 +1703,7 @@ export function ActionScreen({
   onCompleted,
   timerType = "beneficialAction",
   relatedCombinedSessionId,
+  frozenCombinedActionSnapshot,
 }: {
   copy: ArcStageCopy;
   durationMinutes: number | null;
@@ -1706,8 +1712,10 @@ export function ActionScreen({
   /** Adaptive ARC architecture task, Phase 14B-4: defaults to "beneficialAction" so every existing call site (the regular ARC/ARC Goal action stage) is completely unaffected. The combined Personal Development LIVE screen passes one of the three "combined*Action" types instead, giving its State/factor/shared actions distinct stable timer identities within the same session (see data/storage.ts's TimerRun doc) while reusing this exact same component/behavior. */
   timerType?: TimerType;
   relatedCombinedSessionId?: string | null;
+  /** Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6 correction: only ever passed alongside a "combined*Action" timerType -- see data/storage.ts's TimerRun.frozenCombinedActionSnapshot. */
+  frozenCombinedActionSnapshot?: FrozenCombinedActionSnapshot | null;
 }) {
-  const { status } = useTimerRun(timerType, copy, durationMinutes, resumedRun, undefined, relatedCombinedSessionId);
+  const { status } = useTimerRun(timerType, copy, durationMinutes, resumedRun, undefined, relatedCombinedSessionId, frozenCombinedActionSnapshot);
   return (
     <View>
       <Title copy={copy} />

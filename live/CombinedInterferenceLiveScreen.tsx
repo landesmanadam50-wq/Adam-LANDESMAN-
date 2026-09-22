@@ -4,11 +4,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
 import {
+  clearTimerRun,
   loadInterferenceItems,
   loadPersonalDevelopmentRouteConfigs,
   loadPresenceArcs,
   loadStateProfiles,
+  loadTimerRun,
 } from "../data/storage.ts";
+import type { TimerRun, TimerType } from "../data/storage.ts";
 import type { PersonalDevelopmentRouteConfig } from "../arc/personalDevelopmentRouteConfig.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
@@ -55,7 +58,50 @@ import { presenceArcToProfile, isPresenceComplete } from "../arc/presenceLive.ts
 import { advanceLiveSession } from "./liveEventAdapter.ts";
 import { ActionScreen, ScaleButtons } from "./screens.tsx";
 import { toPersonalDevelopmentSharedFacts } from "../arc/sharedLiveSessionFacts.ts";
+import type { PersonalDevelopmentSharedFacts } from "../arc/sharedLiveSessionFacts.ts";
 import { recordSharedLiveSessionCompletion } from "../data/sharedLiveSessionCompletion.ts";
+import { toCombinedLiveSessionFacts } from "../arc/combinedLiveSessionFacts.ts";
+import {
+  allActionRolesConfirmed,
+  applyActionRoleConfirmedToSnapshot,
+  resolveNextUnconfirmedActionRole,
+  resolveTerminalFactsForSnapshot,
+} from "../arc/frozenCombinedActionRecovery.ts";
+import type { FrozenCombinedActionSnapshot } from "../arc/frozenCombinedActionRecovery.ts";
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+ * correction: the three "combined*Action" TimerType values, in the fixed
+ * order restart-recovery scans them -- see findResumableCombinedAction's
+ * own doc for why fixed order plus an immediate clearTimerRun on
+ * confirmation together keep this scan unambiguous even if a session
+ * (state_then_factor) uses two of these slots in sequence.
+ */
+const COMBINED_ACTION_TIMER_TYPES: TimerType[] = ["combinedStateAction", "combinedFactorAction", "combinedSharedAction"];
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+ * correction: restart recovery for a pending combined-action real action +
+ * wall-clock timer, mirroring regular ARC's own loadTimerRun("beneficialAction")
+ * resume check in live/LiveSessionScreen.tsx. Scans all three combined
+ * action timer slots (a session only ever occupies the ones its own
+ * actionOutcomeKind needs) for one whose frozen snapshot belongs to THIS
+ * route config and still has an unconfirmed role -- the same validation
+ * shape as relatedCombinedSessionId's own doc (a stale/foreign record is
+ * never silently resumed). Returns the first match in fixed scan order;
+ * see the call site for why at most one genuinely resumable record should
+ * ever exist at a time.
+ */
+async function findResumableCombinedAction(routeConfigId: string): Promise<TimerRun | null> {
+  for (const timerType of COMBINED_ACTION_TIMER_TYPES) {
+    const run = await loadTimerRun(timerType);
+    if (!run?.frozenCombinedActionSnapshot) continue;
+    if (run.frozenCombinedActionSnapshot.facts.routeConfigId !== routeConfigId) continue;
+    if (allActionRolesConfirmed(run.frozenCombinedActionSnapshot.actionRoleProgress)) continue;
+    return run;
+  }
+  return null;
+}
 
 /**
  * live/CombinedInterferenceLiveScreen.tsx (route:
@@ -81,6 +127,28 @@ import { recordSharedLiveSessionCompletion } from "../data/sharedLiveSessionComp
  * fast double-invoke or unrelated re-render can never call it twice). A
  * fresh mount after abandonment may create a fresh session -- nothing was
  * ever persisted, so there is nothing to reconcile.
+ *
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+ * correction: a restart WHILE a real action's own wall-clock timer is
+ * pending is now recoverable, mirroring regular ARC's own
+ * live/LiveSessionScreen.tsx precedent. The load effect below checks
+ * findResumableCombinedAction FIRST, before ever loading route config or
+ * calling createCombinedLiveSession -- a genuine resume never reconstructs
+ * CombinedLiveSessionState (which is, by design, never persisted; see the
+ * async-lifecycle doc above) and instead renders directly from the frozen
+ * snapshot captured the moment the pending action's timer began (see
+ * arc/frozenCombinedActionRecovery.ts's own header doc). `resumedActionRun`
+ * holds the ONE genuinely-persisted TimerRun found this way -- passed as
+ * `resumedRun` only to the specific action role it belongs to, so
+ * live/screens.tsx's useTimerRun reuses its exact anchor/runId/notification
+ * rather than starting a second timer; every role reached AFTER that one
+ * within this same mount (chaining state_then_factor's second role, or
+ * simply this role being shown again after a duplicate confirmation) is a
+ * genuinely fresh ActionScreen that persists its own new run. `bypassSnapshot`
+ * is the frozen-snapshot state actually driving this recovery render path;
+ * `resumedTerminalFacts` is set once every required role is confirmed,
+ * routing straight to CombinedSessionCompletionScreen without ever
+ * synthesizing a fake CombinedLiveSessionState.
  */
 export default function CombinedInterferenceLiveScreen() {
   const { id, mode: modeParam } = useLocalSearchParams<{ id: string; mode: string }>();
@@ -90,6 +158,11 @@ export default function CombinedInterferenceLiveScreen() {
   const [loadError, setLoadError] = useState(false);
   const startedRef = useRef(false);
   const mountedRef = useRef(true);
+
+  // Restart recovery -- see this component's own doc above.
+  const [resumedActionRun, setResumedActionRun] = useState<TimerRun | null>(null);
+  const [bypassSnapshot, setBypassSnapshot] = useState<FrozenCombinedActionSnapshot | null>(null);
+  const [resumedTerminalFacts, setResumedTerminalFacts] = useState<PersonalDevelopmentSharedFacts | null>(null);
 
   // Nested Full-Presence sub-session -- screen-owned, never controller state.
   const [presenceArcRef, setPresenceArcRef] = useState<PresenceArc | null>(null);
@@ -107,18 +180,28 @@ export default function CombinedInterferenceLiveScreen() {
     if (startedRef.current) return;
     if (typeof id !== "string") return;
     startedRef.current = true;
-    Promise.all([loadPersonalDevelopmentRouteConfigs(), loadInterferenceItems(), loadStateProfiles(), loadPresenceArcs()])
-      .then(([configs, items, stateProfiles, presenceArcs]) => {
+    findResumableCombinedAction(id)
+      .then((resumed) => {
         if (!mountedRef.current) return;
-        const config = configs.find((c) => c.id === id) ?? null;
-        if (!config) {
-          setLoadError(true);
+        if (resumed?.frozenCombinedActionSnapshot) {
+          setResumedActionRun(resumed);
+          setBypassSnapshot(resumed.frozenCombinedActionSnapshot);
           return;
         }
-        const created = createCombinedLiveSession({ mode, config, items, stateProfiles, presenceArcs, startedAt: new Date().toISOString() });
-        setSession(created);
-        const linkedPresenceArc = config.linkedPresenceArcId ? (presenceArcs.find((p) => p.id === config.linkedPresenceArcId) ?? null) : null;
-        setPresenceArcRef(linkedPresenceArc);
+        return Promise.all([loadPersonalDevelopmentRouteConfigs(), loadInterferenceItems(), loadStateProfiles(), loadPresenceArcs()]).then(
+          ([configs, items, stateProfiles, presenceArcs]) => {
+            if (!mountedRef.current) return;
+            const config = configs.find((c) => c.id === id) ?? null;
+            if (!config) {
+              setLoadError(true);
+              return;
+            }
+            const created = createCombinedLiveSession({ mode, config, items, stateProfiles, presenceArcs, startedAt: new Date().toISOString() });
+            setSession(created);
+            const linkedPresenceArc = config.linkedPresenceArcId ? (presenceArcs.find((p) => p.id === config.linkedPresenceArcId) ?? null) : null;
+            setPresenceArcRef(linkedPresenceArc);
+          }
+        );
       })
       .catch((error) => {
         console.warn("[CombinedInterferenceLiveScreen] Failed to load route data.", error);
@@ -126,6 +209,32 @@ export default function CombinedInterferenceLiveScreen() {
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, mode]);
+
+  /**
+   * Explicit confirmation of the currently-shown recovered/chained action
+   * role -- never fires from a timer merely reaching zero (ActionScreen's
+   * own onCompleted is only ever wired to its "עשיתי את זה" button, disabled
+   * until the timer completes but never auto-pressed). Idempotent: a
+   * duplicate confirmation (double-tap, or a second restart before the next
+   * role's own fresh run persists) finds no unconfirmed role left and is a
+   * no-op against `patched`'s state, though the underlying TimerRun slot is
+   * safely re-cleared either way.
+   */
+  function handleBypassActionConfirmed() {
+    setBypassSnapshot((current) => {
+      if (!current) return current;
+      const role = resolveNextUnconfirmedActionRole(current.actionRoleProgress);
+      if (!role) return current; // already confirmed -- nothing left to do
+      const patched = applyActionRoleConfirmedToSnapshot(current, role.role);
+      clearTimerRun(role.timerType); // this role's own run is now superseded -- never matched by findResumableCombinedAction again
+      if (allActionRolesConfirmed(patched.actionRoleProgress)) {
+        setResumedTerminalFacts({ track: "personal_development", facts: resolveTerminalFactsForSnapshot(patched) });
+        setResumedActionRun(null);
+        return null;
+      }
+      return patched;
+    });
+  }
 
   function update(next: CombinedLiveSessionState) {
     if (!mountedRef.current) return;
@@ -153,6 +262,26 @@ export default function CombinedInterferenceLiveScreen() {
       // Resume the parent combined plan directly.
       update(completeFullPresenceSubSession(session));
     }
+  }
+
+  if (resumedTerminalFacts) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <CombinedSessionCompletionScreen facts={resumedTerminalFacts} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (bypassSnapshot) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.content}>
+          {renderBypassAction(bypassSnapshot, resumedActionRun, handleBypassActionConfirmed)}
+        </ScrollView>
+      </SafeAreaView>
+    );
   }
 
   if (loadError) {
@@ -196,6 +325,32 @@ interface PresenceHandles {
   advanceFullPresenceFrom: (stage: ArcStage, patched: ArcLiveState) => void;
   fullPresenceStage: ArcStage;
   fullPresenceSession: ArcLiveState;
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6
+ * correction: renders the currently-pending action role from a frozen
+ * restart-recovery snapshot -- see this file's own module doc for why
+ * `resumedRun` is only ever passed for the ONE role genuinely recovered
+ * from a persisted TimerRun (every role reached afterward within this
+ * same mount starts, and persists, a fresh run of its own).
+ */
+function renderBypassAction(snapshot: FrozenCombinedActionSnapshot, resumedRun: TimerRun | null, onConfirmed: () => void) {
+  const role = resolveNextUnconfirmedActionRole(snapshot.actionRoleProgress);
+  if (!role) return null; // Guarded by the caller (resumedTerminalFacts takes over once every role is confirmed) -- defensive only.
+  const runToResume = resumedRun && resumedRun.timerType === role.timerType ? resumedRun : null;
+  return (
+    <ActionScreen
+      key={role.role}
+      copy={{ title: "פעולה מיטיבה", body: role.action, segments: null }}
+      durationMinutes={role.role === "state" ? snapshot.stateActionDurationMinutes : null}
+      timerType={role.timerType}
+      relatedCombinedSessionId={snapshot.facts.sessionId}
+      resumedRun={runToResume}
+      frozenCombinedActionSnapshot={snapshot}
+      onCompleted={onConfirmed}
+    />
+  );
 }
 
 function renderBody(state: CombinedLiveSessionState, update: (next: CombinedLiveSessionState) => void, presence: PresenceHandles) {
@@ -245,7 +400,7 @@ function renderBody(state: CombinedLiveSessionState, update: (next: CombinedLive
       return renderTail(state, update);
 
     case "complete":
-      return <CombinedSessionCompletionScreen state={state} />;
+      return <CombinedSessionCompletionScreen facts={toPersonalDevelopmentSharedFacts(state)} />;
   }
 }
 
@@ -271,25 +426,33 @@ function renderBody(state: CombinedLiveSessionState, update: (next: CombinedLive
 // separate boundary check to add here -- the controller already
 // structurally prevents reaching this component any earlier.
 //
-// `state.sessionId` is minted exactly once, when the session is created
-// (see this file's own module doc on session lifecycle), and is never
-// regenerated by a retry -- attemptSave below always closes over the same
-// `state` prop, so every retry (the "נסה לשמור שוב" button) resubmits the
-// identical sessionId. There is no cross-app-restart resume for an
-// in-progress PD session (verified: nothing persists CombinedLiveSessionState
-// itself, only the completed-session ledger) -- a genuine app kill
-// mid-session abandons that session exactly as it always has; the
-// component-local "saving" guard prevents a noisy repeated call while one
-// is already in flight, and data/personalDevelopmentRouteProgressPersistence.ts's
-// own persisted countedSessionIds ledger (checked via a fresh load on
-// every call) is the AUTHORITATIVE idempotency guarantee -- it, not this
-// ref, is what makes a re-render, a repeated terminal event, or back/
-// forward navigation all safe to retry against.
+// `facts.facts.sessionId` is minted exactly once, when the session is
+// created (see this file's own module doc on session lifecycle), and is
+// never regenerated by a retry -- attemptSave below always closes over the
+// same `facts` prop, so every retry (the "נסה לשמור שוב" button) resubmits
+// the identical sessionId. The component-local "saving" guard prevents a
+// noisy repeated call while one is already in flight, and
+// data/personalDevelopmentRouteProgressPersistence.ts's own persisted
+// countedSessionIds ledger (checked via a fresh load on every call) is the
+// AUTHORITATIVE idempotency guarantee -- it, not this ref, is what makes a
+// re-render, a repeated terminal event, or back/forward navigation all safe
+// to retry against.
+//
+// Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6 correction:
+// this component now takes the already-projected `facts` directly (built
+// either the normal way, via toPersonalDevelopmentSharedFacts(state) once
+// state.phase reaches "complete", or via the restart-recovery path above,
+// via resolveTerminalFactsForSnapshot on a frozen snapshot whose every
+// required role has just been confirmed) rather than a live
+// CombinedLiveSessionState -- a genuine app restart while a pending
+// action's own wall-clock timer is running now DOES resume correctly (see
+// findResumableCombinedAction and this file's own module doc), so this
+// component can no longer assume its caller always holds one.
 // ---------------------------------------------------------------------------
 
 type CombinedSessionSaveStatus = "saving" | "done" | "error";
 
-function CombinedSessionCompletionScreen({ state }: { state: CombinedLiveSessionState }) {
+function CombinedSessionCompletionScreen({ facts }: { facts: PersonalDevelopmentSharedFacts }) {
   const [status, setStatus] = useState<CombinedSessionSaveStatus>("saving");
   const mountedRef = useRef(true);
   const startedRef = useRef(false);
@@ -303,7 +466,6 @@ function CombinedSessionCompletionScreen({ state }: { state: CombinedLiveSession
 
   function attemptSave() {
     setStatus("saving");
-    const facts = toPersonalDevelopmentSharedFacts(state);
     const now = new Date().toISOString();
     recordSharedLiveSessionCompletion(facts, now)
       .then((result) => {
@@ -571,11 +733,16 @@ function renderStep(state: CombinedLiveSessionState, update: (next: CombinedLive
       if (!entry.reached) update(markActionReached(state));
       return (
         <ActionScreen
+          key={entry.role}
           copy={{ title: "פעולה מיטיבה", body: entry.action, segments: null }}
           durationMinutes={entry.role === "state" ? resolveStateActionDuration(state) : null}
           timerType={entry.timerType}
           relatedCombinedSessionId={state.sessionId}
-          onCompleted={() => update(confirmActionCompleted(state))}
+          frozenCombinedActionSnapshot={{ facts: toCombinedLiveSessionFacts(state), actionRoleProgress: state.actionRoleProgress, stateActionDurationMinutes: resolveStateActionDuration(state) }}
+          onCompleted={() => {
+            clearTimerRun(entry.timerType); // this role is now explicitly confirmed -- never a valid restart-recovery match again
+            update(confirmActionCompleted(state));
+          }}
         />
       );
     }
