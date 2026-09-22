@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   NEUTRAL_PROCESSING_CONTINUATION_LINE,
   THOUGHT_FUTURE_INSIGHT_FIXED_LINE,
+  getAcceptanceStepCopy,
   getCognitiveReassessmentCopy,
   getEmotionProcessingStepCopy,
   getFactorProcessingStepCopy,
@@ -15,6 +16,7 @@ import {
   getUrgeProcessingStepCopy,
   resolveCognitiveReassessmentVariant,
   resolveFactorRecognitionContext,
+  resolveNeutralAnchorPhrase,
 } from "./combinedFactorPlanCopy.ts";
 import { createEmptyBeliefInterferenceItem, createEmptyEmotionInterferenceItem, createEmptyThoughtInterferenceItem, createEmptyUrgeInterferenceItem } from "./interferenceItem.ts";
 import { createEmptyStateProfile } from "./stateProfile.ts";
@@ -77,11 +79,38 @@ test("THOUGHT_FUTURE_INSIGHT_FIXED_LINE and NEUTRAL_PROCESSING_CONTINUATION_LINE
   assert.equal(containsInductionPattern(NEUTRAL_PROCESSING_CONTINUATION_LINE), false);
 });
 
-// --- Shared Stay/Acceptance ---
+// --- Shared Stay ---
 
-test("getSharedStageCopy is fixed and State-independent for shared_stay/shared_acceptance", () => {
+test("getSharedStageCopy is fixed and State-independent for shared_stay", () => {
   assert.equal(getSharedStageCopy("shared_stay").title, "שהייה");
-  assert.equal(getSharedStageCopy("shared_acceptance").title, "קבלה");
+});
+
+// --- Acceptance (Adaptive ARC architecture task, unified PD/ARC Goal, method-completion correction) ---
+
+test("getAcceptanceStepCopy names the single selected disturbance category specifically", () => {
+  assert.ok(getAcceptanceStepCopy(["thought"], null).body.includes("המחשבה המפריעה"));
+  assert.ok(getAcceptanceStepCopy(["belief"], null).body.includes("האמונה המפריעה"));
+  assert.ok(getAcceptanceStepCopy(["urge"], null).body.includes("הדחף"));
+  assert.ok(getAcceptanceStepCopy(["emotion"], null).body.includes("התחושה"));
+});
+
+test("getAcceptanceStepCopy falls back to the generic 'מה שמפריע' phrase for more than one distinct category, or none at all", () => {
+  assert.ok(getAcceptanceStepCopy(["thought", "belief"], null).body.includes("מה שמפריע"));
+  assert.ok(getAcceptanceStepCopy([], null).body.includes("מה שמפריע"), "Presence-only routes with no selected factor still get a real acceptance line");
+});
+
+test("getAcceptanceStepCopy never asks the trainee to evoke, intensify, suppress, or replace the disturbance -- only to notice it alongside the neutral anchor", () => {
+  const copy = getAcceptanceStepCopy(["thought"], "עוגן קרקע");
+  assert.equal(containsInductionPattern(copy.body), false);
+  assert.ok(copy.body.includes("עוגן קרקע"), "the configured regulation anchor is reused verbatim as the neutral anchor");
+  assert.ok(/מותר לשניהם להיות נוכחים/.test(copy.body), "both the disturbance and the anchor are explicitly allowed to be present together");
+});
+
+test("resolveNeutralAnchorPhrase reuses the configured regulation anchor when present, and falls back to the fixed feet-floor default otherwise -- an anchor is always available, even with no State included", () => {
+  assert.equal(resolveNeutralAnchorPhrase("עוגן מותאם"), "עוגן מותאם");
+  assert.equal(resolveNeutralAnchorPhrase(null), "המגע של כפות הרגליים עם הרצפה");
+  assert.equal(resolveNeutralAnchorPhrase(undefined), "המגע של כפות הרגליים עם הרצפה");
+  assert.equal(resolveNeutralAnchorPhrase("   "), "המגע של כפות הרגליים עם הרצפה");
 });
 
 // --- State block copy -- only ever called when State participates ---

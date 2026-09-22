@@ -43,6 +43,7 @@ import {
 import type { CombinedFactorMode } from "../arc/combinedFactorPlan.ts";
 import type { CombinedLiveSessionState } from "../arc/combinedLiveSession.ts";
 import {
+  getAcceptanceStepCopy,
   getCognitiveReassessmentCopy,
   getFactorProcessingStepCopy,
   getGoalConnectionCopy,
@@ -641,7 +642,9 @@ function renderStep(state: CombinedLiveSessionState, update: (next: CombinedLive
       );
     }
     case "shared_acceptance": {
-      const copy = getSharedStageCopy("shared_acceptance");
+      const stateProfile = resolveSessionState(state);
+      const categories = state.resolvedPlan ? state.resolvedPlan.factors.map((factor) => factor.category) : [];
+      const copy = getAcceptanceStepCopy(categories, stateProfile?.regulationAnchor);
       return (
         <View>
           <Text style={styles.title}>{copy.title}</Text>

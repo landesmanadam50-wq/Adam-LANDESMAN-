@@ -152,15 +152,67 @@ export function getFactorProcessingStepCopy(item: InterferenceItem): ProcessingS
 }
 
 // ---------------------------------------------------------------------------
-// Shared Stay / Acceptance -- fixed, generic, never per-item, never State-dependent.
+// Shared Stay -- fixed, generic, never per-item, never State-dependent.
 // ---------------------------------------------------------------------------
 
-export type SharedStageKind = "shared_stay" | "shared_acceptance";
+export type SharedStageKind = "shared_stay";
 
 export function getSharedStageCopy(kind: SharedStageKind): { title: string; body: string } {
-  return kind === "shared_stay"
-    ? { title: "שהייה", body: "אפשר להישאר לרגע עם מה שנוכח, בלי למהר להיפטר ממנו." }
-    : { title: "קבלה", body: "מותר למה שנוכח כרגע להיות כאן, בלי התנגדות מיידית." };
+  void kind;
+  return { title: "שהייה", body: "אפשר להישאר לרגע עם מה שנוכח, בלי למהר להיפטר ממנו." };
+}
+
+// ---------------------------------------------------------------------------
+// Acceptance -- Adaptive ARC architecture task (unified PD/ARC Goal),
+// method-completion correction: names the actual disturbance category
+// (or a generic phrase when several are selected at once, mirroring Mini's
+// own combined_recognition step's "מה שמפריע" phrasing) alongside a
+// neutral anchor, and explicitly frames BOTH as allowed to be present --
+// never an instruction to evoke, intensify, suppress, or replace the
+// disturbance. The neutral anchor reuses the route's own configured State
+// regulation anchor (StateProfile.regulationAnchor) when one is available
+// -- the same anchor Regulation itself uses one step later, so Acceptance
+// and Regulation reference the identical anchor rather than two
+// unrelated ones -- and falls back to a fixed, always-available generic
+// anchor (feet-floor contact) when no State participates or none is
+// configured, so Acceptance is never blocked on State inclusion.
+// ---------------------------------------------------------------------------
+
+const ACCEPTANCE_DISTURBANCE_LABEL: Record<InterferenceCategory, string> = {
+  thought: "המחשבה המפריעה",
+  belief: "האמונה המפריעה",
+  urge: "הדחף",
+  emotion: "התחושה",
+};
+
+const DEFAULT_NEUTRAL_ANCHOR_LINE = "המגע של כפות הרגליים עם הרצפה";
+
+/** The neutral-anchor phrase Acceptance and Regulation both reference -- StateProfile.regulationAnchor when configured, otherwise the fixed, always-available default (feet-floor contact). Never null: an anchor is always available. */
+export function resolveNeutralAnchorPhrase(regulationAnchor: string | null | undefined): string {
+  const custom = safeText(regulationAnchor);
+  return custom.length > 0 ? custom : DEFAULT_NEUTRAL_ANCHOR_LINE;
+}
+
+/**
+ * `categories` is every DISTINCT category among the session's selected
+ * factors (usually one; several when more than one factor was selected
+ * for this route) -- a single category is named specifically ("המחשבה
+ * המפריעה"/"האמונה המפריעה"/"הדחף"/"התחושה"); more than one falls back
+ * to the same generic "מה שמפריע" phrasing arc/combinedFullPlan.ts's own
+ * "combined_recognition" step already uses for the identical situation,
+ * never inventing a new combined phrase. An empty `categories` array
+ * (Presence-only routes with no factor selected) also uses the generic
+ * phrase -- there is still a real experience to accept, even without a
+ * named disturbing factor.
+ */
+export function getAcceptanceStepCopy(categories: InterferenceCategory[], regulationAnchor: string | null | undefined): { title: string; body: string } {
+  const distinctCategories = [...new Set(categories)];
+  const disturbanceLabel = distinctCategories.length === 1 ? ACCEPTANCE_DISTURBANCE_LABEL[distinctCategories[0]] : "מה שמפריע";
+  const anchor = resolveNeutralAnchorPhrase(regulationAnchor);
+  return {
+    title: "קבלה",
+    body: `אפשר לשים לב ל${disturbanceLabel}, ובו-זמנית ל${anchor} -- עוגן ניטרלי שנמצא כאן. מותר לשניהם להיות נוכחים יחד, בלי למהר להיפטר מאף אחד מהם.`,
+  };
 }
 
 // ---------------------------------------------------------------------------
