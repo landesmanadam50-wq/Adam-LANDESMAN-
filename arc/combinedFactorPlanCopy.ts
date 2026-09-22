@@ -215,6 +215,33 @@ export function getAcceptanceStepCopy(categories: InterferenceCategory[], regula
   };
 }
 
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
+ * task, correction round 3: the UNIVERSAL, State-independent Regulation
+ * cue arc/personalDevelopmentRouteLink.ts's own compact rehearsal needs --
+ * "applies according to the selected disturbing factor whether or not ARC
+ * State is included" (the latest method correction). Deliberately its own
+ * function, never a reuse or rename of getStateRegulationAnchorCopy below
+ * -- that one is genuinely State-specific (reads StateProfile's own
+ * configured fields, only ever called when a route's plan actually
+ * resolves stateIncluded) and stays exactly that. This one reuses ONLY
+ * the same neutral-anchor concept resolveNeutralAnchorPhrase already
+ * established for Acceptance (StateProfile.regulationAnchor when
+ * configured, the fixed default otherwise) -- gradually directing more
+ * attention toward it, with a generic natural-breathing/stable-posture
+ * line to reinforce ordinary stability. Never requires relief or a
+ * positive feeling, and never fabricates a specific StateProfile
+ * breathing/posture cue when none is configured (a no-State/no-anchor
+ * route still gets this step, with the fixed default anchor alone).
+ */
+export function getNeutralRegulationCueCopy(regulationAnchor: string | null | undefined): { title: string; body: string } {
+  const anchor = resolveNeutralAnchorPhrase(regulationAnchor);
+  return {
+    title: "ויסות",
+    body: `אפשר להפנות בהדרגה עוד תשומת לב אל ${anchor} -- עוגן ניטרלי וקבוע. נשימה טבעית ותנוחת גוף יציבה יכולות לחזק את היציבות הרגילה, בלי צורך להרגיש הקלה או תחושה חיובית באופן מיידי.`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // ARC State block -- ONLY ever called when State genuinely participates
 // (arc/combinedFullPlan.ts/arc/combinedMiniPlan.ts only emit these steps

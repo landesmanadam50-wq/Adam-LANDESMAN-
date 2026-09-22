@@ -7,17 +7,24 @@ import { fileURLToPath } from "node:url";
  * build/personalDevelopmentSingleLiveEntry.test.ts
  *
  * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
- * task, correction round 2: permanent navigation-boundary guard. The new
- * Route Link (Stage 3) and Action Only (Stage 4) screens are internal
- * stage renderers reachable ONLY through the one existing "התפתחות אישית
- * LIVE" entry point (build/SelfDevelopmentDashboardScreen.tsx ->
+ * task, correction round 3: permanent navigation-boundary guard. Every
+ * protocol mode for a combined Personal Development route (Full, Mini,
+ * Route Link, Action Only) is launched from EXACTLY ONE place --
  * build/LiveModeSelectScreen.tsx's own CombinedRoutesSection, driven by
- * arc/personalDevelopmentRouteProgress.ts's own resolveAvailableEntryModes)
- * -- they must never become a second, competing, directly-navigable "LIVE"
- * system. This codebase has no React Native component test renderer (see
- * build/selfDevelopmentEntryRoute.test.ts's own doc), so this asserts
- * directly on real source text, exactly like that file and
- * build/liveModeSelectCombinedRoutes.test.ts.
+ * arc/personalDevelopmentRouteProgress.ts's own resolveAvailableEntryModes
+ * -- reachable either via the one top-level "LIVE התפתחות אישית" entry
+ * (build/SelfDevelopmentDashboardScreen.tsx) or via a management/program
+ * card's own "▶ תרגול" button (build/PersonalDevelopmentRouteListScreen.tsx),
+ * which routes through this SAME shared controller with the route's own
+ * id (LiveModeSelectScreen's own `focusRouteId` param) rather than
+ * resolving a mode itself. Every other Personal-Development-related
+ * screen (`PD_SCREENS_MUST_NEVER_LAUNCH_A_MODE` below) may manage,
+ * configure, or display progress for a route, but must never itself
+ * decide "full" vs "mini" vs "route_link" vs "action_only" or push
+ * directly to any of their routes. This codebase has no React Native
+ * component test renderer (see build/selfDevelopmentEntryRoute.test.ts's
+ * own doc), so this asserts directly on real source text, exactly like
+ * that file and build/liveModeSelectCombinedRoutes.test.ts.
  */
 function readSource(relativePath: string): string {
   const path = fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
@@ -30,7 +37,26 @@ const dashboardScreen = readSource("build/SelfDevelopmentDashboardScreen.tsx");
 const routeLinkScreen = readSource("live/PersonalDevelopmentRouteLinkScreen.tsx");
 const actionOnlyScreen = readSource("live/PersonalDevelopmentRouteActionOnlyScreen.tsx");
 const combinedLiveScreen = readSource("live/CombinedInterferenceLiveScreen.tsx");
+const routeEditorScreen = readSource("build/PersonalDevelopmentRouteEditorScreen.tsx");
+const interferenceItemEditorScreen = readSource("build/InterferenceItemEditorScreen.tsx");
+const combinedSelectionScreen = readSource("build/CombinedInterferenceSelectionScreen.tsx");
 const layout = readSource("app/_layout.tsx");
+
+/**
+ * Every user-facing screen this app has that touches a combined Personal
+ * Development route WITHOUT being the one sanctioned launcher
+ * (LiveModeSelectScreen) or a protocol renderer itself (which legitimately
+ * reads its own `mode`/step-kind internally -- that is not "launching a
+ * mode," it is being one). Adding a new PD-related management/editor
+ * screen means adding it here too, so this guard actually covers it.
+ */
+const PD_SCREENS_MUST_NEVER_LAUNCH_A_MODE: [string, string][] = [
+  ["build/PersonalDevelopmentRouteListScreen.tsx", routeListScreen],
+  ["build/SelfDevelopmentDashboardScreen.tsx", dashboardScreen],
+  ["build/PersonalDevelopmentRouteEditorScreen.tsx", routeEditorScreen],
+  ["build/InterferenceItemEditorScreen.tsx", interferenceItemEditorScreen],
+  ["build/CombinedInterferenceSelectionScreen.tsx", combinedSelectionScreen],
+];
 
 test("the one top-level Personal Development entry ('LIVE התפתחות אישית') still pushes to the single shared chooser screen (/live/select), never directly to a stage renderer", () => {
   assert.match(
@@ -41,15 +67,51 @@ test("the one top-level Personal Development entry ('LIVE התפתחות איש�
   assert.ok(dashboardScreen.includes('<Text style={styles.buttonText}>LIVE התפתחות אישית</Text>'), "the single entry label must still exist");
 });
 
+test("no PD management/editor screen ever directly launches a protocol mode (full/mini/route_link/action_only) or pushes to any of their routes -- every 'practice' command routes through the shared controller with the route's own id", () => {
+  const forbiddenPatterns: [RegExp, string][] = [
+    [/personal-development-routes\/\[id\]\/live/, 'a direct push to the existing combined LIVE route'],
+    [/personal-development-routes\/\[id\]\/route-link/, 'a direct reference to the Route Link route'],
+    [/personal-development-routes\/\[id\]\/action-only/, 'a direct reference to the Action Only route'],
+    [/mode:\s*"full"/, 'a hardcoded mode: "full"'],
+    [/mode:\s*"mini"/, 'a hardcoded mode: "mini"'],
+  ];
+  for (const [screenName, source] of PD_SCREENS_MUST_NEVER_LAUNCH_A_MODE) {
+    for (const [pattern, description] of forbiddenPatterns) {
+      assert.ok(!pattern.test(source), `${screenName} must never contain ${description}`);
+    }
+  }
+});
+
+test("the management screen's own 'practice' button routes through the shared controller with this route's own id (focusRouteId), never a mode it resolves itself", () => {
+  assert.match(
+    routeListScreen,
+    /router\.push\(\{\s*pathname:\s*"\/live\/select",\s*params:\s*\{\s*focusRouteId:\s*config\.id\s*\}\s*\}\)/,
+    "the practice button must push to the shared chooser with this route's own id, letting IT resolve stage/mode"
+  );
+  assert.ok(routeListScreen.includes("▶ תרגול"), "a single, mode-neutral practice label -- never per-mode buttons");
+  assert.ok(!routeListScreen.includes("ARC מלא"), "no more direct Full label on the management screen");
+  assert.ok(!routeListScreen.includes("Mini ARC"), "no more direct Mini label on the management screen");
+});
+
+test("LiveModeSelectScreen's own focusRouteId branch resolves that one route's stage/modes itself (via CombinedRoutesSection) and returns to the unified Personal Development area, never exposing the old direct-start screen", () => {
+  const focusIndex = liveModeSelectScreen.indexOf("if (focusRouteId)");
+  assert.ok(focusIndex !== -1, "the focusRouteId branch must exist");
+  const focusBody = liveModeSelectScreen.slice(focusIndex, focusIndex + 1800);
+  assert.ok(focusBody.includes("<CombinedRoutesSection"), "the focused route still goes through the one sanctioned mode-resolving component");
+  assert.match(
+    focusBody,
+    /router\.replace\("\/personal-development-routes"\)/,
+    "back navigation from the focused-route view returns to the unified Personal Development area (the management screen, now with no direct-start buttons of its own)"
+  );
+});
+
 test("only build/LiveModeSelectScreen.tsx ever navigates to the new route-link/action-only screens -- no other screen exposes a competing direct entry", () => {
   assert.ok(liveModeSelectScreen.includes('"/personal-development-routes/[id]/route-link"'), "the shared chooser must still be the one place that knows about route-link");
   assert.ok(liveModeSelectScreen.includes('"/personal-development-routes/[id]/action-only"'), "the shared chooser must still be the one place that knows about action-only");
 
-  // The management screen (build/PersonalDevelopmentRouteListScreen.tsx) keeps its
-  // own pre-existing Full/Mini start buttons (Full/Mini are never stage-locked --
-  // they remain valid secondary support at every stage, per the approved
-  // "recommend, don't hard-lock" design) but must never grow a competing
-  // Route Link/Action Only entry of its own.
+  // The management screen (build/PersonalDevelopmentRouteListScreen.tsx) no
+  // longer launches ANY protocol mode directly (see the broader scan test
+  // above) -- it must never reference either new screen's route either.
   assert.ok(!routeListScreen.includes("route-link"), "the management screen must never reference the Route Link route directly");
   assert.ok(!routeListScreen.includes("action-only"), "the management screen must never reference the Action Only route directly");
 

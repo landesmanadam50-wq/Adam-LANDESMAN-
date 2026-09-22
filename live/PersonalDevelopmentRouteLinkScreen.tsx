@@ -20,6 +20,7 @@ import {
   NEUTRAL_PROCESSING_CONTINUATION_LINE,
   getAcceptanceStepCopy,
   getFactorProcessingStepCopy,
+  getNeutralRegulationCueCopy,
   getRecognitionStepCopy,
   getStateDesiredStateEncodingCopy,
   getStateRegulationAnchorCopy,
@@ -292,6 +293,24 @@ function renderStep(state: RouteLinkState, update: (next: RouteLinkState) => voi
       const stateProfile = resolveSessionState(state);
       const categories = state.resolvedPlan ? state.resolvedPlan.factors.map((factor) => factor.category) : [];
       const copy = getAcceptanceStepCopy(categories, stateProfile?.regulationAnchor);
+      return (
+        <View>
+          <Text style={styles.title}>{copy.title}</Text>
+          <Text style={styles.body}>{copy.body}</Text>
+          <PrimaryButton label="המשך" onPress={() => update(advanceRouteLinkStep(state))} />
+        </View>
+      );
+    }
+    case "neutral_regulation": {
+      // Correction round 3: UNIVERSAL, State-independent -- reuses the
+      // same regulationAnchor resolveSessionState already exposes for
+      // Acceptance (null when this session has no State, falling back to
+      // the fixed default anchor inside getNeutralRegulationCueCopy
+      // itself). Never reads getStateRegulationAnchorCopy's own content --
+      // that stays genuinely State-specific, rendered separately below,
+      // only when stateIncluded.
+      const stateProfile = resolveSessionState(state);
+      const copy = getNeutralRegulationCueCopy(stateProfile?.regulationAnchor);
       return (
         <View>
           <Text style={styles.title}>{copy.title}</Text>

@@ -2,7 +2,7 @@
  * arc/personalDevelopmentRouteLink.ts
  *
  * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
- * task, correction round 2: Stage 3's own real, route-specific ARC Link
+ * task, correction round 3: Stage 3's own real, route-specific ARC Link
  * rehearsal -- sourced from the route's StateProfile and EVERY selected
  * interference item, in plain BUILD order. `primaryFactorId` is resolved
  * through the exact same shared-selection contract Full/Mini already use
@@ -10,20 +10,27 @@
  * only when more than one factor is selected, since the ACTION queue
  * still needs one resolved factor to key off, see
  * arc/combinedFactorPlan.ts's own resolveCombinedActionKinds doc), but
- * that designation is used ONLY to resolve the action -- it never removes
- * any other selected factor's own compact cue. There is no approved
- * product rule limiting Route Link to one factor; if that is ever wanted,
- * it must be its own explicit LIVE selection, never a silent narrowing of
- * "primary" into "only."
+ * that designation is used ONLY to resolve the FACTOR-SIDE action -- it
+ * never removes any other selected factor's own compact cue, and never
+ * adds an extra, unrelated action for a secondary factor (the shared
+ * action-role resolver below still only ever surfaces the primary
+ * factor's -- or, State-only, the State's own -- resolved outcome,
+ * exactly like Full/Mini; a secondary factor's own action, if it even has
+ * one configured, is never separately rendered or recorded). There is no
+ * approved product rule limiting Route Link to one factor; if that is
+ * ever wanted, it must be its own explicit LIVE selection, never a silent
+ * narrowing of "primary" into "only."
  *
  * Structural mirror of arc/combinedFullPlan.ts's own corrected method
  * order (Adaptive ARC architecture task, unified PD/ARC Goal,
- * method-completion correction) -- Acceptance -> Regulation -> Encoding
- * -> Action -- reusing the EXACT SAME content resolvers
+ * method-completion correction), extended per correction round 3's own
+ * "Acceptance -> neutral Regulation -> Encoding -> Action" requirement --
+ * reusing the EXACT SAME content resolvers
  * (arc/combinedFactorPlanCopy.ts's getAcceptanceStepCopy/
- * getStateRegulationAnchorCopy/getStateDesiredStateEncodingCopy/
- * getFactorProcessingStepCopy/getRecognitionStepCopy) rather than
- * inventing a second, divergent set of method content:
+ * getNeutralRegulationCueCopy/getStateRegulationAnchorCopy/
+ * getStateDesiredStateEncodingCopy/getFactorProcessingStepCopy/
+ * getRecognitionStepCopy) rather than inventing a second, divergent set
+ * of method content:
  *   1. Urge preventive stopping, one per urge factor with
  *      preventiveStoppingRelevant, BUILD order (mirrors Full's own
  *      earliest placement -- interrupting the urge from acting is a
@@ -33,12 +40,25 @@
  *      generically alongside the neutral anchor (getAcceptanceStepCopy);
  *      never asks the trainee to evoke or intensify the disturbance,
  *      exactly like Full/Mini's own Acceptance.
- *   3. Regulation (once, shared, only when State participates) -- the
- *      neutral anchor plus the configured regulation tool
- *      (getStateRegulationAnchorCopy), same as Full/Mini.
- *   4. Encoding, State half (once, shared, only when State participates)
- *      -- the desired positive sensation (getStateDesiredStateEncodingCopy).
- *   5. Encoding, per-factor half -- one compact cue per SELECTED factor,
+ *   3. Neutral Regulation (once, shared) -- ALWAYS present whenever there
+ *      is a disturbing factor to accept (same gate as Acceptance itself),
+ *      regardless of whether State participates (getNeutralRegulationCueCopy):
+ *      gradually directing more attention to the neutral anchor, using
+ *      natural breathing/stable posture to strengthen ordinary stability,
+ *      never requiring relief or a positive feeling. Deliberately its own
+ *      step kind ("neutral_regulation"), never a reuse of
+ *      "state_regulation_anchor"'s name or content -- that one stays
+ *      genuinely State-specific (StateProfile's own configured fields)
+ *      and conditional on stateIncluded, see step 4.
+ *   4. State creation/encoding (once each, shared, ONLY when State
+ *      participates) -- "state_regulation_anchor"
+ *      (getStateRegulationAnchorCopy, the State's own configured
+ *      regulation content) then "state_desired_state_encoding"
+ *      (getStateDesiredStateEncodingCopy, the desired positive
+ *      sensation). A no-State route omits both entirely -- it already
+ *      received its universal neutral Regulation cue at step 3, never a
+ *      fabricated State cue in its place.
+ *   5. Encoding, per-factor -- one compact cue per SELECTED factor,
  *      BUILD order (plan.factors, never re-grouped by category) -- the
  *      factor's own replacement thought, supportive belief, or
  *      alternative movement/sensory encoding (getFactorProcessingStepCopy),
@@ -51,12 +71,15 @@
  *   6. The real resolved action role(s) -- resolveCombinedActionKinds/
  *      resolvePrimaryOutcome/buildActionRoleProgress (arc/combinedLiveSession.ts),
  *      the SAME shared action-role resolver Full/Mini/Action Only all
- *      use: factor_only -> one factor-action role; state_only/
- *      legacy_shared_state_fallback -> one state-action role;
- *      shared_explicit -> one role, executed once (never twice for one
- *      action); state_then_factor -> two roles in that exact order, each
- *      with its own timer/restart-recovery/explicit confirmation, chained
- *      -- never merged by comparing action text. "unavailable" is caught
+ *      use, keyed off the resolved PRIMARY factor (or, State-only, State
+ *      itself) alone -- never a text-equality inference: factor_only ->
+ *      one factor-action role; state_only/legacy_shared_state_fallback ->
+ *      one state-action role; shared_explicit -> one role, executed once
+ *      (never twice for one action, regardless of whether the two
+ *      configured action fields happen to hold identical text -- the
+ *      explicit ActionRelationship field alone decides); state_then_factor
+ *      -> two roles in that exact order, each with its own timer/restart-
+ *      recovery/explicit confirmation, chained. "unavailable" is caught
  *      upstream, by resolveCombinedFactorPlan itself (returns kind
  *      "invalid" before this module ever builds a step list), so Route
  *      Link never invents Beneficial Action content for it.
@@ -68,9 +91,10 @@
  * arc/combinedFullPlan.ts's own header doc -- "Full-only... this
  * insertion is scoped to Full, never silently extended to Mini," and
  * Route Link has no approved compact Goal-Connection field of its own to
- * repeat it from). Never a replay of Full's or Mini's own exact step
- * shape -- this module has its own, shorter spine, built from the same
- * proven content resolvers.
+ * repeat it from; Full's own placement is completely untouched by this
+ * module). Never a replay of Full's or Mini's own exact step shape --
+ * this module has its own, shorter spine, built from the same proven
+ * content resolvers.
  *
  * Structurally excludes Presence entirely (no presence_intervention/
  * embedded/full Presence step of any kind) and never offers a skip
@@ -115,6 +139,7 @@ import { generateTimerRunId } from "./actionTimer.ts";
 export type RouteLinkStepKind =
   | "urge_preventive_stopping"
   | "acceptance"
+  | "neutral_regulation"
   | "state_regulation_anchor"
   | "state_desired_state_encoding"
   | "factor_replacement_cue"
@@ -155,7 +180,17 @@ export function buildRouteLinkSteps(plan: ResolvedCombinedFactorPlan, beneficial
     if (factor.preventiveStoppingRelevant) steps.push(factorStep("urge_preventive_stopping", factor.itemId, factor.category));
   }
 
-  if (hasFactors) steps.push(sessionStep("acceptance"));
+  if (hasFactors) {
+    steps.push(sessionStep("acceptance"));
+    // Correction round 3: the universal, State-INDEPENDENT Regulation cue
+    // -- "applies according to the selected disturbing factor whether or
+    // not ARC State is included" (latest method correction). Always
+    // present whenever there is a disturbing factor to accept (same gate
+    // as Acceptance itself), never conditional on plan.stateIncluded --
+    // that is what makes it genuinely distinct from "state_regulation_anchor"
+    // below, which stays fully State-specific and conditional.
+    steps.push(sessionStep("neutral_regulation"));
+  }
 
   if (plan.stateIncluded) {
     steps.push(sessionStep("state_regulation_anchor"));
@@ -326,7 +361,7 @@ function resolveActionRoleIndexForStep(state: RouteLinkState, stepKind: "state_a
   return state.actionRoleProgress.length === 1 ? 0 : -1;
 }
 
-/** Generic advance for every non-action step ("urge_preventive_stopping", "acceptance", "state_regulation_anchor", "state_desired_state_encoding", "factor_replacement_cue"). A no-op on an action step or once already complete. */
+/** Generic advance for every non-action step ("urge_preventive_stopping", "acceptance", "neutral_regulation", "state_regulation_anchor", "state_desired_state_encoding", "factor_replacement_cue"). A no-op on an action step or once already complete. */
 export function advanceRouteLinkStep(state: RouteLinkState): RouteLinkState {
   if (state.phase !== "steps") return state;
   const step = currentStep(state);

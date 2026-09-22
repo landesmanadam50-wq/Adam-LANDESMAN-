@@ -151,17 +151,22 @@ export default function PersonalDevelopmentRouteListScreen() {
 
               {ready && config.status === "enabled" && (
                 <View style={styles.cardActions}>
+                  {/*
+                   * Adaptive ARC architecture task (unified PD/ARC Goal),
+                   * correction round 3: this management screen manages routes
+                   * (edit/activate/progress) but never launches a protocol
+                   * mode directly -- every "practice" command routes through
+                   * the one shared unified entry controller
+                   * (build/LiveModeSelectScreen.tsx), which resolves this
+                   * route's own current stage and available modes itself.
+                   * Never a second place that decides "full" vs "mini" vs
+                   * "route_link" vs "action_only".
+                   */}
                   <Pressable
                     style={styles.startButton}
-                    onPress={() => router.push({ pathname: "/personal-development-routes/[id]/live", params: { id: config.id, mode: "full" } })}
+                    onPress={() => router.push({ pathname: "/live/select", params: { focusRouteId: config.id } })}
                   >
-                    <Text style={styles.startButtonText}>▶ ARC מלא</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.startButton}
-                    onPress={() => router.push({ pathname: "/personal-development-routes/[id]/live", params: { id: config.id, mode: "mini" } })}
-                  >
-                    <Text style={styles.startButtonText}>▶ Mini ARC</Text>
+                    <Text style={styles.startButtonText}>▶ תרגול</Text>
                   </Pressable>
                 </View>
               )}

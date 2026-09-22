@@ -9,6 +9,7 @@ import {
   getEmotionProcessingStepCopy,
   getFactorProcessingStepCopy,
   getGoalConnectionCopy,
+  getNeutralRegulationCueCopy,
   getRecognitionStepCopy,
   getSharedStageCopy,
   getStateDesiredStateEncodingCopy,
@@ -111,6 +112,30 @@ test("resolveNeutralAnchorPhrase reuses the configured regulation anchor when pr
   assert.equal(resolveNeutralAnchorPhrase(null), "המגע של כפות הרגליים עם הרצפה");
   assert.equal(resolveNeutralAnchorPhrase(undefined), "המגע של כפות הרגליים עם הרצפה");
   assert.equal(resolveNeutralAnchorPhrase("   "), "המגע של כפות הרגליים עם הרצפה");
+});
+
+// --- getNeutralRegulationCueCopy -- Route Link's UNIVERSAL, State-independent Regulation cue ---
+
+test("getNeutralRegulationCueCopy is available with no State configured at all, using the fixed default anchor", () => {
+  const copy = getNeutralRegulationCueCopy(null);
+  assert.ok(copy.body.includes("המגע של כפות הרגליים עם הרצפה"), "falls back to the fixed neutral anchor, never fabricated State content");
+});
+
+test("getNeutralRegulationCueCopy reuses the configured regulation anchor verbatim when present", () => {
+  const copy = getNeutralRegulationCueCopy("עוגן מותאם");
+  assert.ok(copy.body.includes("עוגן מותאם"));
+});
+
+test("getNeutralRegulationCueCopy never asks the trainee to evoke, intensify, suppress, or replace the disturbance, and explicitly disclaims needing relief or a positive feeling", () => {
+  const copy = getNeutralRegulationCueCopy("עוגן קרקע");
+  assert.equal(containsInductionPattern(copy.body), false);
+  assert.ok(copy.body.includes("בלי צורך להרגיש הקלה"), "explicitly states relief/a positive feeling is not required, never implicitly demanded");
+});
+
+test("getNeutralRegulationCueCopy is semantically distinct from getStateRegulationAnchorCopy -- different title, different content source, never a rename of the State-specific step", () => {
+  const neutral = getNeutralRegulationCueCopy("עוגן");
+  const stateSpecific = getStateRegulationAnchorCopy({ ...createEmptyStateProfile("s1", "מצב", null, NOW), regulationAnchor: "עוגן" });
+  assert.notEqual(neutral.title, stateSpecific.title);
 });
 
 // --- State block copy -- only ever called when State participates ---

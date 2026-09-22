@@ -76,7 +76,16 @@ export default function LiveModeSelectScreen() {
   // "start" button pre-selects that build directly instead of always
   // falling back to "auto-pick when exactly one, else show a picker".
   // Absent (the original entry point from Home), behavior is unchanged.
-  const { buildId, mode: modeParam } = useLocalSearchParams<{ buildId?: string; mode?: string }>();
+  //
+  // Adaptive ARC architecture task (unified PD/ARC Goal), correction round
+  // 3: an optional `focusRouteId` param -- the ONE way a program/management
+  // card (build/PersonalDevelopmentRouteListScreen.tsx's own "▶ תרגול"
+  // button) may request practice for a SPECIFIC combined route, still
+  // exclusively through this shared controller. No screen outside this one
+  // ever resolves stage/mode itself or launches Full/Mini/Route Link/
+  // Action Only directly -- see this file's own header doc and
+  // build/personalDevelopmentSingleLiveEntry.test.ts.
+  const { buildId, mode: modeParam, focusRouteId } = useLocalSearchParams<{ buildId?: string; mode?: string; focusRouteId?: string }>();
   const [mode, setMode] = useState<"chooser" | "regular">(modeParam === "self_development" ? "regular" : "chooser");
   const [builds, setBuilds] = useState<ArcBuild[] | null>(null);
   const [selectedBuild, setSelectedBuild] = useState<ArcBuild | null>(null);
@@ -144,13 +153,50 @@ export default function LiveModeSelectScreen() {
     // The ArcBuild-empty redirect only ever fires once BOTH lists have
     // resolved -- a trainee with zero ArcBuilds but at least one ready
     // combined route must land on this screen, not be redirected to
-    // /build before they can see it.
+    // /build before they can see it. Never fires at all when `focusRouteId`
+    // is set -- that is a dedicated single-route practice request, not the
+    // general chooser.
+    if (focusRouteId) return;
     if (mode !== "regular") return;
     if (builds === null || !combinedRoutesLoaded) return;
     if (builds.length === 0 && readyCombinedRoutes.length === 0) {
       router.replace("/build");
     }
-  }, [mode, builds, combinedRoutesLoaded, readyCombinedRoutes.length]);
+  }, [focusRouteId, mode, builds, combinedRoutesLoaded, readyCombinedRoutes.length]);
+
+  if (focusRouteId) {
+    if (!combinedRoutesLoaded) {
+      return (
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.content} />
+        </SafeAreaView>
+      );
+    }
+    const focusedConfig = routeConfigs.find((config) => config.id === focusRouteId) ?? null;
+    if (!focusedConfig) {
+      return (
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.content}>
+            <Text style={styles.title}>לא ניתן לאתר את המסלול</Text>
+            <Pressable style={styles.backButton} onPress={() => router.replace("/personal-development-routes")}>
+              <Text style={styles.backButtonText}>חזרה</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      );
+    }
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.title}>מה תרצה לתרגל עכשיו?</Text>
+          <CombinedRoutesSection routes={[focusedConfig]} progressStore={routeProgressStore} />
+          <Pressable style={styles.backButton} onPress={() => router.replace("/personal-development-routes")}>
+            <Text style={styles.backButtonText}>חזרה</Text>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   if (mode === "chooser") {
     return (
@@ -239,8 +285,15 @@ export default function LiveModeSelectScreen() {
  * every step of LiveModeSelectScreen. Renders nothing at all when
  * `routes` is empty -- never an empty section header. Each card mirrors
  * build/PersonalDevelopmentRouteListScreen.tsx's own identifying summary
- * ("3 גורמים + נוכחות") and starts the EXACT SAME existing combined LIVE
- * route/screen that screen's own start buttons already use.
+ * ("3 גורמים + נוכחות").
+ *
+ * Adaptive ARC architecture task (unified PD/ARC Goal), correction round
+ * 3: this component -- reached either by browsing the general chooser or
+ * via a management card's own "▶ תרגול" button (this file's own
+ * `focusRouteId` branch above) -- is now the ONLY place in the app that
+ * resolves a route's stage into an actual mode and launches a protocol
+ * screen. build/PersonalDevelopmentRouteListScreen.tsx (route management)
+ * no longer launches anything directly -- see build/personalDevelopmentSingleLiveEntry.test.ts.
  *
  * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
  * task: per the approved "recommend, don't hard-lock" design, each route
