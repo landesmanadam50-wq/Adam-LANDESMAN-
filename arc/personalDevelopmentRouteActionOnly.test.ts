@@ -12,8 +12,8 @@ import {
 } from "./personalDevelopmentRouteActionOnly.ts";
 import { createEmptyPersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
 import type { PersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
-import { createEmptyBeliefInterferenceItem, createEmptyThoughtInterferenceItem } from "./interferenceItem.ts";
-import type { BeliefInterferenceItem, InterferenceItem, ThoughtInterferenceItem } from "./interferenceItem.ts";
+import { createEmptyBeliefInterferenceItem, createEmptyEmotionInterferenceItem, createEmptyThoughtInterferenceItem } from "./interferenceItem.ts";
+import type { BeliefInterferenceItem, EmotionInterferenceItem, InterferenceItem, ThoughtInterferenceItem } from "./interferenceItem.ts";
 import { createEmptyStateProfile } from "./stateProfile.ts";
 import type { StateProfile } from "./stateProfile.ts";
 
@@ -27,6 +27,9 @@ function thought(overrides: Partial<ThoughtInterferenceItem> = {}): Interference
 }
 function belief(overrides: Partial<BeliefInterferenceItem> = {}): InterferenceItem {
   return { ...createEmptyBeliefInterferenceItem("b1", "אמונה", null, NOW), schemaVersion: 2, beneficialActionAgainstFactor: "פעולת אמונה", ...overrides };
+}
+function emotion(overrides: Partial<EmotionInterferenceItem> = {}): InterferenceItem {
+  return { ...createEmptyEmotionInterferenceItem("e1", "רגש", null, NOW), ...overrides };
 }
 function completeState(overrides: Partial<StateProfile> = {}): StateProfile {
   return { ...createEmptyStateProfile("s1", "מצב", null, NOW), regulationAnchor: "עוגן", encodingCue: "קידוד", action: "פעולת המצב", ...overrides };
@@ -209,4 +212,91 @@ test("beneficialActionPolicy 'none' resolves defensively to phase 'invalid' rath
   });
   assert.equal(state.phase, "invalid");
   assert.deepEqual(state.actionRoleProgress, []);
+});
+
+// --- Action-role resolver: every ActionResolutionOutcome kind, reusing the shared resolver ---
+
+test("factor_only outcome: one factor role, factor action text preserved verbatim", () => {
+  const state = createActionOnlySession({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } } }),
+    items: [thought({ beneficialActionAgainstFactor: "פעולת מחשבה ייחודית" })],
+    stateProfiles: [],
+    presenceArcs: [],
+    startedAt: NOW,
+    stageAtStart: 4,
+    generateSessionId: genId,
+  });
+  assert.equal(state.actionRoleProgress.length, 1);
+  assert.equal(state.actionRoleProgress[0].role, "factor");
+  assert.equal(state.actionRoleProgress[0].action, "פעולת מחשבה ייחודית");
+});
+
+test("state_only outcome (Emotion): one state role, State's own action text", () => {
+  const state = createActionOnlySession({
+    config: config({ interferenceItemIds: ["e1"], itemRelationships: { e1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
+    items: [emotion()],
+    stateProfiles: [completeState({ action: "פעולת מצב ייחודית" })],
+    presenceArcs: [],
+    startedAt: NOW,
+    stageAtStart: 4,
+    generateSessionId: genId,
+  });
+  assert.equal(state.actionRoleProgress.length, 1);
+  assert.equal(state.actionRoleProgress[0].role, "state");
+  assert.equal(state.actionRoleProgress[0].action, "פעולת מצב ייחודית");
+});
+
+test("shared_explicit outcome (same_action): one role, executed once -- never two roles for one action, never merged by comparing text", () => {
+  const state = createActionOnlySession({
+    config: config({
+      interferenceItemIds: ["t1"],
+      itemRelationships: { t1: { actionRelationship: "same_action" } },
+      stateInclusionPolicy: "linked",
+      stateProfileId: "s1",
+    }),
+    items: [thought({ beneficialActionAgainstFactor: "פעולה משותפת" })],
+    stateProfiles: [completeState({ action: "פעולה משותפת" })], // identical text -- relationship alone decides, never text comparison
+    presenceArcs: [],
+    startedAt: NOW,
+    stageAtStart: 4,
+    generateSessionId: genId,
+  });
+  assert.equal(state.actionRoleProgress.length, 1, "shared_explicit is exactly one role, even though the two configured action fields hold identical text");
+  assert.equal(state.actionRoleProgress[0].role, "shared");
+});
+
+test("legacy_shared_state_fallback outcome (v1 item, no own action): one state role, falls back to the State's own action", () => {
+  const state = createActionOnlySession({
+    config: config({
+      interferenceItemIds: ["t1"],
+      itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } },
+      stateInclusionPolicy: "linked",
+      stateProfileId: "s1",
+    }),
+    items: [thought({ schemaVersion: 1, beneficialActionAgainstFactor: null })],
+    stateProfiles: [completeState({ action: "פעולת נפילה למצב" })],
+    presenceArcs: [],
+    startedAt: NOW,
+    stageAtStart: 4,
+    generateSessionId: genId,
+  });
+  assert.equal(state.actionRoleProgress.length, 1);
+  assert.equal(state.actionRoleProgress[0].role, "state");
+  assert.equal(state.actionRoleProgress[0].action, "פעולת נפילה למצב");
+});
+
+test("unavailable outcome (v2 item with no configured action) fails safely at the plan level -- 'invalid', never a fabricated action, never reaching phase 'action'", () => {
+  const state = createActionOnlySession({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } } }),
+    items: [thought({ beneficialActionAgainstFactor: null })],
+    stateProfiles: [],
+    presenceArcs: [],
+    startedAt: NOW,
+    stageAtStart: 4,
+    generateSessionId: genId,
+  });
+  assert.equal(state.phase, "invalid");
+  assert.equal(state.invalidReason, "incomplete_v2_factor_action");
+  assert.deepEqual(state.actionRoleProgress, []);
+  assert.equal(state.terminalCompleted, false);
 });

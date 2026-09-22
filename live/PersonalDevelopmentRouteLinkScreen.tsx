@@ -16,7 +16,14 @@ import {
 } from "../arc/personalDevelopmentRouteLink.ts";
 import type { RouteLinkState } from "../arc/personalDevelopmentRouteLink.ts";
 import { STATE_DECISION_QUESTION } from "../arc/combinedFactorPlan.ts";
-import { getRecognitionStepCopy, getStateDesiredStateEncodingCopy, getStateRegulationAnchorCopy } from "../arc/combinedFactorPlanCopy.ts";
+import {
+  NEUTRAL_PROCESSING_CONTINUATION_LINE,
+  getAcceptanceStepCopy,
+  getFactorProcessingStepCopy,
+  getRecognitionStepCopy,
+  getStateDesiredStateEncodingCopy,
+  getStateRegulationAnchorCopy,
+} from "../arc/combinedFactorPlanCopy.ts";
 import { resolveStateInclusion } from "../arc/stateInclusion.ts";
 import type { PersonalDevelopmentSharedFacts } from "../arc/sharedLiveSessionFacts.ts";
 import { recordSharedLiveSessionCompletion } from "../data/sharedLiveSessionCompletion.ts";
@@ -271,14 +278,37 @@ function renderStep(state: RouteLinkState, update: (next: RouteLinkState) => voi
   if (!step) return null;
 
   switch (step.kind) {
-    case "link_recognition": {
+    case "urge_preventive_stopping": {
       const item = step.itemId ? state.snapshot.items.find((i) => i.id === step.itemId) : null;
-      if (!item) return null;
-      const copy = getRecognitionStepCopy(item);
       return (
         <View>
-          <Text style={styles.title}>{copy.framing}</Text>
-          {copy.context && <Text style={styles.body}>{copy.context}</Text>}
+          <Text style={styles.title}>עצירה מונעת</Text>
+          <Text style={styles.body}>{item && item.category === "urge" ? item.preventiveStoppingAction || "אפשר לעצור לפני שהדחף מתממש." : "אפשר לעצור לפני שהדחף מתממש."}</Text>
+          <PrimaryButton label="המשך" onPress={() => update(advanceRouteLinkStep(state))} />
+        </View>
+      );
+    }
+    case "acceptance": {
+      const stateProfile = resolveSessionState(state);
+      const categories = state.resolvedPlan ? state.resolvedPlan.factors.map((factor) => factor.category) : [];
+      const copy = getAcceptanceStepCopy(categories, stateProfile?.regulationAnchor);
+      return (
+        <View>
+          <Text style={styles.title}>{copy.title}</Text>
+          <Text style={styles.body}>{copy.body}</Text>
+          <PrimaryButton label="המשך" onPress={() => update(advanceRouteLinkStep(state))} />
+        </View>
+      );
+    }
+    case "factor_replacement_cue": {
+      const item = step.itemId ? state.snapshot.items.find((i) => i.id === step.itemId) : null;
+      if (!item) return null;
+      const recognition = getRecognitionStepCopy(item);
+      const processing = getFactorProcessingStepCopy(item);
+      return (
+        <View>
+          <Text style={styles.title}>{recognition.framing}</Text>
+          <Text style={styles.body}>{processing.text ?? NEUTRAL_PROCESSING_CONTINUATION_LINE}</Text>
           <PrimaryButton label="המשך" onPress={() => update(advanceRouteLinkStep(state))} />
         </View>
       );

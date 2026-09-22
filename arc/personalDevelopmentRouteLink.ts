@@ -2,33 +2,75 @@
  * arc/personalDevelopmentRouteLink.ts
  *
  * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
- * task: Stage 3's own real, route-specific ARC Link rehearsal -- sourced
- * from the route's StateProfile and selected interference items, per the
- * approved design decision. Deliberately NOT a relabeled
- * arc/combinedMiniPlan.ts: Mini practices EVERY selected factor (its own
- * "secondary interventions remain" guarantee) with a full recognition +
- * factor-intervention pass per factor, plus optional Presence; this
- * module rehearses ONLY the session's resolved PRIMARY factor -- a short,
- * focused review immediately before the real Beneficial Action, never a
- * second full pass over every configured factor. That is the one
- * deliberate structural difference from Mini/Full this module encodes,
- * flagged here rather than left implicit.
+ * task, correction round 2: Stage 3's own real, route-specific ARC Link
+ * rehearsal -- sourced from the route's StateProfile and EVERY selected
+ * interference item, in plain BUILD order. `primaryFactorId` is resolved
+ * through the exact same shared-selection contract Full/Mini already use
+ * (arc/combinedFactorPlan.ts's own "needs_primary_factor" -- required
+ * only when more than one factor is selected, since the ACTION queue
+ * still needs one resolved factor to key off, see
+ * arc/combinedFactorPlan.ts's own resolveCombinedActionKinds doc), but
+ * that designation is used ONLY to resolve the action -- it never removes
+ * any other selected factor's own compact cue. There is no approved
+ * product rule limiting Route Link to one factor; if that is ever wanted,
+ * it must be its own explicit LIVE selection, never a silent narrowing of
+ * "primary" into "only."
  *
- * Reuses arc/combinedFactorPlan.ts's resolveCombinedFactorPlan verbatim
- * for primary-factor/State-decision resolution and action-outcome
- * resolution (the SAME two LIVE-time decisions Full/Mini already resolve
- * through it -- never a second, divergent resolver), and
- * arc/combinedLiveSession.ts's own resolvePrimaryOutcome/
- * buildActionRoleProgress for the real action role(s) -- the SAME real,
- * timed, explicitly confirmed Beneficial Action Full/Mini's own "steps"
- * phase culminates in, never a separate "Link action." Recognition/State
- * copy is resolved through the SAME arc/combinedFactorPlanCopy.ts
- * functions Full/Mini already use (getRecognitionStepCopy,
- * getStateRegulationAnchorCopy, getStateDesiredStateEncodingCopy) --
- * reusing existing Link-adjacent content patterns while keeping the
- * combined route's own PersonalDevelopmentRouteConfig data model, per the
- * approved decision ("do not relabel Mini ARC as Link... reuse existing
- * Link patterns where they fit").
+ * Structural mirror of arc/combinedFullPlan.ts's own corrected method
+ * order (Adaptive ARC architecture task, unified PD/ARC Goal,
+ * method-completion correction) -- Acceptance -> Regulation -> Encoding
+ * -> Action -- reusing the EXACT SAME content resolvers
+ * (arc/combinedFactorPlanCopy.ts's getAcceptanceStepCopy/
+ * getStateRegulationAnchorCopy/getStateDesiredStateEncodingCopy/
+ * getFactorProcessingStepCopy/getRecognitionStepCopy) rather than
+ * inventing a second, divergent set of method content:
+ *   1. Urge preventive stopping, one per urge factor with
+ *      preventiveStoppingRelevant, BUILD order (mirrors Full's own
+ *      earliest placement -- interrupting the urge from acting is a
+ *      distinct, urgent beat, never folded into the later replacement
+ *      cue).
+ *   2. Acceptance (once, shared) -- names the disturbing factor(s)
+ *      generically alongside the neutral anchor (getAcceptanceStepCopy);
+ *      never asks the trainee to evoke or intensify the disturbance,
+ *      exactly like Full/Mini's own Acceptance.
+ *   3. Regulation (once, shared, only when State participates) -- the
+ *      neutral anchor plus the configured regulation tool
+ *      (getStateRegulationAnchorCopy), same as Full/Mini.
+ *   4. Encoding, State half (once, shared, only when State participates)
+ *      -- the desired positive sensation (getStateDesiredStateEncodingCopy).
+ *   5. Encoding, per-factor half -- one compact cue per SELECTED factor,
+ *      BUILD order (plan.factors, never re-grouped by category) -- the
+ *      factor's own replacement thought, supportive belief, or
+ *      alternative movement/sensory encoding (getFactorProcessingStepCopy),
+ *      alongside a brief recognition framing so the cue reads as "notice
+ *      X -> here is your response," never a bare fragment. This is the
+ *      one deliberate compacting merge this module makes (recognition +
+ *      replacement folded into ONE step per factor, instead of Full's two
+ *      separate Awareness/Encoding passes) -- flagged here, not left
+ *      implicit.
+ *   6. The real resolved action role(s) -- resolveCombinedActionKinds/
+ *      resolvePrimaryOutcome/buildActionRoleProgress (arc/combinedLiveSession.ts),
+ *      the SAME shared action-role resolver Full/Mini/Action Only all
+ *      use: factor_only -> one factor-action role; state_only/
+ *      legacy_shared_state_fallback -> one state-action role;
+ *      shared_explicit -> one role, executed once (never twice for one
+ *      action); state_then_factor -> two roles in that exact order, each
+ *      with its own timer/restart-recovery/explicit confirmation, chained
+ *      -- never merged by comparing action text. "unavailable" is caught
+ *      upstream, by resolveCombinedFactorPlan itself (returns kind
+ *      "invalid" before this module ever builds a step list), so Route
+ *      Link never invents Beneficial Action content for it.
+ *   7. Terminal boundary.
+ *
+ * Deliberately compacted relative to Full: no Stay, no rating checkpoints,
+ * no cognitive reassessment, no Presence, no Goal Connection (Full's own
+ * Goal Connection step is reserved for Full alone, per
+ * arc/combinedFullPlan.ts's own header doc -- "Full-only... this
+ * insertion is scoped to Full, never silently extended to Mini," and
+ * Route Link has no approved compact Goal-Connection field of its own to
+ * repeat it from). Never a replay of Full's or Mini's own exact step
+ * shape -- this module has its own, shorter spine, built from the same
+ * proven content resolvers.
  *
  * Structurally excludes Presence entirely (no presence_intervention/
  * embedded/full Presence step of any kind) and never offers a skip
@@ -70,43 +112,63 @@ import { generateTimerRunId } from "./actionTimer.ts";
 // Step spine
 // ---------------------------------------------------------------------------
 
-export type RouteLinkStepKind = "link_recognition" | "state_regulation_anchor" | "state_desired_state_encoding" | "state_action" | "factor_action" | "terminal_boundary";
+export type RouteLinkStepKind =
+  | "urge_preventive_stopping"
+  | "acceptance"
+  | "state_regulation_anchor"
+  | "state_desired_state_encoding"
+  | "factor_replacement_cue"
+  | "state_action"
+  | "factor_action"
+  | "terminal_boundary";
 
 export interface RouteLinkStep {
   kind: RouteLinkStepKind;
-  /** Only set for "link_recognition" -- the session's own resolved primary factor. null for every session-level step. */
+  /** Set for "urge_preventive_stopping" and "factor_replacement_cue" -- the ONE factor that step concerns. null for every session-level step. */
   itemId: string | null;
   category: InterferenceCategory | null;
 }
 
+function factorStep(kind: RouteLinkStepKind, itemId: string, category: InterferenceCategory): RouteLinkStep {
+  return { kind, itemId, category };
+}
+
+function sessionStep(kind: RouteLinkStepKind): RouteLinkStep {
+  return { kind, itemId: null, category: null };
+}
+
 /**
- * The full, ordered Stage 3 rehearsal spine: one recognition step for the
- * primary factor only (when one exists -- null for a Presence-only route,
- * which this module does not support at all, see this module's own
- * header doc), the State regulation-anchor/desired-state-encoding pair
- * when State participates (same pairing Mini uses, no checkpoint or
- * rating between them), the real resolved action role(s)
- * (resolveCombinedActionKinds, omitted entirely under beneficialActionPolicy
- * "none"), then the neutral terminal boundary.
+ * The full, ordered Stage 3 rehearsal spine -- see this module's own
+ * header doc for the exact method-order rationale. Every selected factor
+ * (`plan.factors`, already BUILD/config.interferenceItemIds order -- see
+ * arc/combinedFactorPlan.ts's own resolveCombinedFactorPlan) gets its own
+ * compact cue; `plan.primaryFactorId` is consulted only by
+ * resolveCombinedActionKinds below, never to drop a factor from this
+ * spine.
  */
 export function buildRouteLinkSteps(plan: ResolvedCombinedFactorPlan, beneficialActionPolicy: BeneficialActionPolicy): RouteLinkStep[] {
   const steps: RouteLinkStep[] = [];
+  const hasFactors = plan.factors.length > 0;
+  const byCategory = (category: InterferenceCategory) => plan.factors.filter((factor) => factor.category === category);
 
-  if (plan.primaryFactorId) {
-    const primary = plan.factors.find((factor) => factor.itemId === plan.primaryFactorId);
-    if (primary) steps.push({ kind: "link_recognition", itemId: primary.itemId, category: primary.category });
+  for (const factor of byCategory("urge")) {
+    if (factor.preventiveStoppingRelevant) steps.push(factorStep("urge_preventive_stopping", factor.itemId, factor.category));
   }
+
+  if (hasFactors) steps.push(sessionStep("acceptance"));
 
   if (plan.stateIncluded) {
-    steps.push({ kind: "state_regulation_anchor", itemId: null, category: null });
-    steps.push({ kind: "state_desired_state_encoding", itemId: null, category: null });
+    steps.push(sessionStep("state_regulation_anchor"));
+    steps.push(sessionStep("state_desired_state_encoding"));
   }
+
+  for (const factor of plan.factors) steps.push(factorStep("factor_replacement_cue", factor.itemId, factor.category));
 
   if (beneficialActionPolicy !== "none") {
-    for (const actionKind of resolveCombinedActionKinds(plan)) steps.push({ kind: actionKind, itemId: null, category: null });
+    for (const actionKind of resolveCombinedActionKinds(plan)) steps.push(sessionStep(actionKind));
   }
 
-  steps.push({ kind: "terminal_boundary", itemId: null, category: null });
+  steps.push(sessionStep("terminal_boundary"));
   return steps;
 }
 
@@ -217,8 +279,11 @@ function resolveDecisionsAndAdvance(state: RouteLinkState): RouteLinkState {
   const beneficialActionPolicy = state.snapshot.config.beneficialActionPolicy;
   const steps = buildRouteLinkSteps(plan, beneficialActionPolicy);
   const actionRoleProgress = buildActionRoleProgress(plan, beneficialActionPolicy);
-  // Deliberately only the resolved primary factor -- see this module's own header doc.
-  const practicedItemIds = plan.primaryFactorId ? [plan.primaryFactorId] : [];
+  // Correction round 2: EVERY selected/resolved factor is genuinely cued
+  // (see buildRouteLinkSteps above), so every one of them counts as
+  // practiced -- matching Full/Mini's own practicedItemIdsForPlan exactly,
+  // never just the resolved primary factor.
+  const practicedItemIds = plan.factors.map((factor) => factor.itemId);
 
   return {
     ...state,
@@ -261,7 +326,7 @@ function resolveActionRoleIndexForStep(state: RouteLinkState, stepKind: "state_a
   return state.actionRoleProgress.length === 1 ? 0 : -1;
 }
 
-/** Generic advance for every non-action step ("link_recognition", "state_regulation_anchor", "state_desired_state_encoding"). A no-op on an action step or once already complete. */
+/** Generic advance for every non-action step ("urge_preventive_stopping", "acceptance", "state_regulation_anchor", "state_desired_state_encoding", "factor_replacement_cue"). A no-op on an action step or once already complete. */
 export function advanceRouteLinkStep(state: RouteLinkState): RouteLinkState {
   if (state.phase !== "steps") return state;
   const step = currentStep(state);
