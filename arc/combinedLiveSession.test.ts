@@ -543,3 +543,34 @@ test("this is a brand-new module -- it cannot itself have altered any pre-existi
   const here = path.dirname(fileURLToPath(import.meta.url));
   assert.ok(fs.existsSync(path.join(here, "combinedLiveSession.ts")));
 });
+
+// ---------------------------------------------------------------------------
+// 31. Goal Connection threading (Adaptive ARC architecture task, unified
+// PD/ARC Goal, Phase 7) -- config.goalConnection reaches the real session's
+// own step list unmodified.
+// ---------------------------------------------------------------------------
+
+test("createCombinedLiveSession includes goal_connection in the real Full session's own steps when the route has both State and a configured Goal Connection", () => {
+  const cfg = config({
+    interferenceItemIds: ["t1"],
+    itemRelationships: { t1: { actionRelationship: "same_action" } },
+    stateInclusionPolicy: "linked",
+    stateProfileId: "s1",
+    goalConnection: { desiredResultText: "תוצאה", valueText: "ערך", personalReasonText: "סיבה" },
+  });
+  let state = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg, stateProfiles: [completeState()] }));
+  while (state.awarenessSteps[state.awarenessIndex]?.kind === "recognition") state = advanceAwarenessRecognition(state);
+  state = recordAwarenessRating(state, "t1", "thought", 6);
+  assert.equal(state.phase, "steps");
+  const kinds = state.remainingSteps.map((s) => s.kind);
+  assert.ok(kinds.includes("goal_connection"), "the real session's own step list includes goal_connection");
+});
+
+test("createCombinedLiveSession omits goal_connection when the route's own config.goalConnection is null -- unaffected by default", () => {
+  const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" });
+  let state = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg, stateProfiles: [completeState()] }));
+  while (state.awarenessSteps[state.awarenessIndex]?.kind === "recognition") state = advanceAwarenessRecognition(state);
+  state = recordAwarenessRating(state, "t1", "thought", 6);
+  const kinds = state.remainingSteps.map((s) => s.kind);
+  assert.equal(kinds.includes("goal_connection"), false);
+});

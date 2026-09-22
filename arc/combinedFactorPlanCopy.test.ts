@@ -7,6 +7,7 @@ import {
   getCognitiveReassessmentCopy,
   getEmotionProcessingStepCopy,
   getFactorProcessingStepCopy,
+  getGoalConnectionCopy,
   getRecognitionStepCopy,
   getSharedStageCopy,
   getStateDesiredStateEncodingCopy,
@@ -104,4 +105,13 @@ test("resolveCognitiveReassessmentVariant/getCognitiveReassessmentCopy return th
   assert.equal(resolveCognitiveReassessmentVariant(true, true), "belief_present");
   assert.equal(getCognitiveReassessmentCopy("thought_only").question, "האם המחשבה עדיין מושכת את תשומת הלב שלך?");
   assert.equal(getCognitiveReassessmentCopy("belief_present").question, "האם המחשבה או האמונה עדיין מושכות את תשומת הלב שלך?");
+});
+
+// --- Goal Connection (Adaptive ARC architecture task, unified PD/ARC Goal, Phase 7) ---
+
+test("getGoalConnectionCopy reads back exactly the coach-authored desiredResultText/valueText/personalReasonText -- never invented or rephrased", () => {
+  const copy = getGoalConnectionCopy({ desiredResultText: "תוצאה רצויה", valueText: "ערך מרכזי", personalReasonText: "סיבה אישית" });
+  assert.ok(copy.desiredResultLine.includes("תוצאה רצויה"));
+  assert.ok(copy.valueLine.includes("ערך מרכזי"));
+  assert.ok(copy.personalReasonLine.includes("סיבה אישית"));
 });

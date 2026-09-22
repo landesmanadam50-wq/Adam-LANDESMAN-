@@ -43,6 +43,7 @@
 
 import type { InterferenceCategory, InterferenceItem } from "./interferenceItem.ts";
 import type { StateProfile } from "./stateProfile.ts";
+import type { PersonalDevelopmentRouteGoalConnection } from "./personalDevelopmentRouteConfig.ts";
 
 function safeText(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
@@ -176,6 +177,26 @@ export function getStateRegulationAnchorCopy(state: StateProfile): { title: stri
 export function getStateDesiredStateEncodingCopy(state: StateProfile): { title: string; cue: string | null } {
   const cue = safeText(state.encodingCue);
   return { title: "קידוד המצב הרצוי", cue: cue.length > 0 ? cue : null };
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 7: the
+ * "goal_connection" step's own content -- only ever called when
+ * arc/combinedFullPlan.ts actually emits that step (i.e. only when a
+ * PersonalDevelopmentRouteGoalConnection is genuinely configured on the
+ * route). Reads back exactly the coach-authored fields, never inventing
+ * or rephrasing them -- the trainee's own desired result, the value it
+ * expresses, and their personal reason it matters, in that order,
+ * immediately before Encoding (see arc/combinedFullPlan.ts's own header
+ * doc, step 11).
+ */
+export function getGoalConnectionCopy(goalConnection: PersonalDevelopmentRouteGoalConnection): { title: string; desiredResultLine: string; valueLine: string; personalReasonLine: string } {
+  return {
+    title: "חיבור למטרה",
+    desiredResultLine: `התוצאה הרצויה: ${safeText(goalConnection.desiredResultText)}`,
+    valueLine: `הערך שהיא מבטאת: ${safeText(goalConnection.valueText)}`,
+    personalReasonLine: `הסיבה האישית שלך: ${safeText(goalConnection.personalReasonText)}`,
+  };
 }
 
 // ---------------------------------------------------------------------------

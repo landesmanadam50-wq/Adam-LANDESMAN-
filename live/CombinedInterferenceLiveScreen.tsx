@@ -44,6 +44,7 @@ import type { CombinedLiveSessionState } from "../arc/combinedLiveSession.ts";
 import {
   getCognitiveReassessmentCopy,
   getFactorProcessingStepCopy,
+  getGoalConnectionCopy,
   getRecognitionStepCopy,
   getSharedStageCopy,
   getStateDesiredStateEncodingCopy,
@@ -637,6 +638,26 @@ function renderStep(state: CombinedLiveSessionState, update: (next: CombinedLive
         <View>
           <Text style={styles.title}>{copy.title}</Text>
           {copy.anchor && <Text style={styles.body}>{copy.anchor}</Text>}
+          <PrimaryButton label="המשך" onPress={() => update(advanceStep(state))} />
+        </View>
+      );
+    }
+    case "goal_connection": {
+      // Adaptive ARC architecture task (unified PD/ARC Goal), Phase 7: only
+      // ever reached when arc/combinedFullPlan.ts actually emitted this
+      // step -- i.e. only when the route has a configured
+      // PersonalDevelopmentRouteGoalConnection. See that module's own
+      // header doc for the exact "Acceptance -> Regulation -> Goal
+      // Connection -> Encoding" placement this mirrors.
+      const goalConnection = state.snapshot.config.goalConnection;
+      if (!goalConnection) return null;
+      const copy = getGoalConnectionCopy(goalConnection);
+      return (
+        <View>
+          <Text style={styles.title}>{copy.title}</Text>
+          <Text style={styles.body}>{copy.desiredResultLine}</Text>
+          <Text style={styles.body}>{copy.valueLine}</Text>
+          <Text style={styles.body}>{copy.personalReasonLine}</Text>
           <PrimaryButton label="המשך" onPress={() => update(advanceStep(state))} />
         </View>
       );

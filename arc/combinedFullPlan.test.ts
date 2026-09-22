@@ -6,7 +6,7 @@ import type { FullCombinedStepKind } from "./combinedFullPlan.ts";
 import { resolveCombinedFactorPlan } from "./combinedFactorPlan.ts";
 import type { CombinedFactorPlanInput, ResolvedCombinedFactorPlan } from "./combinedFactorPlan.ts";
 import { createEmptyPersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
-import type { PersonalDevelopmentRouteConfig } from "./personalDevelopmentRouteConfig.ts";
+import type { PersonalDevelopmentRouteConfig, PersonalDevelopmentRouteGoalConnection } from "./personalDevelopmentRouteConfig.ts";
 import { createEmptyBeliefInterferenceItem, createEmptyEmotionInterferenceItem, createEmptyThoughtInterferenceItem, createEmptyUrgeInterferenceItem } from "./interferenceItem.ts";
 import type { BeliefInterferenceItem, EmotionInterferenceItem, InterferenceItem, ThoughtInterferenceItem, UrgeInterferenceItem } from "./interferenceItem.ts";
 import { createEmptyStateProfile } from "./stateProfile.ts";
@@ -334,4 +334,68 @@ test("cognitive_reassessment appears once only when Thought and/or Belief select
     "skipped"
   );
   assert.equal(kinds(withUrgeOnly).includes("cognitive_reassessment"), false);
+});
+
+// ---------------------------------------------------------------------------
+// Goal Connection -- Adaptive ARC architecture task (unified PD/ARC Goal),
+// Phase 7: "Acceptance -> Regulation -> Goal Connection -> Encoding".
+// ---------------------------------------------------------------------------
+
+function goalConnection(overrides: Partial<PersonalDevelopmentRouteGoalConnection> = {}): PersonalDevelopmentRouteGoalConnection {
+  return { desiredResultText: "תוצאה", valueText: "ערך", personalReasonText: "סיבה", ...overrides };
+}
+
+test("goal_connection is omitted entirely when the route has no configured Goal Connection, even with State included", () => {
+  const plan = resolve({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
+    items: [thought()],
+    stateProfiles: [completeState()],
+  });
+  const steps = buildFullStepsAfterPrimaryResolution(plan, "skipped", null);
+  assert.equal(kinds(steps).includes("goal_connection"), false);
+});
+
+test("goal_connection is omitted when Goal Connection is configured but the route has no State -- it only ever appears inside the State block", () => {
+  const plan = resolve({ config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" }), items: [thought()] });
+  const steps = buildFullStepsAfterPrimaryResolution(plan, "skipped", goalConnection());
+  assert.equal(kinds(steps).includes("goal_connection"), false);
+});
+
+test("goal_connection appears exactly once, immediately before state_desired_state_encoding, when both State and Goal Connection are configured", () => {
+  const plan = resolve({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
+    items: [thought()],
+    stateProfiles: [completeState()],
+  });
+  const steps = buildFullStepsAfterPrimaryResolution(plan, "skipped", goalConnection());
+  const goalConnectionIndices = steps.map((s, i) => (s.kind === "goal_connection" ? i : -1)).filter((i) => i !== -1);
+  assert.equal(goalConnectionIndices.length, 1, "goal_connection appears exactly once");
+  const encodingIdx = steps.findIndex((s) => s.kind === "state_desired_state_encoding");
+  assert.equal(goalConnectionIndices[0], encodingIdx - 1, "goal_connection sits immediately before state_desired_state_encoding");
+});
+
+test("the approved order holds: shared_acceptance -> state_regulation_anchor -> goal_connection -> state_desired_state_encoding", () => {
+  const plan = resolve({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
+    items: [thought()],
+    stateProfiles: [completeState()],
+  });
+  const steps = kinds(buildFullStepsAfterPrimaryResolution(plan, "skipped", goalConnection()));
+  const acceptanceIdx = steps.indexOf("shared_acceptance");
+  const regulationIdx = steps.indexOf("state_regulation_anchor");
+  const goalConnectionIdx = steps.indexOf("goal_connection");
+  const encodingIdx = steps.indexOf("state_desired_state_encoding");
+  assert.ok(acceptanceIdx >= 0 && acceptanceIdx < regulationIdx, "Acceptance before Regulation");
+  assert.ok(regulationIdx < goalConnectionIdx, "Regulation before Goal Connection");
+  assert.ok(goalConnectionIdx < encodingIdx, "Goal Connection before Encoding");
+});
+
+test("buildFullCombinedSteps threads goalConnection through to the same effect as buildFullStepsAfterPrimaryResolution", () => {
+  const plan = resolve({
+    config: config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "same_action" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" }),
+    items: [thought()],
+    stateProfiles: [completeState()],
+  });
+  const steps = buildFullCombinedSteps(plan, "skipped", goalConnection());
+  assert.equal(kinds(steps).includes("goal_connection"), true);
 });

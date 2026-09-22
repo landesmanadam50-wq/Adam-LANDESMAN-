@@ -436,7 +436,7 @@ function resolveDecisionsAndAdvance(state: CombinedLiveSessionState): CombinedLi
 
   // Full: build the spine with the neutral "skipped" placeholder -- see this
   // module's own header doc for why this is safe and final.
-  const spine = buildFullStepsAfterPrimaryResolution(plan, "skipped");
+  const spine = buildFullStepsAfterPrimaryResolution(plan, "skipped", state.snapshot.config.goalConnection);
   const presenceGateIndex = computePresenceGateIndex(spine);
   return {
     ...state,
@@ -637,7 +637,7 @@ function resolveActionRoleIndexForStep(state: CombinedLiveSessionState, stepKind
   return state.actionRoleProgress.length === 1 ? 0 : -1;
 }
 
-/** Generic advance for every step kind with no dedicated event above (recognition-after-primary is unreachable here -- Full's remaining steps never contain one; urge_preventive_stopping, shared_stay, shared_acceptance, state_regulation_anchor, state_desired_state_encoding, processing, combined_recognition, factor_intervention, presence_intervention[Mini]). Presence_intervention (Mini) is intentionally excluded -- see advanceEmbeddedPresenceStage below, which owns it. */
+/** Generic advance for every step kind with no dedicated event above (recognition-after-primary is unreachable here -- Full's remaining steps never contain one; urge_preventive_stopping, shared_stay, shared_acceptance, state_regulation_anchor, goal_connection, state_desired_state_encoding, processing, combined_recognition, factor_intervention, presence_intervention[Mini]). Presence_intervention (Mini) is intentionally excluded -- see advanceEmbeddedPresenceStage below, which owns it. */
 export function advanceStep(state: CombinedLiveSessionState): CombinedLiveSessionState {
   if (state.phase !== "steps") return state;
   const step = currentStep(state);
