@@ -408,6 +408,52 @@ export function reconcileRouteStageForPolicyChange(
   return { ...progress, stage: target, updatedAt: now };
 }
 
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+ * correction: resolves `facts`'s own BeneficialActionOutcome, so the
+ * persistence-layer caller of applyStageProgressionToRouteProgress below
+ * never has to re-derive it by hand from the individual role flags.
+ * Meaningful only once `facts` has already passed
+ * validateCombinedSessionFactsForCompletion above (every relevant role is
+ * guaranteed either completed or, under "optional_in_live", explicitly
+ * skipped) -- called defensively before that point simply falls back to
+ * "unavailable_legacy" rather than fabricating an outcome.
+ *
+ * "required" can only ever resolve to "required_completed" (validation
+ * already guarantees every relevant role completed, never skipped, under
+ * that policy). "optional_in_live" resolves to "optional_completed" only
+ * when EVERY relevant role was genuinely completed with zero skips --
+ * state_then_factor has two roles, and a single skipped role among them
+ * still means the Beneficial/Regulating Action, taken as a whole, was not
+ * fully performed, so it resolves "optional_skipped" -- never a fabricated
+ * distinction between "some roles skipped" and "all roles skipped."
+ */
+export function resolveBeneficialActionOutcomeForFacts(facts: CombinedLiveSessionFacts): BeneficialActionOutcome | null {
+  if (facts.beneficialActionPolicy === "none") return "disabled";
+  if (facts.actionOutcomeKind === null || facts.actionOutcomeKind === "unavailable") return "unavailable_legacy";
+
+  const roles: { completed: boolean; skipped: boolean }[] = [];
+  switch (facts.actionOutcomeKind) {
+    case "factor_only":
+      roles.push({ completed: facts.factorActionCompleted, skipped: facts.factorActionSkipped });
+      break;
+    case "state_only":
+    case "legacy_shared_state_fallback":
+      roles.push({ completed: facts.stateActionCompleted, skipped: facts.stateActionSkipped });
+      break;
+    case "shared_explicit":
+      roles.push({ completed: facts.sharedActionCompleted, skipped: facts.sharedActionSkipped });
+      break;
+    case "state_then_factor":
+      roles.push({ completed: facts.stateActionCompleted, skipped: facts.stateActionSkipped });
+      roles.push({ completed: facts.factorActionCompleted, skipped: facts.factorActionSkipped });
+      break;
+  }
+
+  if (facts.beneficialActionPolicy === "required") return "required_completed";
+  return roles.some((role) => role.skipped) ? "optional_skipped" : "optional_completed";
+}
+
 export interface StageProgressionApplyResult {
   progress: PersonalDevelopmentRouteProgress;
   stageAdvanced: boolean;

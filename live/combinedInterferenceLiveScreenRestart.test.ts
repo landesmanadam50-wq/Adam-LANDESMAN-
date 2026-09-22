@@ -73,7 +73,7 @@ function completeState(overrides: Partial<StateProfile> = {}): StateProfile {
   return { ...createEmptyStateProfile("s1", "מצב", null, NOW), regulationAnchor: "עוגן", encodingCue: "קידוד", action: "פעולת המצב", ...overrides };
 }
 function baseInput(overrides: Partial<CreateCombinedLiveSessionInput> = {}): CreateCombinedLiveSessionInput {
-  return { mode: "full", config: config(), items: [], stateProfiles: [], presenceArcs: [], startedAt: NOW, generateSessionId: () => "session-1", ...overrides };
+  return { mode: "full", config: config(), items: [], stateProfiles: [], presenceArcs: [], startedAt: NOW, stageAtStart: 1, generateSessionId: () => "session-1", ...overrides };
 }
 function fakeDeps(initial: PersonalDevelopmentRouteProgressStore = {}): PersonalDevelopmentRouteProgressStorageDependencies & { savedStores: PersonalDevelopmentRouteProgressStore[] } {
   let store = initial;

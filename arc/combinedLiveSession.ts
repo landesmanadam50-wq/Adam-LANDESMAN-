@@ -123,6 +123,7 @@ import {
 } from "./postActionCompletion.ts";
 import type { MiniPostActionCompletionStage, PostActionCompletionStage, PostActionCompletionState } from "./postActionCompletion.ts";
 import { generateTimerRunId } from "./actionTimer.ts";
+import type { PersonalDevelopmentRouteStage } from "./personalDevelopmentRouteProgress.ts";
 
 /**
  * The three combined-action timer identities (data/storage.ts's own
@@ -157,6 +158,15 @@ export interface CreateCombinedLiveSessionInput {
   stateProfiles: StateProfile[];
   presenceArcs: PresenceArc[];
   startedAt: string;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+   * correction: the route's own current PersonalDevelopmentRouteProgress.stage
+   * (arc/personalDevelopmentRouteProgress.ts), read by the caller (the LIVE
+   * screen) once, right before session creation -- frozen onto
+   * CombinedLiveSessionState.stageAtStart for the rest of the session (see
+   * that field's own doc). Never re-read from storage mid-session.
+   */
+  stageAtStart: PersonalDevelopmentRouteStage;
   /** Injectable purely for deterministic tests -- production callers omit it (defaults to generateTimerRunId, the same "not cryptographically unique, session-scale" id every other LIVE session in this codebase already uses). */
   generateSessionId?: () => string;
 }
@@ -206,6 +216,9 @@ export interface CombinedLiveSessionState {
   snapshot: CombinedLiveSessionSnapshot;
   phase: CombinedLiveSessionPhase;
   invalidReason: CombinedFactorPlanInvalidReason | null;
+
+  /** See CreateCombinedLiveSessionInput.stageAtStart's own doc -- frozen once at construction, read only by arc/combinedLiveSessionFacts.ts's own toCombinedLiveSessionFacts. */
+  stageAtStart: PersonalDevelopmentRouteStage;
 
   // Awareness (Full only -- always [] for Mini)
   awarenessSteps: FullCombinedStep[];
@@ -267,6 +280,7 @@ function emptyState(input: CreateCombinedLiveSessionInput): CombinedLiveSessionS
     routeConfigId: input.config.id,
     mode: input.mode,
     cadence: "reactive",
+    stageAtStart: input.stageAtStart,
     // Adaptive ARC architecture task, Phase 14B-4: shallow-copied so later in-place
     // mutation of the caller's own config/items/stateProfiles/presenceArcs arrays
     // (or reassignment of the config object's own top-level fields) can never

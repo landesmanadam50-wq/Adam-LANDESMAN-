@@ -47,6 +47,7 @@ function pdFacts(overrides: Partial<CombinedLiveSessionFacts> = {}): CombinedLiv
     factorActionSkipped: false,
     sharedActionSkipped: false,
     terminalCompleted: true,
+    stageAtStart: 1,
     ...overrides,
   };
 }

@@ -41,7 +41,7 @@ function completeState(overrides: Partial<StateProfile> = {}): StateProfile {
 }
 
 function baseInput(overrides: Partial<CreateCombinedLiveSessionInput> = {}): CreateCombinedLiveSessionInput {
-  return { mode: "full", config: config(), items: [], stateProfiles: [], presenceArcs: [], startedAt: NOW, generateSessionId: () => "session-1", ...overrides };
+  return { mode: "full", config: config(), items: [], stateProfiles: [], presenceArcs: [], startedAt: NOW, stageAtStart: 1, generateSessionId: () => "session-1", ...overrides };
 }
 
 function runFullToComplete(cfg: PersonalDevelopmentRouteConfig, items: InterferenceItem[], stateProfiles: StateProfile[] = []): CombinedLiveSessionState {
@@ -226,4 +226,15 @@ test("a skipped (never completed) factor action reports factorActionSkipped: tru
   assert.equal(facts.factorActionSkipped, true);
   assert.equal(facts.factorActionCompleted, false);
   assert.equal(facts.terminalCompleted, true);
+});
+
+// --- Method-completion correction: stageAtStart frozen at session creation, carried straight through to facts ---
+
+test("facts.stageAtStart carries the session's own frozen stageAtStart straight through, unchanged by anything that happens during the session", () => {
+  const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "legacy_unspecified" } }, stateInclusionPolicy: "none" });
+  const stage3State = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg, stageAtStart: 3 }));
+  assert.equal(toCombinedLiveSessionFacts(stage3State).stageAtStart, 3);
+
+  const stage1State = createCombinedLiveSession(baseInput({ items: [thought()], config: cfg, stageAtStart: 1 }));
+  assert.equal(toCombinedLiveSessionFacts(stage1State).stageAtStart, 1);
 });

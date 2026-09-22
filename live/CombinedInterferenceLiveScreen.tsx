@@ -7,6 +7,7 @@ import {
   clearTimerRun,
   loadInterferenceItems,
   loadPersonalDevelopmentRouteConfigs,
+  loadPersonalDevelopmentRouteProgressStore,
   loadPresenceArcs,
   loadStateProfiles,
   loadTimerRun,
@@ -192,20 +193,25 @@ export default function CombinedInterferenceLiveScreen() {
           setBypassSnapshot(resumed.frozenCombinedActionSnapshot);
           return;
         }
-        return Promise.all([loadPersonalDevelopmentRouteConfigs(), loadInterferenceItems(), loadStateProfiles(), loadPresenceArcs()]).then(
-          ([configs, items, stateProfiles, presenceArcs]) => {
-            if (!mountedRef.current) return;
-            const config = configs.find((c) => c.id === id) ?? null;
-            if (!config) {
-              setLoadError(true);
-              return;
-            }
-            const created = createCombinedLiveSession({ mode, config, items, stateProfiles, presenceArcs, startedAt: new Date().toISOString() });
-            setSession(created);
-            const linkedPresenceArc = config.linkedPresenceArcId ? (presenceArcs.find((p) => p.id === config.linkedPresenceArcId) ?? null) : null;
-            setPresenceArcRef(linkedPresenceArc);
+        return Promise.all([
+          loadPersonalDevelopmentRouteConfigs(),
+          loadInterferenceItems(),
+          loadStateProfiles(),
+          loadPresenceArcs(),
+          loadPersonalDevelopmentRouteProgressStore(),
+        ]).then(([configs, items, stateProfiles, presenceArcs, progressStore]) => {
+          if (!mountedRef.current) return;
+          const config = configs.find((c) => c.id === id) ?? null;
+          if (!config) {
+            setLoadError(true);
+            return;
           }
-        );
+          const stageAtStart = progressStore[config.id]?.stage ?? 1;
+          const created = createCombinedLiveSession({ mode, config, items, stateProfiles, presenceArcs, startedAt: new Date().toISOString(), stageAtStart });
+          setSession(created);
+          const linkedPresenceArc = config.linkedPresenceArcId ? (presenceArcs.find((p) => p.id === config.linkedPresenceArcId) ?? null) : null;
+          setPresenceArcRef(linkedPresenceArc);
+        });
       })
       .catch((error) => {
         console.warn("[CombinedInterferenceLiveScreen] Failed to load route data.", error);

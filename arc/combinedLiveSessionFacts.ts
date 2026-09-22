@@ -27,6 +27,7 @@ import type { FactorRating } from "./factorRating.ts";
 import { resolveStateInclusion } from "./stateInclusion.ts";
 import type { FinalPresenceMode } from "./combinedRoute.ts";
 import type { BeneficialActionPolicy } from "./personalDevelopmentRouteConfig.ts";
+import type { PersonalDevelopmentRouteStage } from "./personalDevelopmentRouteProgress.ts";
 
 export type CombinedLiveSessionCadence = "reactive" | "proactive";
 
@@ -90,6 +91,17 @@ export interface CombinedLiveSessionFacts {
   factorActionSkipped: boolean;
   sharedActionSkipped: boolean;
   terminalCompleted: boolean;
+  /**
+   * Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+   * correction: the route's own 4-stage-program stage
+   * (arc/personalDevelopmentRouteProgress.ts) at the moment THIS session
+   * was created -- frozen once, at session-plan resolution
+   * (CombinedLiveSessionState.stageAtStart), never re-derived from the
+   * route's current stage, which may have already moved on mid-session.
+   * A session always counts toward the stage it was actually practiced
+   * at -- see applyStageProgressionToRouteProgress's own doc.
+   */
+  stageAtStart: PersonalDevelopmentRouteStage;
 }
 
 function resolveSessionStateProfileId(state: CombinedLiveSessionState): string | null {
@@ -151,5 +163,6 @@ export function toCombinedLiveSessionFacts(state: CombinedLiveSessionState, cade
     factorActionSkipped: factorAction?.skipped ?? false,
     sharedActionSkipped: sharedAction?.skipped ?? false,
     terminalCompleted: state.terminalCompleted,
+    stageAtStart: state.stageAtStart,
   };
 }

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -6,8 +6,10 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import {
   getPersonalDevelopmentRouteConfig,
   loadInterferenceItems,
+  loadPersonalDevelopmentRouteProgressStore,
   loadPresenceArcs,
   loadStateProfiles,
+  savePersonalDevelopmentRouteProgressStore,
   upsertPersonalDevelopmentRouteConfig,
 } from "../data/storage.ts";
 import {
@@ -18,8 +20,9 @@ import {
   resolvePendingBuildNewStateReturn,
   validatePersonalDevelopmentRouteConfig,
 } from "../arc/personalDevelopmentRouteConfig.ts";
-import type { PersonalDevelopmentRouteConfig, PersonalDevelopmentRouteGoalConnection } from "../arc/personalDevelopmentRouteConfig.ts";
+import type { BeneficialActionPolicy, PersonalDevelopmentRouteConfig, PersonalDevelopmentRouteGoalConnection } from "../arc/personalDevelopmentRouteConfig.ts";
 import { isPersonalDevelopmentRouteConfigCompleteForPractice } from "../arc/personalDevelopmentRouteConfigReadiness.ts";
+import { reconcileRouteStageForPolicyChange } from "../arc/personalDevelopmentRouteProgress.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import type { ActionRelationship } from "../arc/factorAction.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
@@ -89,6 +92,9 @@ export default function PersonalDevelopmentRouteEditorScreen() {
   // "Build new State" -- see this screen's own header doc.
   const [pendingNewStateId, setPendingNewStateId] = useState<string | null>(null);
 
+  /** The beneficialActionPolicy this config was loaded with (null for a new, unsaved route) -- see handleSave's own reconcileRouteStageForPolicyChange call for why this is tracked separately from `config`. */
+  const loadedBeneficialActionPolicyRef = useRef<BeneficialActionPolicy | null>(null);
+
   useFocusEffect(
     useCallback(() => {
       loadInterferenceItems().then(setItems).catch(() => setItems([]));
@@ -120,6 +126,7 @@ export default function PersonalDevelopmentRouteEditorScreen() {
           return;
         }
         setConfig(existing);
+        loadedBeneficialActionPolicyRef.current = existing.beneficialActionPolicy;
         setStatus("ready");
       });
       return () => {
@@ -193,7 +200,26 @@ export default function PersonalDevelopmentRouteEditorScreen() {
     setSaveError(null);
     setSaving(true);
     try {
-      await upsertPersonalDevelopmentRouteConfig({ ...config, updatedAt: new Date().toISOString() });
+      const now = new Date().toISOString();
+      await upsertPersonalDevelopmentRouteConfig({ ...config, updatedAt: now });
+      // Adaptive ARC architecture task (unified PD/ARC Goal), method-completion
+      // correction: a coach changing beneficialActionPolicy on an EXISTING route
+      // (never a brand-new one -- there is no progress record yet) reconciles
+      // that route's own already-accumulated 4-stage-program stage immediately,
+      // via the same pure resolver LIVE's own stage-advancement path uses --
+      // zero replay of old sessions, only ever `stage`/`updatedAt` change (see
+      // reconcileRouteStageForPolicyChange's own doc). A route with no progress
+      // record yet has nothing to reconcile.
+      if (loadedBeneficialActionPolicyRef.current !== null && loadedBeneficialActionPolicyRef.current !== config.beneficialActionPolicy) {
+        const progressStore = await loadPersonalDevelopmentRouteProgressStore();
+        const existingProgress = progressStore[config.id];
+        if (existingProgress) {
+          const reconciled = reconcileRouteStageForPolicyChange(existingProgress, config.beneficialActionPolicy, now);
+          if (reconciled !== existingProgress) {
+            await savePersonalDevelopmentRouteProgressStore({ ...progressStore, [config.id]: reconciled });
+          }
+        }
+      }
       router.back();
     } catch {
       setSaveError("אירעה שגיאה בשמירת המסלול. נסה שוב.");

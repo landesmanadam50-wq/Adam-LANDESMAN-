@@ -38,6 +38,7 @@ function facts(overrides: Partial<CombinedLiveSessionFacts> = {}): CombinedLiveS
     factorActionSkipped: false,
     sharedActionSkipped: false,
     terminalCompleted: true,
+    stageAtStart: 1,
     ...overrides,
   };
 }
@@ -139,4 +140,50 @@ test("missing progress for a route defaults to zero (lazily created), never requ
   if (outcome.kind !== "applied") return;
   assert.equal(outcome.progress.completedSessions, 1);
   assert.equal(outcome.progress.routeConfigId, "brand-new-route");
+});
+
+// --- Method-completion correction: applyStageProgressionToRouteProgress is now wired in ---
+
+test("a single applied session also advances the correct stageAtStart-matching confirmed count, in the SAME save as the session counters", async () => {
+  const deps = fakeDeps();
+  const outcome = await recordCombinedSessionCompletion(facts({ stageAtStart: 1 }), NOW, deps);
+  assert.equal(outcome.kind, "applied");
+  if (outcome.kind !== "applied") return;
+  assert.equal(outcome.progress.stage1ConfirmedCount, 1);
+  assert.equal(outcome.progress.stage, 1, "one completion is below the 10-completion threshold");
+  assert.equal(deps.saveCount, 1, "session counters and stage counters are written together, in one save");
+});
+
+test("the 10th valid completion at Stage 1 advances the route's own stage to 2, all still within one recordCombinedSessionCompletion call per session", async () => {
+  const deps = fakeDeps();
+  let lastOutcome;
+  for (let i = 0; i < 10; i++) {
+    lastOutcome = await recordCombinedSessionCompletion(facts({ sessionId: `s${i}`, stageAtStart: 1 }), NOW, deps);
+  }
+  assert.equal(lastOutcome?.kind, "applied");
+  if (lastOutcome?.kind !== "applied") return;
+  assert.equal(lastOutcome.progress.stage1ConfirmedCount, 10);
+  assert.equal(lastOutcome.progress.stage, 2);
+});
+
+test("a duplicate session never advances stage progression a second time", async () => {
+  const deps = fakeDeps();
+  await recordCombinedSessionCompletion(facts({ sessionId: "dup", stageAtStart: 1 }), NOW, deps);
+  const retry = await recordCombinedSessionCompletion(facts({ sessionId: "dup", stageAtStart: 1 }), NOW, deps);
+  assert.equal(retry.kind, "duplicate_session");
+  if (retry.kind !== "duplicate_session") return;
+  assert.equal(retry.progress.stage1ConfirmedCount, 1, "the duplicate retry never increments a second time");
+});
+
+test("a Stage 3 session under policy 'optional_in_live' whose action was SKIPPED counts toward completedSessions but never toward stage3ConfirmedCount", async () => {
+  const deps = fakeDeps({ "route-1": { routeConfigId: "route-1", completedSessions: 0, completedByInterferenceType: { thought: 0, belief: 0, emotion: 0, urge: 0, presence: 0 }, embeddedPresenceUses: 0, fullPresenceCompletions: 0, completedFullSessions: 0, completedMiniSessions: 0, countedSessionIds: [], stage: 3, stage1ConfirmedCount: 10, stage2ConfirmedCount: 10, stage3ConfirmedCount: 0, stage4ConfirmedCount: 0, createdAt: NOW, updatedAt: NOW, schemaVersion: 1 } });
+  const outcome = await recordCombinedSessionCompletion(
+    facts({ stageAtStart: 3, beneficialActionPolicy: "optional_in_live", factorActionCompleted: false, factorActionSkipped: true }),
+    NOW,
+    deps
+  );
+  assert.equal(outcome.kind, "applied");
+  if (outcome.kind !== "applied") return;
+  assert.equal(outcome.progress.completedSessions, 1, "the session itself still counts");
+  assert.equal(outcome.progress.stage3ConfirmedCount, 0, "a skipped Beneficial Action never counts toward Stage 3 credit");
 });

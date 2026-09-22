@@ -65,6 +65,7 @@ function baseInput(overrides: Partial<CreateCombinedLiveSessionInput> = {}): Cre
     stateProfiles: [],
     presenceArcs: [],
     startedAt: NOW,
+    stageAtStart: 1,
     generateSessionId: () => "session-1",
     ...overrides,
   };

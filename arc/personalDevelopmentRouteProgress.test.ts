@@ -9,6 +9,7 @@ import {
   isValidRouteStageProjection,
   normalizePersonalDevelopmentRouteProgress,
   reconcileRouteStageForPolicyChange,
+  resolveBeneficialActionOutcomeForFacts,
   resolveEligibleStageAdvancement,
   resolvePolicyDemotion,
   validateCombinedSessionFactsForCompletion,
@@ -49,6 +50,7 @@ function facts(overrides: Partial<CombinedLiveSessionFacts> = {}): CombinedLiveS
     factorActionSkipped: false,
     sharedActionSkipped: false,
     terminalCompleted: true,
+    stageAtStart: 1,
     ...overrides,
   };
 }
@@ -570,4 +572,103 @@ test("stage never regresses purely from applyStageProgressionToRouteProgress eve
 test("PersonalDevelopmentRouteStage values are exactly 1|2|3|4", () => {
   const stages: PersonalDevelopmentRouteStage[] = [1, 2, 3, 4];
   for (const stage of stages) assert.equal(isValidRouteStageProjection(stage), true);
+});
+
+// --- Method-completion correction: resolveBeneficialActionOutcomeForFacts + end-to-end stage wiring ---
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'disabled' whenever beneficialActionPolicy is 'none', regardless of any role flags", () => {
+  const f = facts({ beneficialActionPolicy: "none", factorActionCompleted: false });
+  assert.equal(resolveBeneficialActionOutcomeForFacts(f), "disabled");
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'unavailable_legacy' when actionOutcomeKind is null or 'unavailable'", () => {
+  assert.equal(resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: null })), "unavailable_legacy");
+  assert.equal(resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: "unavailable" })), "unavailable_legacy");
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'required_completed' for every relevant actionOutcomeKind under policy 'required'", () => {
+  assert.equal(resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: "factor_only", beneficialActionPolicy: "required" })), "required_completed");
+  assert.equal(
+    resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: "state_only", beneficialActionPolicy: "required", stateActionCompleted: true })),
+    "required_completed"
+  );
+  assert.equal(
+    resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: "shared_explicit", beneficialActionPolicy: "required", sharedActionCompleted: true })),
+    "required_completed"
+  );
+  assert.equal(
+    resolveBeneficialActionOutcomeForFacts(facts({ actionOutcomeKind: "legacy_shared_state_fallback", beneficialActionPolicy: "required", stateActionCompleted: true })),
+    "required_completed"
+  );
+  assert.equal(
+    resolveBeneficialActionOutcomeForFacts(
+      facts({ actionOutcomeKind: "state_then_factor", beneficialActionPolicy: "required", stateActionCompleted: true, factorActionCompleted: true })
+    ),
+    "required_completed"
+  );
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'optional_completed' under 'optional_in_live' only when every relevant role was genuinely completed, zero skips", () => {
+  const f = facts({ actionOutcomeKind: "factor_only", beneficialActionPolicy: "optional_in_live", factorActionCompleted: true, factorActionSkipped: false });
+  assert.equal(resolveBeneficialActionOutcomeForFacts(f), "optional_completed");
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'optional_skipped' under 'optional_in_live' when the single relevant role was skipped", () => {
+  const f = facts({ actionOutcomeKind: "factor_only", beneficialActionPolicy: "optional_in_live", factorActionCompleted: false, factorActionSkipped: true });
+  assert.equal(resolveBeneficialActionOutcomeForFacts(f), "optional_skipped");
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'optional_skipped' for state_then_factor when only ONE of the two roles was skipped -- a partial skip is never fabricated as a full completion", () => {
+  const f = facts({
+    actionOutcomeKind: "state_then_factor",
+    beneficialActionPolicy: "optional_in_live",
+    stateActionCompleted: true,
+    stateActionSkipped: false,
+    factorActionCompleted: false,
+    factorActionSkipped: true,
+  });
+  assert.equal(resolveBeneficialActionOutcomeForFacts(f), "optional_skipped");
+});
+
+test("resolveBeneficialActionOutcomeForFacts resolves 'optional_completed' for state_then_factor only when BOTH roles were genuinely completed", () => {
+  const f = facts({
+    actionOutcomeKind: "state_then_factor",
+    beneficialActionPolicy: "optional_in_live",
+    stateActionCompleted: true,
+    stateActionSkipped: false,
+    factorActionCompleted: true,
+    factorActionSkipped: false,
+  });
+  assert.equal(resolveBeneficialActionOutcomeForFacts(f), "optional_completed");
+});
+
+test("end-to-end: applyStageProgressionToRouteProgress + resolveBeneficialActionOutcomeForFacts together advance Stage 1 -> 2 at the uniform 10-completion threshold, using only facts a real completed session would carry", () => {
+  let progress = emptyProgress();
+  for (let i = 0; i < 10; i++) {
+    const f = facts({ sessionId: `s${i}`, actionOutcomeKind: "factor_only", beneficialActionPolicy: "required", factorActionCompleted: true, stageAtStart: 1 });
+    const outcome = resolveBeneficialActionOutcomeForFacts(f);
+    const result = applyStageProgressionToRouteProgress(progress, f.stageAtStart, outcome, f.beneficialActionPolicy, LATER);
+    progress = result.progress;
+  }
+  assert.equal(progress.stage, 2);
+  assert.equal(progress.stage1ConfirmedCount, 10);
+});
+
+test("end-to-end: an 'optional_in_live' route's skipped completions never accumulate stage3/4 confirmed counts, since resolveBeneficialActionOutcomeForFacts never resolves 'required_completed' under that policy", () => {
+  let progress: PersonalDevelopmentRouteProgress = { ...emptyProgress(), stage: 3 };
+  for (let i = 0; i < 10; i++) {
+    const f = facts({
+      sessionId: `s${i}`,
+      actionOutcomeKind: "factor_only",
+      beneficialActionPolicy: "optional_in_live",
+      factorActionCompleted: false,
+      factorActionSkipped: true,
+      stageAtStart: 3,
+    });
+    const outcome = resolveBeneficialActionOutcomeForFacts(f);
+    const result = applyStageProgressionToRouteProgress(progress, f.stageAtStart, outcome, f.beneficialActionPolicy, LATER);
+    progress = result.progress;
+  }
+  assert.equal(progress.stage3ConfirmedCount, 0, "a policy that can only ever produce optional_skipped can never accumulate Stage 3 credit");
+  assert.equal(progress.stage, 3, "stays exactly where it started");
 });

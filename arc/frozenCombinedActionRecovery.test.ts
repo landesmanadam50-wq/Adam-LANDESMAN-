@@ -42,6 +42,7 @@ function facts(overrides: Partial<CombinedLiveSessionFacts> = {}): CombinedLiveS
     factorActionSkipped: false,
     sharedActionSkipped: false,
     terminalCompleted: false,
+    stageAtStart: 1,
     ...overrides,
   };
 }
