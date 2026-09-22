@@ -672,7 +672,7 @@ function renderStep(state: CombinedLiveSessionState, update: (next: CombinedLive
     }
     case "state_regulation_anchor": {
       const stateProfile = resolveSessionState(state);
-      const copy = stateProfile ? getStateRegulationAnchorCopy(stateProfile, state.mode) : { title: "ויסות מהמצב הרצוי", lines: [] };
+      const copy = stateProfile ? getStateRegulationAnchorCopy(stateProfile, toStateCopyMode(state.mode)) : { title: "ויסות מהמצב הרצוי", lines: [] };
       return (
         <View>
           <Text style={styles.title}>{copy.title}</Text>
@@ -763,7 +763,7 @@ function renderStep(state: CombinedLiveSessionState, update: (next: CombinedLive
     }
     case "state_desired_state_encoding": {
       const stateProfile = resolveSessionState(state);
-      const copy = stateProfile ? getStateDesiredStateEncodingCopy(stateProfile, state.mode) : { title: "קידוד המצב הרצוי", lines: [] };
+      const copy = stateProfile ? getStateDesiredStateEncodingCopy(stateProfile, toStateCopyMode(state.mode)) : { title: "קידוד המצב הרצוי", lines: [] };
       return (
         <View>
           <Text style={styles.title}>{copy.title}</Text>
@@ -851,6 +851,16 @@ function recognitionHeading(category: InterferenceItem["category"]): string {
     case "emotion":
       return "רגש";
   }
+}
+
+/**
+ * Adaptive ARC architecture task (unified PD/ARC Goal), Phase 6: this screen
+ * only ever runs "full"/"mini" sessions -- "route_link"/"action_only" have
+ * their own dedicated screens -- so CombinedLiveSessionState.mode is
+ * guaranteed "full"|"mini" here even though CombinedFactorMode is wider.
+ */
+function toStateCopyMode(mode: CombinedFactorMode): "full" | "mini" {
+  return mode === "full" ? "full" : "mini";
 }
 
 function resolveSessionState(state: CombinedLiveSessionState): StateProfile | null {
