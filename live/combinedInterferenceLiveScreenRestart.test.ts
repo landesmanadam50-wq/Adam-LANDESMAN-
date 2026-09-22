@@ -33,6 +33,7 @@ import {
   advanceAwarenessRecognition,
   advanceStep,
   answerReassessment,
+  confirmActionCompleted,
   createCombinedLiveSession,
   markActionReached,
   recordAwarenessRating,
@@ -86,37 +87,48 @@ function stateActionDurationFor(stateProfiles: StateProfile[]): number | null {
 }
 
 /**
- * Walks a real combined session forward exactly like ActionScreen's own
- * mount (markActionReached), but STOPS the instant a state_action/
- * factor_action step is reached, WITHOUT ever confirming it -- simulating
- * the app being killed while that role's own wall-clock timer is still
- * running (or has completed but "עשיתי את זה" was never tapped). Every
- * other step is driven identically to the sibling completion test file's
- * own walkFullToComplete.
+ * Continues driving an ALREADY-IN-PROGRESS combined session forward
+ * exactly like ActionScreen's own mount (markActionReached), but STOPS
+ * the instant a state_action/factor_action step is reached, WITHOUT ever
+ * confirming it -- simulating the app being killed while that role's own
+ * wall-clock timer is still running (or has completed but "עשיתי את זה"
+ * was never tapped). Every other step is driven identically to the
+ * sibling completion test file's own walkFullToComplete. Reused both to
+ * reach the FIRST pending action from a freshly created session
+ * (walkToPendingAction below) and, separately, to reach the SECOND
+ * pending action after the first has already been confirmed through the
+ * normal (non-restart) flow -- see the state_then_factor mixed-restart
+ * test below.
  */
+function driveStepsUntilPendingAction(state: CombinedLiveSessionState): CombinedLiveSessionState {
+  let s = state;
+  let guard = 0;
+  while (s.phase === "steps" && guard < 30) {
+    const step = s.remainingSteps[s.stepIndex];
+    if (!step) break;
+    if (step.kind === "state_action" || step.kind === "factor_action") {
+      return markActionReached(s); // ActionScreen mounted, timer running -- never confirmed.
+    }
+    if (step.kind === "rating_checkpoint") {
+      for (const factor of s.resolvedPlan!.factors) s = recordStepRating(s, factor.itemId, factor.category, step.checkpoint!, 5);
+    } else if (step.kind === "cognitive_reassessment") {
+      s = answerReassessment(s, "not_stuck");
+    } else if (step.kind === "desired_state_rating") {
+      s = recordDesiredStateRating(s, 8);
+    } else {
+      s = advanceStep(s);
+    }
+    guard++;
+  }
+  throw new Error("driveStepsUntilPendingAction never reached a state_action/factor_action step -- test setup is wrong");
+}
+
+/** Fresh session, walked to the FIRST pending action -- see driveStepsUntilPendingAction's own doc. */
 function walkToPendingAction(cfg: PersonalDevelopmentRouteConfig, items: InterferenceItem[], stateProfiles: StateProfile[]): CombinedLiveSessionState {
   let state = createCombinedLiveSession(baseInput({ items, config: cfg, stateProfiles }));
   while (state.awarenessSteps[state.awarenessIndex]?.kind === "recognition") state = advanceAwarenessRecognition(state);
   for (const item of items) state = recordAwarenessRating(state, item.id, item.category, 6);
-  let guard = 0;
-  while (state.phase === "steps" && guard < 30) {
-    const step = state.remainingSteps[state.stepIndex];
-    if (!step) break;
-    if (step.kind === "state_action" || step.kind === "factor_action") {
-      return markActionReached(state); // ActionScreen mounted, timer running -- never confirmed.
-    }
-    if (step.kind === "rating_checkpoint") {
-      for (const factor of state.resolvedPlan!.factors) state = recordStepRating(state, factor.itemId, factor.category, step.checkpoint!, 5);
-    } else if (step.kind === "cognitive_reassessment") {
-      state = answerReassessment(state, "not_stuck");
-    } else if (step.kind === "desired_state_rating") {
-      state = recordDesiredStateRating(state, 8);
-    } else {
-      state = advanceStep(state);
-    }
-    guard++;
-  }
-  throw new Error("walkToPendingAction never reached a state_action/factor_action step -- test setup is wrong");
+  return driveStepsUntilPendingAction(state);
 }
 
 /** Exactly what live/CombinedInterferenceLiveScreen.tsx's own state_action/factor_action render case now builds and hands to ActionScreen as frozenCombinedActionSnapshot. */
@@ -227,6 +239,65 @@ test("state_then_factor: restart at the state role's pending point, confirm, cha
   const result = await recordSharedLiveSessionCompletion(facts, NOW, { personalDevelopment: deps });
   assert.equal(result.outcome.kind, "applied");
   assert.equal(deps.savedStores[0]["route1"].completedSessions, 1, "exactly one progress write for the whole two-role session");
+});
+
+test("state_then_factor: confirm the state role through the NORMAL (non-restart) flow, then restart before confirming the factor role -- the state role's own confirmation survives the restart, only the factor role is pending, the session id is unchanged, and progress is written exactly once after the second confirmation", async () => {
+  const cfg = config({ interferenceItemIds: ["t1"], itemRelationships: { t1: { actionRelationship: "different_actions" } }, stateInclusionPolicy: "linked", stateProfileId: "s1" });
+  const stateProfiles = [completeState()];
+
+  // -- The state role is confirmed the NORMAL way: no restart yet. This
+  //    is EXACTLY live/CombinedInterferenceLiveScreen.tsx's own
+  //    state_action/factor_action onCompleted handler -- confirmActionCompleted,
+  //    the real engine function, never the restart module's own
+  //    applyActionRoleConfirmedToSnapshot.
+  const pendingState = walkToPendingAction(cfg, [thought()], stateProfiles);
+  const afterNormalStateConfirm = confirmActionCompleted(pendingState);
+  const stateEntryAfterNormalConfirm = afterNormalStateConfirm.actionRoleProgress.find((r) => r.role === "state");
+  assert.equal(stateEntryAfterNormalConfirm?.completed, true, "the state role is genuinely confirmed through the normal flow");
+  assert.equal(afterNormalStateConfirm.sessionId, "session-1");
+
+  // -- The session continues (still no restart) until the SECOND
+  //    ActionScreen (the factor role) mounts -- this is the exact render
+  //    case in live/CombinedInterferenceLiveScreen.tsx that now builds
+  //    frozenCombinedActionSnapshot and hands it to live/screens.tsx's
+  //    useTimerRun, which persists it on this role's own fresh TimerRun.
+  const pendingFactor = driveStepsUntilPendingAction(afterNormalStateConfirm);
+  const factorEntry = pendingFactor.actionRoleProgress.find((r) => r.role === "factor");
+  assert.equal(factorEntry?.reached, true);
+  assert.equal(factorEntry?.completed, false, "this IS the pending point the restart below lands on");
+  assert.equal(pendingFactor.actionRoleProgress.find((r) => r.role === "state")?.completed, true, "the state role's own confirmation is still carried in the live state, unaffected by reaching the second action");
+
+  const snapshotAtFactorMount = buildFrozenSnapshot(pendingFactor, stateProfiles);
+  assert.equal(snapshotAtFactorMount.actionRoleProgress.find((r) => r.role === "state")?.completed, true, "the frozen snapshot persisted for the SECOND action already carries the first role's genuine confirmation");
+  assert.equal(snapshotAtFactorMount.facts.stateActionCompleted, true, "the frozen facts themselves already reflect the state role as completed -- not just the actionRoleProgress array");
+  assert.equal(snapshotAtFactorMount.facts.sessionId, "session-1");
+
+  // -- "App restart" -- everything above (afterNormalStateConfirm,
+  //    pendingFactor, the whole in-memory CombinedLiveSessionState) is
+  //    gone. Only snapshotAtFactorMount, persisted on the factor role's
+  //    own TimerRun, survives -- exactly what
+  //    findResumableCombinedAction would load back.
+  assert.equal(resolveNextUnconfirmedActionRole(snapshotAtFactorMount.actionRoleProgress)?.role, "factor", "only the factor role is pending after the restart -- the state role is never re-offered");
+
+  const afterRestart = confirmBypassRole(snapshotAtFactorMount);
+  assert.equal(afterRestart.next, null);
+  assert.ok(afterRestart.terminalFacts);
+  assert.equal(afterRestart.terminalFacts!.terminalCompleted, true);
+  assert.equal(afterRestart.terminalFacts!.stateActionCompleted, true, "the pre-restart state confirmation is still present in the final terminal facts");
+  assert.equal(afterRestart.terminalFacts!.factorActionCompleted, true);
+  assert.equal(afterRestart.terminalFacts!.sessionId, "session-1", "the session id is unchanged across the restart");
+
+  const deps = fakeDeps();
+  const facts = { track: "personal_development" as const, facts: afterRestart.terminalFacts! };
+  const first = await recordSharedLiveSessionCompletion(facts, NOW, { personalDevelopment: deps });
+  assert.equal(first.outcome.kind, "applied");
+  assert.equal(deps.savedStores[0]["route1"].completedSessions, 1, "progress is written exactly once, after the second (post-restart) confirmation");
+
+  // A retry (e.g. a second restart landing after the factor confirmation
+  // was already applied) must never double-count.
+  const retry = await recordSharedLiveSessionCompletion(facts, LATER, { personalDevelopment: deps });
+  assert.equal(retry.outcome.kind, "duplicate_session");
+  assert.equal(deps.savedStores[deps.savedStores.length - 1]["route1"].completedSessions, 1);
 });
 
 // ---------------------------------------------------------------------------
