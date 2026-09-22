@@ -79,6 +79,7 @@ import type { PersonalDevelopmentRouteProgress } from "../arc/personalDevelopmen
 import { normalizePersonalDevelopmentRouteProgress } from "../arc/personalDevelopmentRouteProgress.ts";
 import type { ArcGoalSessionProgress } from "../arc/arcGoalSessionProgress.ts";
 import { normalizeArcGoalSessionProgress } from "../arc/arcGoalSessionProgress.ts";
+import type { PendingSharedActionExecution } from "../arc/pendingSharedActionExecution.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
 const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
@@ -113,6 +114,7 @@ const PROGRESSION_MAPPING_STORE_KEY = "archi.progressionMappingStore.v1";
 /** Adaptive ARC architecture task, Phase 15: a brand-new key storing the whole PersonalDevelopmentRouteProgressStore (arc/personalDevelopmentRouteProgress.ts) as one plain JSON object map, keyed by PersonalDevelopmentRouteConfig.id -- deliberately separate from PROGRESSION_MAPPING_STORE_KEY (that store is keyed by a single-InterferenceItem/StateProfile mapping key and belongs to the unrelated Stage 1-4 legacy progression system; combined multi-factor sessions never write to it). No legacy migration: an absent key simply means "no combined-route sessions counted yet" -- every existing PersonalDevelopmentRouteConfig loads with zero progress. Never read/written by any other key above. */
 const PERSONAL_DEVELOPMENT_ROUTE_PROGRESS_KEY = "archi.personalDevelopmentRouteProgress.v1";
 const ARC_GOAL_SESSION_PROGRESS_KEY = "archi.arcGoalSessionProgress.v1";
+const PENDING_SHARED_ACTION_EXECUTION_KEY = "archi.pendingSharedActionExecution.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -1621,4 +1623,32 @@ export async function loadArcGoalSessionProgressStore(): Promise<ArcGoalSessionP
 /** Always the FULL store. Never catches its own AsyncStorage.setItem failure -- a genuine write failure propagates to the caller exactly like every other saveX function here, never silently swallowed. */
 export async function saveArcGoalSessionProgressStore(store: ArcGoalSessionProgressStore): Promise<void> {
   await AsyncStorage.setItem(ARC_GOAL_SESSION_PROGRESS_KEY, JSON.stringify(store));
+}
+
+// ---------------------------------------------------------------------------
+// Adaptive ARC architecture task (unified PD/ARC Goal), Phase 4: the
+// persistent PendingSharedActionExecution store -- keyed by
+// arc/pendingSharedActionExecution.ts's own resolvePendingSharedActionExecutionKey
+// (track:ownerId), shared by both tracks. This is what makes a session's
+// explicit action-role confirmations survive an app restart.
+// ---------------------------------------------------------------------------
+
+export type PendingSharedActionExecutionStore = Record<string, PendingSharedActionExecution>;
+
+export async function loadPendingSharedActionExecutionStore(): Promise<PendingSharedActionExecutionStore> {
+  const raw = await AsyncStorage.getItem(PENDING_SHARED_ACTION_EXECUTION_KEY);
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const isPlainObject = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+    return isPlainObject ? (parsed as PendingSharedActionExecutionStore) : {};
+  } catch (error) {
+    console.warn("[storage] Stored PendingSharedActionExecution store is not valid JSON -- returning an empty store rather than crashing.", error);
+    return {};
+  }
+}
+
+/** Always the FULL store. Never catches its own AsyncStorage.setItem failure -- a genuine write failure propagates to the caller exactly like every other saveX function here, never silently swallowed. */
+export async function savePendingSharedActionExecutionStore(store: PendingSharedActionExecutionStore): Promise<void> {
+  await AsyncStorage.setItem(PENDING_SHARED_ACTION_EXECUTION_KEY, JSON.stringify(store));
 }
