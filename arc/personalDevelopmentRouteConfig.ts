@@ -69,6 +69,17 @@ export interface PersonalDevelopmentRouteGoalConnection {
 export type BeneficialActionPolicy = "required" | "optional_in_live" | "none";
 
 export interface PersonalDevelopmentRouteConfig extends OwnedLibraryRecord {
+  /**
+   * Personal Development consolidation task: an optional, coach-facing
+   * label for "My Routine"'s own card list -- purely a display
+   * convenience, never read by any BUILD/LIVE/readiness/validation logic
+   * (a route with many factors and no State is fully valid and practicable
+   * with name === null; My Routine falls back to the existing
+   * factor-count summary in that case). Every route saved before this
+   * field existed backfills to null (normalizePersonalDevelopmentRouteConfig),
+   * never an invented name.
+   */
+  name: string | null;
   interferenceItemIds: string[];
   /** Route-level -- see this module's own header doc. Never per-item. */
   stateInclusionPolicy: StateInclusionPolicy;
@@ -120,6 +131,7 @@ export function createEmptyPersonalDevelopmentRouteConfig(id: string, ownerProgr
   return {
     id,
     ownerProgramId,
+    name: null,
     interferenceItemIds: [],
     stateInclusionPolicy: "none",
     stateProfileId: null,
@@ -159,6 +171,7 @@ export function normalizePersonalDevelopmentRouteConfig(config: PersonalDevelopm
   return {
     ...config,
     ownerProgramId: config.ownerProgramId ?? null,
+    name: config.name ?? null,
     interferenceItemIds: dedupedItemIds,
     stateInclusionPolicy: config.stateInclusionPolicy ?? "none",
     stateProfileId: config.stateProfileId ?? null,
@@ -341,6 +354,46 @@ export function resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection
   if (existing) return { configs, result: existing };
   const created = buildPersonalDevelopmentRouteConfigFromLegacySelection(selection, now, generateId);
   return { configs: upsertPersonalDevelopmentRouteConfigInList(configs, created), result: created };
+}
+
+/**
+ * Personal Development consolidation task, step 4: the automatic,
+ * additive, idempotent replacement for the old manual "צור תצורת מסלול
+ * חדשה מהגדרה זו" button (build/CombinedInterferenceSelectionScreen.tsx,
+ * hidden from the normal PD interface per the approved consolidation
+ * plan) -- every genuinely ENABLED legacy CombinedInterferenceSelection
+ * that has no corresponding route yet gets converted automatically, via
+ * the exact same idempotent resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection
+ * this module already had (matched only by sourceLegacyCombinedSelectionId,
+ * never by translated text or array position). A disabled/archived
+ * legacy selection is never auto-converted -- a coach who deliberately
+ * turned one off never has it silently resurrected as a new program; it
+ * remains reachable through the legacy CombinedInterferenceSelectionScreen
+ * fallback route if they want to restore and convert it by hand.
+ *
+ * Never reads or writes the source CombinedInterferenceSelection records
+ * themselves (they are never deleted, renamed, or mutated by this
+ * function or by calling it repeatedly) -- purely additive to `configs`.
+ * Calling this with the same inputs twice in a row is a true no-op the
+ * second time (every selection already has a route, so `configs` comes
+ * back as the exact same array reference each already-converted
+ * selection observed on the loop iteration).
+ */
+export function autoMigrateAllLegacyCombinedSelections(
+  configs: PersonalDevelopmentRouteConfig[],
+  selections: CombinedInterferenceSelection[],
+  now: string,
+  generateId: () => string = generatePersonalDevelopmentRouteConfigId
+): { configs: PersonalDevelopmentRouteConfig[]; createdCount: number } {
+  let currentConfigs = configs;
+  let createdCount = 0;
+  for (const selection of selections) {
+    if (selection.status !== "enabled") continue;
+    const { configs: nextConfigs } = resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection(currentConfigs, selection, now, generateId);
+    if (nextConfigs !== currentConfigs) createdCount += 1;
+    currentConfigs = nextConfigs;
+  }
+  return { configs: currentConfigs, createdCount };
 }
 
 // ---------------------------------------------------------------------------

@@ -7,24 +7,27 @@ import { fileURLToPath } from "node:url";
  * build/personalDevelopmentSingleLiveEntry.test.ts
  *
  * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
- * task, correction round 3: permanent navigation-boundary guard. Every
+ * task, correction round 3, later extended by the Personal Development
+ * consolidation task, step 5: permanent navigation-boundary guard. Every
  * protocol mode for a combined Personal Development route (Full, Mini,
- * Route Link, Action Only) is launched from EXACTLY ONE place --
- * build/LiveModeSelectScreen.tsx's own CombinedRoutesSection, driven by
- * arc/personalDevelopmentRouteProgress.ts's own resolveAvailableEntryModes
- * -- reachable either via the one top-level "LIVE התפתחות אישית" entry
- * (build/SelfDevelopmentDashboardScreen.tsx) or via a management/program
- * card's own "▶ תרגול" button (build/PersonalDevelopmentRouteListScreen.tsx),
- * which routes through this SAME shared controller with the route's own
- * id (LiveModeSelectScreen's own `focusRouteId` param) rather than
- * resolving a mode itself. Every other Personal-Development-related
- * screen (`PD_SCREENS_MUST_NEVER_LAUNCH_A_MODE` below) may manage,
- * configure, or display progress for a route, but must never itself
- * decide "full" vs "mini" vs "route_link" vs "action_only" or push
- * directly to any of their routes. This codebase has no React Native
- * component test renderer (see build/selfDevelopmentEntryRoute.test.ts's
- * own doc), so this asserts directly on real source text, exactly like
- * that file and build/liveModeSelectCombinedRoutes.test.ts.
+ * Route Link, Action Only) is launched from EXACTLY ONE real
+ * implementation -- build/CombinedRoutesSection.tsx -- reused, unmodified,
+ * by the TWO thin entry screens that render it: the dashboard's own
+ * "LIVE התפתחות אישית" button (build/PersonalDevelopmentLiveSelectScreen.tsx,
+ * browsing every ready program, no legacy ArcBuild/ARC Goal chooser
+ * anywhere on it) and a My Routine card's own "▶ תרגול" button
+ * (build/PersonalDevelopmentRouteListScreen.tsx, via
+ * build/LiveModeSelectScreen.tsx's own `focusRouteId` branch, scoped to
+ * exactly that one route, also never surfacing ArcBuild). Neither entry
+ * screen resolves a mode itself -- both hand off to the one shared
+ * CombinedRoutesSection. Every other Personal-Development-related screen
+ * (`PD_SCREENS_MUST_NEVER_LAUNCH_A_MODE` below) may manage, configure, or
+ * display progress for a route, but must never itself decide "full" vs
+ * "mini" vs "route_link" vs "action_only" or push directly to any of
+ * their routes. This codebase has no React Native component test
+ * renderer (see build/selfDevelopmentEntryRoute.test.ts's own doc), so
+ * this asserts directly on real source text, exactly like that file and
+ * build/liveModeSelectCombinedRoutes.test.ts.
  */
 function readSource(relativePath: string): string {
   const path = fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
@@ -32,8 +35,10 @@ function readSource(relativePath: string): string {
 }
 
 const liveModeSelectScreen = readSource("build/LiveModeSelectScreen.tsx");
+const combinedRoutesSectionModule = readSource("build/CombinedRoutesSection.tsx");
 const routeListScreen = readSource("build/PersonalDevelopmentRouteListScreen.tsx");
 const dashboardScreen = readSource("build/SelfDevelopmentDashboardScreen.tsx");
+const liveSelectScreen = readSource("build/PersonalDevelopmentLiveSelectScreen.tsx");
 const routeLinkScreen = readSource("live/PersonalDevelopmentRouteLinkScreen.tsx");
 const actionOnlyScreen = readSource("live/PersonalDevelopmentRouteActionOnlyScreen.tsx");
 const combinedLiveScreen = readSource("live/CombinedInterferenceLiveScreen.tsx");
@@ -44,11 +49,12 @@ const layout = readSource("app/_layout.tsx");
 
 /**
  * Every user-facing screen this app has that touches a combined Personal
- * Development route WITHOUT being the one sanctioned launcher
- * (LiveModeSelectScreen) or a protocol renderer itself (which legitimately
- * reads its own `mode`/step-kind internally -- that is not "launching a
- * mode," it is being one). Adding a new PD-related management/editor
- * screen means adding it here too, so this guard actually covers it.
+ * Development route WITHOUT being one of the two sanctioned launcher
+ * screens (LiveModeSelectScreen, PersonalDevelopmentLiveSelectScreen) or
+ * a protocol renderer itself (which legitimately reads its own
+ * `mode`/step-kind internally -- that is not "launching a mode," it is
+ * being one). Adding a new PD-related management/editor screen means
+ * adding it here too, so this guard actually covers it.
  */
 const PD_SCREENS_MUST_NEVER_LAUNCH_A_MODE: [string, string][] = [
   ["build/PersonalDevelopmentRouteListScreen.tsx", routeListScreen],
@@ -56,15 +62,28 @@ const PD_SCREENS_MUST_NEVER_LAUNCH_A_MODE: [string, string][] = [
   ["build/PersonalDevelopmentRouteEditorScreen.tsx", routeEditorScreen],
   ["build/InterferenceItemEditorScreen.tsx", interferenceItemEditorScreen],
   ["build/CombinedInterferenceSelectionScreen.tsx", combinedSelectionScreen],
+  ["build/PersonalDevelopmentLiveSelectScreen.tsx", liveSelectScreen],
 ];
 
-test("the one top-level Personal Development entry ('LIVE התפתחות אישית') still pushes to the single shared chooser screen (/live/select), never directly to a stage renderer", () => {
+test("the one top-level Personal Development entry ('LIVE התפתחות אישית') pushes to the PD-only LIVE screen, never the legacy mixed ArcBuild/ARC-Goal chooser and never directly to a stage renderer", () => {
   assert.match(
     dashboardScreen,
-    /router\.push\(\{\s*pathname:\s*"\/live\/select",\s*params:\s*\{\s*mode:\s*"self_development"\s*\}\s*\}\)/,
-    "the dashboard's own LIVE button must still push to the shared chooser, not to any specific mode/renderer directly"
+    /router\.push\("\/personal-development-routes\/live-select"\)/,
+    "the dashboard's own LIVE button must push to the dedicated PD-only LIVE screen, not the mixed ArcBuild/ARC Goal chooser"
   );
+  assert.ok(!dashboardScreen.includes('"/live/select"'), "the dashboard must never reference the mixed chooser route any more -- ArcBuild/ARC Goal are legacy, hidden from the normal PD interface");
   assert.ok(dashboardScreen.includes('<Text style={styles.buttonText}>LIVE התפתחות אישית</Text>'), "the single entry label must still exist");
+});
+
+test("PersonalDevelopmentLiveSelectScreen never surfaces ArcBuild or ARC Goal -- it renders ONLY the shared CombinedRoutesSection, the same component the general chooser's focusRouteId branch also reuses", () => {
+  assert.ok(!liveSelectScreen.includes("loadArcBuilds"), "must never load ArcBuild -- this is the PD-only entry, never the mixed chooser");
+  assert.ok(!liveSelectScreen.includes("arc-goal"), "must never reference ARC Goal");
+  assert.match(liveSelectScreen, /import\s*{\s*CombinedRoutesSection\s*}\s*from\s*["']\.\/CombinedRoutesSection\.tsx["']/, "must reuse the one shared CombinedRoutesSection, never a second parallel implementation");
+  assert.ok(liveSelectScreen.includes("selectActiveCombinedRoutesForLive"), "must load ready routes via the exact same sanctioned selector every other PD LIVE entry point uses");
+});
+
+test("the PD-only LIVE route is registered as an internal Stack screen under the same personal-development-routes segment", () => {
+  assert.ok(layout.includes('name="personal-development-routes/live-select"'), "the route must be registered");
 });
 
 test("no PD management/editor screen ever directly launches a protocol mode (full/mini/route_link/action_only) or pushes to any of their routes -- every 'practice' command routes through the shared controller with the route's own id", () => {
@@ -105,9 +124,17 @@ test("LiveModeSelectScreen's own focusRouteId branch resolves that one route's s
   );
 });
 
-test("only build/LiveModeSelectScreen.tsx ever navigates to the new route-link/action-only screens -- no other screen exposes a competing direct entry", () => {
-  assert.ok(liveModeSelectScreen.includes('"/personal-development-routes/[id]/route-link"'), "the shared chooser must still be the one place that knows about route-link");
-  assert.ok(liveModeSelectScreen.includes('"/personal-development-routes/[id]/action-only"'), "the shared chooser must still be the one place that knows about action-only");
+test("only build/CombinedRoutesSection.tsx ever navigates to the new route-link/action-only screens -- no other screen exposes a competing direct entry", () => {
+  // Personal Development consolidation task, step 5: pushCombinedRouteMode
+  // (and every other real "which mode, which route" decision) was
+  // extracted out of build/LiveModeSelectScreen.tsx into the shared
+  // build/CombinedRoutesSection.tsx -- this is now the ONE place, reused
+  // unmodified by both build/LiveModeSelectScreen.tsx's own focusRouteId
+  // branch and build/PersonalDevelopmentLiveSelectScreen.tsx.
+  assert.ok(combinedRoutesSectionModule.includes('"/personal-development-routes/[id]/route-link"'), "the shared component must still be the one place that knows about route-link");
+  assert.ok(combinedRoutesSectionModule.includes('"/personal-development-routes/[id]/action-only"'), "the shared component must still be the one place that knows about action-only");
+  assert.ok(!liveModeSelectScreen.includes("route-link"), "LiveModeSelectScreen itself must never reference Route Link directly -- only via the shared component it imports");
+  assert.ok(!liveModeSelectScreen.includes("action-only"), "LiveModeSelectScreen itself must never reference Action Only directly -- only via the shared component it imports");
 
   // The management screen (build/PersonalDevelopmentRouteListScreen.tsx) no
   // longer launches ANY protocol mode directly (see the broader scan test
@@ -115,9 +142,11 @@ test("only build/LiveModeSelectScreen.tsx ever navigates to the new route-link/a
   assert.ok(!routeListScreen.includes("route-link"), "the management screen must never reference the Route Link route directly");
   assert.ok(!routeListScreen.includes("action-only"), "the management screen must never reference the Action Only route directly");
 
-  // The dashboard itself must never reference either new screen's route directly.
+  // The dashboard and the PD-only LIVE screen must never reference either new screen's route directly.
   assert.ok(!dashboardScreen.includes("route-link"), "the dashboard must never reference Route Link directly");
   assert.ok(!dashboardScreen.includes("action-only"), "the dashboard must never reference Action Only directly");
+  assert.ok(!liveSelectScreen.includes("route-link"), "the PD-only LIVE screen must never reference Route Link directly -- only via the shared component it imports");
+  assert.ok(!liveSelectScreen.includes("action-only"), "the PD-only LIVE screen must never reference Action Only directly -- only via the shared component it imports");
 
   // The existing combined Full/Mini LIVE screen must never reference either
   // new mode's route directly either -- each mode's own screen owns its own
@@ -135,17 +164,29 @@ test("both stage routes are registered as internal Stack screens under the same 
   assert.ok(actionOnlyIndex > routeLinkIndex, "action-only registered alongside the same group");
 });
 
-test("each route's recommended/secondary entry is the only place that decides which of the two new screens to open -- the stage alone drives it, never a trainee-facing engine picker", () => {
-  const sectionIndex = liveModeSelectScreen.indexOf("function CombinedRoutesSection");
-  const sectionBody = liveModeSelectScreen.slice(sectionIndex);
-  // Exactly one primary ("recommended") action per route card, plus the
-  // secondary row -- never a free-standing "choose your engine" menu with
-  // Route Link/Action Only presented as co-equal top-level choices outside
-  // the recommended/secondary structure. Every navigation call inside this
-  // component must go through the one shared pushCombinedRouteMode helper.
-  assert.ok(sectionBody.includes("pushCombinedRouteMode(config.id, recommended)"), "exactly one recommended action per route, resolved from that route's own stage");
+test("the stage-driven Route Link/Action Only entry never appears as an equal primary choice -- only inside the clearly separate 'advanced' row, resolved via resolveAdvancedModesForStage -- and every navigation call goes through the one shared pushCombinedRouteMode helper", () => {
+  const sectionIndex = combinedRoutesSectionModule.indexOf("export function CombinedRoutesSection");
+  const sectionBody = combinedRoutesSectionModule.slice(sectionIndex);
+  // Personal Development consolidation task, step 4: the two primary
+  // buttons are always Full ARC and Mini ARC, unconditionally -- never a
+  // stage-resolved "recommended" mode that could itself be route_link/
+  // action_only. Route Link/Action Only, when unlocked, render ONLY in
+  // the separate advancedModes row below, never mixed into the primary
+  // row or presented as co-equal top-level choices.
+  assert.ok(sectionBody.includes('pushCombinedRouteMode(config.id, "full")'), "the first primary button is always Full ARC, never stage-resolved");
+  assert.ok(sectionBody.includes('pushCombinedRouteMode(config.id, "mini")'), "the second primary button is always Mini ARC, never stage-resolved");
+  assert.ok(!sectionBody.includes("recommended"), "no stage-resolved 'recommended' mode drives the primary buttons any more");
+  assert.ok(sectionBody.includes("resolveAdvancedModesForStage(stage)"), "Route Link/Action Only availability is resolved via the dedicated advanced-modes helper");
+  assert.ok(sectionBody.includes("advancedModes.map((mode) => ("), "advanced modes render in their own separate row, never merged with the two primary buttons");
   const routerPushCallsInSection = sectionBody.match(/router\.push\(/g) ?? [];
   assert.equal(routerPushCallsInSection.length, 0, "CombinedRoutesSection itself must never call router.push directly -- only via the shared pushCombinedRouteMode helper");
+});
+
+test("resolveAdvancedModesForStage never includes full/mini -- those are always the two primary buttons, never duplicated in the advanced row", () => {
+  const helperIndex = combinedRoutesSectionModule.indexOf("function resolveAdvancedModesForStage");
+  assert.ok(helperIndex !== -1, "resolveAdvancedModesForStage must exist");
+  const helperBody = combinedRoutesSectionModule.slice(helperIndex, combinedRoutesSectionModule.indexOf("export function CombinedRoutesSection"));
+  assert.ok(helperBody.includes('mode === "route_link" || mode === "action_only"'), "only route_link/action_only are ever collected into the advanced set");
 });
 
 test("Route Link's own restart recovery resumes ONLY a pending route_link action, never intercepting a Full/Mini/Action-Only pending action for the same route", () => {

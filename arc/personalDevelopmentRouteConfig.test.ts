@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  autoMigrateAllLegacyCombinedSelections,
   buildPersonalDevelopmentRouteConfigFromLegacySelection,
   createEmptyPersonalDevelopmentRouteConfig,
   generatePersonalDevelopmentRouteConfigId,
@@ -241,6 +242,24 @@ test("normalizePersonalDevelopmentRouteConfig backfills a missing sourceLegacyCo
   assert.equal(normalizePersonalDevelopmentRouteConfig(config({ sourceLegacyCombinedSelectionId: "sel1" })).sourceLegacyCombinedSelectionId, "sel1");
 });
 
+// --- Personal Development consolidation task: the optional coach-facing `name` field ---
+
+test("createEmptyPersonalDevelopmentRouteConfig defaults name to null", () => {
+  assert.equal(createEmptyPersonalDevelopmentRouteConfig("r1", "prog1", NOW).name, null);
+});
+
+test("normalizePersonalDevelopmentRouteConfig backfills a missing name to null and preserves an already-set one -- every route saved before this field existed gets null, never an invented name", () => {
+  const { name, ...legacyShape } = config();
+  assert.equal(normalizePersonalDevelopmentRouteConfig(legacyShape as PersonalDevelopmentRouteConfig).name, null);
+  assert.equal(normalizePersonalDevelopmentRouteConfig(config({ name: "התמודדות עם לחץ" })).name, "התמודדות עם לחץ");
+});
+
+test("name is purely a display convenience -- readiness/validation/saveability never depend on it", () => {
+  const withName = config({ name: "שם כלשהו" });
+  const withoutName = config({ name: null });
+  assert.equal(validatePersonalDevelopmentRouteConfig(withName, [], []).valid, validatePersonalDevelopmentRouteConfig(withoutName, [], []).valid);
+});
+
 // --- Phase 14B-2: isPersonalDevelopmentRouteConfigSaveable (alias, distinct from readiness) ---
 
 test("isPersonalDevelopmentRouteConfigSaveable mirrors validatePersonalDevelopmentRouteConfig(...).valid exactly", () => {
@@ -364,6 +383,53 @@ test("resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection never arc
   const before = JSON.parse(JSON.stringify(selection));
   resolveOrCreatePersonalDevelopmentRouteConfigFromLegacySelection([], selection, NOW, () => "route-a");
   assert.deepEqual(selection, before, "still status enabled, still exactly as it was");
+});
+
+// --- Personal Development consolidation task, step 4: autoMigrateAllLegacyCombinedSelections ---
+
+test("autoMigrateAllLegacyCombinedSelections converts every enabled legacy selection with no route yet, and reports the created count", () => {
+  const selectionA = legacySelection({ id: "selA", stateProfileId: "stateA", configuredItemIds: ["t1"] });
+  const selectionB = legacySelection({ id: "selB", stateProfileId: "stateB", configuredItemIds: ["b1"] });
+  let generated = 0;
+  const { configs, createdCount } = autoMigrateAllLegacyCombinedSelections([], [selectionA, selectionB], NOW, () => `route-${(generated += 1)}`);
+  assert.equal(createdCount, 2);
+  assert.equal(configs.length, 2);
+  assert.deepEqual(
+    configs.map((c) => c.sourceLegacyCombinedSelectionId).sort(),
+    ["selA", "selB"]
+  );
+});
+
+test("autoMigrateAllLegacyCombinedSelections never converts a disabled or archived legacy selection -- a coach's deliberate turn-off is never silently resurrected", () => {
+  const disabled = legacySelection({ id: "selDisabled", status: "disabled" });
+  const archived = legacySelection({ id: "selArchived", status: "archived" });
+  const { configs, createdCount } = autoMigrateAllLegacyCombinedSelections([], [disabled, archived], NOW);
+  assert.equal(createdCount, 0);
+  assert.deepEqual(configs, []);
+});
+
+test("autoMigrateAllLegacyCombinedSelections is idempotent -- running it twice on the same inputs creates nothing new the second time", () => {
+  const selection = legacySelection({ id: "sel1", configuredItemIds: ["t1"] });
+  const first = autoMigrateAllLegacyCombinedSelections([], [selection], NOW, () => "route-a");
+  assert.equal(first.createdCount, 1);
+  const second = autoMigrateAllLegacyCombinedSelections(first.configs, [selection], LATER, () => "should-not-be-used");
+  assert.equal(second.createdCount, 0, "nothing new is created the second time");
+  assert.equal(second.configs.length, 1, "still exactly one route");
+  assert.equal(second.configs, first.configs, "the configs array reference is unchanged when nothing new is created -- a true no-op");
+});
+
+test("autoMigrateAllLegacyCombinedSelections never reads or mutates any source legacy selection, and never touches an already-existing, unrelated route", () => {
+  const selection = legacySelection({ id: "sel1", configuredItemIds: ["t1"] });
+  const before = JSON.parse(JSON.stringify(selection));
+  const unrelatedRoute = config({ id: "manual-route", sourceLegacyCombinedSelectionId: null });
+  const { configs } = autoMigrateAllLegacyCombinedSelections([unrelatedRoute], [selection], NOW, () => "route-a");
+  assert.deepEqual(selection, before, "the source legacy selection is completely untouched");
+  assert.deepEqual(
+    configs.find((c) => c.id === "manual-route"),
+    unrelatedRoute,
+    "a pre-existing, unrelated route is never mutated by this migration"
+  );
+  assert.equal(configs.length, 2, "the new route is added alongside the existing one, never replacing it");
 });
 
 // --- Phase 14B-2: "Build new State" return-resolution decision ---
