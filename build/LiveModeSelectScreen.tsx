@@ -11,14 +11,7 @@ import type { PersonalDevelopmentRouteConfig } from "../arc/personalDevelopmentR
 import { selectActiveCombinedRoutesForLive } from "../arc/personalDevelopmentRouteConfigReadiness.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
-import { resolveAvailableEntryModes } from "../arc/personalDevelopmentRouteProgress.ts";
-import type { CombinedFactorMode } from "../arc/combinedFactorPlan.ts";
-
-const STATE_INCLUSION_LABELS = {
-  linked: "עם מצב רצוי",
-  none: "ללא מצב רצוי",
-  decide_in_live: "החלטה בזמן התרגול",
-};
+import { CombinedRoutesSection } from "./CombinedRoutesSection.tsx";
 
 /**
  * build/LiveModeSelectScreen.tsx (route: /live/select)
@@ -280,95 +273,6 @@ export default function LiveModeSelectScreen() {
   );
 }
 
-/**
- * Regression repair task: the shared "combined routes" list rendered on
- * every step of LiveModeSelectScreen. Renders nothing at all when
- * `routes` is empty -- never an empty section header. Each card mirrors
- * build/PersonalDevelopmentRouteListScreen.tsx's own identifying summary
- * ("3 גורמים + נוכחות").
- *
- * Adaptive ARC architecture task (unified PD/ARC Goal), correction round
- * 3: this component -- reached either by browsing the general chooser or
- * via a management card's own "▶ תרגול" button (this file's own
- * `focusRouteId` branch above) -- is now the ONLY place in the app that
- * resolves a route's stage into an actual mode and launches a protocol
- * screen. build/PersonalDevelopmentRouteListScreen.tsx (route management)
- * no longer launches anything directly -- see build/personalDevelopmentSingleLiveEntry.test.ts.
- *
- * Adaptive ARC architecture task (unified PD/ARC Goal), stage-based entry
- * task: per the approved "recommend, don't hard-lock" design, each route
- * now shows its own current stage's ONE prominent recommended entry
- * (arc/personalDevelopmentRouteProgress.ts's own resolveAvailableEntryModes)
- * plus every earlier stage's own advancement mode as a smaller secondary
- * button -- never a hard lock to a single mode. A route with no recorded
- * progress yet (absent from `progressStore`) defaults to Stage 1 (Full
- * recommended, Mini secondary), matching
- * createEmptyPersonalDevelopmentRouteProgress's own default. Mode ->
- * route mapping: "full"/"mini" push the existing combined LIVE route with
- * their own `mode` param (unchanged); "route_link" pushes the new
- * Stage 3 rehearsal screen; "action_only" pushes the new Stage 4
- * mark-as-done screen -- both reusing this SAME route config, never a
- * parallel flow.
- */
-function resolveModeLabel(mode: CombinedFactorMode): string {
-  switch (mode) {
-    case "full":
-      return "ARC מלא";
-    case "mini":
-      return "Mini ARC";
-    case "route_link":
-      return "קישור ARC למסלול";
-    case "action_only":
-      return "סימון פעולה מיטיבה כבוצעה";
-  }
-}
-
-function pushCombinedRouteMode(routeConfigId: string, mode: CombinedFactorMode) {
-  if (mode === "full" || mode === "mini") {
-    router.push({ pathname: "/personal-development-routes/[id]/live", params: { id: routeConfigId, mode } });
-    return;
-  }
-  if (mode === "route_link") {
-    router.push({ pathname: "/personal-development-routes/[id]/route-link", params: { id: routeConfigId } });
-    return;
-  }
-  router.push({ pathname: "/personal-development-routes/[id]/action-only", params: { id: routeConfigId } });
-}
-
-function CombinedRoutesSection({ routes, progressStore }: { routes: PersonalDevelopmentRouteConfig[]; progressStore: PersonalDevelopmentRouteProgressStore }) {
-  if (routes.length === 0) return null;
-
-  return (
-    <View style={styles.combinedRoutesSection}>
-      <Text style={styles.sectionTitle}>מסלולי תרגול משולבים</Text>
-      {routes.map((config) => {
-        const stage = progressStore[config.id]?.stage ?? 1;
-        const { recommended, secondary } = resolveAvailableEntryModes(stage);
-        return (
-          <View key={config.id} style={styles.routeCard}>
-            <Text style={styles.routeCardTitle}>{`${config.interferenceItemIds.length} גורמים${config.presenceEnabled ? " + נוכחות" : ""}`}</Text>
-            <Text style={styles.routeCardSubtitle}>{STATE_INCLUSION_LABELS[config.stateInclusionPolicy]}</Text>
-            <View style={styles.routeCardActions}>
-              <Pressable style={styles.routeStartButton} onPress={() => pushCombinedRouteMode(config.id, recommended)}>
-                <Text style={styles.routeStartButtonText}>{`▶ ${resolveModeLabel(recommended)}`}</Text>
-              </Pressable>
-            </View>
-            {secondary.length > 0 && (
-              <View style={styles.routeCardActions}>
-                {secondary.map((mode) => (
-                  <Pressable key={mode} style={styles.routeSecondaryButton} onPress={() => pushCombinedRouteMode(config.id, mode)}>
-                    <Text style={styles.routeSecondaryButtonText}>{resolveModeLabel(mode)}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
   content: { flexGrow: 1, padding: 24, justifyContent: "center" },
@@ -387,14 +291,4 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
   backButton: { marginTop: 24, alignItems: "center" },
   backButtonText: { color: "#0a7ea4", fontSize: 15 },
-  combinedRoutesSection: { marginTop: 28 },
-  sectionTitle: { fontSize: 17, fontWeight: "700", textAlign: "right", marginBottom: 10 },
-  routeCard: { marginBottom: 12, borderWidth: 1, borderColor: "#E6F4FE", borderRadius: 10, padding: 14 },
-  routeCardTitle: { fontSize: 16, fontWeight: "700", textAlign: "right", color: "#0a7ea4" },
-  routeCardSubtitle: { fontSize: 13, textAlign: "right", color: "#666", marginTop: 4 },
-  routeCardActions: { flexDirection: "row-reverse", gap: 12, marginTop: 10, justifyContent: "flex-end" },
-  routeStartButton: { backgroundColor: "#0a7ea4", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
-  routeStartButtonText: { color: "#fff", fontWeight: "600", fontSize: 14 },
-  routeSecondaryButton: { backgroundColor: "#E6F4FE", paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8 },
-  routeSecondaryButtonText: { color: "#0a7ea4", fontWeight: "600", fontSize: 12 },
 });

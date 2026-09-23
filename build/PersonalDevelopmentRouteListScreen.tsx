@@ -6,14 +6,17 @@ import { router, useFocusEffect } from "expo-router";
 import {
   archivePersonalDevelopmentRouteConfig,
   disablePersonalDevelopmentRouteConfig,
+  loadCombinedInterferenceSelections,
   loadInterferenceItems,
   loadPersonalDevelopmentRouteConfigs,
   loadPersonalDevelopmentRouteProgressStore,
   loadPresenceArcs,
   loadStateProfiles,
   restorePersonalDevelopmentRouteConfig,
+  savePersonalDevelopmentRouteConfigs,
 } from "../data/storage.ts";
 import type { PersonalDevelopmentRouteProgressStore } from "../data/storage.ts";
+import { autoMigrateAllLegacyCombinedSelections } from "../arc/personalDevelopmentRouteConfig.ts";
 import type { PersonalDevelopmentRouteConfig } from "../arc/personalDevelopmentRouteConfig.ts";
 import { isPersonalDevelopmentRouteConfigCompleteForPractice } from "../arc/personalDevelopmentRouteConfigReadiness.ts";
 import type { InterferenceItem } from "../arc/interferenceItem.ts";
@@ -43,14 +46,18 @@ const STATE_INCLUSION_LABELS = {
 /**
  * build/PersonalDevelopmentRouteListScreen.tsx (route: /personal-development-routes)
  *
- * Adaptive ARC architecture task, Phase 14B-2: the management screen for
- * PersonalDevelopmentRouteConfig (arc/personalDevelopmentRouteConfig.ts)
- * -- mirrors build/StateProfileListScreen.tsx's own row+action-button
- * conventions exactly. This is the State-INDEPENDENT entry point the
- * approved architecture requires: unlike
- * build/CombinedInterferenceSelectionScreen.tsx (reached only from a
- * StateProfile card), a route here can be created without ever choosing
- * a StateProfile first -- see this screen's own "+ מסלול חדש" button.
+ * Personal Development consolidation task: "My Routine" -- the ONE
+ * visible list of every saved Personal Development program
+ * (PersonalDevelopmentRouteConfig, arc/personalDevelopmentRouteConfig.ts).
+ * Originally built as Phase 14B-2's own management screen (mirroring
+ * build/StateProfileListScreen.tsx's row+action-button conventions);
+ * relabeled and trimmed here per the approved consolidation plan, with no
+ * structural change to its own Edit/Practice wiring -- Edit always opens
+ * the same shared BUILD (PersonalDevelopmentRouteEditorScreen.tsx) with
+ * the selected program loaded; Practice always opens the same shared
+ * LIVE entry (via /live/select's own focusRouteId param) with the
+ * selected program loaded. The user may have many saved programs -- this
+ * list is never restricted to one active/practice-ready program.
  *
  * Archived routes are hidden by default (showArchived toggle reveals
  * them) but never deleted -- disable/archive/restore only ever change
@@ -65,9 +72,18 @@ export default function PersonalDevelopmentRouteListScreen() {
   const [showArchived, setShowArchived] = useState(false);
 
   const reload = useCallback(() => {
-    Promise.all([loadPersonalDevelopmentRouteConfigs(), loadInterferenceItems(), loadStateProfiles(), loadPresenceArcs(), loadPersonalDevelopmentRouteProgressStore()])
-      .then(([loadedConfigs, loadedItems, loadedStates, loadedPresence, loadedProgress]) => {
-        setConfigs(loadedConfigs);
+    Promise.all([loadPersonalDevelopmentRouteConfigs(), loadCombinedInterferenceSelections(), loadInterferenceItems(), loadStateProfiles(), loadPresenceArcs(), loadPersonalDevelopmentRouteProgressStore()])
+      .then(async ([loadedConfigs, legacySelections, loadedItems, loadedStates, loadedPresence, loadedProgress]) => {
+        // Personal Development consolidation task, step 4: every enabled
+        // legacy CombinedInterferenceSelection with no route yet becomes
+        // one automatically -- additive and idempotent (see
+        // arc/personalDevelopmentRouteConfig.ts's own
+        // autoMigrateAllLegacyCombinedSelections doc), so a coach's
+        // pre-consolidation combined-selection work still shows up here
+        // without the old manual "convert" button.
+        const { configs: migratedConfigs, createdCount } = autoMigrateAllLegacyCombinedSelections(loadedConfigs, legacySelections, new Date().toISOString());
+        if (createdCount > 0) await savePersonalDevelopmentRouteConfigs(migratedConfigs);
+        setConfigs(migratedConfigs);
         setItems(loadedItems);
         setStateProfiles(loadedStates);
         setPresenceArcs(loadedPresence);
@@ -113,15 +129,15 @@ export default function PersonalDevelopmentRouteListScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>מסלולי תרגול משולבים</Text>
-        <Text style={styles.subtitle}>יצירה וניהול של מסלולי תרגול המשלבים כמה גורמים מפריעים, עם או בלי מצב רצוי.</Text>
+        <Text style={styles.title}>השגרה שלי</Text>
+        <Text style={styles.subtitle}>כל התוכניות השמורות שלך. כל תוכנית נערכת דרך אותו BUILD ומתורגלת דרך אותו LIVE.</Text>
 
         <Pressable style={styles.toggleRow} onPress={() => setShowArchived((current) => !current)}>
-          <Text style={styles.toggleText}>{showArchived ? "הסתר מסלולים בארכיון" : "הצג גם מסלולים בארכיון"}</Text>
+          <Text style={styles.toggleText}>{showArchived ? "הסתר תוכניות בארכיון" : "הצג גם תוכניות בארכיון"}</Text>
         </Pressable>
 
-        {configs.length === 0 && <Text style={styles.emptyText}>עדיין אין כאן מסלולי תרגול משולבים. אפשר להוסיף אחד חדש למטה.</Text>}
-        {configs.length > 0 && visibleConfigs.length === 0 && <Text style={styles.emptyText}>כל מסלולי התרגול שלך נמצאים כרגע בארכיון.</Text>}
+        {configs.length === 0 && <Text style={styles.emptyText}>עדיין אין כאן תוכניות. אפשר להוסיף אחת חדשה למטה.</Text>}
+        {configs.length > 0 && visibleConfigs.length === 0 && <Text style={styles.emptyText}>כל התוכניות שלך נמצאות כרגע בארכיון.</Text>}
 
         {visibleConfigs.map((config) => {
           const ready = isPersonalDevelopmentRouteConfigCompleteForPractice(config, items, stateProfiles, presenceArcs);
@@ -129,9 +145,10 @@ export default function PersonalDevelopmentRouteListScreen() {
           return (
             <View key={config.id} style={styles.card}>
               <View style={styles.cardHeaderRow}>
-                <Text style={styles.cardTitle}>{`${config.interferenceItemIds.length} גורמים${config.presenceEnabled ? " + נוכחות" : ""}`}</Text>
+                <Text style={styles.cardTitle}>{config.name ?? `${config.interferenceItemIds.length} גורמים${config.presenceEnabled ? " + נוכחות" : ""}`}</Text>
                 <Text style={[styles.statusBadge, styles[`statusBadge_${config.status}`]]}>{STATUS_LABELS[config.status]}</Text>
               </View>
+              {config.name && <Text style={styles.cardRow}>{`${config.interferenceItemIds.length} גורמים${config.presenceEnabled ? " + נוכחות" : ""}`}</Text>}
               <Text style={styles.cardRow}>{STATE_INCLUSION_LABELS[config.stateInclusionPolicy]}</Text>
               <Text style={[styles.readinessBadge, ready ? styles.readinessBadge_ready : styles.readinessBadge_draft]}>{ready ? "מוכן לתרגול" : "טיוטה -- לא מוכן לתרגול"}</Text>
 

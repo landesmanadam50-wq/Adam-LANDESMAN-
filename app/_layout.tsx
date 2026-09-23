@@ -134,8 +134,9 @@ export default function RootLayout() {
         <Stack.Screen name="interference-items/index" options={{ title: "פריטי הפרעה" }} />
         <Stack.Screen name="interference-items/[id]" options={{ title: "עריכת פריט הפרעה" }} />
         <Stack.Screen name="combined-selection/[stateProfileId]" options={{ title: "הגדרת גורמים מפריעים" }} />
-        <Stack.Screen name="personal-development-routes/index" options={{ title: "מסלולי תרגול משולבים" }} />
-        <Stack.Screen name="personal-development-routes/[id]" options={{ title: "עריכת מסלול תרגול משולב" }} />
+        <Stack.Screen name="personal-development-routes/index" options={{ title: "השגרה שלי" }} />
+        <Stack.Screen name="personal-development-routes/[id]" options={{ title: "עריכת תוכנית" }} />
+        <Stack.Screen name="personal-development-routes/live-select" options={{ title: "מה תרצה לתרגל?" }} />
         <Stack.Screen name="personal-development-routes/[id]/live" options={{ title: "תרגול משולב LIVE" }} />
         <Stack.Screen name="personal-development-routes/[id]/route-link" options={{ title: "קישור ARC למסלול" }} />
         <Stack.Screen name="personal-development-routes/[id]/action-only" options={{ title: "סימון פעולה מיטיבה כבוצעה" }} />

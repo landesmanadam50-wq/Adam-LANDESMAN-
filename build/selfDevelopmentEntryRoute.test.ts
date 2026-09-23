@@ -23,7 +23,7 @@ function readSource(relativePath: string): string {
   return readFileSync(path, "utf8");
 }
 
-test("Self Development dashboard's own '+ בניית תוכנית חדשה' button routes to /self-development/build", () => {
+test("Personal Development consolidation task: the dashboard's own '+ בניית תוכנית חדשה' button now routes to the ONE dynamic BUILD (a new PersonalDevelopmentRouteConfig), never the legacy ArcBuild/MiniArcBuild unified BUILD screen -- /self-development/build stays registered and reachable directly, just no longer linked from this dashboard", () => {
   const dashboard = readSource("build/SelfDevelopmentDashboardScreen.tsx");
   const buttonIndex = dashboard.indexOf("בניית תוכנית חדשה");
   assert.ok(buttonIndex !== -1, "the dashboard must still show the '+ בניית תוכנית חדשה' button");
@@ -34,7 +34,8 @@ test("Self Development dashboard's own '+ בניית תוכנית חדשה' butt
   const lastOnPress = before.lastIndexOf("onPress={() => router.push(");
   assert.ok(lastOnPress !== -1, "the button's own Pressable must carry a router.push onPress");
   const onPressToLabel = dashboard.slice(lastOnPress, buttonIndex);
-  assert.ok(onPressToLabel.includes('"/self-development/build"'), "the '+ בניית תוכנית חדשה' button must route to /self-development/build");
+  assert.ok(onPressToLabel.includes('"/personal-development-routes/[id]"') && onPressToLabel.includes('id: "new"'), "the '+ בניית תוכנית חדשה' button must open the one dynamic BUILD screen for a brand-new program");
+  assert.ok(!dashboard.includes('"/self-development/build"'), "the dashboard must never link to the legacy ArcBuild/MiniArcBuild BUILD screen any more");
 });
 
 test("the /self-development/build route renders build/SelfDevelopmentBuildScreen.tsx", () => {
