@@ -178,6 +178,7 @@ test("no persisted ArcLiveState exists to restore a legacy instruction: createEm
     "loopIterationCount",
     "negativeActionStarted",
     "plannedActionConfirmed",
+    "practiceMode",
     "presenceRating",
     "realActionCompleted",
     "regulationNeeded",

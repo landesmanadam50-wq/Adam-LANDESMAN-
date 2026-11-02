@@ -74,6 +74,19 @@ function handleReminderResponse(response: Notifications.NotificationResponse | n
     if (programId) router.push({ pathname: "/personal-development-program/live/[id]", params: { id: programId } });
     return;
   }
+  // Hebrew BUILD/LIVE rework spec: own independent notification per
+  // task, never PendingReminder's one-per-kind model -- same treatment
+  // as "arcGoalTarget"/"routine" above. Deep-links straight to the
+  // task's own screen, which renders the 3-choice end-of-timer prompt
+  // itself once it reloads the (already-ended) TaskTimerRun -- this is
+  // the spec's own sanctioned fallback for "if not all three choices
+  // can be shown in the notification, tapping it opens the choice
+  // screen".
+  if (kind === "taskTimerEnded" || kind === "restTimerEnded" || kind === "postponedTaskReturn") {
+    const taskId = typeof data.taskId === "string" ? data.taskId : null;
+    if (taskId) router.push({ pathname: "/tasks/[id]", params: { id: taskId } });
+    return;
+  }
   cancelPendingReminder(kind);
   router.push(resolveReminderRoute(kind));
 }
@@ -94,6 +107,7 @@ export default function RootLayout() {
         <Stack.Screen name="self-development/index" options={{ title: "התפתחות אישית" }} />
         <Stack.Screen name="self-development/build" options={{ title: "בניית תוכנית חדשה" }} />
         <Stack.Screen name="reach-your-goal/index" options={{ title: "השגת מטרה" }} />
+        <Stack.Screen name="today" options={{ title: "היום" }} />
         <Stack.Screen name="build/index" options={{ title: "ARC Builds" }} />
         <Stack.Screen name="build/[id]" options={{ title: "עריכת ARC Build" }} />
         <Stack.Screen name="arc-state-composition/[id]" options={{ title: "הרכבת ARC State" }} />
@@ -108,6 +122,10 @@ export default function RootLayout() {
         <Stack.Screen name="mini-arc/live/[id]" options={{ title: "Mini ARC LIVE" }} />
         <Stack.Screen name="mini-arc/mode/[id]" options={{ title: "מה תרצה לתרגל?" }} />
         <Stack.Screen name="live/select" options={{ title: "מה תרצה לתרגל?" }} />
+        {/* Hebrew BUILD/LIVE rework spec: an additive, optional pre-practice
+            reflection gate -- not yet linked from any existing dashboard
+            button, reachable only at this own route for now. */}
+        <Stack.Screen name="live/gate" options={{ title: "לפני שמתחילים" }} />
         {/* ARC completion/Link simplification task: arc-link/[id] and
             mini-arc-link/[id] are kept registered ONLY so an old saved
             record (opened via a legacy ArcLink/practice-record deep
@@ -157,6 +175,31 @@ export default function RootLayout() {
         <Stack.Screen name="life-manifest/[id]" options={{ title: "עריכת מניפסט חיים" }} />
         <Stack.Screen name="life-manifest/sub-goal/[subGoalId]" options={{ title: "ניהול תת־מטרה" }} />
         <Stack.Screen name="life-manifest/visualize/[majorGoalId]" options={{ title: "דמיון מודרך" }} />
+        {/* Hebrew BUILD/LIVE rework spec, page 3: a separate, standalone
+            text-only guided practice -- not yet linked from any existing
+            dashboard button, reachable only at this own route for now. */}
+        <Stack.Screen name="manifest-meditation" options={{ title: "מדיטציית מניפסט" }} />
+        {/* Hebrew BUILD/LIVE rework spec, page 4: Goals/Tasks/Timer -- not
+            yet linked from Home or any existing dashboard, reachable only
+            at these own routes for now. */}
+        <Stack.Screen name="tasks/index" options={{ title: "המשימות שלי" }} />
+        <Stack.Screen name="tasks/insights" options={{ title: "תובנות" }} />
+        <Stack.Screen name="coaching/index" options={{ title: "סדנת אימון" }} />
+        <Stack.Screen name="coaching/prepare" options={{ title: "הכנה למפגש" }} />
+        <Stack.Screen name="tasks/[id]" options={{ title: "משימה" }} />
+        <Stack.Screen name="tasks/[id]/edit" options={{ title: "עריכת משימה" }} />
+        <Stack.Screen name="tasks/[id]/prepare" options={{ title: "הכנה לפני המשימה" }} />
+        <Stack.Screen name="tasks/[id]/postpone" options={{ title: "דחיית המשימה" }} />
+        <Stack.Screen name="tasks/[id]/reflect" options={{ title: "רפלקציה קצרה" }} />
+        <Stack.Screen name="tasks/[id]/factor/index" options={{ title: "מה מפריע?" }} />
+        <Stack.Screen name="tasks/[id]/factor/emotion" options={{ title: "זיהוי רגש" }} />
+        <Stack.Screen name="tasks/[id]/factor/neutral" options={{ title: "תמיכה נייטרלית" }} />
+        <Stack.Screen name="tasks/[id]/factor/saved" options={{ title: "פרוטוקולים שמורים" }} />
+        <Stack.Screen name="tasks/[id]/factor/new" options={{ title: "גורם חדש" }} />
+        <Stack.Screen name="tasks/[id]/factor/presence" options={{ title: "נוכחות וריכוז" }} />
+        <Stack.Screen name="tasks/[id]/factor/energy" options={{ title: "אנרגיה נמוכה" }} />
+        <Stack.Screen name="tasks/[id]/factor/practical" options={{ title: "בירור המשימה" }} />
+        <Stack.Screen name="tasks/[id]/factor/interruption" options={{ title: "הפרעה חיצונית" }} />
       </Stack>
       <StatusBar style="auto" />
     </SafeAreaProvider>

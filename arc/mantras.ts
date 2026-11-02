@@ -28,6 +28,18 @@
  *     desired state, identity, and action -- shown immediately after
  *     the Regulation Mantra, still inside "regulate"'s own copy, never
  *     "encode"'s.
+ *
+ * Hebrew BUILD/LIVE rework spec: two further additive mantras --
+ * Prevention Mantra and Choice Mantra -- for a new "Bridge to Action"
+ * LIVE step (a later stage adds the step itself), spoken TOGETHER
+ * there. These are genuinely separate from Bridge Mantra above, which
+ * keeps its own existing place at the end of Regulation unchanged; the
+ * new step and its two mantras are purely additive and read only once
+ * that step exists.
+ *   - Prevention Mantra: the trainee's own reminder of what helps them
+ *     avoid the automatic/interfering action.
+ *   - Choice Mantra: the trainee's own reminder of the action they are
+ *     choosing instead.
  */
 
 interface MantraProfile {
@@ -35,6 +47,8 @@ interface MantraProfile {
   acceptanceMantra?: string | null;
   regulationMantra?: string | null;
   bridgeMantra?: string | null;
+  preventionMantra?: string | null;
+  choiceMantra?: string | null;
 }
 
 function safeMantraText(value: string | null | undefined): string | null {
@@ -65,4 +79,28 @@ export function getBridgeMantraLine(profile: MantraProfile): string | null {
   const text = safeMantraText(profile.bridgeMantra);
   if (!text) return null;
   return `הגשר לקראת מה שרוצים לחזק: "${text}".`;
+}
+
+export function getPreventionMantraLine(profile: MantraProfile): string | null {
+  const text = safeMantraText(profile.preventionMantra);
+  if (!text) return null;
+  return `מנטרת המניעה שלך: "${text}".`;
+}
+
+export function getChoiceMantraLine(profile: MantraProfile): string | null {
+  const text = safeMantraText(profile.choiceMantra);
+  if (!text) return null;
+  return `מנטרת הבחירה שלך: "${text}".`;
+}
+
+/**
+ * Whether the new Bridge to Action stage (arc/types.ts's ArcStage)
+ * has anything at all to show -- gates the engine's own
+ * encode -> bridge_to_action -> act transition (arc/arcEngine.ts) so a
+ * build with neither mantra configured skips the new stage entirely,
+ * exactly preserving its existing encode -> act transition rather than
+ * inserting one more, empty-content screen into every session.
+ */
+export function hasBridgeToActionContent(profile: MantraProfile): boolean {
+  return getPreventionMantraLine(profile) !== null || getChoiceMantraLine(profile) !== null;
 }

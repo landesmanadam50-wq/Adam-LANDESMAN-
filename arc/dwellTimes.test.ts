@@ -57,7 +57,7 @@ function profile(overrides: Partial<ArcBuildProfile> = {}): ArcBuildProfile {
 
 // --- B: five default dwell values -------------------------------------
 
-test("DEFAULT_DWELL_TIMES has exactly the ten specified default values (post-action reflection/imagery task: completedActionImagery/improvedActionImagery joined the original eight)", () => {
+test("DEFAULT_DWELL_TIMES has exactly the eleven specified default values (post-action reflection/imagery task: completedActionImagery/improvedActionImagery joined the original eight; Hebrew BUILD/LIVE rework spec: bridgeToActionDwellSeconds joined as the eleventh)", () => {
   const expected: DwellTimes = {
     sensationDwellSeconds: 8,
     acceptanceDwellSeconds: 8,
@@ -69,6 +69,7 @@ test("DEFAULT_DWELL_TIMES has exactly the ten specified default values (post-act
     resultImageryDwellSeconds: 8,
     completedActionImageryDwellSeconds: 20,
     improvedActionImageryDwellSeconds: 20,
+    bridgeToActionDwellSeconds: 15,
   };
   assert.deepEqual(DEFAULT_DWELL_TIMES, expected);
 });

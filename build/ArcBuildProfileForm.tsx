@@ -10,6 +10,11 @@ import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
 import type { DevelopmentLayer, DwellTimes } from "../arc/types.ts";
 import { EXECUTION_QUALITY_PRESETS } from "../arc/successfulPerformance.ts";
 import CollapsibleSection from "./CollapsibleSection.tsx";
+import { EMOTION_STATE_OPTIONS, EMOTION_STATE_OPTION_LABELS } from "../arc/emotionStateOptions.ts";
+import type { EmotionStateOption } from "../arc/emotionStateOptions.ts";
+import { BODY_REGIONS, BODY_REGION_LABELS, bodyRegionHasRole, createBodyRegionConfig, resolveBodyRegionDisplayLabel } from "../arc/bodyRegionRoles.ts";
+import type { BodyRegion, BodyRegionConfig, BodyRegionRole } from "../arc/bodyRegionRoles.ts";
+import { resolveBodyRegionMovementPresets } from "../arc/bodyRegionMovementPresets.ts";
 
 export { buildEvidenceIndex };
 export type { EvidenceRecord };
@@ -47,6 +52,14 @@ export type { EvidenceRecord };
 export const STATE_STEPS: ProfileStep[] = [
   "presenceColor",
   "value",
+  "emotionStateSelection",
+  "arcSuggestionIntensityThreshold",
+  "bodyRegionConfigs",
+  "awakeningAwarenessSentence",
+  "preMovementAirContactRegion",
+  "releaseRelaxationInstruction",
+  "preventionMantra",
+  "choiceMantra",
   "stayMantra",
   "acceptanceMantra",
   "supportiveState",
@@ -83,6 +96,14 @@ export const STATE_STEPS: ProfileStep[] = [
 export const IDENTITY_STEPS: ProfileStep[] = [
   "presenceColor",
   "value",
+  "emotionStateSelection",
+  "arcSuggestionIntensityThreshold",
+  "bodyRegionConfigs",
+  "awakeningAwarenessSentence",
+  "preMovementAirContactRegion",
+  "releaseRelaxationInstruction",
+  "preventionMantra",
+  "choiceMantra",
   "stayMantra",
   "acceptanceMantra",
   "desiredIdentity",
@@ -127,6 +148,14 @@ export const IDENTITY_STEPS: ProfileStep[] = [
 export const HABIT_STEPS: ProfileStep[] = [
   "presenceColor",
   "value",
+  "emotionStateSelection",
+  "arcSuggestionIntensityThreshold",
+  "bodyRegionConfigs",
+  "awakeningAwarenessSentence",
+  "preMovementAirContactRegion",
+  "releaseRelaxationInstruction",
+  "preventionMantra",
+  "choiceMantra",
   "stayMantra",
   "acceptanceMantra",
   "beneficialAction",
@@ -216,6 +245,14 @@ const STEP_TITLES: Partial<Record<ProfileStep, string>> = {
   acceptanceMantra: "משפט קצר שמאפשר לתחושה הקיימת להיות כאן כרגע, בלי צורך לשנות אותה מיד. (רשות, לדוגמה \"מותר למה שאני מרגיש להיות כאן כרגע.\")",
   regulationMantra: "משפט קצר שמלווה את הגוף בזמן ההתייצבות, בלי לדרוש ממנו להירגע או להשתנות. (רשות, לדוגמה \"אני מאפשר לגוף להתייצב בקצב שלו.\")",
   bridgeMantra: "משפט קצר שמגשר לקראת מה שברצונך לחזק בהמשך. (רשות)",
+  preventionMantra: "מנטרת מניעה: מה עוזר לך להימנע מהפעולה האוטומטית? (רשות)",
+  choiceMantra: "מנטרת בחירה: מה אתה בוחר לעשות במקום? (רשות)",
+  awakeningAwarenessSentence: "משפט מודעות מעוררת, בפנייה אישית לעצמך בגוף שני (רשות, לדוגמה \"אדם, עצור ושים לב\")",
+  releaseRelaxationInstruction: "הנחיית הרפיה אישית (רשות)",
+  emotionStateSelection: "אילו רגשות או מצבים נוטים לעלות? אפשר לבחור כמה, להוסיף טקסט אישי, או לבחור \"עדיין לא יודע\"",
+  arcSuggestionIntensityThreshold: "מעל איזו עוצמה (0 עד 10) תרצה שהאפליקציה תציע לך ARC? (רשות, זו הצעה לבחירה ולא כלל מחייב)",
+  bodyRegionConfigs: "באילו אזורי גוף תרצה לעבוד? אפשר לבחור כמה ולהגדיר לכל אחד תפקיד",
+  preMovementAirContactRegion: "באיזה אזור תרצה להתמקד במגע האוויר לפני התנועה הפותחת? (רשות)",
 
   stateDesiredImageryDescription: "תאר בקצרה את הדימוי (רשות, לדוגמה: הצלחה / חמלה / ביטחון / רוגע / אנרגטיות / משמעת)",
   identityDesiredImageryDescription: "תאר בקצרה את הדימוי (רשות, לדוגמה: הצלחה / חמלה / ביטחון / רוגע / אנרגטיות / משמעת)",
@@ -281,6 +318,10 @@ const TEXT_STEP_FIELDS: Partial<Record<ProfileStep, keyof ProfileDraft>> = {
   acceptanceMantra: "acceptanceMantra",
   regulationMantra: "regulationMantra",
   bridgeMantra: "bridgeMantra",
+  preventionMantra: "preventionMantra",
+  choiceMantra: "choiceMantra",
+  awakeningAwarenessSentence: "awakeningAwarenessSentence",
+  releaseRelaxationInstruction: "releaseRelaxationInstruction",
   stateDesiredImageryDescription: "stateDesiredImageryDescription",
   identityDesiredImageryDescription: "identityDesiredImageryDescription",
 
@@ -318,6 +359,7 @@ const DWELL_ROWS: { key: keyof DwellTimes; label: string }[] = [
   { key: "stopImageryDwellSeconds", label: "דמיון עצירה" },
   { key: "completedActionImageryDwellSeconds", label: "דמיון הפעולה שקרתה" },
   { key: "improvedActionImageryDwellSeconds", label: "דמיון הפעולה המשופרת" },
+  { key: "bridgeToActionDwellSeconds", label: "גשר לפעולה" },
 ];
 
 /** Maps a dwell category + the chosen target to its ProfileDraft field name -- only meaningful for target "state"/"identity" (habit has no dwellTimes step). */
@@ -338,7 +380,11 @@ type SectionId =
   | "successfulPerformance"
   | "negativeAction"
   | "dwellTimes"
-  | "trigger";
+  | "trigger"
+  /** Hebrew BUILD/LIVE rework spec, BUILD sections ב/ג/ד -- new, purely optional/advanced, all collapsed by default. */
+  | "emotionIntensity"
+  | "bodyRegions"
+  | "personalChoices";
 
 const SECTION_TITLES: Record<SectionId, string> = {
   foundations: "יסודות",
@@ -353,6 +399,9 @@ const SECTION_TITLES: Record<SectionId, string> = {
   negativeAction: "פעולה שלילית מוגבלת",
   dwellTimes: "זמן שהייה",
   trigger: "טריגר לקישור העתידי המקוצר",
+  emotionIntensity: "רגש, דחף ועוצמה",
+  bodyRegions: "אזורי גוף",
+  personalChoices: "בחירות אישיות לתרגול",
 };
 
 /** Every section here that is never entirely optional (contains at least one field isTargetDraftComplete actually requires) opens expanded by default; every purely optional/advanced section stays collapsed -- this task's own explicit requirement. */
@@ -369,6 +418,9 @@ const SECTION_DEFAULT_EXPANDED: Record<SectionId, boolean> = {
   negativeAction: false,
   dwellTimes: false,
   trigger: false,
+  emotionIntensity: false,
+  bodyRegions: false,
+  personalChoices: false,
 };
 
 const SECTION_FOR: Partial<Record<ProfileStep, SectionId>> = {
@@ -452,6 +504,17 @@ const SECTION_FOR: Partial<Record<ProfileStep, SectionId>> = {
 
   linkTriggerType: "trigger",
   linkTriggerText: "trigger",
+
+  emotionStateSelection: "emotionIntensity",
+  arcSuggestionIntensityThreshold: "emotionIntensity",
+
+  bodyRegionConfigs: "bodyRegions",
+
+  awakeningAwarenessSentence: "personalChoices",
+  preMovementAirContactRegion: "personalChoices",
+  releaseRelaxationInstruction: "personalChoices",
+  preventionMantra: "personalChoices",
+  choiceMantra: "personalChoices",
 };
 
 export function ArcBuildProfileForm({
@@ -633,6 +696,159 @@ export function ArcBuildProfileForm({
           </View>
         )}
 
+        {step === "arcSuggestionIntensityThreshold" && (
+          <View style={styles.chipRow}>
+            {Array.from({ length: 11 }, (_, intensity) => intensity).map((intensity) => (
+              <Pressable
+                key={intensity}
+                style={[styles.chip, draft.arcSuggestionIntensityThreshold === intensity && styles.chipSelected]}
+                onPress={() =>
+                  setDraft({ ...draft, arcSuggestionIntensityThreshold: draft.arcSuggestionIntensityThreshold === intensity ? null : intensity })
+                }
+              >
+                <Text style={styles.chipText}>{intensity}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {step === "preMovementAirContactRegion" && (
+          <View style={styles.chipRow}>
+            {BODY_REGIONS.map((region) => (
+              <Pressable
+                key={region}
+                style={[styles.chip, draft.preMovementAirContactRegion === region && styles.chipSelected]}
+                onPress={() =>
+                  setDraft({ ...draft, preMovementAirContactRegion: draft.preMovementAirContactRegion === region ? null : region })
+                }
+              >
+                <Text style={styles.chipText}>{BODY_REGION_LABELS[region]}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {step === "emotionStateSelection" && (
+          <View>
+            <View style={styles.chipRow}>
+              {EMOTION_STATE_OPTIONS.map((option) => {
+                const selected = draft.emotionStateOptions.includes(option);
+                return (
+                  <Pressable
+                    key={option}
+                    style={[styles.chip, selected && styles.chipSelected]}
+                    onPress={() => {
+                      const next = selected ? draft.emotionStateOptions.filter((o) => o !== option) : [...draft.emotionStateOptions, option];
+                      setDraft({ ...draft, emotionStateOptions: next });
+                    }}
+                  >
+                    <Text style={styles.chipText}>{EMOTION_STATE_OPTION_LABELS[option]}</Text>
+                  </Pressable>
+                );
+              })}
+              <Pressable
+                style={[styles.chip, draft.emotionStateStillUnknown && styles.chipSelected]}
+                onPress={() => setDraft({ ...draft, emotionStateStillUnknown: !draft.emotionStateStillUnknown })}
+              >
+                <Text style={styles.chipText}>עדיין לא יודע</Text>
+              </Pressable>
+            </View>
+            <TextInput
+              style={[styles.textInput, { marginTop: 10 }]}
+              value={draft.emotionStateCustomText}
+              onChangeText={(value) => setDraft({ ...draft, emotionStateCustomText: value })}
+              textAlign="right"
+              multiline
+              placeholder="תיאור אישי (רשות)"
+            />
+          </View>
+        )}
+
+        {step === "bodyRegionConfigs" && (
+          <View>
+            <View style={styles.chipRow}>
+              {BODY_REGIONS.map((region) => {
+                const selected = draft.bodyRegionConfigs.some((config) => config.region === region);
+                return (
+                  <Pressable
+                    key={region}
+                    style={[styles.chip, selected && styles.chipSelected]}
+                    onPress={() => {
+                      const next = selected
+                        ? draft.bodyRegionConfigs.filter((config) => config.region !== region)
+                        : [...draft.bodyRegionConfigs, createBodyRegionConfig(region, draft.bodyRegionConfigs.length)];
+                      setDraft({ ...draft, bodyRegionConfigs: next });
+                    }}
+                  >
+                    <Text style={styles.chipText}>{BODY_REGION_LABELS[region]}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {draft.bodyRegionConfigs.map((config, index) => {
+              const presets = resolveBodyRegionMovementPresets(config.region);
+              function updateConfig(patch: Partial<BodyRegionConfig>) {
+                const next = [...draft.bodyRegionConfigs];
+                next[index] = { ...config, ...patch };
+                setDraft({ ...draft, bodyRegionConfigs: next });
+              }
+              function toggleRole(role: BodyRegionRole) {
+                const has = bodyRegionHasRole(config, role);
+                updateConfig({ roles: has ? config.roles.filter((r) => r !== role) : [...config.roles, role] });
+              }
+              return (
+                <View key={`${config.region}-${index}`} style={styles.bodyRegionCard}>
+                  <Text style={styles.bodyRegionCardTitle}>{resolveBodyRegionDisplayLabel(config)}</Text>
+                  {config.region === "other" && (
+                    <TextInput
+                      style={styles.textInput}
+                      value={config.customLabel ?? ""}
+                      onChangeText={(value) => updateConfig({ customLabel: value })}
+                      textAlign="right"
+                      placeholder="שם האזור"
+                    />
+                  )}
+                  <View style={styles.buttonRow}>
+                    <Pressable
+                      style={[styles.smallButton, bodyRegionHasRole(config, "sensationAndOpening") && styles.smallButtonSelected]}
+                      onPress={() => toggleRole("sensationAndOpening")}
+                    >
+                      <Text style={styles.smallButtonText}>תחושה מפריעה ופתיחה</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.smallButton, bodyRegionHasRole(config, "supportive") && styles.smallButtonSelected]}
+                      onPress={() => toggleRole("supportive")}
+                    >
+                      <Text style={styles.smallButtonText}>תנועה תומכת</Text>
+                    </Pressable>
+                  </View>
+                  {presets.length > 0 && (
+                    <View style={styles.chipRow}>
+                      {presets.map((preset) => (
+                        <Pressable
+                          key={preset}
+                          style={[styles.chip, config.movementText === preset && styles.chipSelected]}
+                          onPress={() => updateConfig({ movementText: preset })}
+                        >
+                          <Text style={styles.chipText}>{preset}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                  <TextInput
+                    style={styles.textInput}
+                    value={config.movementText ?? ""}
+                    onChangeText={(value) => updateConfig({ movementText: value })}
+                    textAlign="right"
+                    multiline
+                    placeholder="תנועה אישית (רשות)"
+                  />
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         {yesNoField && (
           <View style={styles.buttonRow}>
             {[true, false].map((answer) => (
@@ -719,4 +935,6 @@ const styles = StyleSheet.create({
   dwellLabel: { flex: 1, fontSize: 15, textAlign: "right" },
   dwellInput: { width: 56, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 8, fontSize: 16, marginHorizontal: 8 },
   dwellUnit: { fontSize: 13, color: "#666" },
+  bodyRegionCard: { borderWidth: 1, borderColor: "#ddd", borderRadius: 10, padding: 12, marginTop: 10, gap: 8 },
+  bodyRegionCardTitle: { fontSize: 15, fontWeight: "700", textAlign: "right" },
 });

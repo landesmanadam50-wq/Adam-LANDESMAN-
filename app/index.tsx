@@ -3,9 +3,9 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 /**
- * New architecture task, Phase 1 (spec section 1): Home now offers
- * exactly the two primary modes -- "replace the confusing mixed entry
- * experience with two primary choices." Every previous Home entry
+ * New architecture task, Phase 1 (spec section 1): Home originally
+ * offered exactly two primary modes -- "replace the confusing mixed
+ * entry experience with two primary choices." Every previous Home entry
  * point (Mini ARC, ARC Goals, Urge ARC, Life Manifest, stats, routines,
  * negative action, the future-reminder scheduler) still exists at its
  * exact original route, unchanged -- see build/SelfDevelopmentDashboardScreen.tsx
@@ -13,6 +13,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
  * points instead of Home itself (spec section 19's own removal
  * ordering: move the entry BUTTON off the new UI, never delete the
  * underlying screen/route/data).
+ *
+ * Productivity roadmap, Stage G: a third mode, "משימות ולוח זמנים",
+ * added the exact same way -- one more Pressable, same visual/navigation
+ * convention, its own dashboard (build/TodayScreen.tsx, route /today)
+ * hosting every one of ITS entry points (Tasks, BUILD, the LIVE gate,
+ * Manifest Meditation) rather than adding a fourth button here for each.
  */
 export default function Home() {
   return (
@@ -35,6 +41,14 @@ export default function Home() {
             <Text style={styles.modeButtonAction}>השגת מטרה</Text>
           </Pressable>
         </Link>
+
+        <Link href="/today" asChild>
+          <Pressable style={[styles.modeButton, styles.todayButton]}>
+            <Text style={styles.modeButtonLabel}>משימות ולוח זמנים</Text>
+            <Text style={styles.modeButtonHint}>משימות עם טיימר, הכנה לפני פעולה, ותמיכת ARC כשמשהו מפריע</Text>
+            <Text style={styles.modeButtonAction}>כניסה להיום</Text>
+          </Pressable>
+        </Link>
       </View>
     </SafeAreaView>
   );
@@ -52,6 +66,7 @@ const styles = StyleSheet.create({
   },
   selfDevelopmentButton: { backgroundColor: "#0a7ea4" },
   reachGoalButton: { backgroundColor: "#1a6b4a" },
+  todayButton: { backgroundColor: "#7A4E2E" },
   modeButtonLabel: { color: "#fff", fontSize: 22, fontWeight: "700", textAlign: "right" },
   modeButtonHint: { color: "#e6f4fe", fontSize: 13, textAlign: "right", marginTop: 6, marginBottom: 14 },
   modeButtonAction: {

@@ -78,7 +78,22 @@ export default function LiveModeSelectScreen() {
   // ever resolves stage/mode itself or launches Full/Mini/Route Link/
   // Action Only directly -- see this file's own header doc and
   // build/personalDevelopmentSingleLiveEntry.test.ts.
-  const { buildId, mode: modeParam, focusRouteId } = useLocalSearchParams<{ buildId?: string; mode?: string; focusRouteId?: string }>();
+  /**
+   * Productivity roadmap, Stage J: an optional `returnToTaskId` param --
+   * set only by live/ActiveTaskScreen.tsx's own "משהו מפריע"/"בוא נעשה
+   * ARC עכשיו" buttons -- forwarded, unchanged, onto the "ARC רגיל" push
+   * to /live below, so that session knows to return to this exact task
+   * on completion (see live/LiveSessionScreen.tsx's own doc for the
+   * same param). Every other button/path on this screen (ARC Goal,
+   * future-arc-link, combined Personal Development routes) does not yet
+   * forward it -- scoped to the single most direct path for this stage.
+   */
+  const { buildId, mode: modeParam, focusRouteId, returnToTaskId } = useLocalSearchParams<{
+    buildId?: string;
+    mode?: string;
+    focusRouteId?: string;
+    returnToTaskId?: string;
+  }>();
   const [mode, setMode] = useState<"chooser" | "regular">(modeParam === "self_development" ? "regular" : "chooser");
   const [builds, setBuilds] = useState<ArcBuild[] | null>(null);
   const [selectedBuild, setSelectedBuild] = useState<ArcBuild | null>(null);
@@ -249,7 +264,12 @@ export default function LiveModeSelectScreen() {
 
         <Pressable
           style={[styles.button, styles.fullWidthButton]}
-          onPress={() => router.push({ pathname: "/live", params: { buildId: selectedBuild.id } })}
+          onPress={() =>
+            router.push({
+              pathname: "/live",
+              params: returnToTaskId ? { buildId: selectedBuild.id, returnToTaskId } : { buildId: selectedBuild.id },
+            })
+          }
         >
           <Text style={styles.buttonText}>ARC רגיל</Text>
         </Pressable>

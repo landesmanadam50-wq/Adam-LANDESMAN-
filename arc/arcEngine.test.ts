@@ -1217,6 +1217,67 @@ test("the tail is a fixed line: encode -> act -> success_focus -> gratitude_and_
   assert.equal(getNextArcStage("future_link", s, p, ALL_LAYERS).stage, "complete");
 });
 
+test("encode routes through the new bridge_to_action stage only when a Prevention or Choice Mantra is configured -- a build with neither keeps the exact original encode -> act transition", () => {
+  const s = state();
+  assert.equal(getNextArcStage("encode", s, profile(), ALL_LAYERS).stage, "act", "neither configured -- unchanged");
+  assert.equal(getNextArcStage("encode", s, profile({ preventionMantra: "אני עוצר." }), ALL_LAYERS).stage, "bridge_to_action");
+  assert.equal(getNextArcStage("encode", s, profile({ choiceMantra: "אני בוחר." }), ALL_LAYERS).stage, "bridge_to_action");
+  assert.equal(
+    getNextArcStage("encode", s, profile({ preventionMantra: "אני עוצר.", choiceMantra: "אני בוחר." }), ALL_LAYERS).stage,
+    "bridge_to_action"
+  );
+});
+
+test("bridge_to_action always continues straight to act", () => {
+  const s = state();
+  assert.equal(getNextArcStage("bridge_to_action", s, profile({ preventionMantra: "אני עוצר." }), ALL_LAYERS).stage, "act");
+});
+
+// --- Hebrew BUILD/LIVE rework spec, step 9: trigger_imagery_repeat ---------
+
+test("regulate routes through the new trigger_imagery_repeat stage only in preparation mode with a configured trigger -- every other case keeps the exact original regulate -> encode transition", () => {
+  const capped = state({ triggerType: "reactive_emotion", loopIterationCount: 999 });
+  assert.equal(getNextArcStage("regulate", capped, profile(), ALL_LAYERS).stage, "encode", "real_time (default), no trigger -- unchanged");
+  assert.equal(
+    getNextArcStage("regulate", { ...capped, practiceMode: "preparation" }, profile(), ALL_LAYERS).stage,
+    "encode",
+    "preparation mode but no trigger configured -- unchanged"
+  );
+  assert.equal(
+    getNextArcStage("regulate", capped, profile({ linkSettings: { enabled: true, triggerType: "time", triggerText: "בשעה 10:00" } }), ALL_LAYERS).stage,
+    "encode",
+    "trigger configured but real_time mode -- unchanged"
+  );
+  assert.equal(
+    getNextArcStage(
+      "regulate",
+      { ...capped, practiceMode: "preparation" },
+      profile({ linkSettings: { enabled: true, triggerType: "time", triggerText: "בשעה 10:00" } }),
+      ALL_LAYERS
+    ).stage,
+    "trigger_imagery_repeat",
+    "preparation mode AND a configured trigger -- the new stage is inserted"
+  );
+});
+
+test("the same gate applies to the proactive loop-capped edge into encode", () => {
+  const capped = state({ triggerType: "proactive", loopIterationCount: 999 });
+  assert.equal(getNextArcStage("regulate", capped, profile(), ALL_LAYERS).stage, "encode");
+  assert.equal(
+    getNextArcStage(
+      "regulate",
+      { ...capped, practiceMode: "preparation" },
+      profile({ linkSettings: { enabled: true, triggerType: "time", triggerText: "בשעה 10:00" } }),
+      ALL_LAYERS
+    ).stage,
+    "trigger_imagery_repeat"
+  );
+});
+
+test("trigger_imagery_repeat always continues straight to encode", () => {
+  assert.equal(getNextArcStage("trigger_imagery_repeat", state(), profile(), ALL_LAYERS).stage, "encode");
+});
+
 test("success_focus continues straight to gratitude_and_learning (then the post-action reflection/imagery sequence to complete) regardless of activeLayers -- habit layer active or not never matters any more", () => {
   const p = profile();
   const s = state();

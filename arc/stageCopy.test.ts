@@ -643,6 +643,183 @@ test("encode with no regulation tool configured still works, with a neutral sens
   assert.equal(copy.body, "שים לב לתחושה שלך עכשיו ולכל שינוי שקרה, אם קרה. קח רגע לקבע את התחושה החדשה.");
 });
 
+// --- Hebrew BUILD/LIVE rework spec, steps 1-2 & 9: trigger_selection -------
+// (awakening sentence + dual trigger-imagery placement) ---------------------
+
+test("trigger_selection is completely unaffected when no awakening sentence is configured and practiceMode is real_time (the default) -- the exact pre-existing chooser copy", () => {
+  const copy = getStageCopy("trigger_selection", profile(), liveState({ triggerType: "proactive" }), ["state"]);
+  assert.equal(copy.body, "בחר את מה שהכי מתאים לרגע הזה.");
+});
+
+test("trigger_selection shows the awakening sentence first, regardless of practice mode, and passes the safety denylist", () => {
+  const p = profile({ awakeningAwarenessSentence: "אדם, עצור ושים לב." });
+  const copy = getStageCopy("trigger_selection", p, liveState({ triggerType: "proactive" }), ["state"]);
+  assert.match(copy.body, /^אדם, עצור ושים לב\./);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("trigger_selection shows the early trigger imagery only in preparation mode WITH a configured trigger -- real_time mode or an unconfigured trigger never show it", () => {
+  const triggerProfile = profile({ linkSettings: { enabled: true, triggerType: "time", triggerText: "בשעה 10:00" } });
+  const realTime = getStageCopy("trigger_selection", triggerProfile, liveState({ triggerType: "proactive", practiceMode: "real_time" }), ["state"]);
+  assert.ok(!realTime.body.includes("דמיון טריגר"));
+
+  const preparationNoTrigger = getStageCopy("trigger_selection", profile(), liveState({ triggerType: "proactive", practiceMode: "preparation" }), ["state"]);
+  assert.ok(!preparationNoTrigger.body.includes("דמיון טריגר"));
+
+  const preparationWithTrigger = getStageCopy("trigger_selection", triggerProfile, liveState({ triggerType: "proactive", practiceMode: "preparation" }), ["state"]);
+  assert.match(preparationWithTrigger.body, /דמיון טריגר: דמיין את הרגע הבא: בשעה 10:00\./);
+  assert.equal(containsInductionPattern(preparationWithTrigger.body), false);
+});
+
+test("trigger_selection's awakening sentence and early trigger imagery can coexist, awakening sentence first", () => {
+  const p = profile({
+    awakeningAwarenessSentence: "אדם, עצור ושים לב.",
+    linkSettings: { enabled: true, triggerType: "time", triggerText: "בשעה 10:00" },
+  });
+  const copy = getStageCopy("trigger_selection", p, liveState({ triggerType: "proactive", practiceMode: "preparation" }), ["state"]);
+  const awakeningIndex = copy.body.indexOf("אדם, עצור ושים לב.");
+  const triggerIndex = copy.body.indexOf("דמיון טריגר");
+  assert.ok(awakeningIndex === 0 && triggerIndex > awakeningIndex);
+});
+
+test("trigger_imagery_repeat shows a brief second mention of the same configured trigger, and passes the safety denylist", () => {
+  const p = profile({ linkSettings: { enabled: true, triggerType: "time", triggerText: "בשעה 10:00" } });
+  const copy = getStageCopy("trigger_imagery_repeat", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /חזרה קצרה.*בשעה 10:00/);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("trigger_imagery_repeat never crashes or shows an empty body even if somehow reached with no trigger configured", () => {
+  const copy = getStageCopy("trigger_imagery_repeat", profile(), liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(copy.body.length > 0);
+});
+
+// --- Hebrew BUILD/LIVE rework spec, step 11: bridge_to_action -------------
+
+test("bridge_to_action shows both mantras, in order, with the informational posture/continue-early line first, and passes the safety denylist", () => {
+  const p = profile({ preventionMantra: "אני עוצר לפני שאני פועל מתוך אוטומט.", choiceMantra: "אני בוחר את הפעולה שמשרתת אותי." });
+  const copy = getStageCopy("bridge_to_action", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  const preventionIndex = copy.body.indexOf("אני עוצר לפני שאני פועל מתוך אוטומט.");
+  const choiceIndex = copy.body.indexOf("אני בוחר את הפעולה שמשרתת אותי.");
+  assert.ok(preventionIndex >= 0 && choiceIndex > preventionIndex, "Prevention Mantra must precede Choice Mantra");
+  assert.match(copy.body, /אין צורך בחוסר תנועה מוחלט/);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("bridge_to_action shows only whichever mantra is configured -- never invents the other", () => {
+  const onlyPrevention = getStageCopy("bridge_to_action", profile({ preventionMantra: "אני עוצר." }), liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(onlyPrevention.body, /אני עוצר\./);
+  assert.ok(!onlyPrevention.body.includes('מנטרת הבחירה שלך'));
+
+  const onlyChoice = getStageCopy("bridge_to_action", profile({ choiceMantra: "אני בוחר." }), liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(onlyChoice.body, /אני בוחר\./);
+  assert.ok(!onlyChoice.body.includes('מנטרת המניעה שלך'));
+});
+
+test("bridge_to_action's dwell resolves from the current target's own bridgeToActionDwellSeconds, same mechanism as every other dwell-bearing stage", () => {
+  const p = profile({ preventionMantra: "אני עוצר.", stateDwellTimes: { ...DEFAULT_DWELL_TIMES, bridgeToActionDwellSeconds: 42 } });
+  const copy = getStageCopy("bridge_to_action", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(copy.segments);
+  const lastSegment = copy.segments[copy.segments.length - 1];
+  assert.equal(lastSegment.text, "");
+  assert.equal(lastSegment.durationSeconds, 42);
+});
+
+// --- Hebrew BUILD/LIVE rework spec: movement-aware stay/accept/regulate ---
+
+test("stay/accept/regulate are completely unaffected when no body region is configured -- the exact pre-existing copy for every legacy build", () => {
+  const p = profile();
+  const s = liveState({ triggerType: "reactive_emotion" });
+  assert.ok(!getStageCopy("stay", p, s, ["state"]).body.includes("באזור ה"));
+  assert.ok(!getStageCopy("accept", p, s, ["state"]).body.includes("באזור ה"));
+  assert.ok(!getStageCopy("regulate", p, s, ["state"]).body.includes("באזור ה"));
+});
+
+test("stay names the sensationAndOpening region(s) when configured, with curious, non-demanding wording, and passes the safety denylist", () => {
+  const p = profile({
+    bodyRegionConfigs: [{ region: "chest", customLabel: null, roles: ["sensationAndOpening"], movementText: "פתיחה עדינה", order: 0 }],
+  });
+  const copy = getStageCopy("stay", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /באזור החזה/);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("stay never names a region configured only for the supportive role", () => {
+  const p = profile({ bodyRegionConfigs: [{ region: "hands", customLabel: null, roles: ["supportive"], movementText: null, order: 0 }] });
+  const copy = getStageCopy("stay", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(!copy.body.includes("באזור ה"));
+});
+
+test("accept invites the supportive movement in its own configured region(s), including the movement text when present, and passes the safety denylist", () => {
+  const p = profile({
+    bodyRegionConfigs: [{ region: "hands", customLabel: null, roles: ["supportive"], movementText: "פתיחה הדרגתית", order: 0 }],
+  });
+  const copy = getStageCopy("accept", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /התנועה התומכת באזור הכפות ידיים: פתיחה הדרגתית/);
+  assert.match(copy.body, /להרגיש את התחושה המפריעה ואת התחושה התומכת יחד/);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("regulate invites gently expanding the supportive movement and softening the disturbed area, without requiring more movement or an improved sensation, and passes the safety denylist", () => {
+  const p = profile({ regulationTool: "נשימה 4-7-8", bodyRegionConfigs: [{ region: "back", customLabel: null, roles: ["supportive"], movementText: null, order: 0 }] });
+  const copy = getStageCopy("regulate", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /להרחיב בעדינות.*באזור הגב/);
+  assert.match(copy.body, /בלי דרישה להגדיל את התנועה או לשפר את התחושה/);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("the opening movement is performed at observer_pause (before Presence), never at stay -- stay only NOTICES the same region, it never re-performs the movement", () => {
+  const p = profile({
+    bodyRegionConfigs: [{ region: "chest", customLabel: null, roles: ["sensationAndOpening"], movementText: "פתיחה עדינה", order: 0 }],
+  });
+  const s = liveState({ triggerType: "reactive_emotion" });
+  const observerPauseCopy = getStageCopy("observer_pause", p, s, ["state"]);
+  assert.match(observerPauseCopy.body, /התנועה הפותחת באזור החזה: פתיחה עדינה/, "the opening movement itself must be performed at observer_pause");
+
+  const stayCopy = getStageCopy("stay", p, s, ["state"]);
+  assert.ok(!stayCopy.body.includes("התנועה הפותחת"), "stay must never re-perform the opening movement");
+  assert.ok(!stayCopy.body.includes("פתיחה עדינה"), "stay must never repeat the movement text itself");
+  assert.match(stayCopy.body, /באזור החזה/, "stay still names the same region, but only to NOTICE it");
+});
+
+test("observer_pause is completely unaffected when no air-contact region or opening-movement region is configured -- the exact pre-existing copy for every legacy build", () => {
+  const copy = getStageCopy("observer_pause", profile(), liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.ok(!copy.body.includes("מגע האוויר"));
+  assert.ok(!copy.body.includes("התנועה הפותחת"));
+});
+
+test("observer_pause names the pre-movement air-contact region when configured, with the clothing fallback line, and passes the safety denylist", () => {
+  const p = profile({ preMovementAirContactRegion: "abdomen" });
+  const copy = getStageCopy("observer_pause", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(copy.body, /מגע האוויר באזור הבטן/);
+  assert.match(copy.body, /מגע הבגד/);
+  assert.equal(containsInductionPattern(copy.body), false);
+});
+
+test("the air-contact region and the opening-movement region are independently configurable -- one can be set without the other", () => {
+  const onlyAirContact = getStageCopy("observer_pause", profile({ preMovementAirContactRegion: "hands" }), liveState({ triggerType: "reactive_emotion" }), ["state"]);
+  assert.match(onlyAirContact.body, /מגע האוויר באזור הכפות ידיים/);
+  assert.ok(!onlyAirContact.body.includes("התנועה הפותחת"));
+
+  const onlyOpening = getStageCopy(
+    "observer_pause",
+    profile({ bodyRegionConfigs: [{ region: "back", customLabel: null, roles: ["sensationAndOpening"], movementText: "התיישרות נוחה", order: 0 }] }),
+    liveState({ triggerType: "reactive_emotion" }),
+    ["state"]
+  );
+  assert.ok(!onlyOpening.body.includes("מגע האוויר"));
+  assert.match(onlyOpening.body, /התנועה הפותחת באזור הגב: התיישרות נוחה/);
+});
+
+test("a single region carrying both roles at once is named in both stay and accept/regulate -- the product spec's own explicit allowance", () => {
+  const p = profile({
+    bodyRegionConfigs: [{ region: "chest", customLabel: null, roles: ["sensationAndOpening", "supportive"], movementText: null, order: 0 }],
+  });
+  const s = liveState({ triggerType: "reactive_emotion" });
+  assert.match(getStageCopy("stay", p, s, ["state"]).body, /באזור החזה/);
+  assert.match(getStageCopy("accept", p, s, ["state"]).body, /באזור החזה/);
+});
+
 test("stay is Awareness-adjacent -- it must never name the regulation tool, since Regulation begins only at the regulate stage", () => {
   const p = profile({ regulationTool: "נשימה 4-7-8" });
   const copy = getStageCopy("stay", p, liveState({ triggerType: "reactive_emotion" }), ["state"]);

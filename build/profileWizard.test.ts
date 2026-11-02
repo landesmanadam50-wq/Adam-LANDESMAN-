@@ -687,6 +687,7 @@ test("buildProfileFromDraft saves the state target's ten dwell values (ARC Goal 
     resultImageryDwellSeconds: 8,
     completedActionImageryDwellSeconds: 20,
     improvedActionImageryDwellSeconds: 20,
+    bridgeToActionDwellSeconds: 15,
   });
 });
 
@@ -713,6 +714,7 @@ test("buildProfileFromDraft saves a state target's CUSTOMIZED dwell values exact
     resultImageryDwellSeconds: 8,
     completedActionImageryDwellSeconds: 20,
     improvedActionImageryDwellSeconds: 20,
+    bridgeToActionDwellSeconds: 15,
   });
 });
 
@@ -1163,4 +1165,115 @@ test("draftFromProfileAndSelection infers desired imagery as unconfigured (null/
   assert.equal(reloaded.stateDesiredImageryDescription, "");
   assert.equal(reloaded.identityDesiredImageryType, null);
   assert.equal(reloaded.identityDesiredImageryDescription, "");
+});
+
+// --- Hebrew BUILD/LIVE rework spec: new fields round-trip ------------------
+
+test("buildProfileFromDraft leaves every new field null/default when the new BUILD sections were never touched", () => {
+  const p = buildProfileFromDraft(filledStateOnlyDraft());
+  assert.equal(p.emotionStateSelection, null);
+  assert.equal(p.arcSuggestionIntensityThreshold, null);
+  assert.equal(p.bodyRegionConfigs, null);
+  assert.equal(p.awakeningAwarenessSentence, null);
+  assert.equal(p.preMovementAirContactRegion, null);
+  assert.equal(p.releaseRelaxationInstruction, null);
+  assert.equal(p.preventionMantra, null);
+  assert.equal(p.choiceMantra, null);
+  assert.equal(p.stateDwellTimes?.bridgeToActionDwellSeconds, 15);
+});
+
+test("buildProfileFromDraft persists the emotion/intensity selection exactly as entered, and round-trips via draftFromProfileAndSelection", () => {
+  const draft = filledStateOnlyDraft({
+    emotionStateOptions: ["fear", "overwhelm"],
+    emotionStateCustomText: "גם תחושת לחץ בחזה",
+    emotionStateStillUnknown: false,
+    arcSuggestionIntensityThreshold: 6,
+  });
+  const profile = buildProfileFromDraft(draft);
+  assert.deepEqual(profile.emotionStateSelection, { options: ["fear", "overwhelm"], customText: "גם תחושת לחץ בחזה", stillUnknown: false });
+  assert.equal(profile.arcSuggestionIntensityThreshold, 6);
+
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.deepEqual(reloaded.emotionStateOptions, ["fear", "overwhelm"]);
+  assert.equal(reloaded.emotionStateCustomText, "גם תחושת לחץ בחזה");
+  assert.equal(reloaded.emotionStateStillUnknown, false);
+  assert.equal(reloaded.arcSuggestionIntensityThreshold, 6);
+});
+
+test("emotionStateSelection is persisted when ONLY 'still unknown' is marked, with no options/custom text -- not treated as unconfigured", () => {
+  const profile = buildProfileFromDraft(filledStateOnlyDraft({ emotionStateStillUnknown: true }));
+  assert.deepEqual(profile.emotionStateSelection, { options: [], customText: null, stillUnknown: true });
+});
+
+test("buildProfileFromDraft persists multi-region body configs with per-region roles exactly as entered, and round-trips", () => {
+  const draft = filledStateOnlyDraft({
+    bodyRegionConfigs: [
+      { region: "chest", customLabel: null, roles: ["sensationAndOpening"], movementText: "פתיחה עדינה", order: 0 },
+      { region: "hands", customLabel: null, roles: ["supportive"], movementText: "פתיחה הדרגתית", order: 1 },
+    ],
+  });
+  const profile = buildProfileFromDraft(draft);
+  assert.equal(profile.bodyRegionConfigs?.length, 2);
+  assert.deepEqual(profile.bodyRegionConfigs?.[0].roles, ["sensationAndOpening"]);
+  assert.deepEqual(profile.bodyRegionConfigs?.[1].roles, ["supportive"]);
+
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.deepEqual(reloaded.bodyRegionConfigs, draft.bodyRegionConfigs);
+});
+
+test("buildProfileFromDraft persists the new personal-choice text fields and prevention/choice mantras, trimmed, and round-trips", () => {
+  const draft = filledStateOnlyDraft({
+    awakeningAwarenessSentence: "  אדם, עצור ושים לב.  ",
+    preMovementAirContactRegion: "chest",
+    releaseRelaxationInstruction: "  שחרור הכתפיים.  ",
+    preventionMantra: "  אני עוצר לפני שאני פועל מתוך אוטומט.  ",
+    choiceMantra: "  אני בוחר את הפעולה שמשרתת אותי.  ",
+  });
+  const profile = buildProfileFromDraft(draft);
+  assert.equal(profile.awakeningAwarenessSentence, "אדם, עצור ושים לב.");
+  assert.equal(profile.preMovementAirContactRegion, "chest");
+  assert.equal(profile.releaseRelaxationInstruction, "שחרור הכתפיים.");
+  assert.equal(profile.preventionMantra, "אני עוצר לפני שאני פועל מתוך אוטומט.");
+  assert.equal(profile.choiceMantra, "אני בוחר את הפעולה שמשרתת אותי.");
+
+  const reloaded = draftFromProfileAndSelection(profile, selectionFromDraft(draft));
+  assert.equal(reloaded.awakeningAwarenessSentence, "אדם, עצור ושים לב.");
+  assert.equal(reloaded.preMovementAirContactRegion, "chest");
+  assert.equal(reloaded.releaseRelaxationInstruction, "שחרור הכתפיים.");
+  assert.equal(reloaded.preventionMantra, "אני עוצר לפני שאני פועל מתוך אוטומט.");
+  assert.equal(reloaded.choiceMantra, "אני בוחר את הפעולה שמשרתת אותי.");
+});
+
+test("buildProfileFromDraft saves a CUSTOMIZED bridgeToActionDwellSeconds per layer, independent of every other dwell field", () => {
+  const draft = filledTwoWeekDraft({ stateBridgeToActionDwellSeconds: "20", identityBridgeToActionDwellSeconds: "25" });
+  const profile = buildProfileFromDraft(draft);
+  assert.equal(profile.stateDwellTimes?.bridgeToActionDwellSeconds, 20);
+  assert.equal(profile.identityDwellTimes?.bridgeToActionDwellSeconds, 25);
+  assert.equal(profile.stateDwellTimes?.sensationDwellSeconds, 8, "sanity: neighboring dwell fields are untouched");
+});
+
+test("a legacy profile saved before the new fields existed loads into the draft with every new field at its safe default", () => {
+  const legacyProfile: ArcBuildProfile = buildProfileFromDraft(filledStateOnlyDraft());
+  // Simulate a genuinely legacy record: strip every new field the way JSON.parse would for data saved before this task.
+  const stripped = { ...legacyProfile };
+  delete (stripped as Partial<ArcBuildProfile>).emotionStateSelection;
+  delete (stripped as Partial<ArcBuildProfile>).arcSuggestionIntensityThreshold;
+  delete (stripped as Partial<ArcBuildProfile>).bodyRegionConfigs;
+  delete (stripped as Partial<ArcBuildProfile>).awakeningAwarenessSentence;
+  delete (stripped as Partial<ArcBuildProfile>).preMovementAirContactRegion;
+  delete (stripped as Partial<ArcBuildProfile>).releaseRelaxationInstruction;
+  delete (stripped as Partial<ArcBuildProfile>).preventionMantra;
+  delete (stripped as Partial<ArcBuildProfile>).choiceMantra;
+
+  const draft = draftFromProfileAndSelection(stripped, selectionFromDraft(filledStateOnlyDraft()));
+  assert.deepEqual(draft.emotionStateOptions, []);
+  assert.equal(draft.emotionStateCustomText, "");
+  assert.equal(draft.emotionStateStillUnknown, false);
+  assert.equal(draft.arcSuggestionIntensityThreshold, null);
+  assert.deepEqual(draft.bodyRegionConfigs, []);
+  assert.equal(draft.awakeningAwarenessSentence, "");
+  assert.equal(draft.preMovementAirContactRegion, null);
+  assert.equal(draft.releaseRelaxationInstruction, "");
+  assert.equal(draft.preventionMantra, "");
+  assert.equal(draft.choiceMantra, "");
 });

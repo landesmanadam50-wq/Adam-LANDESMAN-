@@ -3,10 +3,12 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
-import { deleteArcGoal, loadArcGoals, upsertArcGoal } from "../data/storage.ts";
+import { deleteArcGoal, loadArcGoals, loadTasks, saveTasks, upsertArcGoal } from "../data/storage.ts";
 import { duplicateArcGoal } from "../arc/arcGoals.ts";
 import { createEmptyArcGoal, generateArcGoalId } from "../arc/types.ts";
 import type { ArcGoal } from "../arc/types.ts";
+import { findTasksReferencingArcGoal, unlinkArcGoalFromTasks } from "../arc/taskLibraryUsage.ts";
+import type { Task } from "../arc/tasks.ts";
 
 /**
  * ARC Goal task: the ARC Goal home screen -- lists every independently
@@ -28,6 +30,7 @@ export default function ArcGoalListScreen() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   const reload = useCallback(() => {
     loadArcGoals()
@@ -36,6 +39,8 @@ export default function ArcGoalListScreen() {
         console.warn("[ArcGoalListScreen] Failed to load ARC Goals -- showing the empty state.", error);
         setGoals([]);
       });
+    // Productivity roadmap, Stage AC: loaded alongside goals so the delete-confirm modal can warn about any task still linked to the goal about to be deleted.
+    loadTasks().then(setTasks);
   }, []);
 
   useFocusEffect(
@@ -74,6 +79,11 @@ export default function ArcGoalListScreen() {
   }
 
   async function handleDelete(id: string) {
+    // Productivity roadmap, Stage AC: "never silently delete referenced data" -- any task still linked to this goal is safely unlinked first, never left with a dangling id.
+    const referencingTasks = findTasksReferencingArcGoal(id, tasks);
+    if (referencingTasks.length > 0) {
+      await saveTasks(unlinkArcGoalFromTasks(tasks, id, new Date().toISOString()));
+    }
     await deleteArcGoal(id);
     setConfirmDeleteId(null);
     reload();
@@ -82,7 +92,9 @@ export default function ArcGoalListScreen() {
   if (!goals) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.content} />
+        <View style={styles.content}>
+          <Text style={styles.body}>טוען...</Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -176,6 +188,13 @@ export default function ArcGoalListScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>למחוק את המטרה הזאת?</Text>
             <Text style={styles.body}>הפעולה אינה הפיכה. הפרוטוקולים המקושרים (ARC Build) לא יימחקו.</Text>
+            {confirmDeleteId &&
+              (() => {
+                const referencingTasks = findTasksReferencingArcGoal(confirmDeleteId, tasks);
+                return referencingTasks.length > 0 ? (
+                  <Text style={styles.body}>{`${referencingTasks.length} משימות מקושרות למטרה הזו -- הקישור יוסר מהן, המשימות עצמן יישארו.`}</Text>
+                ) : null;
+              })()}
             <View style={styles.modalButtonRow}>
               <Pressable
                 style={[styles.button, styles.modalButton, styles.deleteButton]}

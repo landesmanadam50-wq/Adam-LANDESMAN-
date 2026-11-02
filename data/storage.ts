@@ -81,6 +81,15 @@ import { normalizePersonalDevelopmentRouteProgress } from "../arc/personalDevelo
 import type { ArcGoalSessionProgress } from "../arc/arcGoalSessionProgress.ts";
 import { normalizeArcGoalSessionProgress } from "../arc/arcGoalSessionProgress.ts";
 import type { PendingSharedActionExecution } from "../arc/pendingSharedActionExecution.ts";
+import { deleteTaskFromList, normalizeTask, upsertTaskInList } from "../arc/tasks.ts";
+import type { Task } from "../arc/tasks.ts";
+import { normalizeTaskJournalEntry } from "./taskJournal.ts";
+import type { TaskJournalEntry } from "./taskJournal.ts";
+import type { TaskTimerRun } from "../arc/taskTimer.ts";
+import type { TaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
+import type { ReviewLaterFactor } from "../arc/reviewLaterFactor.ts";
+import { upsertCoachingWorkspaceEntryInList } from "../arc/coachingWorkspace.ts";
+import type { CoachingWorkspaceEntry } from "../arc/coachingWorkspace.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
 const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
@@ -116,6 +125,20 @@ const PROGRESSION_MAPPING_STORE_KEY = "archi.progressionMappingStore.v1";
 const PERSONAL_DEVELOPMENT_ROUTE_PROGRESS_KEY = "archi.personalDevelopmentRouteProgress.v1";
 const ARC_GOAL_SESSION_PROGRESS_KEY = "archi.arcGoalSessionProgress.v1";
 const PENDING_SHARED_ACTION_EXECUTION_KEY = "archi.pendingSharedActionExecution.v1";
+/** ARCHI productivity task, Stage 1 foundation: a brand-new, independent collection of Task records (arc/tasks.ts) -- a trainee's own to-do items, never read/written by any existing ARC/ArcGoal/MiniArc/UrgeArc/Life Manifest/routine key. References ArcGoal only by id (linkedArcGoalId), never duplicates its content, same "reference, never duplicate" convention as ARC_GOALS_KEY. No legacy migration: there is no prior data format for Task, so an absent key simply means "no tasks yet". */
+const TASKS_KEY = "archi.tasks.v1";
+/** ARCHI productivity task, Stage 1 foundation: the Task journal -- append-only, exact mirror of LIFE_MANIFEST_JOURNAL_KEY's own shape/guarantees (see data/taskJournal.ts's module doc). Never read/written by TASKS_KEY or any other key above. */
+const TASK_JOURNAL_KEY = "archi.taskJournal.v1";
+/** Hebrew BUILD/LIVE rework spec, page 4: a single-slot store for the ONE currently in-flight TaskTimerRun (arc/taskTimer.ts) -- a trainee works on one timed task at a time, same singleton-per-slot convention as TIMER_RUN_KEY's own ARC-internal timers, deliberately never merged with that key/type (see arc/taskTimer.ts's own module doc for why). */
+const TASK_TIMER_RUN_KEY = "archi.taskTimerRun.v1";
+/** Productivity roadmap, Stage I: append-only per-occurrence completions for RECURRING tasks -- see arc/taskOccurrence.ts's own module doc for why this is a separate collection rather than a field on Task itself. */
+const TASK_OCCURRENCE_COMPLETIONS_KEY = "archi.taskOccurrenceCompletions.v1";
+/** Productivity roadmap, Stages Q/R/S: append-only "review later" factors (a new, unmatched urge/thought/belief captured during a task) -- see arc/reviewLaterFactor.ts's own module doc. */
+const REVIEW_LATER_FACTORS_KEY = "archi.reviewLaterFactors.v1";
+/** Productivity roadmap, Stage Z: the local, trainee-owned coaching workspace -- see arc/coachingWorkspace.ts's own module doc. */
+const COACHING_WORKSPACE_ENTRIES_KEY = "archi.coachingWorkspaceEntries.v1";
+/** Productivity roadmap, Stage AB: a single persisted flag -- has the trainee already seen the in-app explanation of why ARCHI asks for notification permission? Shown once, on live/ActiveTaskScreen.tsx, BEFORE the first action that would trigger the real OS permission dialog. */
+const NOTIFICATION_EXPLANATION_SEEN_KEY = "archi.notificationExplanationSeen.v1";
 
 function isKnownProgramPath(programPath: string): boolean {
   return Object.prototype.hasOwnProperty.call(PROGRAM_DEFINITIONS, programPath);
@@ -1299,7 +1322,13 @@ export type ReminderKind =
   | "lifeManifestTarget"
   | "arcGoalTarget"
   | "fourWeekProgramWeek"
-  | "personalDevelopmentProgramWeek";
+  | "personalDevelopmentProgramWeek"
+  /** Hebrew BUILD/LIVE rework spec, page 4: fires once a task's own timer completes (or would complete) while the app is backgrounded/the screen isn't open -- tapping it deep-links to that task's own screen (app/_layout.tsx's handleReminderResponse), which then shows the 3-choice end-of-timer prompt itself. Spec's own sanctioned fallback for "if not all three choices can be shown in the notification, tapping it opens the choice screen". */
+  | "taskTimerEnded"
+  /** Productivity roadmap, Stage AB: fires once the "I need rest" sub-timer (arc/taskTimer.ts's TaskTimerRun, kind "rest") completes -- tapping deep-links to the same task screen, which shows the rest timer's own "סיום המנוחה" state. */
+  | "restTimerEnded"
+  /** Productivity roadmap, Stage AB: fires at a postponed task's own chosen return time (Stage W's PostponementScreen, only when returnChoice is "specificTime") -- tapping deep-links straight to that task's own screen. */
+  | "postponedTaskReturn";
 
 export interface PendingReminder {
   kind: ReminderKind;
@@ -1668,4 +1697,159 @@ export async function loadPendingSharedActionExecutionStore(): Promise<PendingSh
 /** Always the FULL store. Never catches its own AsyncStorage.setItem failure -- a genuine write failure propagates to the caller exactly like every other saveX function here, never silently swallowed. */
 export async function savePendingSharedActionExecutionStore(store: PendingSharedActionExecutionStore): Promise<void> {
   await AsyncStorage.setItem(PENDING_SHARED_ACTION_EXECUTION_KEY, JSON.stringify(store));
+}
+
+// ---------------------------------------------------------------------------
+// ARCHI productivity task, Stage 1 foundation: CRUD for Task
+// (arc/tasks.ts) and its append-only TaskJournalEntry log
+// (data/taskJournal.ts) -- mirrors loadPersonalDevelopmentRouteConfigs'
+// own defensive-parse + normalize pattern for Task, and
+// loadLifeManifestJournal/appendLifeManifestJournalEntry's own
+// append-only, no-update-no-delete pattern for the journal.
+// ---------------------------------------------------------------------------
+
+export async function loadTasks(): Promise<Task[]> {
+  const raw = await AsyncStorage.getItem(TASKS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Task[];
+    return Array.isArray(parsed) ? parsed.map(normalizeTask) : [];
+  } catch (error) {
+    console.warn("[storage] Stored Tasks are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write, matching every other saveX function here. */
+export async function saveTasks(tasks: Task[]): Promise<void> {
+  await AsyncStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+}
+
+export async function getTask(id: string): Promise<Task | null> {
+  const tasks = await loadTasks();
+  return tasks.find((task) => task.id === id) ?? null;
+}
+
+/** Create or update -- upserts by id, see arc/tasks.ts's upsertTaskInList. */
+export async function upsertTask(task: Task): Promise<void> {
+  const tasks = await loadTasks();
+  await saveTasks(upsertTaskInList(tasks, task));
+}
+
+/** A Task is a trainee's own to-do item, not a shared library record referenced by id from elsewhere -- unlike InterferenceItem/StateProfile it supports real deletion rather than disable-only status transitions. Callers are responsible for also cancelling any scheduled notification first, once a later reminders stage adds one. A no-op if the id doesn't match any task. */
+export async function deleteTask(id: string): Promise<void> {
+  const tasks = await loadTasks();
+  await saveTasks(deleteTaskFromList(tasks, id));
+}
+
+/**
+ * Append-only, exact mirror of loadLifeManifestJournal/
+ * appendLifeManifestJournalEntry. No update/delete function exists on
+ * purpose -- a journal entry, once appended, is permanent history (see
+ * data/taskJournal.ts's own module doc).
+ */
+export async function loadTaskJournal(): Promise<TaskJournalEntry[]> {
+  const raw = await AsyncStorage.getItem(TASK_JOURNAL_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as TaskJournalEntry[];
+    return Array.isArray(parsed) ? parsed.map(normalizeTaskJournalEntry) : [];
+  } catch (error) {
+    console.warn("[storage] Stored Task journal is not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function appendTaskJournalEntry(entry: TaskJournalEntry): Promise<void> {
+  const existing = await loadTaskJournal();
+  existing.push(entry);
+  await AsyncStorage.setItem(TASK_JOURNAL_KEY, JSON.stringify(existing));
+}
+
+/** Single-slot read, mirroring loadTimerRun's own shape -- null when no task timer is currently in flight. `kind` defaults to "task" for a run persisted before that field existed (Stage J), so an in-flight main timer from an earlier app version is never misread as a rest timer. */
+export async function loadTaskTimerRun(): Promise<TaskTimerRun | null> {
+  const raw = await AsyncStorage.getItem(TASK_TIMER_RUN_KEY);
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as Omit<TaskTimerRun, "kind"> & { kind?: "task" | "rest" };
+  return { ...parsed, kind: parsed.kind ?? "task" };
+}
+
+export async function saveTaskTimerRun(run: TaskTimerRun): Promise<void> {
+  await AsyncStorage.setItem(TASK_TIMER_RUN_KEY, JSON.stringify(run));
+}
+
+export async function clearTaskTimerRun(): Promise<void> {
+  await AsyncStorage.removeItem(TASK_TIMER_RUN_KEY);
+}
+
+/** Exact mirror of loadRoutineOccurrenceCompletions -- defensive parse, empty list on anything unexpected, never a crash. */
+export async function loadTaskOccurrenceCompletions(): Promise<TaskOccurrenceCompletion[]> {
+  const raw = await AsyncStorage.getItem(TASK_OCCURRENCE_COMPLETIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as TaskOccurrenceCompletion[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored Task occurrence completions are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Records one occurrence as done -- never removes or rewrites any earlier entry, exactly mirroring appendRoutineOccurrenceCompletion's own guarantees. */
+export async function appendTaskOccurrenceCompletion(entry: TaskOccurrenceCompletion): Promise<void> {
+  const existing = await loadTaskOccurrenceCompletions();
+  existing.push(entry);
+  await AsyncStorage.setItem(TASK_OCCURRENCE_COMPLETIONS_KEY, JSON.stringify(existing));
+}
+
+/** Exact mirror of loadTaskOccurrenceCompletions -- defensive parse, empty list on anything unexpected, never a crash. */
+export async function loadReviewLaterFactors(): Promise<ReviewLaterFactor[]> {
+  const raw = await AsyncStorage.getItem(REVIEW_LATER_FACTORS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ReviewLaterFactor[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored review-later factors are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Append-only -- a captured factor is permanent history until a later coaching/BUILD review stage explicitly removes or converts it; nothing in this stage does either. */
+export async function appendReviewLaterFactor(entry: ReviewLaterFactor): Promise<void> {
+  const existing = await loadReviewLaterFactors();
+  existing.push(entry);
+  await AsyncStorage.setItem(REVIEW_LATER_FACTORS_KEY, JSON.stringify(existing));
+}
+
+/** Exact mirror of loadReviewLaterFactors -- defensive parse, empty list on anything unexpected, never a crash. */
+export async function loadCoachingWorkspaceEntries(): Promise<CoachingWorkspaceEntry[]> {
+  const raw = await AsyncStorage.getItem(COACHING_WORKSPACE_ENTRIES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as CoachingWorkspaceEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored coaching workspace entries are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Create or update -- upserts by id (one entry per coaching session), see arc/coachingWorkspace.ts's upsertCoachingWorkspaceEntryInList. */
+export async function upsertCoachingWorkspaceEntry(entry: CoachingWorkspaceEntry): Promise<void> {
+  const entries = await loadCoachingWorkspaceEntries();
+  await AsyncStorage.setItem(COACHING_WORKSPACE_ENTRIES_KEY, JSON.stringify(upsertCoachingWorkspaceEntryInList(entries, entry)));
+}
+
+/** False for a trainee who has never seen the explanation yet (including a missing key, the common case) -- never throws, so a storage read failure fails toward SHOWING the explanation again rather than silently skipping it. */
+export async function hasSeenNotificationExplanation(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(NOTIFICATION_EXPLANATION_SEEN_KEY)) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export async function markNotificationExplanationSeen(): Promise<void> {
+  await AsyncStorage.setItem(NOTIFICATION_EXPLANATION_SEEN_KEY, "true");
 }

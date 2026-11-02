@@ -54,6 +54,10 @@ export const DEFAULT_DWELL_TIMES: DwellTimes = {
   // another -- see DwellTimes' own field docs (arc/types.ts).
   completedActionImageryDwellSeconds: 20,
   improvedActionImageryDwellSeconds: 20,
+  // Hebrew BUILD/LIVE rework spec: the new Bridge to Action step's own
+  // dwell -- a comfortable resting duration, independent of every other
+  // dwell above.
+  bridgeToActionDwellSeconds: 15,
 };
 
 /**

@@ -113,6 +113,7 @@ export default function LiveSessionScreen() {
     pdProgramId: pdProgramIdParam,
     pdWeek: pdWeekParam,
     thenIdentityGoalId: thenIdentityGoalIdParam,
+    returnToTaskId: returnToTaskIdParam,
   } = useLocalSearchParams<{
     routineId?: string;
     buildId?: string;
@@ -121,6 +122,7 @@ export default function LiveSessionScreen() {
     pdProgramId?: string;
     pdWeek?: string;
     thenIdentityGoalId?: string;
+    returnToTaskId?: string;
   }>();
   const routineId = typeof routineIdParam === "string" ? routineIdParam : null;
   const buildId = typeof buildIdParam === "string" ? buildIdParam : null;
@@ -167,6 +169,22 @@ export default function LiveSessionScreen() {
    * back there once it finishes).
    */
   const thenIdentityGoalId = typeof thenIdentityGoalIdParam === "string" ? thenIdentityGoalIdParam : null;
+  /**
+   * Productivity roadmap, Stage J: set only by live/ActiveTaskScreen.tsx's
+   * own "משהו מפריע"/"בוא נעשה ARC עכשיו" buttons (forwarded through
+   * build/LiveModeSelectScreen.tsx's "ARC רגיל" push) -- means this
+   * session was launched FROM that specific task and must return there
+   * on completion, mirroring the existing fourWeekGoalId/pdProgramId
+   * "optional support and return context" precedent exactly: a brand
+   * new, independent param that only ever changes the PLAIN (no
+   * routine/thenIdentityGoalId/fourWeekGoalId/pdProgramId) completion
+   * path's own destination, never touching any of those other paths.
+   * Scoped to this one entry route for now -- ARC Goal/Mini ARC/
+   * combined Personal Development routes, and the "ARC רגיל" picker's
+   * other button (future-arc-link), do not yet carry this context (see
+   * HEBREW_REWORK_PROGRESS.md).
+   */
+  const returnToTaskId = typeof returnToTaskIdParam === "string" ? returnToTaskIdParam : null;
   /**
    * ARC Builds task: LIVE now selects and runs any saved ArcBuild --
    * resolved from the buildId route param when present, auto-picked
@@ -227,6 +245,16 @@ export default function LiveSessionScreen() {
    * session, same as the three fields above.
    */
   const [improvementText, setImprovementText] = useState("");
+  /**
+   * Hebrew BUILD/LIVE rework spec, step 13: gratitude_and_learning's own
+   * optional post-practice intensity re-rating and "was the action
+   * performed?" answer -- session-local, exactly like every other field
+   * above; never read by handleContinuePress's own gating logic, never
+   * persisted to the session log in this pass (see
+   * HEBREW_REWORK_PROGRESS.md). Reset to null on every fresh session.
+   */
+  const [postPracticeIntensity, setPostPracticeIntensity] = useState<number | null>(null);
+  const [actionPerformed, setActionPerformed] = useState<boolean | null>(null);
   /**
    * Evidence-encoding task: derived once per session load from the
    * trainee's EXISTING session log (arc/evidence.ts's buildEvidenceIndex)
@@ -567,6 +595,8 @@ export default function LiveSessionScreen() {
       setGratitudeMemoryDetailText("");
       setProgressEvidenceText("");
       setImprovementText("");
+      setPostPracticeIntensity(null);
+      setActionPerformed(null);
       setRoutineSuccessFocusSelectedMinutes(null);
       setRoutinePhase("successFocus");
       return;
@@ -587,6 +617,8 @@ export default function LiveSessionScreen() {
     setGratitudeMemoryDetailText("");
     setProgressEvidenceText("");
     setImprovementText("");
+      setPostPracticeIntensity(null);
+      setActionPerformed(null);
   };
 
   /**
@@ -617,6 +649,33 @@ export default function LiveSessionScreen() {
       fullReflectionCreditEarned
     ).finally(() => {
       router.replace("/self-development");
+    });
+  };
+
+  /**
+   * Productivity roadmap, Stage J: the returnToTaskId-aware replacement
+   * for finishToSelfDevelopment -- identical save-then-navigate shape,
+   * only the destination differs ("back to the exact task" instead of
+   * the Self Development dashboard).
+   */
+  const returnToTask = () => {
+    const trimmedGratitude = gratitudeText.trim();
+    const trimmedMemoryDetail = gratitudeMemoryDetailText.trim();
+    const trimmedProgressEvidence = progressEvidenceText.trim();
+    const trimmedImprovement = improvementText.trim();
+    const fullReflectionCreditEarned =
+      trimmedImprovement.length > 0 &&
+      session.completedActionImageryFinished &&
+      session.improvedActionImageryFinished &&
+      session.futureLinkAcknowledged;
+    updateLastSessionLogEntryGratitude(
+      trimmedGratitude.length > 0 ? trimmedGratitude : null,
+      trimmedMemoryDetail.length > 0 ? trimmedMemoryDetail : null,
+      trimmedProgressEvidence.length > 0 ? trimmedProgressEvidence : null,
+      trimmedImprovement.length > 0 ? trimmedImprovement : null,
+      fullReflectionCreditEarned
+    ).finally(() => {
+      router.replace({ pathname: "/tasks/[id]", params: { id: returnToTaskId! } });
     });
   };
 
@@ -987,6 +1046,10 @@ export default function LiveSessionScreen() {
           onChangeProgressEvidenceText={setProgressEvidenceText}
           improvementText={improvementText}
           onChangeImprovementText={setImprovementText}
+          postPracticeIntensity={postPracticeIntensity}
+          onSelectPostPracticeIntensity={setPostPracticeIntensity}
+          actionPerformed={actionPerformed}
+          onSelectActionPerformed={setActionPerformed}
           onGratitudeAndLearningContinue={() => commitAdvance(session)}
           onCompletedActionImageryContinue={() => commitAdvance(applyCompletedActionImageryFinished(session))}
           onImprovedActionImageryContinue={() => commitAdvance(applyImprovedActionImageryFinished(session))}
@@ -1000,7 +1063,9 @@ export default function LiveSessionScreen() {
                   ? "לחזור לתוכנית ארבעת השבועות"
                   : pdProgramId
                     ? "לחזור לתוכנית ההתפתחות האישית"
-                    : undefined
+                    : returnToTaskId
+                      ? "לחזור למשימה"
+                      : undefined
           }
           onCompletePrimary={
             routine
@@ -1011,7 +1076,9 @@ export default function LiveSessionScreen() {
                   ? returnToFourWeekProgram
                   : pdProgramId
                     ? returnToPersonalDevelopmentProgram
-                    : finishToSelfDevelopment
+                    : returnToTaskId
+                      ? returnToTask
+                      : finishToSelfDevelopment
           }
           completePracticeAgainLabel={!routine && !thenIdentityGoalId && !fourWeekGoalId && !pdProgramId ? "תרגול שוב" : undefined}
           onCompletePracticeAgain={!routine && !thenIdentityGoalId && !fourWeekGoalId && !pdProgramId ? restart : undefined}
@@ -1036,7 +1103,13 @@ export default function LiveSessionScreen() {
             onPress={() =>
               router.push({
                 pathname: "/identity-extension/offer",
-                params: { returnTo: pdProgramId ? `/personal-development-program/live/${pdProgramId}` : "/self-development" },
+                params: {
+                  returnTo: pdProgramId
+                    ? `/personal-development-program/live/${pdProgramId}`
+                    : returnToTaskId
+                      ? `/tasks/${returnToTaskId}`
+                      : "/self-development",
+                },
               })
             }
           >

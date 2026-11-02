@@ -57,15 +57,18 @@ type Status = "loading" | "notFound" | "modeChoice" | "runningFull" | "runningMi
  * like every other Personal Development completion.
  */
 export default function UrgeArcLiveScreen() {
-  const { id, goalId, mode, pdProgramId, pdWeek } = useLocalSearchParams<{
+  const { id, goalId, mode, pdProgramId, pdWeek, returnToTaskId } = useLocalSearchParams<{
     id: string;
     goalId?: string;
     mode?: "full" | "mini";
     pdProgramId?: string;
     pdWeek?: string;
+    /** Productivity roadmap, Stage P: set only when this saved Urge ARC is being practiced from a task's own reactive flow (live/SavedFactorChooserScreen.tsx) -- mirrors live/LiveSessionScreen.tsx's own returnToTaskId precedent exactly. */
+    returnToTaskId?: string;
   }>();
   const hasGoal = typeof goalId === "string" && goalId.length > 0;
   const hasPd = typeof pdProgramId === "string" && pdProgramId.length > 0;
+  const hasReturnToTask = typeof returnToTaskId === "string" && returnToTaskId.length > 0;
   const [status, setStatus] = useState<Status>("loading");
   const [urgeArc, setUrgeArc] = useState<UrgeArc | null>(null);
   const [linkedMini, setLinkedMini] = useState<MiniArcBuild | null>(null);
@@ -223,7 +226,13 @@ export default function UrgeArcLiveScreen() {
                 onPress={() =>
                   router.push({
                     pathname: "/identity-extension/offer",
-                    params: { returnTo: hasPd ? `/personal-development-program/live/${pdProgramId}` : "/self-development" },
+                    params: {
+                      returnTo: hasPd
+                        ? `/personal-development-program/live/${pdProgramId}`
+                        : hasReturnToTask
+                          ? `/tasks/${returnToTaskId}`
+                          : "/self-development",
+                    },
                   })
                 }
               >
@@ -231,9 +240,17 @@ export default function UrgeArcLiveScreen() {
               </Pressable>
               <Pressable
                 style={[styles.button, styles.secondaryButton, styles.fullWidthButton]}
-                onPress={() => router.replace(hasPd ? { pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId as string } } : "/self-development")}
+                onPress={() =>
+                  router.replace(
+                    hasPd
+                      ? { pathname: "/personal-development-program/live/[id]", params: { id: pdProgramId as string } }
+                      : hasReturnToTask
+                        ? { pathname: "/tasks/[id]", params: { id: returnToTaskId as string } }
+                        : "/self-development"
+                  )
+                }
               >
-                <Text style={styles.secondaryButtonText}>{hasPd ? "לא, סיימתי -- חזרה לתוכנית" : "לא, סיימתי"}</Text>
+                <Text style={styles.secondaryButtonText}>{hasPd ? "לא, סיימתי -- חזרה לתוכנית" : hasReturnToTask ? "לא, סיימתי -- חזרה למשימה" : "לא, סיימתי"}</Text>
               </Pressable>
             </>
           )}

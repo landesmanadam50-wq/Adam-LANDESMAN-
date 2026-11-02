@@ -13,7 +13,8 @@ import { IDENTIFIED_NEED_UNKNOWN } from "./types.ts";
 import type { ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer } from "./types.ts";
 import { getEnergyColorLine } from "./presenceColor.ts";
 import { getFreeBreathingLine } from "./naturalBreathing.ts";
-import { getAcceptanceMantraLine, getBridgeMantraLine, getRegulationMantraLine, getStayMantraLine } from "./mantras.ts";
+import { getAcceptanceMantraLine, getBridgeMantraLine, getChoiceMantraLine, getPreventionMantraLine, getRegulationMantraLine, getStayMantraLine } from "./mantras.ts";
+import { BODY_REGION_LABELS, resolveBodyRegionMovementLine } from "./bodyRegionRoles.ts";
 import { getDesiredImageryLine } from "./desiredImagery.ts";
 import { getFutureOrientedMantraLine } from "./futureOrientedMantra.ts";
 import {
@@ -187,7 +188,9 @@ const STAGE_INPUT_KINDS: Record<ArcStage, ArcStageInputKind> = {
   reactive_transition_check: "yesno",
   regulate: "info",
   desired_state_check: "scale0to10",
+  trigger_imagery_repeat: "info",
   encode: "info",
+  bridge_to_action: "info",
   act: "info",
   success_focus: "successFocus",
   gratitude_and_learning: "info",
@@ -256,15 +259,36 @@ export function getStageCopy(
   suppressFutureMantra: boolean = false
 ): ArcStageCopy {
   switch (stage) {
-    case "trigger_selection":
+    case "trigger_selection": {
       // Recognition-only chooser copy when 2+ mapped reactive experiences
       // are available (see arc/arcEngine.ts's needsReactiveStateSelection)
       // -- asks which already-present mapped experience the trainee
       // recognizes, never to generate/imagine/strengthen/recall one.
-      if (needsReactiveStateSelection(state.triggerType, activeLayers, profile, state.selectedTarget)) {
-        return { title: "מה כבר נמצא עכשיו?", body: "בחר את מה שהכי מתאים לרגע הזה.", segments: null };
+      const isReactiveStateSelection = needsReactiveStateSelection(state.triggerType, activeLayers, profile, state.selectedTarget);
+      const title = isReactiveStateSelection ? "מה כבר נמצא עכשיו?" : "מה מביא אותך לכאן?";
+      const chooserPrompt = "בחר את מה שהכי מתאים לרגע הזה.";
+      // Hebrew BUILD/LIVE rework spec, step 1 ("מודעות מעוררת"): the
+      // trainee's own awakening sentence, shown first -- additive, null
+      // when unconfigured (every existing build).
+      const prefixLines: string[] = [];
+      if (profile.awakeningAwarenessSentence) prefixLines.push(profile.awakeningAwarenessSentence.trim());
+      // Hebrew BUILD/LIVE rework spec, step 2 ("דמיון טריגר -- בתרגול
+      // הכנה בלבד"): the first of two trigger-imagery appearances --
+      // only in "preparation" practice mode, and only when a future
+      // trigger context is actually configured (reuses
+      // ArcBuildProfile.linkSettings.triggerText -- the SAME field ARC
+      // Link already collects for this exact purpose -- rather than a
+      // new, duplicated BUILD field). "real_time" mode (the default,
+      // and every session that never chose otherwise) skips this
+      // entirely, exactly as before this mode existed. See
+      // "trigger_imagery_repeat" below for the second appearance, right
+      // before Encoding.
+      const triggerText = state.practiceMode === "preparation" ? profile.linkSettings?.triggerText?.trim() : null;
+      if (triggerText) {
+        prefixLines.push(`דמיון טריגר: דמיין את הרגע הבא: ${triggerText}.`, "שים לב היכן אתה נמצא, מה אתה רואה סביבך ומה אתה עושה באותו רגע.");
       }
-      return { title: "מה מביא אותך לכאן?", body: "בחר את מה שהכי מתאים לרגע הזה.", segments: null };
+      return { title, body: [...prefixLines, chooserPrompt].join(" "), segments: null };
+    }
 
     // Urge-check task: reached only for a reactive_urge (habit) session,
     // before the existing Stop/Preventive-Action sequence. Recognition
@@ -329,11 +353,35 @@ export function getStageCopy(
 
       const isPreviousSituation = state.sideObservationMode === "previous";
       const perspectiveText = isPreviousSituation ? previousSituationPerspective : presentModePerspective;
-      const instructionSegments: InstructionSegment[] = [
-        { text: perspectiveText, durationSeconds: INSTRUCTION_TIMING.observerPerspective },
-      ];
+      const instructionSegments: InstructionSegment[] = [];
+      // Hebrew BUILD/LIVE rework spec, step 3 ("הכנה -- נשימה טבעית
+      // ומגע אוויר"): additive, placed first -- the air-contact region
+      // is still "relevant to the disturbing sensation," but this is
+      // explicitly NOT yet a precise check of the sensation itself
+      // (that happens later, at Stay). null (no region configured)
+      // leaves this stage's existing copy completely unaffected.
+      if (profile.preMovementAirContactRegion) {
+        instructionSegments.push({
+          text: `שים לב לנשימה הטבעית ולמגע האוויר באזור ה${BODY_REGION_LABELS[profile.preMovementAirContactRegion]}. הקשב הראשוני לאזור הזה מכין לביצוע התנועה. אם מגע האוויר אינו מורגש, אפשר לשים לב למגע הבגד.`,
+          durationSeconds: INSTRUCTION_TIMING.mantra,
+        });
+      }
+      instructionSegments.push({ text: perspectiveText, durationSeconds: INSTRUCTION_TIMING.observerPerspective });
       if (state.triggerType === "reactive_urge") {
         instructionSegments.push({ text: urgeStopVisualization, durationSeconds: INSTRUCTION_TIMING.observerPause });
+      }
+      // Hebrew BUILD/LIVE rework spec, step 4 ("...ולבצע את התנועה
+      // הפותחת שנבחרה"): the actual OPENING MOVEMENT, performed here --
+      // BEFORE Presence -- never confused with Stay's own later, purely
+      // NOTICING-only reference to this same region (see the "stay"
+      // case below). null (no region configured with this role) leaves
+      // this stage's existing copy completely unaffected.
+      const openingMovementLine = resolveBodyRegionMovementLine(profile.bodyRegionConfigs ?? [], "sensationAndOpening");
+      if (openingMovementLine && openingMovementLine.movementTexts.length > 0) {
+        instructionSegments.push({
+          text: `אפשר לבצע כעת את התנועה הפותחת באזור ה${openingMovementLine.regionLabels}: ${openingMovementLine.movementTexts.join(", ")}.`,
+          durationSeconds: INSTRUCTION_TIMING.mantra,
+        });
       }
 
       const observerPauseLayer = resolveObserverPauseLayer(state.triggerType, state.selectedTarget, activeLayers, profile);
@@ -553,6 +601,22 @@ export function getStageCopy(
       // existing natural-breath awareness line just above (neither
       // replaces the other).
       instructionSegments.push({ text: getFreeBreathingLine(), durationSeconds: INSTRUCTION_TIMING.freeBreathing });
+      // Hebrew BUILD/LIVE rework spec, step 6 ("שהייה"): a more precise
+      // invitation to NOTICE (never perform) the disturbing sensation's
+      // own configured body region(s) -- the opening MOVEMENT itself
+      // already happened earlier, at observer_pause (step 4, before
+      // Presence); this is purely a later, closer noticing of the same
+      // region, never a second performance of the movement. Appended
+      // additively -- null (no region configured with this role) leaves
+      // Stay's existing copy completely unaffected, exactly as before
+      // this stage existed.
+      const sensationRegionLine = resolveBodyRegionMovementLine(profile.bodyRegionConfigs ?? [], "sensationAndOpening");
+      if (sensationRegionLine) {
+        instructionSegments.push({
+          text: `אפשר לשים לב בעדינות ובסקרנות לתחושה המפריעה, אם היא קיימת, באזור ה${sensationRegionLine.regionLabels}.`,
+          durationSeconds: INSTRUCTION_TIMING.mantra,
+        });
+      }
       const segments = withTrailingDwellSegment(instructionSegments, dwellSeconds);
       // Unified Presence/Mantra/Trigger/Imagery spec, section 5: Stay
       // Mantra, appended at the very end of Stay -- after the trailing
@@ -629,7 +693,18 @@ export function getStageCopy(
       // (see acceptanceMantraLine prop).
       const energyColorLine = getEnergyColorLine(profile.presenceColor);
       const question = "האם אתה מוכן לקבל את התחושה הזו כמו שהיא, בלי להילחם בה?";
-      const parts = [energyColorLine, question, getFreeBreathingLine()].filter((part): part is string => part !== null);
+      // Hebrew BUILD/LIVE rework spec, step 7 ("קבלה ותחילת התנועה
+      // התומכת"): an additive invitation to begin the supportive
+      // movement's own configured body region(s) -- null (no region
+      // configured with this role) leaves Accept's existing copy
+      // completely unaffected.
+      const supportiveRegionLine = resolveBodyRegionMovementLine(profile.bodyRegionConfigs ?? [], "supportive");
+      const supportiveMovementLine = supportiveRegionLine
+        ? `אפשר להתחיל בעדינות את התנועה התומכת באזור ה${supportiveRegionLine.regionLabels}${
+            supportiveRegionLine.movementTexts.length > 0 ? `: ${supportiveRegionLine.movementTexts.join(", ")}` : ""
+          }, ולהרגיש את התחושה המפריעה ואת התחושה התומכת יחד.`
+        : null;
+      const parts = [energyColorLine, question, getFreeBreathingLine(), supportiveMovementLine].filter((part): part is string => part !== null);
       return { title: "קבלה", body: parts.join(" "), segments: null };
     }
 
@@ -679,6 +754,19 @@ export function getStageCopy(
       const instructionSegments: InstructionSegment[] = [];
       if (energyColorLine) instructionSegments.push({ text: energyColorLine, durationSeconds: INSTRUCTION_TIMING.energyColor });
       instructionSegments.push({ text: baseRegulateText, durationSeconds: INSTRUCTION_TIMING.regulate });
+      // Hebrew BUILD/LIVE rework spec, step 8 ("וויסות"): an additive
+      // invitation to gently expand the supportive movement and let the
+      // disturbed region soften -- never a requirement to increase the
+      // movement or to improve the sensation. null (no region
+      // configured with this role) leaves Regulation's existing copy
+      // completely unaffected.
+      const regulateSupportiveRegionLine = resolveBodyRegionMovementLine(profile.bodyRegionConfigs ?? [], "supportive");
+      if (regulateSupportiveRegionLine) {
+        instructionSegments.push({
+          text: `אפשר להרחיב בעדינות, בטווח נוח, את התנועה באזור ה${regulateSupportiveRegionLine.regionLabels}, ולתת לאזור המפריע להתרכך -- בלי דרישה להגדיל את התנועה או לשפר את התחושה.`,
+          durationSeconds: INSTRUCTION_TIMING.mantra,
+        });
+      }
       const segments = withTrailingDwellSegment(instructionSegments, dwellSeconds);
       // Unified Presence/Mantra/Trigger/Imagery spec, section 5:
       // Regulation Mantra, then the brand-new Bridge Mantra -- both
@@ -891,6 +979,49 @@ export function getStageCopy(
       const dwellSeconds = resolveDwellSecondsFor("encodingDwellSeconds", layer, profile);
       return {
         title: "קיבוע",
+        body: segments.map((segment) => segment.text).join(" "),
+        segments: withTrailingDwellSegment(segments, dwellSeconds),
+      };
+    }
+
+    case "trigger_imagery_repeat": {
+      // Hebrew BUILD/LIVE rework spec, step 9: only reached when the
+      // engine's own resolveStageBeforeEncode already confirmed
+      // preparation mode + a configured trigger (arc/arcEngine.ts) --
+      // so triggerText here is never blank in practice, but this case
+      // still falls back to a generic line rather than ever throwing or
+      // showing an empty screen.
+      const triggerText = profile.linkSettings?.triggerText?.trim();
+      const body = triggerText
+        ? `חזרה קצרה: דמיין את הרגע הבא, שוב: ${triggerText}.`
+        : "חזרה קצרה לאותו הקשר עתידי.";
+      return { title: "דמיון חוזר של הטריגר", body, segments: null };
+    }
+
+    case "bridge_to_action": {
+      // Hebrew BUILD/LIVE rework spec, step 11 ("גשר לפעולה"): the
+      // engine only ever routes here when hasBridgeToActionContent
+      // (arc/mantras.ts) is true, so at least one of the two lines
+      // below is always present -- never an empty screen. Resting
+      // comfortably in position, never a requirement of complete
+      // stillness; the spec's own "אפשר להתאים תנוחה או להמשיך מוקדם"
+      // is informational copy here, not a new UI gate -- Continue
+      // becomes available the same way it does for every other
+      // dwell-gated stage.
+      const { layer } = resolveEncodingTarget({
+        activeLayers,
+        triggerType: state.triggerType,
+        selectedTarget: state.selectedTarget,
+        buildProfile: profile,
+      });
+      const segments: InstructionSegment[] = [{ text: "אפשר להישאר רגע בתנוחה נוחה, לכוון אותה מעט או להמשיך מוקדם -- אין צורך בחוסר תנועה מוחלט.", durationSeconds: INSTRUCTION_TIMING.mantra }];
+      const preventionMantraLine = getPreventionMantraLine(profile);
+      if (preventionMantraLine) segments.push({ text: preventionMantraLine, durationSeconds: INSTRUCTION_TIMING.mantra });
+      const choiceMantraLine = getChoiceMantraLine(profile);
+      if (choiceMantraLine) segments.push({ text: choiceMantraLine, durationSeconds: INSTRUCTION_TIMING.mantra });
+      const dwellSeconds = resolveDwellSecondsFor("bridgeToActionDwellSeconds", layer, profile);
+      return {
+        title: "גשר לפעולה",
         body: segments.map((segment) => segment.text).join(" "),
         segments: withTrailingDwellSegment(segments, dwellSeconds),
       };

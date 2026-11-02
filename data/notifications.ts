@@ -188,6 +188,8 @@ export interface ScheduleReminderNotificationInput {
   arcGoalId?: string;
   /** Phase 9: only meaningful for kind "personalDevelopmentProgramWeek" -- which Personal Development program's own four-week dashboard to open. Omitted for every other kind. */
   personalDevelopmentProgramId?: string;
+  /** Hebrew BUILD/LIVE rework spec: only meaningful for kind "taskTimerEnded" -- which specific Task this notification belongs to, so tapping it deep-links straight to that task's own screen. Omitted for every other kind. */
+  taskId?: string;
 }
 
 /**
@@ -225,6 +227,7 @@ export async function scheduleReminderNotification(input: ScheduleReminderNotifi
           ...(input.targetId !== undefined ? { targetId: input.targetId } : {}),
           ...(input.arcGoalId !== undefined ? { arcGoalId: input.arcGoalId } : {}),
           ...(input.personalDevelopmentProgramId !== undefined ? { personalDevelopmentProgramId: input.personalDevelopmentProgramId } : {}),
+          ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
         },
       },
       trigger: {

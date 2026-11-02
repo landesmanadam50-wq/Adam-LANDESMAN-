@@ -2029,6 +2029,10 @@ export function GratitudeAndLearningScreen({
   onChangeProgressEvidenceText,
   improvementText,
   onChangeImprovementText,
+  postPracticeIntensity,
+  onSelectPostPracticeIntensity,
+  actionPerformed,
+  onSelectActionPerformed,
   onContinue,
 }: {
   copy: ArcStageCopy;
@@ -2040,6 +2044,10 @@ export function GratitudeAndLearningScreen({
   onChangeProgressEvidenceText: (text: string) => void;
   improvementText: string;
   onChangeImprovementText: (text: string) => void;
+  postPracticeIntensity: number | null;
+  onSelectPostPracticeIntensity: (value: number | null) => void;
+  actionPerformed: boolean | null;
+  onSelectActionPerformed: (value: boolean | null) => void;
   onContinue: () => void;
 }) {
   const [showSkipWarning, setShowSkipWarning] = useState(false);
@@ -2112,6 +2120,40 @@ export function GratitudeAndLearningScreen({
           </View>
         </View>
       )}
+      {/*
+        Hebrew BUILD/LIVE rework spec, step 13: an optional post-practice
+        intensity re-rating and an explicit "was the action performed?"
+        answer -- both purely optional, never a condition for Continue
+        (handleContinuePress above is completely untouched -- it still
+        gates only on improvementText, exactly as before this addition).
+      */}
+      <Text style={styles.body}>אם תרצה, אפשר לדרג כעת את עוצמת התחושה, מ-0 עד 10 (רשות)</Text>
+      <View style={styles.buttonRow}>
+        {Array.from({ length: 11 }, (_, value) => value).map((value) => (
+          <Pressable
+            key={value}
+            style={[styles.chip, postPracticeIntensity === value && styles.chipSelected]}
+            onPress={() => onSelectPostPracticeIntensity(postPracticeIntensity === value ? null : value)}
+          >
+            <Text style={styles.buttonText}>{value}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Text style={styles.body}>האם ביצעת את הפעולה המיטיבה? (רשות)</Text>
+      <View style={styles.buttonRow}>
+        <Pressable
+          style={[styles.chip, actionPerformed === true && styles.chipSelected]}
+          onPress={() => onSelectActionPerformed(actionPerformed === true ? null : true)}
+        >
+          <Text style={styles.buttonText}>כן</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.chip, actionPerformed === false && styles.chipSelected]}
+          onPress={() => onSelectActionPerformed(actionPerformed === false ? null : false)}
+        >
+          <Text style={styles.buttonText}>לא</Text>
+        </Pressable>
+      </View>
       <PrimaryButton label="המשך" onPress={handleContinuePress} />
     </View>
   );

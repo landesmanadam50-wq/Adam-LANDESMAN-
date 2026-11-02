@@ -70,6 +70,8 @@ import type { ArcBuildProfile, BarrierType, DwellTimes, EncodingProfile } from "
 import type { DesiredImageryType } from "../arc/desiredImagery.ts";
 import { bodyImageryFromCustomFields } from "../arc/bodyImagery.ts";
 import type { ArcLinkTriggerType } from "../arc/bodyImagery.ts";
+import type { EmotionStateOption } from "../arc/emotionStateOptions.ts";
+import type { BodyRegion, BodyRegionConfig } from "../arc/bodyRegionRoles.ts";
 import type { ArcProgramSelection, KnownProgramPath } from "../program/programTypes.ts";
 import { deriveNeedsFromLegacyProgramPath, resolveCurrentPreset } from "../program/selection.ts";
 import { clampDwellSeconds, DEFAULT_DWELL_TIMES } from "../arc/dwellTimes.ts";
@@ -260,6 +262,21 @@ export type ProfileStep =
   | "stateDesiredImageryDescription"
   | "identityDesiredImageryType"
   | "identityDesiredImageryDescription"
+  /**
+   * Hebrew BUILD/LIVE rework spec, BUILD section ב ("רגש, דחף ועוצמה"):
+   * build-global (like value/regulationTool above), never gated on
+   * needsState/needsIdentity -- see arc/emotionStateOptions.ts.
+   */
+  | "emotionStateSelection"
+  | "arcSuggestionIntensityThreshold"
+  /** Hebrew BUILD/LIVE rework spec, BUILD section ג ("אזורי גוף"): build-global multi-region configuration -- see arc/bodyRegionRoles.ts. */
+  | "bodyRegionConfigs"
+  /** Hebrew BUILD/LIVE rework spec, BUILD section ד ("בחירות אישיות לתרגול"): build-global, always optional. */
+  | "awakeningAwarenessSentence"
+  | "preMovementAirContactRegion"
+  | "releaseRelaxationInstruction"
+  | "preventionMantra"
+  | "choiceMantra"
   | "review";
 
 /**
@@ -496,6 +513,23 @@ export interface ProfileDraft {
   stateDesiredImageryDescription: string;
   identityDesiredImageryType: DesiredImageryType | null;
   identityDesiredImageryDescription: string;
+
+  /** Hebrew BUILD/LIVE rework spec, BUILD section ב -- build-global, see ArcBuildProfile.emotionStateSelection/arcSuggestionIntensityThreshold's own docs. */
+  emotionStateOptions: EmotionStateOption[];
+  emotionStateCustomText: string;
+  emotionStateStillUnknown: boolean;
+  arcSuggestionIntensityThreshold: number | null;
+  /** Hebrew BUILD/LIVE rework spec, BUILD section ג -- build-global, see ArcBuildProfile.bodyRegionConfigs' own doc. */
+  bodyRegionConfigs: BodyRegionConfig[];
+  /** Hebrew BUILD/LIVE rework spec, BUILD section ד -- build-global, all always optional. */
+  awakeningAwarenessSentence: string;
+  preMovementAirContactRegion: BodyRegion | null;
+  releaseRelaxationInstruction: string;
+  preventionMantra: string;
+  choiceMantra: string;
+  /** Hebrew BUILD/LIVE rework spec: the new Bridge to Action step's own dwell -- per-layer, same string-for-TextInput-binding convention as every other dwell field above. */
+  stateBridgeToActionDwellSeconds: string;
+  identityBridgeToActionDwellSeconds: string;
 }
 
 export function createEmptyDraft(): ProfileDraft {
@@ -591,6 +625,18 @@ export function createEmptyDraft(): ProfileDraft {
     stateDesiredImageryDescription: "",
     identityDesiredImageryType: null,
     identityDesiredImageryDescription: "",
+    emotionStateOptions: [],
+    emotionStateCustomText: "",
+    emotionStateStillUnknown: false,
+    arcSuggestionIntensityThreshold: null,
+    bodyRegionConfigs: [],
+    awakeningAwarenessSentence: "",
+    preMovementAirContactRegion: null,
+    releaseRelaxationInstruction: "",
+    preventionMantra: "",
+    choiceMantra: "",
+    stateBridgeToActionDwellSeconds: String(DEFAULT_DWELL_TIMES.bridgeToActionDwellSeconds),
+    identityBridgeToActionDwellSeconds: String(DEFAULT_DWELL_TIMES.bridgeToActionDwellSeconds),
   };
 }
 
@@ -754,6 +800,20 @@ export function draftFromProfileAndSelection(
     stateDesiredImageryDescription: profile.stateDesiredImageryDescription ?? "",
     identityDesiredImageryType: profile.identityDesiredImageryType ?? null,
     identityDesiredImageryDescription: profile.identityDesiredImageryDescription ?? "",
+    emotionStateOptions: profile.emotionStateSelection?.options ?? [],
+    emotionStateCustomText: profile.emotionStateSelection?.customText ?? "",
+    emotionStateStillUnknown: profile.emotionStateSelection?.stillUnknown ?? false,
+    arcSuggestionIntensityThreshold: profile.arcSuggestionIntensityThreshold ?? null,
+    bodyRegionConfigs: profile.bodyRegionConfigs ?? [],
+    awakeningAwarenessSentence: profile.awakeningAwarenessSentence ?? "",
+    preMovementAirContactRegion: profile.preMovementAirContactRegion ?? null,
+    releaseRelaxationInstruction: profile.releaseRelaxationInstruction ?? "",
+    preventionMantra: profile.preventionMantra ?? "",
+    choiceMantra: profile.choiceMantra ?? "",
+    stateBridgeToActionDwellSeconds: String(profile.stateDwellTimes?.bridgeToActionDwellSeconds ?? DEFAULT_DWELL_TIMES.bridgeToActionDwellSeconds),
+    identityBridgeToActionDwellSeconds: String(
+      profile.identityDwellTimes?.bridgeToActionDwellSeconds ?? DEFAULT_DWELL_TIMES.bridgeToActionDwellSeconds
+    ),
   };
 }
 
@@ -934,6 +994,7 @@ function dwellTimesFromDraft(draft: {
   resultImagery: string;
   completedActionImagery: string;
   improvedActionImagery: string;
+  bridgeToAction: string;
 }): DwellTimes {
   return {
     sensationDwellSeconds: parseDwellField(draft.sensation, DEFAULT_DWELL_TIMES.sensationDwellSeconds),
@@ -952,6 +1013,7 @@ function dwellTimesFromDraft(draft: {
       draft.improvedActionImagery,
       DEFAULT_DWELL_TIMES.improvedActionImageryDwellSeconds
     ),
+    bridgeToActionDwellSeconds: parseDwellField(draft.bridgeToAction, DEFAULT_DWELL_TIMES.bridgeToActionDwellSeconds),
   };
 }
 
@@ -1089,6 +1151,7 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
           resultImagery: draft.stateResultImageryDwellSeconds,
           completedActionImagery: draft.stateCompletedActionImageryDwellSeconds,
           improvedActionImagery: draft.stateImprovedActionImageryDwellSeconds,
+          bridgeToAction: draft.stateBridgeToActionDwellSeconds,
         })
       : null,
 
@@ -1145,6 +1208,7 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
           resultImagery: draft.identityResultImageryDwellSeconds,
           completedActionImagery: draft.identityCompletedActionImageryDwellSeconds,
           improvedActionImagery: draft.identityImprovedActionImageryDwellSeconds,
+          bridgeToAction: draft.identityBridgeToActionDwellSeconds,
         })
       : null,
     identitySuccessfulPerformanceAction:
@@ -1212,6 +1276,22 @@ export function buildProfileFromDraft(draft: ProfileDraft): ArcBuildProfile {
     acceptanceMantra: draft.acceptanceMantra.trim() ? draft.acceptanceMantra.trim() : null,
     regulationMantra: draft.regulationMantra.trim() ? draft.regulationMantra.trim() : null,
     bridgeMantra: draft.bridgeMantra.trim() ? draft.bridgeMantra.trim() : null,
+    // Hebrew BUILD/LIVE rework spec: build-global, never gated on needsState/needsIdentity -- same shape as value/stayMantra above.
+    preventionMantra: draft.preventionMantra.trim() ? draft.preventionMantra.trim() : null,
+    choiceMantra: draft.choiceMantra.trim() ? draft.choiceMantra.trim() : null,
+    awakeningAwarenessSentence: draft.awakeningAwarenessSentence.trim() ? draft.awakeningAwarenessSentence.trim() : null,
+    preMovementAirContactRegion: draft.preMovementAirContactRegion,
+    releaseRelaxationInstruction: draft.releaseRelaxationInstruction.trim() ? draft.releaseRelaxationInstruction.trim() : null,
+    emotionStateSelection:
+      draft.emotionStateOptions.length > 0 || draft.emotionStateCustomText.trim().length > 0 || draft.emotionStateStillUnknown
+        ? {
+            options: draft.emotionStateOptions,
+            customText: draft.emotionStateCustomText.trim() ? draft.emotionStateCustomText.trim() : null,
+            stillUnknown: draft.emotionStateStillUnknown,
+          }
+        : null,
+    arcSuggestionIntensityThreshold: draft.arcSuggestionIntensityThreshold,
+    bodyRegionConfigs: draft.bodyRegionConfigs.length > 0 ? draft.bodyRegionConfigs : null,
     // Unified Presence/Mantra/Trigger/Imagery spec, section 9: per-layer, gated on needsState/needsIdentity exactly like stateFutureOrientedMantra/identityFutureOrientedMantra above -- a type without a description (or vice versa) is treated as unconfigured (null), never a half-saved state.
     stateDesiredImageryType:
       draft.needsState && draft.stateDesiredImageryType && draft.stateDesiredImageryDescription.trim() ? draft.stateDesiredImageryType : null,

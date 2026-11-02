@@ -133,7 +133,12 @@ test("combined routes are reloaded regardless of the chooser/regular mode -- vis
 
 test("existing standalone ARC Build choices remain available: ARC רגיל and Future ARC Link buttons are untouched", () => {
   assert.ok(screen.includes('<Text style={styles.buttonText}>ARC רגיל</Text>'), "the ARC רגיל button must still be present");
-  assert.match(screen, /router\.push\(\{\s*pathname:\s*"\/live",\s*params:\s*\{\s*buildId:\s*selectedBuild\.id\s*\}\s*\}\)/, "ARC רגיל must still push to the exact same /live route with the same buildId param");
+  // Productivity roadmap, Stage J: this now ALSO forwards an optional returnToTaskId when present (see live/LiveSessionScreen.tsx's own doc) -- buildId is still the exact same value, still pushed to the exact same route, for every caller that doesn't pass returnToTaskId.
+  assert.match(
+    screen,
+    /router\.push\(\{\s*pathname:\s*"\/live",\s*params:\s*returnToTaskId\s*\?\s*\{\s*buildId:\s*selectedBuild\.id,\s*returnToTaskId\s*\}\s*:\s*\{\s*buildId:\s*selectedBuild\.id\s*\},?\s*\}\)/,
+    "ARC רגיל must still push to the exact same /live route with the same buildId param"
+  );
   assert.match(screen, /router\.push\(\{\s*pathname:\s*"\/future-arc-link\/\[id\]",\s*params:\s*\{\s*id:\s*selectedBuild\.id\s*\}\s*\}\)/, "the Future ARC Link button must still push to the exact same route");
 });
 

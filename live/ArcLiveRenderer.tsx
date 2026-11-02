@@ -146,6 +146,20 @@ export interface ArcLiveRendererProps {
   /** Post-action reflection/imagery task: gratitude_and_learning's own new "מה אפשר לשפר בפעם הבאה?" answer -- session-local, exactly like the three fields above; empty is a valid, never-forced answer. Passed straight through into improved_action_imagery below (never re-typed or duplicated). */
   improvementText: string;
   onChangeImprovementText: (text: string) => void;
+  /**
+   * Hebrew BUILD/LIVE rework spec, step 13 ("חיזוק והכרת תודה"): an
+   * optional post-practice intensity re-rating and an explicit "was the
+   * action performed?" answer -- session-local, exactly like the other
+   * gratitude_and_learning fields above, and explicitly NEVER a
+   * condition for continuing (see live/screens.tsx's
+   * GratitudeAndLearningScreen -- handleContinuePress's own gating
+   * logic is untouched and still keyed only to improvementText).
+   */
+  /** Optional: other callers of this renderer (ArcGoal/Identity Extension sessions) don't yet surface this new, optional UI -- defaults to null/no-op when omitted, leaving their own gratitude_and_learning rendering exactly as it was before this field existed. */
+  postPracticeIntensity?: number | null;
+  onSelectPostPracticeIntensity?: (value: number | null) => void;
+  actionPerformed?: boolean | null;
+  onSelectActionPerformed?: (value: boolean | null) => void;
   onGratitudeAndLearningContinue: () => void;
   onCompletedActionImageryContinue: () => void;
   onImprovedActionImageryContinue: () => void;
@@ -471,6 +485,10 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
       return <EncodingScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
     }
 
+    case "trigger_imagery_repeat":
+    case "bridge_to_action":
+      return <InstructionScreen key={stage} copy={copy} onContinue={props.onGenericContinue} />;
+
     case "act": {
       // Which of the "act" stage's three sub-phases to show -- same
       // "stay at this ArcStage, render a conditional interstitial"
@@ -639,6 +657,10 @@ export function ArcLiveRenderer(props: ArcLiveRendererProps) {
           onChangeProgressEvidenceText={props.onChangeProgressEvidenceText}
           improvementText={props.improvementText}
           onChangeImprovementText={props.onChangeImprovementText}
+          postPracticeIntensity={props.postPracticeIntensity ?? null}
+          onSelectPostPracticeIntensity={props.onSelectPostPracticeIntensity ?? (() => {})}
+          actionPerformed={props.actionPerformed ?? null}
+          onSelectActionPerformed={props.onSelectActionPerformed ?? (() => {})}
           onContinue={props.onGratitudeAndLearningContinue}
         />
       );

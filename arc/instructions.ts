@@ -89,9 +89,22 @@ export const INDUCTION_PATTERN_DENYLIST: RegExp[] = [
   // Imagery transition ("now step into the character and imagine you're
   // experiencing the moment through your own eyes") -- entering the SAME
   // already-achieved, desired scene from (8), never a difficult/
-  // interfering one. Any other "imagine" usage -- e.g. imagining a
+  // interfering one; (10) the Hebrew BUILD/LIVE rework spec's own
+  // future-trigger-context rehearsal line ("imagine the moment to
+  // come: <the trainee's own configured future trigger text>") --
+  // mirrors ARC Link's own pre-existing trigger-imagery wording
+  // (arc/triggerImagery.ts's "reactive" category), imagining a
+  // not-yet-happened CONTEXT/situation for rehearsal, never an
+  // interfering feeling/sensation/urge itself; used at both of this
+  // task's two trigger-imagery appearances ("trigger_selection"'s own
+  // early one and the new "trigger_imagery_repeat" stage's short
+  // repeat); (11) the Manifest Meditation task's "imagine a day where
+  // you act according to your values" (arc/manifestMeditation.ts's
+  // "day_imagery" stage) -- a desired, values-aligned FUTURE day, same
+  // already-achieved/desired-outcome category as (8)/(9), never an
+  // interfering state. Any other "imagine" usage -- e.g. imagining a
   // feeling/craving/distraction directly -- still trips this pattern.
-  /דמיין(?! את עצמך מתחיל| לרגע את מה שקרה| את עצמך לרגע| את עצמך מבצע| שהפעולה מצליחה| את המצב מהצד| שאתה מזהה את הרגע| שהמטרה הגדולה שלך כבר הושגה| שתת־המטרה| שאתה חווה את הרגע דרך העיניים שלך)/,
+  /דמיין(?! את עצמך מתחיל| לרגע את מה שקרה| את עצמך לרגע| את עצמך מבצע| שהפעולה מצליחה| את המצב מהצד| שאתה מזהה את הרגע| שהמטרה הגדולה שלך כבר הושגה| שתת־המטרה| שאתה חווה את הרגע דרך העיניים שלך| את הרגע הבא| יום שבו אתה פועל)/,
   /תחזק את/,
   // "hold/keep X in awareness/mind/the head" -- covers "בתודעה"/"בראש"
   // in addition to "במודעות".

@@ -3,9 +3,11 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
-import { deleteArcBuild, loadArcBuilds, upsertArcBuild } from "../data/storage.ts";
+import { deleteArcBuild, loadArcBuilds, loadTasks, saveTasks, upsertArcBuild } from "../data/storage.ts";
 import { createEmptyArcBuildProfile, generateArcBuildId } from "../arc/types.ts";
 import type { ArcBuild } from "../arc/types.ts";
+import { findTasksReferencingArcBuild, unlinkArcBuildFromTasks } from "../arc/taskLibraryUsage.ts";
+import type { Task } from "../arc/tasks.ts";
 
 /**
  * ARC Builds task: the new BUILD home screen -- replaces the old
@@ -33,6 +35,7 @@ export default function ArcBuildListScreen() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   const reload = useCallback(() => {
     // Startup-safety fix: loadArcBuilds() itself no longer rejects, but
@@ -45,6 +48,8 @@ export default function ArcBuildListScreen() {
         console.warn("[ArcBuildListScreen] Failed to load ARC Builds -- showing the empty state.", error);
         setBuilds([]);
       });
+    // Productivity roadmap, Stage AC: loaded alongside builds so the delete-confirm modal can warn about any task still linked to the build about to be deleted -- see findTasksReferencingArcBuild below.
+    loadTasks().then(setTasks);
   }, []);
 
   useFocusEffect(
@@ -87,6 +92,11 @@ export default function ArcBuildListScreen() {
   }
 
   async function handleDelete(id: string) {
+    // Productivity roadmap, Stage AC: "never silently delete referenced data" -- any task still linked to this build is safely unlinked (its own record, history, and every other field untouched) BEFORE the build itself is deleted, never left with a dangling id.
+    const referencingTasks = findTasksReferencingArcBuild(id, tasks);
+    if (referencingTasks.length > 0) {
+      await saveTasks(unlinkArcBuildFromTasks(tasks, id, new Date().toISOString()));
+    }
     await deleteArcBuild(id);
     setConfirmDeleteId(null);
     reload();
@@ -95,7 +105,9 @@ export default function ArcBuildListScreen() {
   if (!builds) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.content} />
+        <View style={styles.content}>
+          <Text style={styles.body}>טוען...</Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -197,6 +209,13 @@ export default function ArcBuildListScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>למחוק את ה-ARC Build הזה?</Text>
             <Text style={styles.body}>הפעולה אינה הפיכה.</Text>
+            {confirmDeleteId &&
+              (() => {
+                const referencingTasks = findTasksReferencingArcBuild(confirmDeleteId, tasks);
+                return referencingTasks.length > 0 ? (
+                  <Text style={styles.body}>{`${referencingTasks.length} משימות מקושרות לתרגול הזה -- הקישור יוסר מהן, המשימות עצמן יישארו.`}</Text>
+                ) : null;
+              })()}
             <View style={styles.modalButtonRow}>
               <Pressable
                 style={[styles.button, styles.modalButton, styles.deleteButton]}

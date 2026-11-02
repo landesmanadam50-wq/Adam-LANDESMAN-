@@ -56,14 +56,17 @@ type Status = "loading" | "notFound" | "modeChoice" | "runningFull" | "runningMi
  * Phase 9 doc comment.
  */
 export default function ThoughtArcLiveScreen() {
-  const { id, goalId, mode, pdProgramId, pdWeek } = useLocalSearchParams<{
+  const { id, goalId, mode, pdProgramId, pdWeek, returnToTaskId } = useLocalSearchParams<{
     id: string;
     goalId?: string;
     mode?: "full" | "mini";
     pdProgramId?: string;
     pdWeek?: string;
+    /** Productivity roadmap, Stage R: mirrors live/UrgeArcLiveScreen.tsx's own returnToTaskId precedent exactly. */
+    returnToTaskId?: string;
   }>();
   const hasPd = typeof pdProgramId === "string" && pdProgramId.length > 0;
+  const hasReturnToTask = typeof returnToTaskId === "string" && returnToTaskId.length > 0;
   const [status, setStatus] = useState<Status>("loading");
   const [thoughtArc, setThoughtArc] = useState<ThoughtArc | null>(null);
   const [linkedMini, setLinkedMini] = useState<MiniArcBuild | null>(null);
@@ -131,6 +134,10 @@ export default function ThoughtArcLiveScreen() {
     }
     if (typeof goalId === "string" && goalId.length > 0) {
       router.replace({ pathname: "/goals/live/[goalId]", params: { goalId } });
+      return;
+    }
+    if (hasReturnToTask) {
+      router.replace({ pathname: "/tasks/[id]", params: { id: returnToTaskId as string } });
       return;
     }
     router.replace("/self-development");
@@ -243,14 +250,21 @@ export default function ThoughtArcLiveScreen() {
                 onPress={() =>
                   router.push({
                     pathname: "/identity-extension/offer",
-                    params: { returnTo: hasPd && typeof pdProgramId === "string" ? `/personal-development-program/live/${pdProgramId}` : "/self-development" },
+                    params: {
+                      returnTo:
+                        hasPd && typeof pdProgramId === "string"
+                          ? `/personal-development-program/live/${pdProgramId}`
+                          : hasReturnToTask
+                            ? `/tasks/${returnToTaskId}`
+                            : "/self-development",
+                    },
                   })
                 }
               >
                 <Text style={styles.buttonText}>כן, להמשיך לבניית הזהות</Text>
               </Pressable>
               <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={returnAfterCompletion}>
-                <Text style={styles.secondaryButtonText}>{hasPd ? "לא, סיימתי -- חזרה לתוכנית" : "לא, סיימתי"}</Text>
+                <Text style={styles.secondaryButtonText}>{hasPd ? "לא, סיימתי -- חזרה לתוכנית" : hasReturnToTask ? "לא, סיימתי -- חזרה למשימה" : "לא, סיימתי"}</Text>
               </Pressable>
             </>
           )}

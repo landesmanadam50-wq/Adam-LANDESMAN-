@@ -79,6 +79,7 @@ import {
 } from "./engine.ts";
 import { ARC_CONFIG } from "./config.ts";
 import { createEmptyArcBuildProfile } from "./types.ts";
+import { hasBridgeToActionContent } from "./mantras.ts";
 import type { ArcBuild, ArcBuildProfile, ArcLiveState, ArcStage, DevelopmentLayer, EncodingProfile, TriggerType } from "./types.ts";
 
 export interface ArcStageResult {
@@ -93,6 +94,20 @@ function result(stage: ArcStage, loopIterationCount: number): ArcStageResult {
 /** Once this many loop-backs have happened, force the session forward instead of looping again. */
 function loopCapped(loopIterationCount: number): boolean {
   return loopIterationCount >= ARC_CONFIG.safety.maxLoopIterations;
+}
+
+/**
+ * Hebrew BUILD/LIVE rework spec, step 9: gates the one new stage
+ * inserted between Regulate and Encode -- a "preparation" practice
+ * session with a future trigger configured (ArcBuildProfile.linkSettings.
+ * triggerText, the same field ARC Link already collects) sees a brief
+ * second trigger-imagery appearance; every other session (the default
+ * "real_time" mode, or any session with no trigger configured) keeps
+ * the exact original Regulate -> Encode transition.
+ */
+function resolveStageBeforeEncode(state: ArcLiveState, profile: ArcBuildProfile): ArcStage {
+  if (state.practiceMode === "preparation" && profile.linkSettings?.triggerText?.trim()) return "trigger_imagery_repeat";
+  return "encode";
 }
 
 /**
@@ -968,13 +983,16 @@ export function getNextArcStage(
 
     case "regulate":
       if (state.triggerType === "proactive") {
-        if (loopCapped(state.loopIterationCount)) return result("encode", state.loopIterationCount);
+        if (loopCapped(state.loopIterationCount)) return result(resolveStageBeforeEncode(state, profile), state.loopIterationCount);
         return result("desired_state_check", state.loopIterationCount + 1);
       }
       if (loopCapped(state.loopIterationCount)) {
-        return result("encode", state.loopIterationCount);
+        return result(resolveStageBeforeEncode(state, profile), state.loopIterationCount);
       }
       return result("sensation_check", state.loopIterationCount + 1);
+
+    case "trigger_imagery_repeat":
+      return result("encode", state.loopIterationCount);
 
     case "desired_state_check": {
       if (state.desiredStateRating === null) return result(current, state.loopIterationCount);
@@ -982,6 +1000,13 @@ export function getNextArcStage(
     }
 
     case "encode":
+      // Hebrew BUILD/LIVE rework spec: the new Bridge to Action stage is
+      // inserted only when this build actually configured a Prevention
+      // or Choice Mantra -- a build with neither keeps the exact
+      // original encode -> act transition, never an extra empty-content
+      // screen.
+      return result(hasBridgeToActionContent(profile) ? "bridge_to_action" : "act", state.loopIterationCount);
+    case "bridge_to_action":
       return result("act", state.loopIterationCount);
     case "act":
       return result("success_focus", state.loopIterationCount);

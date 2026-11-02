@@ -1,5 +1,7 @@
 import type { ArcLinkSettings, BodyImagery } from "./bodyImagery.ts";
 import type { ActionRelationship } from "./factorAction.ts";
+import type { EmotionStateSelection } from "./emotionStateOptions.ts";
+import type { BodyRegion, BodyRegionConfig } from "./bodyRegionRoles.ts";
 
 export type DevelopmentLayer = "state" | "identity" | "habit";
 
@@ -133,7 +135,29 @@ export type ArcStage =
   | "reactive_transition_check"
   | "regulate"
   | "desired_state_check"
+  /**
+   * Hebrew BUILD/LIVE rework spec, step 9 ("דמיון חוזר של הטריגר --
+   * בתרגול הכנה בלבד"): a brief SECOND appearance of the future-trigger
+   * imagery, right before Encoding -- only in "preparation" practice
+   * mode with a trigger configured (see "trigger_selection"'s own
+   * stageCopy case for the first appearance). Additive: a "real_time"
+   * session, or any session with no trigger configured, routes straight
+   * from Regulate to Encode exactly as before this stage existed.
+   */
+  | "trigger_imagery_repeat"
   | "encode"
+  /**
+   * Hebrew BUILD/LIVE rework spec, step 11 ("גשר לפעולה"): a new stage
+   * between Encoding and Act -- resting comfortably in position while
+   * the Prevention and Choice Mantras (arc/mantras.ts's
+   * getPreventionMantraLine/getChoiceMantraLine) are spoken together,
+   * dwell-gated via DwellTimes.bridgeToActionDwellSeconds. Additive:
+   * every existing build with neither mantra configured renders this
+   * stage with no mantra lines at all (never an invented one), so a
+   * legacy build's session is unaffected in substance, just passes
+   * through one more (empty-content) screen on the way to Act.
+   */
+  | "bridge_to_action"
   | "act"
   | "success_focus"
   /**
@@ -339,6 +363,17 @@ export interface DwellTimes {
    * default to the same 20s value.
    */
   improvedActionImageryDwellSeconds: number;
+  /**
+   * Hebrew BUILD/LIVE rework spec: the trainee's own comfortable dwell
+   * duration for the new "Bridge to Action" LIVE step (a later stage
+   * adds the step itself) -- where the Prevention and Choice Mantras
+   * (arc/mantras.ts) are spoken while resting in position before the
+   * beneficial action. Resolved via the exact same resolveDwellSecondsFor
+   * mechanism as every other field here; a legacy profile saved before
+   * this field existed falls back to DEFAULT_DWELL_TIMES.bridgeToActionDwellSeconds,
+   * same as every other optional DwellTimes field.
+   */
+  bridgeToActionDwellSeconds: number;
 }
 
 export interface ArcBuildProfile {
@@ -583,6 +618,79 @@ export interface ArcBuildProfile {
   acceptanceMantra?: string | null;
   regulationMantra?: string | null;
   bridgeMantra?: string | null;
+
+  /**
+   * Hebrew BUILD/LIVE rework spec ("עבודה בתוך הפרויקט הקיים... סדר ARC
+   * המעודכן"): two NEW, additive, optional mantras for the new "Bridge
+   * to Action" LIVE step (a later stage adds the step itself) --
+   * Prevention Mantra and Choice Mantra, spoken TOGETHER during that
+   * one step. Genuinely separate from the four mantras above --
+   * bridgeMantra keeps its own existing place at the end of Regulation,
+   * completely untouched. Optional/nullable, defaulting to null -- a
+   * build without them (every existing build, and any that never
+   * visits the new step) renders exactly as before.
+   */
+  preventionMantra?: string | null;
+  choiceMantra?: string | null;
+
+  /**
+   * Hebrew BUILD/LIVE rework spec: the trainee's own awakening-awareness
+   * sentence, addressed to themselves in second person (e.g. "אדם, עצור
+   * ושים לב") -- free text the trainee writes once in BUILD, never
+   * auto-generated or name-interpolated by the app itself. Optional --
+   * when blank, the new LIVE step (a later stage) simply skips this
+   * line rather than inventing one.
+   */
+  awakeningAwarenessSentence?: string | null;
+
+  /**
+   * Hebrew BUILD/LIVE rework spec: which body region to focus on for
+   * pre-movement air-contact/breathing awareness, before the opening
+   * movement begins. References arc/bodyRegionRoles.ts's BodyRegion --
+   * independent of bodyRegionConfigs below (the trainee may focus
+   * air-contact awareness on a region even if that region isn't one of
+   * the ones configured with a role there), though BUILD's own UI (a
+   * later stage) will typically default-suggest the sensationAndOpening
+   * region. Optional/nullable.
+   */
+  preMovementAirContactRegion?: BodyRegion | null;
+
+  /**
+   * Hebrew BUILD/LIVE rework spec: the trainee's own release/relaxation
+   * instruction -- distinct from regulationTool (the general-purpose
+   * regulation anchor already used elsewhere in this build), a
+   * dedicated free-text field for this specific new flow's own release
+   * step. Optional/nullable.
+   */
+  releaseRelaxationInstruction?: string | null;
+
+  /**
+   * Hebrew BUILD/LIVE rework spec, BUILD section ב ("רגש, דחף ועוצמה"):
+   * the trainee's own multi-select emotion/state choice (fixed list +
+   * free text + "still don't know") -- see arc/emotionStateOptions.ts.
+   * Optional/nullable/additive, read only by the new BUILD section/LIVE
+   * steps a later stage adds. Never required for an existing build to
+   * keep rendering exactly as it always has.
+   */
+  emotionStateSelection?: EmotionStateSelection | null;
+  /**
+   * Personal threshold (0-10) above which the app SUGGESTS running ARC
+   * -- never a requirement; see arc/emotionStateOptions.ts's
+   * shouldSuggestArcForIntensity. null = no personal threshold
+   * configured, falls back to the documented default there.
+   */
+  arcSuggestionIntensityThreshold?: number | null;
+
+  /**
+   * Hebrew BUILD/LIVE rework spec, BUILD section ג ("אזורי גוף"): the
+   * trainee's own multi-region, per-region-role body configuration --
+   * see arc/bodyRegionRoles.ts. Optional/nullable/additive, read only by
+   * the new BUILD section/LIVE steps a later stage adds -- completely
+   * independent of regulationBodyImagery/EncodingProfile.bodyImagery
+   * above, which keep their own existing single-region-per-cue meaning
+   * for the existing flow unchanged.
+   */
+  bodyRegionConfigs?: BodyRegionConfig[] | null;
 
   /**
    * Coherent-architecture task (#1 "Add Value"): the "why" underneath
@@ -859,6 +967,14 @@ export function createEmptyArcBuildProfile(): ArcBuildProfile {
     acceptanceMantra: null,
     regulationMantra: null,
     bridgeMantra: null,
+    preventionMantra: null,
+    choiceMantra: null,
+    awakeningAwarenessSentence: null,
+    preMovementAirContactRegion: null,
+    releaseRelaxationInstruction: null,
+    emotionStateSelection: null,
+    arcSuggestionIntensityThreshold: null,
+    bodyRegionConfigs: null,
     value: null,
     identityDesiredState: null,
     stateSupportingAction: null,
@@ -2661,7 +2777,20 @@ export interface ArcLiveState {
    * now one of the three stages that must complete for full stars).
    */
   futureLinkAcknowledged: boolean;
+  /**
+   * Hebrew BUILD/LIVE rework spec: "real-time" (work with the state as
+   * it already exists) vs "preparation" (a rehearsal including brief
+   * imagery of a future trigger context, shown twice -- once early,
+   * once again right before Encoding). Set once at session start,
+   * never changed mid-session. Defaults to "real_time" in
+   * createEmptyLiveState -- every existing session (which never chose a
+   * mode at all) behaves exactly as it always has.
+   */
+  practiceMode: ArcPracticeMode;
 }
+
+/** See ArcLiveState.practiceMode's own doc. */
+export type ArcPracticeMode = "real_time" | "preparation";
 
 /**
  * Urge-check task: the explicit sentinel ArcLiveState.identifiedNeed
@@ -2718,5 +2847,6 @@ export function createEmptyLiveState(): ArcLiveState {
     completedActionImageryFinished: false,
     improvedActionImageryFinished: false,
     futureLinkAcknowledged: false,
+    practiceMode: "real_time",
   };
 }
