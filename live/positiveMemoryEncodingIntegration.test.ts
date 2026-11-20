@@ -94,14 +94,17 @@ test("case 'encoding' and case 'mini_encoding' both short-circuit to the positiv
   assert.ok(miniShortCircuitIndex !== -1 && miniArcBodyIndex !== -1 && miniShortCircuitIndex < miniArcBodyIndex);
 });
 
-test("the visualization block shows the required prompt, the documented feeling/title/moment/location-time/what-was-special, and both 'אירוע אחר'/'דלג' actions -- never inventing text not present on the real PositiveMemory", () => {
+test("Positive Memory Visualization & Gratitude Integration task, section 1: the visualization block shows the exact required prompt/label/gratitude wording, in order, plus the documented feeling/moment/location-time/what-was-special, and both 'אירוע אחר'/'דלג' actions -- never inventing text not present on the real PositiveMemory", () => {
   const fnIndex = screen.indexOf("function renderPositiveMemoryEncodingBlock(memory: PositiveMemory) {");
   assert.ok(fnIndex !== -1);
-  const fnBody = screen.slice(fnIndex, fnIndex + 1600);
-  assert.ok(fnBody.includes("דמיין את הרגע שבו חווית את התחושה הזאת."));
+  const fnBody = screen.slice(fnIndex, fnIndex + 1900);
+  const promptIndex = fnBody.indexOf("דמיין את הרגע הספציפי שבו חווית את התחושה החיובית שבחרת.");
+  const labelIndex = fnBody.indexOf("הרגע שתיעדת:");
+  const momentIndex = fnBody.indexOf("{feelingEntry.moment}");
+  const gratitudeIndex = fnBody.indexOf("הוקר תודה על האירוע הזה.");
+  assert.ok(promptIndex !== -1 && labelIndex !== -1 && momentIndex !== -1 && gratitudeIndex !== -1);
+  assert.ok(promptIndex < labelIndex && labelIndex < momentIndex && momentIndex < gratitudeIndex, "prompt, label, moment, and gratitude must appear in this exact order");
   assert.ok(fnBody.includes("{feelingEntry.feeling}"));
-  assert.ok(fnBody.includes("{memory.title}"));
-  assert.ok(fnBody.includes("{feelingEntry.moment}"));
   assert.ok(fnBody.includes("{memory.whatWasSpecial}"));
   assert.ok(fnBody.includes(">אירוע אחר<"));
   assert.ok(fnBody.includes(">דלג<"));

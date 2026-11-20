@@ -64,15 +64,29 @@ function pickHighestScoringWithVariety<T extends { id: string }>(
 }
 
 /**
- * Strategy A (section 8, used by ARC encoding): a documented feeling
- * match is REQUIRED -- resolvePositiveMemoriesForFeeling already
- * filters to exactly that (criterion 1). Among those, scores:
- * criterion 2 (task/goal relevance) outweighs criterion 3 (documented
- * detail usefulness), which outweighs criterion 4 (intensity,
- * 1-5, the smallest-weighted factor) -- so a highly intense but
- * unrelated memory can never outrank a relevant one. `excludeIds`
- * supports "אירוע אחר" (re-selecting another eligible memory) without
- * a second, separately-written function.
+ * Strategy A (Positive Memory Visualization & Gratitude Integration
+ * task, section 3A, used by ARC encoding): a documented feeling match
+ * is REQUIRED -- resolvePositiveMemoriesForFeeling already filters to
+ * exactly that (criterion 1), checking ONLY each memory's own real
+ * `feelings[]` entries -- this is also what satisfies section 1's "a
+ * success memory... only [eligible] if that same positive feeling was
+ * explicitly documented during the success... never use a success
+ * record as evidence of a feeling unless it was actually recorded":
+ * eventType is never consulted here, so a "success" memory is matched
+ * exactly like a "positive_feeling" one -- strictly by its own
+ * documented feelings[], never by successDescription text.
+ *
+ * Scoring tiers are deliberately separated by orders of magnitude so
+ * a lower tier can never outweigh a higher one, however many lower-
+ * tier factors stack together: criterion 2 (task/goal relevance,
+ * 1000/500) >> criterion 3 (a documented moment for THIS feeling
+ * exists, 100) >> criterion 4 (other contextual detail -- location/
+ * whatWasSpecial, up to 20) >> criterion 5 (intensity 1-5, the
+ * smallest-weighted factor, used only as a final tiebreaker).
+ * Criterion 6 (variety) is the shared tie-break in
+ * pickHighestScoringWithVariety. `excludeIds` supports "אירוע אחר"
+ * (re-selecting another eligible memory) without a second,
+ * separately-written function.
  */
 export function selectPositiveMemoryForFeeling(
   memories: PositiveMemory[],
@@ -89,9 +103,10 @@ export function selectPositiveMemoryForFeeling(
   function score(memory: PositiveMemory): number {
     const entry = memory.feelings.find((candidate) => candidate.feeling.trim().toLowerCase() === feeling.trim().toLowerCase());
     let total = 0;
-    if (context.taskId && memory.taskId === context.taskId) total += 100;
-    else if (hasSharedGoal(memory.linkedGoalIds, context.goalIds)) total += 50;
-    if (entry?.moment.trim()) total += 10;
+    if (context.taskId && memory.taskId === context.taskId) total += 1000;
+    else if (hasSharedGoal(memory.linkedGoalIds, context.goalIds)) total += 500;
+    if (entry?.moment.trim()) total += 100;
+    if (memory.location?.trim()) total += 10;
     if (memory.whatWasSpecial.trim()) total += 10;
     total += entry?.intensity ?? 0;
     return total;
@@ -106,14 +121,33 @@ export interface PositiveMemorySuccessSelectionContextInput {
 }
 
 /**
- * Strategy B (section 9, used by ARC Success): relevance to the
- * current TASK is established via an exact task-id match, a shared
- * goal link, or (secondarily) a matching documented feeling --
+ * Strategy B (Positive Memory Visualization & Gratitude Integration
+ * task, section 3B, used by ARC Success): relevance to the current
+ * TASK is established via an exact task-id match (which, per this
+ * codebase's own architecture, is ALSO "the exact recurring task
+ * template" -- a recurring Task keeps the same id across every future
+ * occurrence, so no second field is needed), a shared ARC Goal link,
+ * or (secondarily, only "when applicable") a matching documented
+ * feeling. "Closely related action" (the spec's own criterion 2) is
+ * deliberately NOT implemented as a text-similarity heuristic --
  * "prioritize explicit task relationships over weak text similarity"
  * is satisfied structurally by never attempting any text-similarity
- * comparison at all. Scoring mirrors Strategy A's own weighting:
- * exact task match outranks goal overlap, which outranks a feeling
- * match, which outranks mere documented-detail presence.
+ * comparison at all, which this codebase's own prior design already
+ * decided against as unreliable and prone to fabricated relevance.
+ *
+ * ONLY "success"-typed memories are ever considered here (never a
+ * positive_feeling-only event standing in for a real success -- "do
+ * not substitute an unrelated positive-feeling event for an actual
+ * documented success"), and a success memory is fully eligible with
+ * NO documented feeling at all ("a success memory does not have to
+ * include a positive feeling to be eligible").
+ *
+ * Scoring tiers are separated by orders of magnitude, same as
+ * Strategy A: exact task match (1000) >> goal overlap (500) >>
+ * feeling match (100, only when `context.feeling` is supplied) >>
+ * documented-moment presence (20, the smallest-weighted factor).
+ * Criterion 6 (variety) is the shared tie-break in
+ * pickHighestScoringWithVariety.
  */
 export function selectPositiveMemoryForTaskSuccess(
   memories: PositiveMemory[],
@@ -135,10 +169,10 @@ export function selectPositiveMemoryForTaskSuccess(
 
   function score(memory: PositiveMemory): number {
     let total = 0;
-    if (memory.taskId === taskId) total += 100;
-    else if (hasSharedGoal(memory.linkedGoalIds, context.goalIds)) total += 50;
-    if (context.feeling && memory.feelings.some((entry) => entry.feeling.trim().toLowerCase() === context.feeling!.trim().toLowerCase())) total += 20;
-    if (memory.successDescription?.trim()) total += 10;
+    if (memory.taskId === taskId) total += 1000;
+    else if (hasSharedGoal(memory.linkedGoalIds, context.goalIds)) total += 500;
+    if (context.feeling && memory.feelings.some((entry) => entry.feeling.trim().toLowerCase() === context.feeling!.trim().toLowerCase())) total += 100;
+    if (memory.successDescription?.trim()) total += 20;
     return total;
   }
 

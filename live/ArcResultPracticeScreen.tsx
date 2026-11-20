@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
 import type { ArcResultExercise } from "../arc/arcResult.ts";
-import { loadArcResultExercises, loadPositiveMemories, loadPositiveMemorySelectionHistory, savePositiveMemorySelectionHistory } from "../data/storage.ts";
+import { getTask, loadArcResultExercises, loadPositiveMemories, loadPositiveMemorySelectionHistory, savePositiveMemorySelectionHistory } from "../data/storage.ts";
 // Positive Memory, Success Recall & Quick Capture task, section 9: the
 // SAME reusable selection engine encoding's own visualization uses,
 // with its success-based ranking strategy -- never a second,
@@ -63,6 +63,8 @@ export default function ArcResultPracticeScreen({
   const [pastSuccessMemory, setPastSuccessMemory] = useState<PositiveMemory | null>(null);
   const [pastSuccessDismissed, setPastSuccessDismissed] = useState(false);
   const [pastSuccessExcludedIds, setPastSuccessExcludedIds] = useState<string[]>([]);
+  /** Positive Memory Visualization & Gratitude Integration task, section 2: "the associated task" is one of the fields to show when available -- the task's own title, resolved once alongside the exercise/memory load, never fabricated when there is no linked task. */
+  const [pastSuccessTaskTitle, setPastSuccessTaskTitle] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -71,8 +73,10 @@ export default function ArcResultPracticeScreen({
       setPastSuccessExcludedIds([]);
       if (!taskId) {
         setPastSuccessMemory(null);
+        setPastSuccessTaskTitle(null);
         return;
       }
+      getTask(taskId).then((task) => setPastSuccessTaskTitle(task?.title ?? null));
       (async () => {
         const [memories, history] = await Promise.all([loadPositiveMemories(), loadPositiveMemorySelectionHistory()]);
         const picked = selectPositiveMemoryForTaskSuccess(memories, taskId, {}, history, []);
@@ -131,9 +135,19 @@ export default function ArcResultPracticeScreen({
       <ScrollView contentContainerStyle={styles.content}>
         {pastSuccessMemory && !pastSuccessDismissed && (
           <View style={styles.pastSuccessCard}>
-            <Text style={styles.pastSuccessPrompt}>דמיין את הרגע שבו הצלחת לבצע את הפעולה הזאת בעבר.</Text>
-            <Text style={styles.pastSuccessTitle}>{pastSuccessMemory.title}</Text>
-            {pastSuccessMemory.successDescription?.trim() ? <Text style={styles.pastSuccessDetail}>{pastSuccessMemory.successDescription}</Text> : null}
+            {/*
+             * Positive Memory Visualization & Gratitude Integration
+             * task, section 2: the exact required instruction/label/
+             * gratitude wording, in the exact required order -- the
+             * documented success (successDescription, never a
+             * generic/imagined scenario) is shown verbatim beneath
+             * its own label, never spliced into another sentence.
+             */}
+            <Text style={styles.pastSuccessPrompt}>דמיין את הרגע הספציפי שבו הצלחת במשימה הזאת בעבר.</Text>
+            <Text style={styles.pastSuccessLabel}>הרגע שבו הצלחת:</Text>
+            {pastSuccessMemory.successDescription?.trim() ? <Text style={styles.pastSuccessMoment}>{pastSuccessMemory.successDescription}</Text> : null}
+            <Text style={styles.pastSuccessGratitude}>הוקר תודה על ההצלחה הזאת.</Text>
+            {pastSuccessTaskTitle && <Text style={styles.pastSuccessDetail}>{pastSuccessTaskTitle}</Text>}
             {(pastSuccessMemory.location && pastSuccessMemory.location.trim()) || pastSuccessMemory.occurredAt.trim() ? (
               <Text style={styles.pastSuccessDetail}>
                 {[pastSuccessMemory.location, pastSuccessMemory.occurredAt].filter((part): part is string => !!part && part.trim().length > 0).join(" -- ")}
@@ -196,7 +210,9 @@ const styles = StyleSheet.create({
   gymHomeButtonText: { color: "#0a7ea4", fontWeight: "700", fontSize: 16 },
   pastSuccessCard: { backgroundColor: "#FFF8E1", borderRadius: 14, padding: 20, marginBottom: 12 },
   pastSuccessPrompt: { fontSize: 17, fontWeight: "700", textAlign: "right", color: "#333", marginBottom: 10 },
-  pastSuccessTitle: { fontSize: 16, fontWeight: "600", textAlign: "right", color: "#333", marginBottom: 6 },
+  pastSuccessLabel: { fontSize: 14, fontWeight: "600", textAlign: "right", color: "#8A6D00", marginBottom: 4 },
+  pastSuccessMoment: { fontSize: 16, fontWeight: "600", textAlign: "right", color: "#333", marginBottom: 10 },
+  pastSuccessGratitude: { fontSize: 15, fontStyle: "italic", textAlign: "right", color: "#8A6D00", marginBottom: 10 },
   pastSuccessDetail: { fontSize: 14, textAlign: "right", color: "#555", marginBottom: 6 },
   pastSuccessActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 14 },
   secondaryButton: { borderWidth: 1, borderColor: "#0a7ea4", paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, alignItems: "center" },

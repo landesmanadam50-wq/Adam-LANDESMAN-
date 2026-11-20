@@ -65,17 +65,26 @@ test("'דלג' only ever dismisses the additive block -- never touches storage, 
   assert.ok(!fnBody.includes("savePositiveMemorySelectionHistory"));
 });
 
-test("the visualization block is rendered BEFORE the existing four sections (focus point / success visualization / success mantra / supportive body language), only while a match exists and is not dismissed", () => {
+test("Positive Memory Visualization & Gratitude Integration task, section 2: the visualization block is rendered BEFORE the existing four sections (focus point / success visualization / success mantra / supportive body language), shows the exact required prompt/label/gratitude wording in order, only while a match exists and is not dismissed", () => {
   const blockIndex = screen.indexOf("{pastSuccessMemory && !pastSuccessDismissed && (");
   const focusPointIndex = screen.indexOf("נקודת מיקוד");
   assert.ok(blockIndex !== -1 && focusPointIndex !== -1 && blockIndex < focusPointIndex);
   const blockBody = screen.slice(blockIndex, focusPointIndex);
-  assert.ok(blockBody.includes("דמיין את הרגע שבו הצלחת לבצע את הפעולה הזאת בעבר."));
-  assert.ok(blockBody.includes("{pastSuccessMemory.title}"));
+  const promptIndex = blockBody.indexOf("דמיין את הרגע הספציפי שבו הצלחת במשימה הזאת בעבר.");
+  const labelIndex = blockBody.indexOf("הרגע שבו הצלחת:");
+  const momentIndex = blockBody.indexOf("{pastSuccessMemory.successDescription}");
+  const gratitudeIndex = blockBody.indexOf("הוקר תודה על ההצלחה הזאת.");
+  assert.ok(promptIndex !== -1 && labelIndex !== -1 && momentIndex !== -1 && gratitudeIndex !== -1);
+  assert.ok(promptIndex < labelIndex && labelIndex < momentIndex && momentIndex < gratitudeIndex, "prompt, label, moment, and gratitude must appear in this exact order");
   assert.ok(blockBody.includes(">הצלחה אחרת<"));
   assert.ok(blockBody.includes(">דלג<"));
   assert.ok(blockBody.includes("onPress={handlePastSuccessAnother}"));
   assert.ok(blockBody.includes("onPress={handlePastSuccessSkip}"));
+});
+
+test("Positive Memory Visualization & Gratitude Integration task, section 2: 'the associated task' is resolved via getTask and shown when available, never fabricated when there is none", () => {
+  assert.ok(screen.includes("getTask(taskId).then((task) => setPastSuccessTaskTitle(task?.title ?? null));"));
+  assert.ok(screen.includes("{pastSuccessTaskTitle && <Text style={styles.pastSuccessDetail}>{pastSuccessTaskTitle}</Text>}"));
 });
 
 test("the existing four fields and both finish()-destination buttons are completely untouched", () => {

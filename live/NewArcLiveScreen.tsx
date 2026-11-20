@@ -1681,10 +1681,19 @@ export default function NewArcLiveScreen({
     const feelingEntry = memory.feelings[0] ?? null;
     return (
       <View style={styles.positiveMemoryCard}>
-        <Text style={styles.positiveMemoryPrompt}>דמיין את הרגע שבו חווית את התחושה הזאת.</Text>
+        {/*
+         * Positive Memory Visualization & Gratitude Integration task,
+         * section 1: the exact required instruction/label/gratitude
+         * wording, in the exact required order -- the documented
+         * moment (feelingEntry.moment, never a generic/imagined
+         * scenario) is shown verbatim beneath its own label, never
+         * spliced into another sentence.
+         */}
+        <Text style={styles.positiveMemoryPrompt}>דמיין את הרגע הספציפי שבו חווית את התחושה החיובית שבחרת.</Text>
+        <Text style={styles.positiveMemoryLabel}>הרגע שתיעדת:</Text>
+        {feelingEntry?.moment.trim() ? <Text style={styles.positiveMemoryMoment}>{feelingEntry.moment}</Text> : null}
+        <Text style={styles.positiveMemoryGratitude}>הוקר תודה על האירוע הזה.</Text>
         {feelingEntry && <Text style={styles.positiveMemoryFeeling}>{feelingEntry.feeling}</Text>}
-        <Text style={styles.positiveMemoryTitle}>{memory.title}</Text>
-        {feelingEntry?.moment.trim() ? <Text style={styles.positiveMemoryDetail}>{feelingEntry.moment}</Text> : null}
         {(memory.location && memory.location.trim()) || memory.occurredAt.trim() ? (
           <Text style={styles.positiveMemoryDetail}>
             {[memory.location, memory.occurredAt].filter((part): part is string => !!part && part.trim().length > 0).join(" -- ")}
@@ -3694,7 +3703,9 @@ const styles = StyleSheet.create({
   positiveMemoryCard: { backgroundColor: "#FFF8E1", borderRadius: 14, padding: 20, marginTop: 12 },
   positiveMemoryPrompt: { fontSize: 17, fontWeight: "700", textAlign: "right", color: "#333", marginBottom: 10 },
   positiveMemoryFeeling: { fontSize: 15, fontWeight: "600", textAlign: "right", color: "#8A6D00", marginBottom: 6 },
-  positiveMemoryTitle: { fontSize: 16, fontWeight: "600", textAlign: "right", color: "#333", marginBottom: 6 },
+  positiveMemoryLabel: { fontSize: 14, fontWeight: "600", textAlign: "right", color: "#8A6D00", marginBottom: 4 },
+  positiveMemoryMoment: { fontSize: 16, fontWeight: "600", textAlign: "right", color: "#333", marginBottom: 10 },
+  positiveMemoryGratitude: { fontSize: 15, fontStyle: "italic", textAlign: "right", color: "#8A6D00", marginBottom: 10 },
   positiveMemoryDetail: { fontSize: 14, textAlign: "right", color: "#555", marginBottom: 6 },
   positiveMemoryActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 14 },
   disabledButton: { opacity: 0.5 },

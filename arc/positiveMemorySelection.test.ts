@@ -127,3 +127,35 @@ test("'הצלחה אחרת': excludeIds surfaces a different relevant past succe
 test("empty library / no matching success behavior returns null safely, never throwing", () => {
   assert.equal(selectPositiveMemoryForTaskSuccess([], "task-1", {}, []), null);
 });
+
+// --- Positive Memory Visualization & Gratitude Integration task, section 1/8: feeling-based selection may ONLY accept a success memory when that exact feeling was explicitly documented on it ---
+
+test("a success-typed memory is eligible for FEELING-based (encoding) selection ONLY when the exact selected feeling was explicitly documented on it -- never inferred from its successDescription text", () => {
+  const successWithFeeling = withFeeling("success-with-feeling", "ביטחון", "הרגשתי ביטחון כשסיימתי", null, { eventType: "success" });
+  const picked = selectPositiveMemoryForFeeling([successWithFeeling], "ביטחון", {}, []);
+  assert.equal(picked?.id, "success-with-feeling");
+});
+
+test("a success-typed memory with a successDescription but NO documented feelings is never matched by feeling-based selection, even though it describes a real achievement", () => {
+  const successNoFeeling = updatePositiveMemory(successMemory("success-no-feeling"), { successDescription: "הצלחתי להרגיש בטוח כששאלתי שאלה" }, NOW);
+  assert.equal(selectPositiveMemoryForFeeling([successNoFeeling], "ביטחון", {}, []), null);
+});
+
+test("a success-typed memory documenting a DIFFERENT feeling than the one selected is never matched -- the exact feeling match is mandatory regardless of eventType", () => {
+  const successDifferentFeeling = withFeeling("success-other-feeling", "רוגע", "", null, { eventType: "success" });
+  assert.equal(selectPositiveMemoryForFeeling([successDifferentFeeling], "ביטחון", {}, []), null);
+});
+
+// --- section 2/8: ARC Success selection must work even when the success has NO positive-feeling association at all ---
+
+test("a success relevant to the task is selected for ARC Success even with zero documented feelings -- a positive feeling is never required for success eligibility", () => {
+  const plainSuccess = successMemory("plain-success", { taskId: "task-1" });
+  assert.equal(plainSuccess.feelings.length, 0);
+  const picked = selectPositiveMemoryForTaskSuccess([plainSuccess], "task-1", {}, []);
+  assert.equal(picked?.id, "plain-success");
+});
+
+test("ARC Success never substitutes an unrelated positive_feeling-only event for a real success, even when it is the only other memory and shares the exact feeling", () => {
+  const feelingOnly = withFeeling("feeling-only", "ביטחון", "", null, { taskId: "task-1" });
+  assert.equal(selectPositiveMemoryForTaskSuccess([feelingOnly], "task-1", { feeling: "ביטחון" }, []), null);
+});
