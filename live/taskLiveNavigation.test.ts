@@ -48,7 +48,7 @@ test("navigateToNextOrTasksList uses resolveNextTaskEntry (never buildTodaySecti
   const fnIndex = screen.indexOf("async function navigateToNextOrTasksList");
   assert.ok(fnIndex !== -1);
   const fnBody = screen.slice(fnIndex, fnIndex + 500);
-  assert.ok(fnBody.includes("resolveNextTaskEntry(allTasks, completions, excludeTaskId, new Date())"));
+  assert.ok(fnBody.includes("resolveNextTaskEntry(allTasks, completions, excludeTaskId, new Date(), overrides)"));
   assert.ok(fnBody.includes('pathname: "/tasks", params: { noMoreTasks: "1" }'));
   assert.ok(fnBody.includes('pathname: "/tasks/[id]", params: { id: next.task.id }'));
 });

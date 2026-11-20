@@ -966,8 +966,8 @@ export default function ActiveTaskScreen({
    * the "nothing left today" message, instead of navigating nowhere.
    */
   async function navigateToNextOrTasksList(excludeTaskId: string) {
-    const [allTasks, completions] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions()]);
-    const next = resolveNextTaskEntry(allTasks, completions, excludeTaskId, new Date());
+    const [allTasks, completions, overrides] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()]);
+    const next = resolveNextTaskEntry(allTasks, completions, excludeTaskId, new Date(), overrides);
     if (!next) {
       router.push({ pathname: "/tasks", params: { noMoreTasks: "1" } });
       return;

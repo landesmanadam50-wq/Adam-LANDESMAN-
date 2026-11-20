@@ -52,7 +52,7 @@ test("requirement 5/6: PostTaskRewardScreen looks up the next task via the SAME 
   assert.match(rewardScreen, /import\s*\{\s*resolveNextTaskEntry\s*\}\s*from\s*["']\.\.\/arc\/todaySchedule\.ts["']/);
   const fnIndex = rewardScreen.indexOf("async function advanceToNextTask");
   const fnBody = rewardScreen.slice(fnIndex, fnIndex + 1400);
-  assert.ok(fnBody.includes("resolveNextTaskEntry(allTasks, completions, taskId, new Date())"));
+  assert.ok(fnBody.includes("resolveNextTaskEntry(allTasks, completions, taskId, new Date(), overrides)"));
   assert.ok(fnBody.includes('router.replace({ pathname, params: { id: next.task.id } })'));
 });
 

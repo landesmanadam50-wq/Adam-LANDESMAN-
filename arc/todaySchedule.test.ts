@@ -4,6 +4,10 @@ import assert from "node:assert/strict";
 import { archiveTask, createEmptyTask, startTask, postponeTask, completeTask, type Task } from "./tasks.ts";
 import { buildTodaySections, listTasksScheduledThisWeek, resolveArcWindowClockTime, resolveMostUrgentEntry, resolveNextTaskEntry } from "./todaySchedule.ts";
 import type { TaskOccurrenceCompletion } from "./taskOccurrence.ts";
+import { buildTaskOccurrenceOverride, markTaskOccurrenceRemoved } from "./taskOccurrenceOverride.ts";
+import type { TaskOccurrenceOverride } from "./taskOccurrenceOverride.ts";
+import { resolveDailyPlan } from "./dailyPlan.ts";
+import { resetWeekOccurrenceOverrides } from "./weeklyRoutine.ts";
 
 // Fixed reference "now": Monday 2026-01-05, 12:00 local.
 const NOW = new Date(2026, 0, 5, 12, 0, 0);
@@ -323,4 +327,118 @@ test("listTasksScheduledThisWeek reuses buildTodaySections's own recurrence reso
   const neverThisWeek = task({ recurrence: { kind: "recurring", daysOfWeek: [] } });
   const result = listTasksScheduledThisWeek([neverThisWeek], [], NOW);
   assert.deepEqual(result, []);
+});
+
+// --- Flexible Daily / Fixed Weekly sync fix: a weekly-origin task removed for TODAY's date alone must never resurface via buildTodaySections/resolveNextTaskEntry (bug report) ---
+
+test("1. removing a weekly-origin task's occurrence for today excludes it from EVERY section, and the next-task mechanism moves on to the next real task -- never the removed one, never back to the Fixed Weekly template", () => {
+  const removedTask = task({ id: "removed", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "08:00" }); // Monday, overdue by clock
+  const stillThere = task({ id: "still-there", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "18:00" });
+  const overrides: TaskOccurrenceOverride[] = [markTaskOccurrenceRemoved(removedTask, TODAY, [], "2026-01-01T00:00:00.000Z")];
+
+  const sections = buildTodaySections([removedTask, stillThere], [], NOW, overrides);
+  assert.equal(sections.overdue.length, 0, "the removed task must not appear in overdue");
+  assert.equal(sections.nextTask?.task.id, "still-there");
+
+  const next = resolveNextTaskEntry([removedTask, stillThere], [], "some-other-active-task", NOW, overrides);
+  assert.equal(next?.task.id, "still-there", "the next-task mechanism must skip the removed occurrence and pick the next REAL task on today's own list");
+});
+
+test("2. removing SEVERAL weekly-origin occurrences for today preserves the correct new sequence among whatever remains", () => {
+  const removed1 = task({ id: "r1", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "09:00" });
+  const removed2 = task({ id: "r2", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "10:00" });
+  const kept = task({ id: "kept", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "11:00" });
+  const now = "2026-01-01T00:00:00.000Z";
+  const overrides: TaskOccurrenceOverride[] = [markTaskOccurrenceRemoved(removed1, TODAY, [], now), markTaskOccurrenceRemoved(removed2, TODAY, [], now)];
+
+  const sections = buildTodaySections([removed1, removed2, kept], [], NOW, overrides);
+  const allShown = [...sections.overdue, ...(sections.nextTask ? [sections.nextTask] : []), ...sections.laterToday].map((entry) => entry.task.id);
+  assert.deepEqual(allShown, ["kept"], "only the never-removed task remains on today's own sequence");
+});
+
+test("3. reordering a weekly-origin task for today (an override's own effective `order`) is reflected immediately in today's sort -- never only on the Flexible Daily Routine's own separate screen", () => {
+  const taskA = task({ id: "a", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "14:00" });
+  const taskB = task({ id: "b", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "15:00" });
+  // Without any override, A (earlier clock time) would naturally sort before B.
+  const naturalOrder = buildTodaySections([taskA, taskB], [], NOW, []);
+  assert.deepEqual([naturalOrder.nextTask?.task.id, naturalOrder.laterToday[0]?.task.id], ["a", "b"]);
+
+  // An explicit reorder-for-today override flips B ahead of A via effective `order`, the SAME mechanism arc/dailyPlan.ts's own reordering already writes.
+  const now = "2026-01-01T00:00:00.000Z";
+  const overrides: TaskOccurrenceOverride[] = [
+    buildTaskOccurrenceOverride(taskB, TODAY, null, { order: 0 }, now),
+    buildTaskOccurrenceOverride(taskA, TODAY, null, { order: 1 }, now),
+  ];
+  const reordered = buildTodaySections([taskA, taskB], [], NOW, overrides);
+  assert.deepEqual([reordered.nextTask?.task.id, reordered.laterToday[0]?.task.id], ["b", "a"], "the manually reordered sequence must win over raw clock time");
+});
+
+test("4. adding a new task mid-day (a one-time task scheduled for today) enters the sequence at its own clock position, alongside any weekly-origin removals already in effect", () => {
+  const removedWeekly = task({ id: "removed", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "09:00" });
+  const addedMidDay = task({ id: "added", scheduledDate: TODAY, scheduledTime: "14:00" });
+  const overrides: TaskOccurrenceOverride[] = [markTaskOccurrenceRemoved(removedWeekly, TODAY, [], "2026-01-01T00:00:00.000Z")];
+
+  const sections = buildTodaySections([removedWeekly, addedMidDay], [], NOW, overrides);
+  assert.equal(sections.nextTask?.task.id, "added", "the newly added task takes its place in the sequence, and the removed weekly task never resurfaces alongside it");
+});
+
+test("5. closing and reopening the app (a fresh buildTodaySections call reading the SAME persisted overrides) never restores a removed occurrence", () => {
+  const removedTask = task({ id: "removed", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "09:00" });
+  const persistedOverrides: TaskOccurrenceOverride[] = [markTaskOccurrenceRemoved(removedTask, TODAY, [], "2026-01-01T00:00:00.000Z")];
+
+  // Simulates two independent "cold reads" of the exact same persisted override list -- e.g. app close/reopen, or a second screen's own reload().
+  const firstRead = buildTodaySections([removedTask], [], NOW, persistedOverrides);
+  const secondRead = buildTodaySections([removedTask], [], NOW, persistedOverrides);
+  assert.equal(firstRead.nextTask, null);
+  assert.equal(secondRead.nextTask, null, "the removal must stay excluded on every subsequent read, never silently reappearing");
+});
+
+test("6. switching between the Fixed Weekly Routine screen's own resolveDailyPlan and Today's own buildTodaySections: both agree on the exact same removed/kept set for the identical overrides", () => {
+  const removedTask = task({ id: "removed", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "09:00" });
+  const keptTask = task({ id: "kept", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "10:00" });
+  const overrides: TaskOccurrenceOverride[] = [markTaskOccurrenceRemoved(removedTask, TODAY, [], "2026-01-01T00:00:00.000Z")];
+
+  const dailyPlanIds = resolveDailyPlan([removedTask, keptTask], overrides, [], TODAY, new Date(`${TODAY}T00:00:00`)).map((entry) => entry.task.id);
+  const todaySections = buildTodaySections([removedTask, keptTask], [], NOW, overrides);
+  const todayIds = [...todaySections.overdue, ...(todaySections.nextTask ? [todaySections.nextTask] : []), ...todaySections.laterToday].map((entry) => entry.task.id);
+
+  assert.deepEqual(dailyPlanIds, ["kept"]);
+  assert.deepEqual(todayIds, ["kept"], "the Flexible Daily Routine screen and Today's own next-task mechanism must never disagree about which occurrences exist for this date");
+});
+
+test("7. a removed occurrence is excluded from the SAME pool timer/alarm-triggering navigation (resolveNextTaskEntry) reads -- never leaving a stale next-task pointing at a cancelled occurrence", () => {
+  const removedTask = task({ id: "removed", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "08:00" });
+  const realNext = task({ id: "real-next", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "09:00" });
+  const overrides: TaskOccurrenceOverride[] = [markTaskOccurrenceRemoved(removedTask, TODAY, [], "2026-01-01T00:00:00.000Z")];
+
+  const next = resolveNextTaskEntry([removedTask, realNext], [], "currently-active-task-id", NOW, overrides);
+  assert.equal(next?.task.id, "real-next");
+});
+
+test("8. an explicit week reset (resetWeekOccurrenceOverrides) -- and ONLY that explicit action -- restores a removed occurrence back to the Fixed Weekly template, without duplicating it", () => {
+  const removedTask = task({ id: "removed", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "09:00" });
+  let overrides: TaskOccurrenceOverride[] = [markTaskOccurrenceRemoved(removedTask, TODAY, [], "2026-01-01T00:00:00.000Z")];
+
+  const beforeReset = buildTodaySections([removedTask], [], NOW, overrides);
+  assert.equal(beforeReset.nextTask, null, "still removed before any explicit reset action");
+
+  overrides = resetWeekOccurrenceOverrides(overrides, TODAY); // TODAY (Monday) is this week's own start date
+  const afterReset = buildTodaySections([removedTask], [], NOW, overrides);
+  assert.equal(afterReset.overdue[0]?.task.id, "removed", "the explicit week reset restores the template occurrence (09:00 is overdue by NOW=12:00)");
+  assert.equal(afterReset.overdue.length + (afterReset.nextTask ? 1 : 0) + afterReset.laterToday.length, 1, "restored exactly once -- never duplicated");
+});
+
+test("a non-removed override's effective scheduledTime is also used for today's own clock-bucket classification (overdue vs. laterToday), not just the raw template time", () => {
+  const retimed = task({ id: "retimed", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "08:00" }); // template says 08:00 -- overdue by NOW (12:00)
+  const overrides: TaskOccurrenceOverride[] = [buildTaskOccurrenceOverride(retimed, TODAY, null, { scheduledTime: "18:00" }, "2026-01-01T00:00:00.000Z")];
+  const sections = buildTodaySections([retimed], [], NOW, overrides);
+  assert.equal(sections.overdue.length, 0, "the effective (overridden) time is 18:00, still ahead of NOW -- must not be misclassified as overdue");
+  assert.equal(sections.nextTask?.task.id, "retimed");
+});
+
+test("buildTodaySections/resolveNextTaskEntry/listTasksScheduledThisWeek all default `overrides` to [] -- a caller that hasn't been updated degrades to the old template-only behavior rather than crashing", () => {
+  const removedTask = task({ id: "removed", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "09:00" });
+  const sections = buildTodaySections([removedTask], [], NOW); // no overrides argument at all
+  assert.equal(sections.overdue[0]?.task.id, "removed");
+  assert.equal(resolveNextTaskEntry([removedTask], [], "x", NOW)?.task.id, "removed");
 });

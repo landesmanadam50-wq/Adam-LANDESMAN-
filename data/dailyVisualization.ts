@@ -32,6 +32,7 @@ import {
   loadDailyVisualizationDailyProgress,
   loadDailyVisualizationProfile,
   loadTaskOccurrenceCompletions,
+  loadTaskOccurrenceOverrides,
   loadTasks,
   saveDailyVisualizationDailyProgress,
   saveDailyVisualizationProfile,
@@ -58,11 +59,12 @@ export interface DailyVisualizationSession {
  */
 export async function loadOrStartDailyVisualizationSession(now: Date = new Date()): Promise<DailyVisualizationSession> {
   const todayDateLocal = todayLocalDateString(now);
-  const [storedProfile, existingProgress, tasks, completions, alarmState] = await Promise.all([
+  const [storedProfile, existingProgress, tasks, completions, overrides, alarmState] = await Promise.all([
     loadDailyVisualizationProfile(),
     loadDailyVisualizationDailyProgress(),
     loadTasks(),
     loadTaskOccurrenceCompletions(),
+    loadTaskOccurrenceOverrides(),
     loadDailyVisualizationAlarmState(),
   ]);
   const profile = storedProfile ?? createEmptyDailyVisualizationProfile(now.toISOString());
@@ -74,7 +76,7 @@ export async function loadOrStartDailyVisualizationSession(now: Date = new Date(
     return { profile, progress: resumable, tasks: resolvedTasks };
   }
 
-  const todaysTasks = resolveTodaysVisualizationTasks(tasks, completions, now);
+  const todaysTasks = resolveTodaysVisualizationTasks(tasks, completions, now, overrides);
   const alarmFireAt = alarmState.scheduledFor ? new Date(alarmState.scheduledFor) : null;
   const startedLate = isVisualizationStartedLate(alarmFireAt, now);
   const progress = createDailyVisualizationDailyProgress(todayDateLocal, todaysTasks.map((task) => task.id), now.toISOString(), startedLate);

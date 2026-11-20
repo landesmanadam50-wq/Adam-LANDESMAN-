@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 
 import { resolveNextTaskEntry } from "../arc/todaySchedule.ts";
-import { loadTaskOccurrenceCompletions, loadTasks, loadTaskTimerRun } from "../data/storage.ts";
+import { loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, loadTaskTimerRun } from "../data/storage.ts";
 
 /**
  * live/PersistentTaskControls.tsx
@@ -49,8 +49,8 @@ export default function PersistentTaskControls() {
       router.push({ pathname: "/tasks/[id]", params: { id: activeTaskId } });
       return;
     }
-    const [tasks, completions] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions()]);
-    const next = resolveNextTaskEntry(tasks, completions, "", new Date());
+    const [tasks, completions, overrides] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()]);
+    const next = resolveNextTaskEntry(tasks, completions, "", new Date(), overrides);
     if (next) {
       router.push({ pathname: "/tasks/[id]", params: { id: next.task.id, autoStart: "1" } });
       return;

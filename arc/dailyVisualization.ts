@@ -33,6 +33,7 @@
 
 import { buildTodaySections, resolveTaskClockTime } from "./todaySchedule.ts";
 import type { TaskOccurrenceCompletion } from "./taskOccurrence.ts";
+import type { TaskOccurrenceOverride } from "./taskOccurrenceOverride.ts";
 import type { Task } from "./tasks.ts";
 import { findActionStageByKind, hasConfiguredActionStages } from "./taskStage.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
@@ -385,8 +386,13 @@ export function buildImmediateActionTaskFields(actionText: string, dateLocal: st
  * with no resolvable time, and nothing useful to visualize for one
  * already finished.
  */
-export function resolveTodaysVisualizationTasks(tasks: Task[], completions: TaskOccurrenceCompletion[], now: Date): Task[] {
-  const sections = buildTodaySections(tasks, completions, now);
+export function resolveTodaysVisualizationTasks(
+  tasks: Task[],
+  completions: TaskOccurrenceCompletion[],
+  now: Date,
+  overrides: TaskOccurrenceOverride[] = []
+): Task[] {
+  const sections = buildTodaySections(tasks, completions, now, overrides);
   const entries = [
     ...(sections.current ? [sections.current] : []),
     ...sections.overdue,

@@ -21,7 +21,7 @@ import {
 } from "../arc/manifestMeditationDataSources.ts";
 import { buildTodaySections, resolveMostUrgentEntry } from "../arc/todaySchedule.ts";
 import { createEmptyTask, generateTaskId } from "../arc/tasks.ts";
-import { loadIdentityProfiles, loadTaskOccurrenceCompletions, loadTasks, upsertTask } from "../data/storage.ts";
+import { loadIdentityProfiles, loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, upsertTask } from "../data/storage.ts";
 
 /**
  * live/ManifestMeditationScreen.tsx (route /manifest-meditation)
@@ -67,12 +67,12 @@ export default function ManifestMeditationScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      Promise.all([loadIdentityProfiles(), loadTasks(), loadTaskOccurrenceCompletions()]).then(([profiles, tasks, completions]) => {
+      Promise.all([loadIdentityProfiles(), loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()]).then(([profiles, tasks, completions, overrides]) => {
         setSuggestedValues(suggestValuesFromIdentityProfiles(profiles));
         setSuggestedIdentities(suggestIdentitiesFromIdentityProfiles(profiles));
         setSuggestedHabits(suggestHabitsFromRecurringTasks(tasks));
         setSuggestedSentences(suggestPersonalSentencesFromIdentityProfiles(profiles));
-        const today = buildTodaySections(tasks, completions, new Date());
+        const today = buildTodaySections(tasks, completions, new Date(), overrides);
         const currentTask = resolveMostUrgentEntry(today)?.task ?? null;
         setSuggestedTodaysAction(currentTask ? currentTask.currentAction ?? currentTask.firstAction : null);
       });

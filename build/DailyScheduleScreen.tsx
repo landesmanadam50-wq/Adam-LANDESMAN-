@@ -9,7 +9,8 @@ import type { TaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
 import { buildTodaySections } from "../arc/todaySchedule.ts";
 import { ROUTINE_BREAK_KIND_LABELS, ROUTINE_PERIOD_LABELS, generateDailyRoutineSchedule, type DailyRoutineTemplate } from "../arc/dailyRoutine.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
-import { appendTaskOccurrenceCompletion, loadPlannedArcs, loadTaskOccurrenceCompletions, loadTasks, upsertTask } from "../data/storage.ts";
+import { appendTaskOccurrenceCompletion, loadPlannedArcs, loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, upsertTask } from "../data/storage.ts";
+import type { TaskOccurrenceOverride } from "../arc/taskOccurrenceOverride.ts";
 import { loadDailyRoutineTemplate, resolveContinuousRoutineOutcome } from "../data/dailyRoutine.ts";
 import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
 import { reconcilePlannedArcAlarms, reconcileTaskAlarms } from "../data/taskAlarm.ts";
@@ -34,6 +35,7 @@ export default function DailyScheduleScreen() {
   const [template, setTemplate] = useState<DailyRoutineTemplate | null | undefined>(undefined);
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [completions, setCompletions] = useState<TaskOccurrenceCompletion[]>([]);
+  const [overrides, setOverrides] = useState<TaskOccurrenceOverride[]>([]);
   const [plannedArcKindById, setPlannedArcKindById] = useState<Record<string, "full" | "mini">>({});
 
   const reload = useCallback(() => {
@@ -42,12 +44,14 @@ export default function DailyScheduleScreen() {
       reconcileTaskAlarms(),
       reconcilePlannedArcAlarms(),
       loadTaskOccurrenceCompletions(),
+      loadTaskOccurrenceOverrides(),
       loadPlannedArcs(),
       reconcileDailyVisualizationAlarm(),
-    ]).then(([loadedTemplate, reconciledTasks, , loadedCompletions, plannedArcs]) => {
+    ]).then(([loadedTemplate, reconciledTasks, , loadedCompletions, loadedOverrides, plannedArcs]) => {
       setTemplate(loadedTemplate);
       setTasks(reconciledTasks);
       setCompletions(loadedCompletions);
+      setOverrides(loadedOverrides);
       setPlannedArcKindById(Object.fromEntries(plannedArcs.map((item) => [item.id, item.kind])));
     });
   }, []);
@@ -124,7 +128,7 @@ export default function DailyScheduleScreen() {
   const now = new Date();
   const todayDateLocal = todayLocalDateString(now);
   const generated = generateDailyRoutineSchedule(template);
-  const sections = buildTodaySections(tasks, completions, now);
+  const sections = buildTodaySections(tasks, completions, now, overrides);
 
   const routineTasksToday = tasks.filter((task) => {
     if (task.routinePeriodId === null || task.status === "archived") return false;

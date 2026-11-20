@@ -9,7 +9,8 @@ import { createTaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
 import type { TaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
 import { buildTodaySections, resolveArcWindowClockTime } from "../arc/todaySchedule.ts";
 import type { TodayTaskEntry } from "../arc/todaySchedule.ts";
-import { appendTaskOccurrenceCompletion, loadTaskOccurrenceCompletions, upsertTask } from "../data/storage.ts";
+import { appendTaskOccurrenceCompletion, loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, upsertTask } from "../data/storage.ts";
+import type { TaskOccurrenceOverride } from "../arc/taskOccurrenceOverride.ts";
 import { resolveContinuousRoutineOutcome } from "../data/dailyRoutine.ts";
 import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
 import { reconcilePlannedArcAlarms, reconcileTaskAlarms } from "../data/taskAlarm.ts";
@@ -50,6 +51,7 @@ import { TASK_STATUS_LABELS } from "./TasksListScreen.tsx";
 export default function TodayScreen() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [completions, setCompletions] = useState<TaskOccurrenceCompletion[]>([]);
+  const [overrides, setOverrides] = useState<TaskOccurrenceOverride[]>([]);
 
   const reload = useCallback(() => {
     // Productivity upgrade task, requirement 2: the same "lazily
@@ -63,10 +65,13 @@ export default function TodayScreen() {
     // alongside it so a "before_task" ARC alarm also stays in sync with
     // its own linked task's time/recurrence/deletion/archival, without
     // waiting for that specific exercise's own editor to be reopened.
-    Promise.all([reconcileTaskAlarms(), reconcilePlannedArcAlarms(), loadTaskOccurrenceCompletions()]).then(([reconciledTasks, , loadedCompletions]) => {
-      setTasks(reconciledTasks);
-      setCompletions(loadedCompletions);
-    });
+    Promise.all([reconcileTaskAlarms(), reconcilePlannedArcAlarms(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()]).then(
+      ([reconciledTasks, , loadedCompletions, loadedOverrides]) => {
+        setTasks(reconciledTasks);
+        setCompletions(loadedCompletions);
+        setOverrides(loadedOverrides);
+      }
+    );
   }, []);
 
   useFocusEffect(reload);
@@ -108,7 +113,7 @@ export default function TodayScreen() {
     );
   }
 
-  const sections = buildTodaySections(tasks, completions, new Date());
+  const sections = buildTodaySections(tasks, completions, new Date(), overrides);
   const isEmpty =
     sections.overdue.length === 0 &&
     sections.current === null &&

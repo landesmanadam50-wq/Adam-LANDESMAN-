@@ -17,6 +17,7 @@
 
 import type { Task } from "./tasks.ts";
 import { isRecurringTaskScheduledOnDate, isTaskOccurrenceCompleted, type TaskOccurrenceCompletion } from "./taskOccurrence.ts";
+import { resolveEffectiveOccurrence, type TaskOccurrenceOverride } from "./taskOccurrenceOverride.ts";
 import { addCalendarDays, todayLocalDateString } from "../program/dateUtils.ts";
 
 export type TodaySection = "overdue" | "current" | "nextTask" | "laterToday" | "unscheduled" | "completedToday";
@@ -122,7 +123,23 @@ function resolveClockBucket(task: Task, todayDateLocal: string, now: Date): "ove
   return clock.getTime() <= now.getTime() ? "overdue" : "laterToday";
 }
 
+/**
+ * Flexible Daily / Fixed Weekly sync fix: an explicit manual reorder
+ * (an EFFECTIVE `order`, merged onto the task below from that date's
+ * own TaskOccurrenceOverride for a weekly-origin task, or a one-time
+ * task's own `order` field) wins first -- the exact same priority
+ * arc/dailyPlan.ts's own compareDailyPlanEntries already gives the
+ * Flexible Daily Routine's own list, so a reorder made there is
+ * reflected here immediately, never only in that other screen. Falls
+ * through to clock time, then creation order, exactly as before for
+ * every task that was never manually reordered (order stays null).
+ */
 function compareByClockThenCreatedAt(a: TodayTaskEntry, b: TodayTaskEntry): number {
+  const orderA = a.task.order;
+  const orderB = b.task.order;
+  if (orderA !== null && orderB !== null) return orderA - orderB;
+  if (orderA !== null) return -1;
+  if (orderB !== null) return 1;
   const clockA = resolveTaskClockTime(a.task, a.occurrenceDateLocal);
   const clockB = resolveTaskClockTime(b.task, b.occurrenceDateLocal);
   if (clockA && clockB) return clockA.getTime() - clockB.getTime();
@@ -171,11 +188,40 @@ export function resolveMostUrgentEntry(sections: TodaySections): TodayTaskEntry 
  * auto-advance, so every navigation path agrees on exactly one
  * definition of "next."
  */
-export function resolveNextTaskEntry(tasks: Task[], completions: TaskOccurrenceCompletion[], excludeTaskId: string, now: Date = new Date()): TodayTaskEntry | null {
-  return resolveMostUrgentEntry(buildTodaySections(tasks.filter((task) => task.id !== excludeTaskId), completions, now));
+export function resolveNextTaskEntry(
+  tasks: Task[],
+  completions: TaskOccurrenceCompletion[],
+  excludeTaskId: string,
+  now: Date = new Date(),
+  overrides: TaskOccurrenceOverride[] = []
+): TodayTaskEntry | null {
+  return resolveMostUrgentEntry(buildTodaySections(tasks.filter((task) => task.id !== excludeTaskId), completions, now, overrides));
 }
 
-export function buildTodaySections(tasks: Task[], completions: TaskOccurrenceCompletion[], now: Date = new Date()): TodaySections {
+/**
+ * Flexible Daily / Fixed Weekly sync fix (bug report: "a task removed
+ * from today keeps surfacing as the next task via the Fixed Weekly
+ * template"): `overrides` defaults to [] so a caller that hasn't been
+ * updated yet degrades to the OLD (template-only) behavior rather than
+ * crashing -- but every real navigation/suggestion call site
+ * (resolveNextTaskEntry's own callers, plus Today's own screens) now
+ * passes the real, freshly-loaded TaskOccurrenceOverride list, same
+ * convention data/taskAlarm.ts's own alarm-reconciliation already
+ * uses. A weekly-origin task's date-specific removal for THIS date
+ * excludes it from every section below -- it is never classified,
+ * never promoted to current/nextTask, and the Fixed Weekly template
+ * itself (and every other date it applies to) is left completely
+ * untouched. A non-removed override's own effective scheduledTime/
+ * order is merged onto the task used for classification/sorting, so a
+ * retimed or reordered-for-today occurrence is reflected immediately
+ * here too -- never only on the Flexible Daily Routine's own screen.
+ */
+export function buildTodaySections(
+  tasks: Task[],
+  completions: TaskOccurrenceCompletion[],
+  now: Date = new Date(),
+  overrides: TaskOccurrenceOverride[] = []
+): TodaySections {
   const todayDateLocal = todayLocalDateString(now);
 
   const overdueRaw: TodayTaskEntry[] = [];
@@ -184,9 +230,15 @@ export function buildTodaySections(tasks: Task[], completions: TaskOccurrenceCom
   const completedToday: TodayTaskEntry[] = [];
 
   for (const task of tasks) {
-    const section = classifyTaskForToday(task, completions, todayDateLocal, now);
+    let effectiveTask = task;
+    if (task.recurrence.kind === "recurring") {
+      const effective = resolveEffectiveOccurrence(task, todayDateLocal, overrides);
+      if (effective.removed) continue;
+      effectiveTask = { ...task, scheduledTime: effective.scheduledTime, order: effective.order };
+    }
+    const section = classifyTaskForToday(effectiveTask, completions, todayDateLocal, now);
     if (!section) continue;
-    const entry: TodayTaskEntry = { task, section, occurrenceDateLocal: todayDateLocal };
+    const entry: TodayTaskEntry = { task: effectiveTask, section, occurrenceDateLocal: todayDateLocal };
     if (section === "overdue") overdueRaw.push(entry);
     else if (section === "laterToday") laterTodayRaw.push(entry);
     else if (section === "unscheduled") unscheduled.push(entry);
@@ -244,13 +296,18 @@ export interface WeeklyScheduledTaskEntry {
   occurrenceDateLocal: string;
 }
 
-export function listTasksScheduledThisWeek(tasks: Task[], completions: TaskOccurrenceCompletion[], now: Date = new Date()): WeeklyScheduledTaskEntry[] {
+export function listTasksScheduledThisWeek(
+  tasks: Task[],
+  completions: TaskOccurrenceCompletion[],
+  now: Date = new Date(),
+  overrides: TaskOccurrenceOverride[] = []
+): WeeklyScheduledTaskEntry[] {
   const todayDateLocal = todayLocalDateString(now);
   const seen = new Map<string, WeeklyScheduledTaskEntry>();
   for (let offset = 0; offset < 7; offset++) {
     const dateLocal = addCalendarDays(todayDateLocal, offset);
     const dayNow = new Date(now.getTime() + offset * 24 * 60 * 60 * 1000);
-    const sections = buildTodaySections(tasks, completions, dayNow);
+    const sections = buildTodaySections(tasks, completions, dayNow, overrides);
     const entries = [...(sections.current ? [sections.current] : []), ...sections.overdue, ...(sections.nextTask ? [sections.nextTask] : []), ...sections.laterToday, ...sections.completedToday];
     for (const entry of entries) {
       if (!seen.has(entry.task.id)) seen.set(entry.task.id, { task: entry.task, occurrenceDateLocal: dateLocal });

@@ -229,7 +229,7 @@ test("the list screen shows the alarm badge only when arcAlarmEnabled, using the
 
 test("TodayScreen reconciles planned-ARC alarms alongside task alarms on every focus, the same lazy reconcile-on-touch pattern", () => {
   assert.match(todayScreen, /import\s*\{\s*reconcilePlannedArcAlarms,\s*reconcileTaskAlarms\s*\}\s*from\s*["']\.\.\/data\/taskAlarm\.ts["']/);
-  assert.ok(todayScreen.includes("Promise.all([reconcileTaskAlarms(), reconcilePlannedArcAlarms(), loadTaskOccurrenceCompletions()])"));
+  assert.ok(todayScreen.includes("Promise.all([reconcileTaskAlarms(), reconcilePlannedArcAlarms(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()])"));
 });
 
 test("TaskEditorScreen reconciles planned-ARC alarms immediately after both saving a task's new schedule and archiving it -- a 'before_task' alarm linked to this task must never wait for Today's own next focus", () => {

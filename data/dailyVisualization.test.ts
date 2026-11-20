@@ -25,7 +25,7 @@ test("loadOrStartDailyVisualizationSession resumes an in-progress record for TOD
   const fnBody = module_.slice(fnIndex, fnIndex + 1200);
   assert.ok(fnBody.includes("resolveResumableProgress(existingProgress, todayDateLocal)"));
   const resumeIndex = fnBody.indexOf("if (resumable) {");
-  const snapshotIndex = fnBody.indexOf("resolveTodaysVisualizationTasks(tasks, completions, now)");
+  const snapshotIndex = fnBody.indexOf("resolveTodaysVisualizationTasks(tasks, completions, now, overrides)");
   assert.ok(resumeIndex !== -1 && snapshotIndex !== -1 && resumeIndex < snapshotIndex, "the resume branch must return before the fresh-snapshot code is ever reached");
 });
 
