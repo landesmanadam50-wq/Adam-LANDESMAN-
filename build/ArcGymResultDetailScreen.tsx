@@ -3,10 +3,11 @@ import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-n
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
-import { linkTaskToArcResult, unlinkTaskFromArcResult } from "../arc/arcResult.ts";
+import { linkGoalToArcResultExercise, linkTaskToArcResult, unlinkGoalFromArcResultExercise, unlinkTaskFromArcResult } from "../arc/arcResult.ts";
 import type { ArcResultExercise } from "../arc/arcResult.ts";
+import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
 import type { Task } from "../arc/tasks.ts";
-import { loadArcResultExercises, loadTasks, upsertArcResultExerciseEntry } from "../data/storage.ts";
+import { loadArcGymGoals, loadArcResultExercises, loadTasks, upsertArcResultExerciseEntry } from "../data/storage.ts";
 
 /**
  * build/ArcGymResultDetailScreen.tsx (route /arc-gym/result/[id])
@@ -23,11 +24,14 @@ export default function ArcGymResultDetailScreen({ id }: { id: string }) {
   const [exercise, setExercise] = useState<ArcResultExercise | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [showLinking, setShowLinking] = useState(false);
+  const [goals, setGoals] = useState<ArcGymGoal[]>([]);
+  const [showGoalLinking, setShowGoalLinking] = useState(false);
 
   const reload = useCallback(() => {
-    Promise.all([loadArcResultExercises(), loadTasks()]).then(([exercises, allTasks]) => {
+    Promise.all([loadArcResultExercises(), loadTasks(), loadArcGymGoals()]).then(([exercises, allTasks, allGoals]) => {
       setExercise(exercises.find((candidate) => candidate.id === id) ?? null);
       setTasks(allTasks);
+      setGoals(allGoals);
     });
   }, [id]);
 
@@ -38,6 +42,15 @@ export default function ArcGymResultDetailScreen({ id }: { id: string }) {
     const now = new Date().toISOString();
     const linked = exercise.linkedTaskIds.includes(taskId);
     const updated = linked ? unlinkTaskFromArcResult(exercise, taskId, now) : linkTaskToArcResult(exercise, taskId, now);
+    await upsertArcResultExerciseEntry(updated);
+    setExercise(updated);
+  }
+
+  async function toggleGoalLink(goalId: string) {
+    if (!exercise) return;
+    const now = new Date().toISOString();
+    const linked = exercise.linkedGoalIds.includes(goalId);
+    const updated = linked ? unlinkGoalFromArcResultExercise(exercise, goalId, now) : linkGoalToArcResultExercise(exercise, goalId, now);
     await upsertArcResultExerciseEntry(updated);
     setExercise(updated);
   }
@@ -104,6 +117,41 @@ export default function ArcGymResultDetailScreen({ id }: { id: string }) {
                 const linked = exercise.linkedTaskIds.includes(item.id);
                 return (
                   <Pressable style={styles.taskPickerRow} onPress={() => toggleTaskLink(item.id)}>
+                    <Text style={[styles.taskPickerText, linked && styles.taskPickerTextLinked]}>{item.title}</Text>
+                    <Text style={styles.taskPickerCheck}>{linked ? "☑" : "☐"}</Text>
+                  </Pressable>
+                );
+              }}
+            />
+          )}
+        </View>
+
+        <View style={styles.linkingBlock}>
+          <View style={styles.linkingHeaderRow}>
+            <Text style={styles.sectionTitle}>שיוך למטרות</Text>
+            <Pressable onPress={() => setShowGoalLinking((prev) => !prev)}>
+              <Text style={styles.linkText}>{showGoalLinking ? "סגור" : "ניהול שיוך"}</Text>
+            </Pressable>
+          </View>
+
+          {goals.filter((goal) => exercise.linkedGoalIds.includes(goal.id)).length === 0 && <Text style={styles.hint}>התרגיל הזה עדיין לא משויך לאף מטרה.</Text>}
+          {goals
+            .filter((goal) => exercise.linkedGoalIds.includes(goal.id))
+            .map((goal) => (
+              <Text key={goal.id} style={styles.linkedTaskText}>
+                • {goal.title}
+              </Text>
+            ))}
+
+          {showGoalLinking && (
+            <FlatList
+              data={goals}
+              keyExtractor={(item) => item.id}
+              style={styles.taskPickerList}
+              renderItem={({ item }) => {
+                const linked = exercise.linkedGoalIds.includes(item.id);
+                return (
+                  <Pressable style={styles.taskPickerRow} onPress={() => toggleGoalLink(item.id)}>
                     <Text style={[styles.taskPickerText, linked && styles.taskPickerTextLinked]}>{item.title}</Text>
                     <Text style={styles.taskPickerCheck}>{linked ? "☑" : "☐"}</Text>
                   </Pressable>

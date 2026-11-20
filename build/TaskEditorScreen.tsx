@@ -56,6 +56,7 @@ export default function TaskEditorScreen({
   occurrenceDate = null,
   initialScheduledDate = null,
   initialTitle = null,
+  initialArcGymGoalId = null,
 }: {
   id: string;
   occurrenceDate?: string | null;
@@ -63,6 +64,8 @@ export default function TaskEditorScreen({
   initialScheduledDate?: string | null;
   /** ARC Decision task: prefills a brand-new task's own title from a chosen decision option -- e.g. ARC Gym's own "הפוך את ההחלטה למשימה" action. Same isNew-only, never-auto-saves rule as initialScheduledDate above -- the trainee still has to review/confirm and explicitly press "יצירת משימה". */
   initialTitle?: string | null;
+  /** ARC Gym + ARC Goal Integration task: links a brand-new task to its ArcGymGoal, the same way an existing task's own arcGymGoalId already survives every save (buildTaskFromDraft spreads `...base` and never overrides this field) -- here `base` for a NEW task is built from this value instead of arc/tasks.ts's own always-null default. Never applies to an EXISTING task and ignored once `id` isn't "new", same rule as the two props above. */
+  initialArcGymGoalId?: string | null;
 }) {
   const isNew = id === "new";
   const [existingTask, setExistingTask] = useState<Task | null>(null);
@@ -150,7 +153,7 @@ export default function TaskEditorScreen({
     const validationErrors = validateTaskDraft(draft);
     setErrors(validationErrors);
     if (validationErrors.length > 0) return;
-    const base = existingTask ?? emptyTaskBase(generateTaskId(), new Date().toISOString());
+    const base = existingTask ?? { ...emptyTaskBase(generateTaskId(), new Date().toISOString()), arcGymGoalId: initialArcGymGoalId };
     const saved = buildTaskFromDraft(draft, base, new Date().toISOString());
     // Productivity upgrade task, requirement 2: the schedule the trainee
     // just saved (date/time/recurrence) may have changed what "it's time

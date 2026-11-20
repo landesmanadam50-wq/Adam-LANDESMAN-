@@ -3,15 +3,24 @@ import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-n
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
-import { clearArcGymBodySensationMemory, describeArcGymReminderSchedule, listArcGymRemindersForExercise, listArcGymTrainingRecordsForSituation } from "../arc/arcGym.ts";
+import {
+  clearArcGymBodySensationMemory,
+  describeArcGymReminderSchedule,
+  linkGoalToArcGymSituation,
+  listArcGymRemindersForExercise,
+  listArcGymTrainingRecordsForSituation,
+  unlinkGoalFromArcGymSituation,
+} from "../arc/arcGym.ts";
 import type { ArcGymCheckInChoice, ArcGymMemory, ArcGymReminder, ArcGymSituation, ArcGymTrainingRecord } from "../arc/arcGym.ts";
 import { BODY_SCAN_REGION_LABELS } from "../arc/bodyScanRegions.ts";
 import { BODY_REGION_LABELS } from "../arc/bodyRegionRoles.ts";
 import { findPairedArcResultForSituation, pairArcResultWithBehaviour, unpairArcResultFromBehaviour } from "../arc/arcResult.ts";
 import type { ArcResultExercise } from "../arc/arcResult.ts";
+import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
 import { createEmptyTask, generateTaskId } from "../arc/tasks.ts";
 import type { Task } from "../arc/tasks.ts";
 import {
+  loadArcGymGoals,
   loadArcGymMemories,
   loadArcGymReminders,
   loadArcGymSituations,
@@ -19,6 +28,7 @@ import {
   loadArcResultExercises,
   loadTasks,
   upsertArcGymMemoryEntry,
+  upsertArcGymSituationEntry,
   upsertArcResultExerciseEntry,
   upsertTask,
 } from "../data/storage.ts";
@@ -54,10 +64,12 @@ export default function ArcGymSituationScreen({ id }: { id: string }) {
   const [resultExercises, setResultExercises] = useState<ArcResultExercise[]>([]);
   const [scheduledTask, setScheduledTask] = useState<Task | null>(null);
   const [showResultPicker, setShowResultPicker] = useState(false);
+  const [goals, setGoals] = useState<ArcGymGoal[]>([]);
+  const [showGoalLinking, setShowGoalLinking] = useState(false);
 
   const reload = useCallback(() => {
-    Promise.all([loadArcGymSituations(), loadArcGymMemories(), loadArcGymTrainingRecords(), loadArcGymReminders(), loadArcResultExercises(), loadTasks()]).then(
-      ([situations, memories, trainingRecords, allReminders, allResults, allTasks]) => {
+    Promise.all([loadArcGymSituations(), loadArcGymMemories(), loadArcGymTrainingRecords(), loadArcGymReminders(), loadArcResultExercises(), loadTasks(), loadArcGymGoals()]).then(
+      ([situations, memories, trainingRecords, allReminders, allResults, allTasks, allGoals]) => {
         const found = situations.find((candidate) => candidate.id === id) ?? null;
         setSituation(found);
         setMemory(memories.find((candidate) => candidate.situationId === id) ?? null);
@@ -65,11 +77,21 @@ export default function ArcGymSituationScreen({ id }: { id: string }) {
         setReminders(listArcGymRemindersForExercise(allReminders, "behaviour", id));
         setResultExercises(allResults);
         setScheduledTask(allTasks.find((task) => task.linkedArcGymSituationId === id) ?? null);
+        setGoals(allGoals);
       }
     );
   }, [id]);
 
   useFocusEffect(reload);
+
+  async function toggleGoalLink(goalId: string) {
+    if (!situation) return;
+    const now = new Date().toISOString();
+    const linked = situation.linkedGoalIds.includes(goalId);
+    const updated = linked ? unlinkGoalFromArcGymSituation(situation, goalId, now) : linkGoalToArcGymSituation(situation, goalId, now);
+    await upsertArcGymSituationEntry(updated);
+    setSituation(updated);
+  }
 
   async function resetBodyMemory() {
     if (!memory) return;
@@ -257,6 +279,39 @@ export default function ArcGymSituationScreen({ id }: { id: string }) {
           <Text style={styles.secondaryButtonText}>{scheduledTask ? "ערוך תזמון אימון" : "תזמן אימון"}</Text>
         </Pressable>
 
+        <View style={styles.remindersBlock}>
+          <View style={styles.remindersHeaderRow}>
+            <Text style={styles.sectionTitle}>שיוך למטרות</Text>
+            <Pressable onPress={() => setShowGoalLinking((prev) => !prev)}>
+              <Text style={styles.linkText}>{showGoalLinking ? "סגור" : "ניהול שיוך"}</Text>
+            </Pressable>
+          </View>
+          {goals.filter((goal) => situation.linkedGoalIds.includes(goal.id)).length === 0 && <Text style={styles.hint}>התרגיל הזה עדיין לא משויך לאף מטרה.</Text>}
+          {goals
+            .filter((goal) => situation.linkedGoalIds.includes(goal.id))
+            .map((goal) => (
+              <Text key={goal.id} style={styles.reminderText}>
+                • {goal.title}
+              </Text>
+            ))}
+          {showGoalLinking && (
+            <FlatList
+              data={goals}
+              keyExtractor={(item) => item.id}
+              style={styles.taskPickerList}
+              renderItem={({ item }) => {
+                const linked = situation.linkedGoalIds.includes(item.id);
+                return (
+                  <Pressable style={styles.reminderRow} onPress={() => toggleGoalLink(item.id)}>
+                    <Text style={[styles.reminderText, linked && styles.goalPickerTextLinked]}>{item.title}</Text>
+                    <Text style={styles.hint}>{linked ? "☑" : "☐"}</Text>
+                  </Pressable>
+                );
+              }}
+            />
+          )}
+        </View>
+
         {/*
          * ARCHI -- Unified Development Specification task, Part 2: ARC
          * GYM reminders for the Behaviour exercise type -- never a
@@ -331,4 +386,5 @@ const styles = StyleSheet.create({
   taskPickerList: { maxHeight: 220, marginTop: 10, borderTopWidth: 1, borderTopColor: "#eee" },
   taskPickerRow: { borderBottomWidth: 1, borderBottomColor: "#eee", paddingVertical: 10 },
   taskPickerText: { fontSize: 14, textAlign: "right", color: "#333" },
+  goalPickerTextLinked: { color: "#0a7ea4", fontWeight: "700" },
 });

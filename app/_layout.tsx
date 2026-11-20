@@ -130,6 +130,15 @@ export default function RootLayout() {
             arc/arcFocusSession.ts's own module doc. */}
         <Stack.Screen name="arc-gym/arc-focus" options={{ title: "ARC Focus" }} />
         <Stack.Screen name="arc-gym/decision" options={{ title: "ARC Decision" }} />
+        <Stack.Screen name="arc-gym/goal/index" options={{ title: "מטרות ARC" }} />
+        <Stack.Screen name="arc-gym/goal/[id]" options={{ title: "מטרת ARC" }} />
+        <Stack.Screen name="arc-gym/goal/[id]/edit" options={{ title: "עריכת מטרת ARC" }} />
+        <Stack.Screen name="arc-gym/goal/[id]/objectives" options={{ title: "יעדים" }} />
+        <Stack.Screen name="arc-gym/goal/[id]/tasks" options={{ title: "משימות מעשיות" }} />
+        <Stack.Screen name="arc-gym/goal/[id]/exercises" options={{ title: "תרגילים מקושרים" }} />
+        <Stack.Screen name="arc-gym/focus-exercise/index" options={{ title: "תרגילי Focus שמורים" }} />
+        <Stack.Screen name="arc-gym/focus-exercise/[id]" options={{ title: "תרגיל Focus" }} />
+        <Stack.Screen name="arc-gym/focus-exercise/[id]/edit" options={{ title: "עריכת תרגיל Focus" }} />
         {/* ARC Learning + ARC Creativity + Integrated Spaced Repetition
             task: ARC Learning is a fully independent system from ARC
             Gym/ARC Goal, reached only from its own home card (never

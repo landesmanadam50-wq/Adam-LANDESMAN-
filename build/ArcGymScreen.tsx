@@ -80,6 +80,21 @@ export default function ArcGymScreen() {
           <Text style={styles.decisionLinkText}>🤔 ARC Decision — קבלת החלטות</Text>
         </Pressable>
 
+        {/*
+         * ARC Gym + ARC Goal Integration task: the optional goal layer
+         * living INSIDE ARC Gym -- never gating any exercise above,
+         * reached only from here. The saved ARC Focus configurations
+         * list sits right beside it since it's the Focus exercise
+         * type's own additional, saved/listable entry point (the
+         * existing zero-setup "ARC Focus" card above stays unchanged).
+         */}
+        <Pressable style={styles.goalLinkCard} onPress={() => router.push("/arc-gym/goal")}>
+          <Text style={styles.goalLinkText}>🎯 מטרות ARC</Text>
+        </Pressable>
+        <Pressable style={styles.focusExerciseLinkCard} onPress={() => router.push("/arc-gym/focus-exercise")}>
+          <Text style={styles.focusExerciseLinkText}>📋 תרגילי Focus שמורים</Text>
+        </Pressable>
+
         {behaviors === null && <Text style={styles.hint}>טוען...</Text>}
 
         {behaviors !== null && behaviors.length === 0 && (
@@ -120,8 +135,12 @@ const styles = StyleSheet.create({
   resultLinkText: { color: "#B8860B", fontSize: 15, fontWeight: "600", textAlign: "right" },
   arcFocusLinkCard: { borderWidth: 1, borderColor: "#1565C0", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 12 },
   arcFocusLinkText: { color: "#1565C0", fontSize: 15, fontWeight: "600", textAlign: "right" },
-  decisionLinkCard: { borderWidth: 1, borderColor: "#2E7D32", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 20 },
+  decisionLinkCard: { borderWidth: 1, borderColor: "#2E7D32", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 12 },
   decisionLinkText: { color: "#2E7D32", fontSize: 15, fontWeight: "600", textAlign: "right" },
+  goalLinkCard: { borderWidth: 1, borderColor: "#C2410C", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 12 },
+  goalLinkText: { color: "#C2410C", fontSize: 15, fontWeight: "600", textAlign: "right" },
+  focusExerciseLinkCard: { borderWidth: 1, borderColor: "#1565C0", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 20 },
+  focusExerciseLinkText: { color: "#1565C0", fontSize: 15, fontWeight: "600", textAlign: "right" },
   question: { fontSize: 16, fontWeight: "700", textAlign: "right", marginBottom: 12 },
   chipColumn: { gap: 10 },
   optionCard: { borderWidth: 1, borderColor: "#0a7ea4", borderRadius: 12, padding: 16, alignItems: "flex-end" },

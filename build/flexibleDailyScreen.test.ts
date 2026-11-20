@@ -342,7 +342,7 @@ test("the time-planning card is visible on Home (today mode), additive to the ex
 
 test("reload() loads this exact date's own continuous-routine groups via loadContinuousRoutineGroupsForDate(dateLocal), alongside the existing plan-resolution reads", () => {
   const fnIndex = screen.indexOf("const reload = useCallback(async () => {");
-  const fnBody = screen.slice(fnIndex, fnIndex + 700);
+  const fnBody = screen.slice(fnIndex, fnIndex + 900);
   assert.ok(fnBody.includes("loadContinuousRoutineGroupsForDate(dateLocal)"));
   assert.ok(fnBody.includes("setContinuousGroups(groupsForDate);"));
 });

@@ -23,8 +23,10 @@ import {
   WEEKLY_SPACED_GAP_PRESETS,
 } from "../arc/weeklyScheduleMode.ts";
 import type { WeeklyScheduleMode } from "../arc/weeklyScheduleMode.ts";
+import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
 import {
   deleteTask,
+  loadArcGymGoals,
   loadDailyScheduleModeOverrides,
   loadTaskOccurrenceCompletions,
   loadTaskOccurrenceOverrides,
@@ -64,11 +66,14 @@ export default function WeeklyRoutineScreen() {
   const [weekdaySettings, setWeekdaySettings] = useState<Record<number, WeeklyScheduleMode>>({});
   const [weekStartLocal, setWeekStartLocal] = useState(() => resolveWeekStartLocalDate(todayLocalDateString(new Date())));
   const [customGapDraftByWeekday, setCustomGapDraftByWeekday] = useState<Record<number, string>>({});
+  /** ARC Gym + ARC Goal Integration task: read-only, for the additive goal-title badge on each task card below -- never affects scheduling/ordering. */
+  const [arcGymGoals, setArcGymGoals] = useState<ArcGymGoal[]>([]);
 
   const reload = useCallback(() => {
-    Promise.all([loadTasks(), loadWeeklyScheduleModeSettings()]).then(([loaded, settings]) => {
+    Promise.all([loadTasks(), loadWeeklyScheduleModeSettings(), loadArcGymGoals()]).then(([loaded, settings, goals]) => {
       setTasks(loaded.filter((task) => task.status !== "archived"));
       setWeekdaySettings(settings);
+      setArcGymGoals(goals);
     });
   }, []);
 
@@ -268,6 +273,10 @@ export default function WeeklyRoutineScreen() {
                     <Text style={styles.taskTitle}>{task.title}</Text>
                     {task.scheduledTime && <Text style={styles.taskMeta}>{task.scheduledTime}</Text>}
                     {task.expectedDurationMinutes !== null && <Text style={styles.taskMeta}>{task.expectedDurationMinutes} דק&apos;</Text>}
+                    {task.arcGymGoalId && (
+                      <Text style={styles.taskGoalBadge}>🎯 {arcGymGoals.find((goal) => goal.id === task.arcGymGoalId)?.title ?? "מטרת ARC"}</Text>
+                    )}
+                    {task.linkedArcGymSituationId && <Text style={styles.taskGoalBadge}>🏋️ אימון ARC Gym</Text>}
                   </Pressable>
                   <View style={styles.reorderColumn}>
                     <Pressable disabled={position === 0} onPress={() => handleReorder(dayTasks, task.id, "up")}>
@@ -332,6 +341,7 @@ const styles = StyleSheet.create({
   taskCardMain: { flex: 1 },
   taskTitle: { fontSize: 16, fontWeight: "600", textAlign: "right" },
   taskMeta: { fontSize: 13, color: "#555", textAlign: "right" },
+  taskGoalBadge: { fontSize: 11, color: "#C2410C", textAlign: "right", marginTop: 2 },
   reorderColumn: { marginRight: 8, alignItems: "center" },
   reorderArrow: { fontSize: 16, color: "#0a7ea4", paddingVertical: 2 },
   reorderArrowDisabled: { color: "#ccc" },

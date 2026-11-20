@@ -11,9 +11,11 @@ import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride, markTaskOccurr
 import { resolveEffectiveScheduleMode, WEEKLY_SPACED_GAP_PRESETS } from "../arc/weeklyScheduleMode.ts";
 import type { WeeklyScheduleMode } from "../arc/weeklyScheduleMode.ts";
 import { isTaskTimerRunStale } from "../arc/taskTimer.ts";
+import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
 import {
   deleteTask,
   getTask,
+  loadArcGymGoals,
   loadDailyScheduleModeOverrides,
   loadFloatingTimerOverlayPreferences,
   loadShowHomeInsightButtonSetting,
@@ -131,9 +133,11 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
    */
   const [overlayActive, setOverlayActive] = useState(false);
   const [togglingOverlay, setTogglingOverlay] = useState(false);
+  /** ARC Gym + ARC Goal Integration task: read-only, for the additive goal-title badge on each row below -- never affects scheduling/ordering. */
+  const [arcGymGoals, setArcGymGoals] = useState<ArcGymGoal[]>([]);
 
   const reload = useCallback(async () => {
-    const [tasks, overrides, completions, weekdaySettings, dateModeOverrides, groupsForDate, showInsightButton, overlayPreferences] = await Promise.all([
+    const [tasks, overrides, completions, weekdaySettings, dateModeOverrides, groupsForDate, showInsightButton, overlayPreferences, goals] = await Promise.all([
       loadTasks(),
       loadTaskOccurrenceOverrides(),
       loadTaskOccurrenceCompletions(),
@@ -142,7 +146,9 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
       loadContinuousRoutineGroupsForDate(dateLocal),
       loadShowHomeInsightButtonSetting(),
       loadFloatingTimerOverlayPreferences(),
+      loadArcGymGoals(),
     ]);
+    setArcGymGoals(goals);
     setShowHomeInsightButton(showInsightButton);
     setOverlayActive(overlayPreferences.enabled);
     setContinuousGroups(groupsForDate);
@@ -883,6 +889,10 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
                   {entry.origin === "weekly" && !entry.isModifiedForToday && <Text style={styles.badgeInherited}>מהשבועי</Text>}
                   {entry.hasConflict && <Text style={styles.badgeConflict}>התנגשות</Text>}
                   {group && <Text style={styles.badgeContinuous}>שגרה רצופה</Text>}
+                  {entry.task.arcGymGoalId && (
+                    <Text style={styles.badgeGoal}>🎯 {arcGymGoals.find((goal) => goal.id === entry.task.arcGymGoalId)?.title ?? "מטרת ARC"}</Text>
+                  )}
+                  {entry.task.linkedArcGymSituationId && <Text style={styles.badgeGoal}>🏋️ אימון ARC Gym</Text>}
                 </View>
                 {entry.effectiveStartTime && <Text style={styles.entryMeta}>{entry.effectiveStartTime}</Text>}
                 {entry.expectedDurationMinutes !== null && <Text style={styles.entryMeta}>{entry.expectedDurationMinutes} דק&apos;</Text>}
@@ -983,6 +993,7 @@ const styles = StyleSheet.create({
   badgeConflict: { fontSize: 11, color: "#fff", backgroundColor: "#b00020", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   // Unified ARC & Productivity Update task, requirement 9.
   badgeContinuous: { fontSize: 11, color: "#fff", backgroundColor: "#0a7ea4", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
+  badgeGoal: { fontSize: 11, color: "#fff", backgroundColor: "#C2410C", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   continuousGroupToggle: { alignItems: "center", paddingVertical: 8, marginTop: 4 },
   continuousGroupToggleText: { color: "#0a7ea4", fontSize: 13, fontWeight: "600" },
   continuousGroupBar: { backgroundColor: "#F5FAFD", borderRadius: 10, padding: 10, marginTop: 4, gap: 8 },

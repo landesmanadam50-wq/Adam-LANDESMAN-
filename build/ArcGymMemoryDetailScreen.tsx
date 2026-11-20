@@ -1,11 +1,18 @@
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
-import { describeArcGymReminderSchedule, listArcGymRemindersForExercise, listArcGymTrainingRecordsForMemoryExercise } from "../arc/arcGym.ts";
+import {
+  describeArcGymReminderSchedule,
+  linkGoalToArcGymMemoryExercise,
+  listArcGymRemindersForExercise,
+  listArcGymTrainingRecordsForMemoryExercise,
+  unlinkGoalFromArcGymMemoryExercise,
+} from "../arc/arcGym.ts";
 import type { ArcGymMemoryExercise, ArcGymReminder, ArcGymTrainingRecord } from "../arc/arcGym.ts";
-import { loadArcGymMemoryExercises, loadArcGymReminders, loadArcGymTrainingRecords } from "../data/storage.ts";
+import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
+import { loadArcGymGoals, loadArcGymMemoryExercises, loadArcGymReminders, loadArcGymTrainingRecords, upsertArcGymMemoryExerciseEntry } from "../data/storage.ts";
 
 /**
  * build/ArcGymMemoryDetailScreen.tsx (route /arc-gym/memory/[id])
@@ -22,16 +29,30 @@ export default function ArcGymMemoryDetailScreen({ id }: { id: string }) {
   const [exercise, setExercise] = useState<ArcGymMemoryExercise | null>(null);
   const [records, setRecords] = useState<ArcGymTrainingRecord[]>([]);
   const [reminders, setReminders] = useState<ArcGymReminder[]>([]);
+  const [goals, setGoals] = useState<ArcGymGoal[]>([]);
+  const [showGoalLinking, setShowGoalLinking] = useState(false);
 
   const reload = useCallback(() => {
-    Promise.all([loadArcGymMemoryExercises(), loadArcGymTrainingRecords(), loadArcGymReminders()]).then(([exercises, trainingRecords, allReminders]) => {
-      setExercise(exercises.find((candidate) => candidate.id === id) ?? null);
-      setRecords(listArcGymTrainingRecordsForMemoryExercise(trainingRecords, id));
-      setReminders(listArcGymRemindersForExercise(allReminders, "memory", id));
-    });
+    Promise.all([loadArcGymMemoryExercises(), loadArcGymTrainingRecords(), loadArcGymReminders(), loadArcGymGoals()]).then(
+      ([exercises, trainingRecords, allReminders, allGoals]) => {
+        setExercise(exercises.find((candidate) => candidate.id === id) ?? null);
+        setRecords(listArcGymTrainingRecordsForMemoryExercise(trainingRecords, id));
+        setReminders(listArcGymRemindersForExercise(allReminders, "memory", id));
+        setGoals(allGoals);
+      }
+    );
   }, [id]);
 
   useFocusEffect(reload);
+
+  async function toggleGoalLink(goalId: string) {
+    if (!exercise) return;
+    const now = new Date().toISOString();
+    const linked = exercise.linkedGoalIds.includes(goalId);
+    const updated = linked ? unlinkGoalFromArcGymMemoryExercise(exercise, goalId, now) : linkGoalToArcGymMemoryExercise(exercise, goalId, now);
+    await upsertArcGymMemoryExerciseEntry(updated);
+    setExercise(updated);
+  }
 
   if (!exercise) {
     return (
@@ -76,6 +97,39 @@ export default function ArcGymMemoryDetailScreen({ id }: { id: string }) {
           ))}
         </View>
 
+        <View style={styles.remindersBlock}>
+          <View style={styles.remindersHeaderRow}>
+            <Text style={styles.sectionTitle}>שיוך למטרות</Text>
+            <Pressable onPress={() => setShowGoalLinking((prev) => !prev)}>
+              <Text style={styles.linkText}>{showGoalLinking ? "סגור" : "ניהול שיוך"}</Text>
+            </Pressable>
+          </View>
+          {goals.filter((goal) => exercise.linkedGoalIds.includes(goal.id)).length === 0 && <Text style={styles.hint}>התרגיל הזה עדיין לא משויך לאף מטרה.</Text>}
+          {goals
+            .filter((goal) => exercise.linkedGoalIds.includes(goal.id))
+            .map((goal) => (
+              <Text key={goal.id} style={styles.reminderText}>
+                • {goal.title}
+              </Text>
+            ))}
+          {showGoalLinking && (
+            <FlatList
+              data={goals}
+              keyExtractor={(item) => item.id}
+              style={styles.goalPickerList}
+              renderItem={({ item }) => {
+                const linked = exercise.linkedGoalIds.includes(item.id);
+                return (
+                  <Pressable style={styles.reminderRow} onPress={() => toggleGoalLink(item.id)}>
+                    <Text style={[styles.reminderText, linked && styles.goalPickerTextLinked]}>{item.title}</Text>
+                    <Text style={styles.hint}>{linked ? "☑" : "☐"}</Text>
+                  </Pressable>
+                );
+              }}
+            />
+          )}
+        </View>
+
         {records.length > 0 && (
           <View style={styles.historyBlock}>
             <Text style={styles.sectionTitle}>היסטוריית אימונים</Text>
@@ -110,4 +164,6 @@ const styles = StyleSheet.create({
   remindersHeaderRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   reminderRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#eee", paddingVertical: 8 },
   reminderText: { fontSize: 14, textAlign: "right", color: "#333" },
+  goalPickerList: { maxHeight: 280, marginTop: 10, borderTopWidth: 1, borderTopColor: "#eee" },
+  goalPickerTextLinked: { color: "#0a7ea4", fontWeight: "700" },
 });
