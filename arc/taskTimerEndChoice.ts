@@ -22,9 +22,9 @@
 export type TaskTimerEndChoice = "start_arc" | "rest" | "next_task";
 
 export const TASK_TIMER_END_CHOICE_LABELS: Record<TaskTimerEndChoice, string> = {
-  start_arc: "ARC",
-  rest: "מנוחה",
-  next_task: "המשך לפעולה הבאה",
+  start_arc: "צריך ARC",
+  rest: "צריך מנוחה",
+  next_task: "להמשיך",
 };
 
 export const REST_DURATION_OPTIONS_MINUTES = [2, 5, 10, 15];

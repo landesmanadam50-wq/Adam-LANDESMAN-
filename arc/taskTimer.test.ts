@@ -5,8 +5,11 @@ import {
   finishTaskTimerRunEarly,
   generateTaskTimerRunId,
   getTaskTimerStatus,
+  isAnotherTaskActive,
+  isTaskTimerRunStale,
   pauseTaskTimerRun,
   resumeTaskTimerRun,
+  shortenTaskTimerRun,
 } from "./taskTimer.ts";
 
 const START = "2026-09-26T12:00:00.000Z";
@@ -24,6 +27,28 @@ test("createTaskTimerRun starts running (not paused), not completed, and default
 test("createTaskTimerRun accepts an explicit 'rest' kind -- Stage J's rest sub-timer, persisted through the exact same single storage slot", () => {
   const rest = createTaskTimerRun("task-1", "run-2", 5, START, "rest");
   assert.equal(rest.kind, "rest");
+});
+
+// --- Critical-bug task ("Startup Popups Still Not Working After Modal Fix"): isTaskTimerRunStale ---
+
+test("isTaskTimerRunStale is false for a genuinely in-progress run started earlier TODAY", () => {
+  const run = createTaskTimerRun("task-1", "run-1", 30, "2026-11-10T07:00:00.000Z");
+  assert.equal(isTaskTimerRunStale(run, new Date("2026-11-10T08:00:00.000Z")), false);
+});
+
+test("isTaskTimerRunStale is true once the run is completed, even if that happened today -- an acknowledged/finished run is never still 'active'", () => {
+  const run = { ...createTaskTimerRun("task-1", "run-1", 30, "2026-11-10T07:00:00.000Z"), completedAt: "2026-11-10T07:35:00.000Z" };
+  assert.equal(isTaskTimerRunStale(run, new Date("2026-11-10T08:00:00.000Z")), true);
+});
+
+test("isTaskTimerRunStale is true for a run started on an EARLIER calendar day and never cleared -- this is the actual bug: backgrounding/force-stopping/an OS kill mid-run leaves no explicit cleanup, so an abandoned run from a previous day must never block today's startup sequence forever", () => {
+  const run = createTaskTimerRun("task-1", "run-1", 30, "2026-11-08T07:00:00.000Z");
+  assert.equal(isTaskTimerRunStale(run, new Date("2026-11-10T08:00:00.000Z")), true);
+});
+
+test("isTaskTimerRunStale is false for a run started earlier today even while paused -- a trainee who paused and stepped away for a few minutes is still genuinely mid-session", () => {
+  const run = pauseTaskTimerRun(createTaskTimerRun("task-1", "run-1", 30, "2026-11-10T07:00:00.000Z"), "2026-11-10T07:10:00.000Z");
+  assert.equal(isTaskTimerRunStale(run, new Date("2026-11-10T08:00:00.000Z")), false);
 });
 
 test("getTaskTimerStatus computes elapsed/remaining purely from timestamps -- never an accumulated tick counter", () => {
@@ -103,6 +128,59 @@ test("finishTaskTimerRunEarly sets completedAt and is idempotent -- calling it a
 
   const finishedAgain = finishTaskTimerRunEarly(finished, new Date(startedMs + 90_000).toISOString());
   assert.equal(finishedAgain.completedAt, finished.completedAt, "the second call must never move the completion time");
+});
+
+// --- Smart Alarm Conflict Management task: isAnotherTaskActive -----------
+
+test("test 7/8: isAnotherTaskActive is true for a DIFFERENT task's run that is running, paused, or resting, as long as it isn't stale", () => {
+  const now = new Date("2026-11-10T08:00:00.000Z");
+  const running = createTaskTimerRun("task-B", "run-1", 30, "2026-11-10T07:00:00.000Z");
+  assert.equal(isAnotherTaskActive(running, "task-A", now), true);
+
+  const paused = pauseTaskTimerRun(running, "2026-11-10T07:30:00.000Z");
+  assert.equal(isAnotherTaskActive(paused, "task-A", now), true, "a paused run still occupies the active-task slot");
+
+  const resting = createTaskTimerRun("task-B", "run-2", 5, "2026-11-10T07:00:00.000Z", "rest");
+  assert.equal(isAnotherTaskActive(resting, "task-A", now), true, "a rest run for task-B is still task-B's own active context, a conflict for task-A");
+});
+
+test("isAnotherTaskActive is false when there is no run, the run is for the SAME task, it's already completed, or it's stale", () => {
+  const now = new Date("2026-11-10T08:00:00.000Z");
+  assert.equal(isAnotherTaskActive(null, "task-A", now), false);
+
+  const sameTask = createTaskTimerRun("task-A", "run-1", 30, "2026-11-10T07:00:00.000Z");
+  assert.equal(isAnotherTaskActive(sameTask, "task-A", now), false, "a task is never a conflict with its own run");
+
+  const completed = { ...createTaskTimerRun("task-B", "run-2", 30, "2026-11-10T07:00:00.000Z"), completedAt: "2026-11-10T07:40:00.000Z" };
+  assert.equal(isAnotherTaskActive(completed, "task-A", now), false, "do not automatically re-ring/suppress for a run that has already been completed");
+
+  const stale = createTaskTimerRun("task-B", "run-3", 30, "2026-11-08T07:00:00.000Z");
+  assert.equal(isAnotherTaskActive(stale, "task-A", now), false, "an abandoned run from an earlier day can never suppress today's alarms");
+});
+
+// --- Task Shortening/Rescheduling UI, option A: shortenTaskTimerRun ------
+
+test("test 10: shortenTaskTimerRun changes only durationMinutes -- startedAt/pausedAt/accumulatedPauseSeconds are untouched, so already-elapsed time is never reset", () => {
+  const run = createTaskTimerRun("task-1", "run-1", 60, START);
+  const shortened = shortenTaskTimerRun(run, 20);
+  assert.equal(shortened.durationMinutes, 20);
+  assert.equal(shortened.startedAt, run.startedAt);
+  assert.equal(shortened.pausedAt, run.pausedAt);
+  assert.equal(shortened.accumulatedPauseSeconds, run.accumulatedPauseSeconds);
+
+  const statusBefore = getTaskTimerStatus(run, startedMs + 15 * 60_000); // 15 minutes elapsed
+  const statusAfter = getTaskTimerStatus(shortened, startedMs + 15 * 60_000);
+  assert.equal(statusAfter.elapsedSeconds, statusBefore.elapsedSeconds, "elapsed time is identical before and after shortening");
+  assert.equal(statusAfter.remainingSeconds, 5 * 60, "20min total - 15min already elapsed = 5 minutes left");
+});
+
+test("shortenTaskTimerRun can produce an already-passed end time (remainingSeconds 0, complete true) -- the caller's own job to confirm with the trainee first, never auto-completed here", () => {
+  const run = createTaskTimerRun("task-1", "run-1", 60, START);
+  const shortened = shortenTaskTimerRun(run, 10);
+  const status = getTaskTimerStatus(shortened, startedMs + 15 * 60_000); // 15min elapsed > 10min new total
+  assert.equal(status.remainingSeconds, 0);
+  assert.equal(status.complete, true);
+  assert.equal(shortened.completedAt, null, "shortening itself never marks the run completed -- only the natural timerEnded state changes");
 });
 
 test("generateTaskTimerRunId produces distinct, correctly-prefixed ids", () => {

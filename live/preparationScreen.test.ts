@@ -32,9 +32,9 @@ test("the route passes the id param straight through to PreparationScreen", () =
   assert.ok(route.includes("PreparationScreen taskId={id}"));
 });
 
-test("ActiveTaskScreen and TodayScreen both have a real 'הכנה' Pressable to the prepare route", () => {
-  assert.match(activeTaskScreen, /pathname:\s*"\/tasks\/\[id\]\/prepare",\s*params:\s*\{\s*id:\s*task\.id\s*\}/);
-  assert.match(todayScreen, /pathname:\s*"\/tasks\/\[id\]\/prepare",\s*params:\s*\{\s*id:\s*task\.id\s*\}/);
+test("Simplified-architecture task, Phase 1: neither ActiveTaskScreen nor TodayScreen links to the prepare route anymore -- it is hidden from normal navigation, never deleted (the route itself stays registered, see the test above)", () => {
+  assert.ok(!activeTaskScreen.includes('pathname: "/tasks/[id]/prepare"'));
+  assert.ok(!todayScreen.includes('pathname: "/tasks/[id]/prepare"'));
 });
 
 test("every protocol ends by opening the active task with autoStart -- never a dead end, never leaving the trainee stuck in the preparation screen", () => {

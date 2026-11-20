@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { archiveTask, createEmptyTask, startTask, postponeTask, completeTask, type Task } from "./tasks.ts";
-import { buildTodaySections } from "./todaySchedule.ts";
+import { buildTodaySections, listTasksScheduledThisWeek, resolveArcWindowClockTime, resolveMostUrgentEntry, resolveNextTaskEntry } from "./todaySchedule.ts";
 import type { TaskOccurrenceCompletion } from "./taskOccurrence.ts";
 
 // Fixed reference "now": Monday 2026-01-05, 12:00 local.
@@ -16,33 +16,39 @@ function task(overrides: Partial<Task> = {}): Task {
   return { ...base, ...overrides };
 }
 
-test("a one-time task scheduled today with a future time is laterToday (no currentOrNext candidate yet)", () => {
+test("a one-time task scheduled today with a future time is laterToday AND is the nextTask (no current candidate -- nothing is active)", () => {
   const t = task({ scheduledDate: TODAY, scheduledTime: "18:00" });
   const sections = buildTodaySections([t], [], NOW);
-  assert.equal(sections.currentOrNext?.task.id, t.id, "the only eligible task today is promoted to currentOrNext");
+  assert.equal(sections.current, null);
+  assert.equal(sections.nextTask?.task.id, t.id);
   assert.deepEqual(sections.laterToday, []);
 });
 
-test("a one-time task scheduled today with a past time is overdue, and becomes currentOrNext when alone", () => {
+// Task-categorization fix: this is the exact bug report -- a task whose
+// scheduled time has passed, but was never started, must NEVER appear
+// under "current" ("המשימה עכשיו"). It belongs in "overdue" only.
+test("a one-time task scheduled today with a past time, never started, is overdue -- NEVER promoted to current", () => {
   const t = task({ scheduledDate: TODAY, scheduledTime: "08:00" });
   const sections = buildTodaySections([t], [], NOW);
-  assert.equal(sections.currentOrNext?.task.id, t.id);
-  assert.deepEqual(sections.overdue, []);
+  assert.equal(sections.current, null, "an un-started overdue task must never be shown as the current task");
+  assert.equal(sections.overdue.length, 1);
+  assert.equal(sections.overdue[0].task.id, t.id);
 });
 
-test("a one-time task scheduled yesterday is overdue regardless of time", () => {
+test("a one-time task scheduled yesterday, never started, is overdue -- never current", () => {
   const t = task({ scheduledDate: YESTERDAY, scheduledTime: "08:00" });
   const sections = buildTodaySections([t], [], NOW);
-  assert.equal(sections.currentOrNext?.task.id, t.id);
+  assert.equal(sections.current, null);
+  assert.equal(sections.overdue[0]?.task.id, t.id);
 });
 
 test("a one-time task scheduled tomorrow never appears on today's screen", () => {
   const t = task({ scheduledDate: TOMORROW });
   const sections = buildTodaySections([t], [], NOW);
-  assert.equal(sections.currentOrNext, null);
+  assert.equal(sections.current, null);
+  assert.equal(sections.nextTask, null);
   assert.deepEqual(sections.overdue, []);
   assert.deepEqual(sections.laterToday, []);
-  assert.deepEqual(sections.unscheduled, []);
 });
 
 test("a one-time task with no scheduledDate is unscheduled", () => {
@@ -50,7 +56,8 @@ test("a one-time task with no scheduledDate is unscheduled", () => {
   const sections = buildTodaySections([t], [], NOW);
   assert.equal(sections.unscheduled.length, 1);
   assert.equal(sections.unscheduled[0].task.id, t.id);
-  assert.equal(sections.currentOrNext, null, "unscheduled tasks are never promoted to currentOrNext");
+  assert.equal(sections.current, null, "unscheduled tasks are never promoted to current");
+  assert.equal(sections.nextTask, null, "unscheduled tasks have no clock time, so they can never be the next task either");
 });
 
 test("a one-time task completed today is completedToday; completed on an earlier day disappears from today entirely", () => {
@@ -60,68 +67,118 @@ test("a one-time task completed today is completedToday; completed on an earlier
   assert.deepEqual(sections.completedToday.map((e) => e.task.id), ["a"]);
 });
 
-test("an ACTIVE task is always promoted to currentOrNext, even over an earlier-timed overdue task", () => {
+// Requirement 4: a completed task stays completed and never becomes active again, even across a reload (classification is a pure function of the persisted status/completedAt fields -- there is no path back to "current").
+test("a completed task is never promoted to current, even if its original scheduled time would otherwise make it look overdue", () => {
+  const completed = completeTask(task({ scheduledDate: YESTERDAY, scheduledTime: "08:00" }), NOW.toISOString());
+  const sections = buildTodaySections([completed], [], NOW);
+  assert.equal(sections.current, null);
+  assert.deepEqual(sections.overdue, []);
+});
+
+test("requirement 1 + 'starting a late task manually makes it the active task': an ACTIVE task is promoted to current, and REMOVED from overdue/laterToday -- never shown in both places", () => {
   const overdueTask = task({ id: "overdue", scheduledDate: TODAY, scheduledTime: "07:00" });
   const activeTask = startTask(task({ id: "active", scheduledDate: TODAY, scheduledTime: "20:00" }), NOW.toISOString());
   const sections = buildTodaySections([overdueTask, activeTask], [], NOW);
-  assert.equal(sections.currentOrNext?.task.id, "active");
+  assert.equal(sections.current?.task.id, "active");
+  // The still-overdue, non-active task keeps its own, separate place -- it is NOT swallowed by "current".
   assert.equal(sections.overdue.length, 1);
   assert.equal(sections.overdue[0].task.id, "overdue");
 });
 
-test("overdue tasks are preferred over laterToday tasks for currentOrNext when nothing is active", () => {
+test("starting an overdue task moves it OUT of 'overdue' and INTO 'current' -- the exact 'start a late task manually' requirement", () => {
+  const overdueTask = task({ id: "late", scheduledDate: TODAY, scheduledTime: "06:30" });
+  const beforeStart = buildTodaySections([overdueTask], [], NOW);
+  assert.equal(beforeStart.current, null);
+  assert.equal(beforeStart.overdue[0]?.task.id, "late");
+
+  const started = startTask(overdueTask, NOW.toISOString());
+  const afterStart = buildTodaySections([started], [], NOW);
+  assert.equal(afterStart.current?.task.id, "late");
+  assert.deepEqual(afterStart.overdue, []);
+});
+
+// Task-categorization fix, the core bug report: at 13:43, a task scheduled
+// for 06:30 that was never started must show under "overdue", never under
+// "המשימה עכשיו" -- reproduced directly with the reported numbers.
+test("bug report reproduction: at 13:43, a task scheduled for 06:30 and never started is overdue, not current", () => {
+  const reportedNow = new Date(2026, 0, 5, 13, 43, 0);
+  const workout = task({ id: "workout", title: "לעשות כושר בבית", scheduledDate: TODAY, scheduledTime: "06:30" });
+  const sections = buildTodaySections([workout], [], reportedNow);
+  assert.equal(sections.current, null, "no active task exists, so 'המשימה עכשיו' must show nothing");
+  assert.equal(sections.overdue[0]?.task.id, "workout");
+});
+
+test("requirement 3: the earliest-timed upcoming task is singled out as nextTask, distinct from and never duplicated in laterToday, even when an overdue task exists (overdue never qualifies as 'next')", () => {
   const laterTask = task({ id: "later", scheduledDate: TODAY, scheduledTime: "20:00" });
   const overdueTask = task({ id: "overdue", scheduledDate: TODAY, scheduledTime: "07:00" });
   const sections = buildTodaySections([laterTask, overdueTask], [], NOW);
-  assert.equal(sections.currentOrNext?.task.id, "overdue");
-  assert.equal(sections.laterToday.length, 1);
-  assert.equal(sections.laterToday[0].task.id, "later");
+  assert.equal(sections.current, null, "nothing is active");
+  assert.equal(sections.nextTask?.task.id, "later", "the overdue task's time has already passed, so it can never be 'the next' task");
+  assert.deepEqual(sections.overdue.map((e) => e.task.id), ["overdue"]);
+  assert.deepEqual(sections.laterToday, [], "the sole upcoming task is singled out as nextTask, not duplicated in laterToday");
 });
 
-test("laterToday and overdue sort chronologically by time, time-less tasks sort last, and the earliest-timed laterToday task is promoted to currentOrNext when nothing is overdue", () => {
+test("laterToday and overdue sort chronologically, time-less tasks sort last, and the earliest-timed upcoming task becomes nextTask (never 'current', since nothing is active)", () => {
   const noon = task({ id: "noon", scheduledDate: TODAY, scheduledTime: "12:30" });
   const evening = task({ id: "evening", scheduledDate: TODAY, scheduledTime: "21:00" });
   const noTime = task({ id: "no-time", scheduledDate: TODAY, scheduledTime: null });
   const sections = buildTodaySections([evening, noTime, noon], [], NOW);
-  assert.equal(sections.currentOrNext?.task.id, "noon");
+  assert.equal(sections.current, null);
+  assert.equal(sections.nextTask?.task.id, "noon");
   assert.deepEqual(sections.laterToday.map((e) => e.task.id), ["evening", "no-time"]);
 });
 
 test("an archived task never appears on today's screen, even if it would otherwise be overdue", () => {
   const archived = archiveTask(task({ scheduledDate: YESTERDAY }), NOW.toISOString());
   const sections = buildTodaySections([archived], [], NOW);
-  assert.equal(sections.currentOrNext, null);
+  assert.equal(sections.current, null);
+  assert.equal(sections.nextTask, null);
   assert.deepEqual(sections.overdue, []);
 });
 
 test("a recurring task not scheduled on today's weekday never appears", () => {
   const notToday = task({ recurrence: { kind: "recurring", daysOfWeek: [2] } }); // Tuesday only; NOW is Monday
   const sections = buildTodaySections([notToday], [], NOW);
-  assert.equal(sections.currentOrNext, null);
+  assert.equal(sections.current, null);
+  assert.equal(sections.nextTask, null);
   assert.deepEqual(sections.overdue, []);
   assert.deepEqual(sections.laterToday, []);
 });
 
-test("a recurring task scheduled today behaves like a one-time task for today's bucketing", () => {
+test("a recurring task scheduled today, past time, never started, behaves like a one-time task -- overdue, never current", () => {
   const recurring = task({ recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "08:00" }); // Monday, past time
   const sections = buildTodaySections([recurring], [], NOW);
-  assert.equal(sections.currentOrNext?.task.id, recurring.id);
+  assert.equal(sections.current, null);
+  assert.equal(sections.overdue[0]?.task.id, recurring.id);
 });
 
-test("a recurring task whose TODAY occurrence is already completed is completedToday, never overdue", () => {
+// Day-transition / recurring-task safety: an ACTIVE recurring task must
+// never disappear from Today just because its own recurrence calendar no
+// longer names today's weekday (e.g. it was started before midnight and
+// is still running after midnight rolled into a day it isn't scheduled
+// for). Requirement 1 ("started and still active") always wins.
+test("an ACTIVE recurring task still shows as current even on a day its own recurrence calendar does not name (crossing midnight while still running)", () => {
+  const recurring = startTask(task({ recurrence: { kind: "recurring", daysOfWeek: [2] } }), NOW.toISOString()); // Tuesday only; NOW is Monday
+  const sections = buildTodaySections([recurring], [], NOW);
+  assert.equal(sections.current?.task.id, recurring.id, "an active task must never vanish from Today, even if today isn't one of its scheduled weekdays");
+});
+
+test("a recurring task whose TODAY occurrence is already completed is completedToday, never overdue or current", () => {
   const recurring = task({ id: "rec", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "08:00" });
   const completions: TaskOccurrenceCompletion[] = [{ taskId: "rec", occurrenceDateLocal: TODAY, completedAt: NOW.toISOString() }];
   const sections = buildTodaySections([recurring], completions, NOW);
   assert.equal(sections.completedToday.length, 1);
   assert.equal(sections.completedToday[0].task.id, "rec");
-  assert.equal(sections.currentOrNext, null);
+  assert.equal(sections.current, null);
+  assert.deepEqual(sections.overdue, []);
 });
 
-test("completing a recurring task's occurrence never marks a DIFFERENT day's occurrence complete (it would simply reappear tomorrow)", () => {
+test("completing a recurring task's occurrence never marks a DIFFERENT day's occurrence complete (it reappears, overdue, today -- never current without being started)", () => {
   const recurring = task({ id: "rec", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "08:00" });
   const completions: TaskOccurrenceCompletion[] = [{ taskId: "rec", occurrenceDateLocal: YESTERDAY, completedAt: "irrelevant" }];
   const sections = buildTodaySections([recurring], completions, NOW);
-  assert.equal(sections.currentOrNext?.task.id, "rec", "yesterday's completion must not suppress today's occurrence");
+  assert.equal(sections.current, null, "yesterday's completion must not suppress today's occurrence, but it also must not be shown as current without being started");
+  assert.equal(sections.overdue[0]?.task.id, "rec", "today's occurrence must still appear, as overdue");
 });
 
 test("a postponed task with no returnAt is unscheduled -- the spec's explicit 'move to unscheduled' outcome", () => {
@@ -130,16 +187,17 @@ test("a postponed task with no returnAt is unscheduled -- the spec's explicit 'm
   assert.equal(sections.unscheduled.length, 1);
 });
 
-test("a postponed task with a past returnAt today is overdue (a return reminder due now)", () => {
+test("a postponed task with a past returnAt today is overdue (a return reminder due now, not yet started) -- never current", () => {
   const postponed = postponeTask(task(), "practical", new Date(2026, 0, 5, 9, 0).toISOString(), NOW.toISOString());
   const sections = buildTodaySections([postponed], [], NOW);
-  assert.equal(sections.currentOrNext?.task.id, postponed.id);
+  assert.equal(sections.current, null);
+  assert.equal(sections.overdue[0]?.task.id, postponed.id);
 });
 
 test("a postponed task returning on a future day never appears on today's screen", () => {
   const postponed = postponeTask(task(), "practical", new Date(2026, 0, 10, 9, 0).toISOString(), NOW.toISOString());
   const sections = buildTodaySections([postponed], [], NOW);
-  assert.equal(sections.currentOrNext, null);
+  assert.equal(sections.current, null);
   assert.deepEqual(sections.overdue, []);
   assert.deepEqual(sections.unscheduled, []);
 });
@@ -156,4 +214,113 @@ test("completedToday sorts most-recently-completed first", () => {
   const later = completeTask(task({ id: "later" }), new Date(2026, 0, 5, 11, 0).toISOString());
   const sections = buildTodaySections([earlier, later], [], NOW);
   assert.deepEqual(sections.completedToday.map((e) => e.task.id), ["later", "earlier"]);
+});
+
+// Requirement 5 (skipped tasks): "Skip Task" (live/ActiveTaskScreen.tsx's
+// handleSkipTask) deliberately never changes Task.status -- see
+// live/taskLiveNavigation.test.ts for that contract. From this module's
+// own point of view, a "skipped" task is simply a task whose status was
+// never touched: it must keep showing up in its natural bucket (overdue
+// if its time passed), and must NEVER be mistaken for completed.
+test("requirement 5: a 'skipped' task (status left untouched, no completion recorded) stays overdue -- never completedToday, never silently dropped", () => {
+  const skipped = task({ id: "skipped-one", scheduledDate: TODAY, scheduledTime: "07:00" });
+  const sections = buildTodaySections([skipped], [], NOW);
+  assert.equal(sections.overdue[0]?.task.id, "skipped-one");
+  assert.deepEqual(sections.completedToday, []);
+});
+
+// Requirement: "status persistence after reopening the app" -- classification depends only on the Task's own persisted fields, so a round-trip through JSON (simulating an AsyncStorage reload) must classify identically.
+test("classification is a pure function of the task's own persisted fields -- a JSON round-trip (simulating a reload from storage) classifies identically", () => {
+  const original = startTask(task({ id: "reload-me", scheduledDate: TODAY, scheduledTime: "06:30" }), NOW.toISOString());
+  const reloaded = JSON.parse(JSON.stringify(original)) as Task;
+  const sections = buildTodaySections([reloaded], [], NOW);
+  assert.equal(sections.current?.task.id, "reload-me");
+});
+
+// ARC-system upgrade task, Part J: resolveNextTaskEntry -- the single
+// "what's next" calculation shared by "Next Task", "Skip Task", and the
+// post-completion auto-advance. This is a NAVIGATION concept (what to
+// jump to), deliberately distinct from Today's own display sections --
+// it still falls back to the nearest overdue task when nothing is
+// active, via resolveMostUrgentEntry, exactly as before this fix.
+test("resolveNextTaskEntry finds the next-due task excluding the given one, even while the excluded task is still 'active' (falls back to the nearest overdue task)", () => {
+  const current = startTask(task({ id: "current", scheduledDate: TODAY, scheduledTime: "08:00" }), NOW.toISOString());
+  const next = task({ id: "next", scheduledDate: TODAY, scheduledTime: "09:00" });
+  const entry = resolveNextTaskEntry([current, next], [], "current", NOW);
+  assert.equal(entry?.task.id, "next");
+});
+
+test("resolveNextTaskEntry returns null when nothing else is eligible today", () => {
+  const current = task({ id: "current", scheduledDate: TODAY, scheduledTime: "08:00" });
+  const entry = resolveNextTaskEntry([current], [], "current", NOW);
+  assert.equal(entry, null);
+});
+
+test("resolveNextTaskEntry picks the earliest-due (most urgent, i.e. overdue-first) task among several remaining ones, not just list order", () => {
+  const current = task({ id: "current", scheduledDate: TODAY, scheduledTime: "08:00" });
+  const later = task({ id: "later", scheduledDate: TODAY, scheduledTime: "18:00" });
+  const sooner = task({ id: "sooner", scheduledDate: TODAY, scheduledTime: "09:00" });
+  const entry = resolveNextTaskEntry([current, later, sooner], [], "current", NOW);
+  assert.equal(entry?.task.id, "sooner");
+});
+
+test("resolveMostUrgentEntry: current wins over overdue and nextTask when something is actually active", () => {
+  const active = startTask(task({ id: "active", scheduledDate: TODAY, scheduledTime: "20:00" }), NOW.toISOString());
+  const overdueTask = task({ id: "overdue", scheduledDate: TODAY, scheduledTime: "07:00" });
+  const sections = buildTodaySections([active, overdueTask], [], NOW);
+  assert.equal(resolveMostUrgentEntry(sections)?.task.id, "active");
+});
+
+test("resolveMostUrgentEntry: falls back to the earliest overdue task, then to nextTask, when nothing is active", () => {
+  const overdueTask = task({ id: "overdue", scheduledDate: TODAY, scheduledTime: "07:00" });
+  const sections = buildTodaySections([overdueTask], [], NOW);
+  assert.equal(resolveMostUrgentEntry(sections)?.task.id, "overdue");
+
+  const upcomingOnly = buildTodaySections([task({ id: "upcoming", scheduledDate: TODAY, scheduledTime: "20:00" })], [], NOW);
+  assert.equal(resolveMostUrgentEntry(upcomingOnly)?.task.id, "upcoming");
+});
+
+// ARC-system upgrade task ("ARC ספונטני ויצירת ARC מתוכנן"), Part 2:
+// resolveArcWindowClockTime -- the window's own clock moment, never
+// auto-derived for a task that never set arcWindowMinutesBefore.
+
+test("resolveArcWindowClockTime is null when no window was ever set, even for a fully-scheduled task", () => {
+  const t = task({ scheduledDate: TODAY, scheduledTime: "09:00" });
+  assert.equal(resolveArcWindowClockTime(t, TODAY), null);
+});
+
+test("resolveArcWindowClockTime is exactly arcWindowMinutesBefore earlier than the task's own clock time", () => {
+  const t = task({ scheduledDate: TODAY, scheduledTime: "09:00", arcWindowMinutesBefore: 5 });
+  const windowClock = resolveArcWindowClockTime(t, TODAY);
+  assert.equal(windowClock?.getHours(), 8);
+  assert.equal(windowClock?.getMinutes(), 55);
+});
+
+test("resolveArcWindowClockTime is null when the task itself has no resolvable clock time, even if a window is set", () => {
+  const t = task({ arcWindowMinutesBefore: 5 });
+  assert.equal(resolveArcWindowClockTime(t, TODAY), null);
+});
+
+// --- ARCHI -- Unified Development Specification task, Part 8 ("LINK INSIGHTS TO EXISTING TASKS") ---
+
+test("listTasksScheduledThisWeek includes a one-time task scheduled later this week, and excludes one scheduled next week or with no scheduledDate at all", () => {
+  const thisWeek = task({ scheduledDate: "2026-01-08" }); // Thursday, 3 days after TODAY (Monday)
+  const nextWeek = task({ scheduledDate: "2026-01-13" }); // the following Tuesday -- outside the 7-day window
+  const unscheduled = task({ scheduledDate: null });
+  const result = listTasksScheduledThisWeek([thisWeek, nextWeek, unscheduled], [], NOW);
+  assert.deepEqual(result.map((entry) => entry.task.id), [thisWeek.id]);
+  assert.equal(result[0].occurrenceDateLocal, "2026-01-08");
+});
+
+test("listTasksScheduledThisWeek de-duplicates a recurring task down to its FIRST qualifying occurrence this week -- never listed twice even though it recurs on multiple days within the window", () => {
+  const recurring = task({ recurrence: { kind: "recurring", daysOfWeek: [1, 3] } }); // Monday (today) and Wednesday
+  const result = listTasksScheduledThisWeek([recurring], [], NOW);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].occurrenceDateLocal, TODAY, "the first (earliest) qualifying occurrence this week is today itself");
+});
+
+test("listTasksScheduledThisWeek reuses buildTodaySections's own recurrence resolution -- a recurring task with no matching weekday this week is correctly excluded", () => {
+  const neverThisWeek = task({ recurrence: { kind: "recurring", daysOfWeek: [] } });
+  const result = listTasksScheduledThisWeek([neverThisWeek], [], NOW);
+  assert.deepEqual(result, []);
 });

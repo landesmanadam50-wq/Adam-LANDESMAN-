@@ -26,6 +26,8 @@
  * persistence, kept completely separate).
  */
 
+import { todayLocalDateString } from "../program/dateUtils.ts";
+
 export interface TaskTimerRun {
   taskId: string;
   runId: string;
@@ -58,6 +60,30 @@ export interface TaskTimerRun {
 
 export function createTaskTimerRun(taskId: string, runId: string, durationMinutes: number, now: string, kind: "task" | "rest" = "task"): TaskTimerRun {
   return { taskId, runId, startedAt: now, durationMinutes, pausedAt: null, accumulatedPauseSeconds: 0, notificationId: null, completedAt: null, kind };
+}
+
+/**
+ * Critical-bug task ("Startup Popups Still Not Working After Modal
+ * Fix"): the single-slot TaskTimerRun is only ever explicitly cleared
+ * on an in-app exit path (finish early, complete, postpone --
+ * live/ActiveTaskScreen.tsx/live/PostponementScreen.tsx) -- there is no
+ * handler for the trainee backgrounding/force-stopping the app, or the
+ * OS killing it, while a timer is running. That leaves a genuinely
+ * ABANDONED run sitting in storage forever, and
+ * live/DailyStartupSequenceOverlay.tsx's own "don't interrupt an active
+ * task" gate was treating ANY persisted run as still active -- so one
+ * stale run, from any earlier day, silently suppressed BOTH startup
+ * popups on every single cold start afterward, forever, regardless of
+ * any UI/presentation fix. A run only counts as genuinely active when
+ * it is NOT already completed/acknowledged (completedAt still null) AND
+ * it was actually started TODAY -- a run abandoned on an earlier day is
+ * stale, never still "active" for the purposes of blocking a brand new
+ * day's startup sequence. Exported so the overlay (and its own tests)
+ * read this exact rule rather than re-deriving a second one.
+ */
+export function isTaskTimerRunStale(run: TaskTimerRun, now: Date): boolean {
+  if (run.completedAt !== null) return true;
+  return todayLocalDateString(new Date(run.startedAt)) !== todayLocalDateString(now);
 }
 
 export interface TaskTimerStatus {
@@ -99,4 +125,40 @@ export function finishTaskTimerRunEarly(run: TaskTimerRun, now: string): TaskTim
 
 export function generateTaskTimerRunId(): string {
   return `task-timer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Smart Alarm Conflict Management task, requirement 3 ("critical"):
+ * the ONE authoritative, persisted-state predicate every conflict
+ * check (both the alarm-delivery boundary in data/taskAlarm.ts and the
+ * Task LIVE/Details UI) must read -- never temporary React component
+ * state, which a killed/backgrounded app or a cold alarm delivery
+ * would never see. `run` genuinely occupies the "one active task" slot
+ * for any OTHER task as long as it exists, isn't completed, and isn't
+ * stale -- covering running, paused (pausedAt set), AND resting
+ * (kind: "rest", still the same taskId's own context) alike, since
+ * none of those states ever clear this single-slot run.
+ */
+export function isAnotherTaskActive(run: TaskTimerRun | null, excludeTaskId: string, now: Date): boolean {
+  if (!run) return false;
+  if (run.taskId === excludeTaskId) return false;
+  if (run.completedAt !== null) return false;
+  if (isTaskTimerRunStale(run, now)) return false;
+  return true;
+}
+
+/**
+ * Task Shortening/Rescheduling UI, option A ("Shorten the current
+ * task"): changes ONLY the run's own total duration -- startedAt,
+ * pausedAt and accumulatedPauseSeconds (the three fields
+ * getTaskTimerStatus's elapsed-time math actually depends on) are left
+ * untouched, so already-elapsed time is never reset. remainingSeconds
+ * simply becomes whatever getTaskTimerStatus computes from the new,
+ * smaller total -- including possibly <= 0 (the caller's own job to
+ * confirm with the trainee before calling this when that's the case,
+ * per the spec's "require explicit user decision if the new end time
+ * has already passed").
+ */
+export function shortenTaskTimerRun(run: TaskTimerRun, newDurationMinutes: number): TaskTimerRun {
+  return { ...run, durationMinutes: newDurationMinutes };
 }

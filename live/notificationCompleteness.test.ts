@@ -30,21 +30,20 @@ test("ReminderKind includes restTimerEnded and postponedTaskReturn, alongside th
 test("tapping a restTimerEnded or postponedTaskReturn notification deep-links to the task's own screen, the same sanctioned fallback as taskTimerEnded", () => {
   const branchIndex = layout.indexOf('kind === "taskTimerEnded" || kind === "restTimerEnded" || kind === "postponedTaskReturn"');
   assert.ok(branchIndex !== -1);
-  assert.match(layout.slice(branchIndex, branchIndex + 250), /pathname:\s*"\/tasks\/\[id\]"/);
+  assert.match(layout.slice(branchIndex, branchIndex + 320), /pathname:\s*"\/tasks\/\[id\]"/);
 });
 
-test("starting the rest sub-timer schedules a 'restTimerEnded' notification, mirroring the main timer's own pattern", () => {
+test("starting the rest sub-timer arms the real end-of-timer ring with its own distinct title ('זמן המנוחה הסתיים'), mirroring the main timer's own pattern -- the exact same underlying mechanism, never a parallel one", () => {
   const fnIndex = activeTaskScreen.indexOf("async function scheduleRestTimerNotification");
   const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 600);
-  assert.ok(fnBody.includes('kind: "restTimerEnded"'));
-  assert.ok(fnBody.includes("taskId: currentTask.id"));
+  assert.ok(fnBody.includes('armTaskTimerEndAlarm(currentTask.id, currentTask.title, new Date(Date.now() + status.remainingSeconds * 1000), "זמן המנוחה הסתיים")'));
 });
 
-test("resuming (handleStart) and completing a task both cancel any stale notification already on the task record (e.g. a postponed-return reminder)", () => {
-  const startIndex = activeTaskScreen.indexOf("async function handleStart()");
-  assert.ok(activeTaskScreen.slice(startIndex, startIndex + 400).includes("if (task.notificationId) await cancelScheduledNotification(task.notificationId)"));
+test("resuming (performStart, reached via handleStart's required-before-tasks gate) and completing a task both cancel any stale notification already on the task record (e.g. a postponed-return reminder)", () => {
+  const startIndex = activeTaskScreen.indexOf("async function performStart()");
+  assert.ok(activeTaskScreen.slice(startIndex, startIndex + 5400).includes("if (task.notificationId) await cancelScheduledNotification(task.notificationId)"));
   const completeIndex = activeTaskScreen.indexOf("async function handleComplete()");
-  assert.ok(activeTaskScreen.slice(completeIndex, completeIndex + 200).includes("if (task.notificationId) await cancelScheduledNotification(task.notificationId)"));
+  assert.ok(activeTaskScreen.slice(completeIndex, completeIndex + 1300).includes("if (task.notificationId) await cancelScheduledNotification(task.notificationId)"));
 });
 
 test("re-postponing cancels any EXISTING postponed-return notification before scheduling the new one, never stacking two", () => {

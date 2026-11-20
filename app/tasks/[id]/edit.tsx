@@ -2,6 +2,6 @@ import { useLocalSearchParams } from "expo-router";
 import TaskEditorScreen from "../../../build/TaskEditorScreen.tsx";
 
 export default function TaskEdit() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  return <TaskEditorScreen id={id} />;
+  const { id, occurrenceDate, scheduledDate } = useLocalSearchParams<{ id: string; occurrenceDate?: string; scheduledDate?: string }>();
+  return <TaskEditorScreen id={id} occurrenceDate={occurrenceDate ?? null} initialScheduledDate={scheduledDate ?? null} />;
 }

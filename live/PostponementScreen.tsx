@@ -8,9 +8,11 @@ import type { PostponementCategory, PostponementDraft } from "../arc/postponemen
 import { PREPARATION_STATE_IDS, PREPARATION_STATE_LABELS } from "../arc/preparationStates.ts";
 import { generateTaskJournalEntryId } from "../arc/tasks.ts";
 import type { Task } from "../arc/tasks.ts";
-import { appendTaskJournalEntry, clearTaskTimerRun, getTask, loadTaskTimerRun, upsertTask } from "../data/storage.ts";
+import { appendTaskJournalEntry, clearTaskTimerRun, getTask, loadPostTaskRewardsState, loadTaskTimerRun, savePostTaskRewardsState, upsertTask } from "../data/storage.ts";
 import { createTaskJournalEntry } from "../data/taskJournal.ts";
 import { cancelScheduledNotification, scheduleReminderNotification } from "../data/notifications.ts";
+import { createInitialPostTaskRewardsState, recordPostponement } from "../arc/postTaskRewards.ts";
+import { todayLocalDateString } from "../program/dateUtils.ts";
 
 const CATEGORY_OPTIONS: PostponementCategory[] = ["practical", "internal"];
 const CATEGORY_LABELS: Record<PostponementCategory, string> = { practical: "סיבה מעשית", internal: "סיבה פנימית" };
@@ -69,6 +71,15 @@ export default function PostponementScreen({ taskId }: { taskId: string }) {
       : null;
     const postponed = { ...postponedDraft, notificationId, notificationScheduledFor: postponedDraft.returnAt };
     await upsertTask(postponed);
+    // Psychology/Smiling/Positive-Reinforcement task, feature 3: this
+    // confirm() is the ONLY place a task is ever actually postponed in
+    // the whole app -- the one call site that resets the consecutive
+    // smile-reward streak (never the physical smiling-duration
+    // progression, which stays completely untouched -- see
+    // arc/postTaskRewards.ts's own recordPostponement doc).
+    const rewardsToday = todayLocalDateString();
+    const rewardsState = (await loadPostTaskRewardsState()) ?? createInitialPostTaskRewardsState(rewardsToday);
+    await savePostTaskRewardsState(recordPostponement(rewardsState, rewardsToday));
     await appendTaskJournalEntry(
       createTaskJournalEntry({
         id: generateTaskJournalEntryId(),

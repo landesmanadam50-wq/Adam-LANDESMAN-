@@ -28,8 +28,8 @@ test("the route renders TaskInsightsScreen", () => {
   assert.match(route, /from ["']\.\.\/\.\.\/live\/TaskInsightsScreen\.tsx["']/);
 });
 
-test("Today has a real Pressable to the insights screen", () => {
-  assert.match(todayScreen, /onPress={\(\) => router\.push\("\/tasks\/insights"\)}/);
+test("Simplified-architecture task, Phase 1: Today no longer links to the insights screen -- hidden from normal navigation, never deleted (the route itself stays registered, see the test above)", () => {
+  assert.ok(!todayScreen.includes('router.push("/tasks/insights")'));
 });
 
 test("the screen only ever renders counts from arc/taskInsights.ts's pure aggregates -- never its own interpretation", () => {

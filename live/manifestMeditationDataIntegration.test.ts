@@ -32,7 +32,7 @@ test("the suggestions are read from real saved records (IdentityProfile, recurri
 
 test("today's action can be set from the real current/next task (Stage I's own buildTodaySections), never a guessed one", () => {
   assert.match(screen, /import\s*\{[\s\S]*?buildTodaySections[\s\S]*?\}\s*from\s*["']\.\.\/arc\/todaySchedule\.ts["']/);
-  assert.ok(screen.includes("today.currentOrNext?.task ?? null"));
+  assert.ok(screen.includes("resolveMostUrgentEntry(today)?.task ?? null"));
 });
 
 test("turning today's action into a task requires an explicit confirmation step -- never created on a single tap", () => {

@@ -15,12 +15,16 @@
  * not with node --test.
  */
 
-import { resolveReminderFireDate } from "../arc/reminders.ts";
+import { router } from "expo-router";
+
+import { resolveReminderFireDate, resolveReminderRoute } from "../arc/reminders.ts";
 import type { DeferralOption } from "../arc/reminders.ts";
 import { cancelScheduledNotification, scheduleReminderNotification, scheduleTimerCompletionNotification } from "./notifications.ts";
-import { clearPendingReminder, clearTimerRun, loadPendingReminder, loadTimerRun, savePendingReminder, saveTimerRun } from "./storage.ts";
+import { clearPendingReminder, clearTimerRun, getArcGoalTarget, loadPendingReminder, loadTimerRun, savePendingReminder, saveTimerRun } from "./storage.ts";
 import type { PendingReminder, ReminderKind } from "./storage.ts";
 import { generateTimerRunId } from "../arc/actionTimer.ts";
+import { reconcileRoutineNotifications } from "./routines.ts";
+import { reconcileArcGoalTargetNotification } from "./arcGoalTargetReminders.ts";
 
 export { DEFERRAL_OPTIONS, resolveReminderFireDate, resolveReminderRoute } from "../arc/reminders.ts";
 export type { DeferralOption, ReminderRoute } from "../arc/reminders.ts";
@@ -181,4 +185,70 @@ export async function cancelFutureSuccessFocus(): Promise<void> {
     await cancelScheduledNotification(existingRun.notificationId);
     await clearTimerRun("successCoding");
   }
+}
+
+/**
+ * ARCHI -- Complete the Non-Interrupting Notification System task: the
+ * single source of truth for "where does a tapped SOFT reminder
+ * navigate to" -- moved here (out of app/_layout.tsx's own
+ * handleReminderResponse, which used to contain this exact switch
+ * inline) so data/taskAlarm.ts's own handleTaskAlarmEvent can route a
+ * notifee-delivered reminder tap (every kind now scheduled via
+ * data/notifications.ts's scheduleNativeReminderNotification) through
+ * the IDENTICAL logic app/_layout.tsx's own expo-notifications listener
+ * still uses for whatever remains on that mechanism -- never a second,
+ * re-derived switch. Takes a plain data object rather than either
+ * library's own response-wrapper type, since the two deliver the exact
+ * same shape (kind/routineId/targetId/arcGoalId/...) through
+ * completely different wrapper objects.
+ *
+ * Deliberately does NOT handle "taskTimerEnded"/"restTimerEnded"/
+ * "postponedTaskReturn"/"taskScheduledStart" -- those four current-task
+ * kinds never migrated off expo-notifications (see
+ * data/notifications.ts's own CURRENT_TASK_REMINDER_KINDS doc) and keep
+ * their existing dedicated handling in app/_layout.tsx, unchanged.
+ */
+export function routeTappedReminder(data: Record<string, unknown>): void {
+  if (data?.isReminder !== true) return;
+  const kind = data.kind as ReminderKind;
+  if (kind === "routine") {
+    const routineId = typeof data.routineId === "string" ? data.routineId : null;
+    reconcileRoutineNotifications();
+    if (routineId) router.push({ pathname: "/live", params: { routineId } });
+    return;
+  }
+  if (kind === "arcGoalTarget") {
+    const targetId = typeof data.targetId === "string" ? data.targetId : null;
+    if (targetId) {
+      getArcGoalTarget(targetId).then((target) => {
+        if (target) reconcileArcGoalTargetNotification(target);
+      });
+      router.push({ pathname: "/goals/target/[targetId]", params: { targetId } });
+    }
+    return;
+  }
+  if (kind === "fourWeekProgramWeek") {
+    const goalId = typeof data.arcGoalId === "string" ? data.arcGoalId : null;
+    if (goalId) router.push({ pathname: "/goals/live/[goalId]", params: { goalId } });
+    return;
+  }
+  if (kind === "personalDevelopmentProgramWeek") {
+    const programId = typeof data.personalDevelopmentProgramId === "string" ? data.personalDevelopmentProgramId : null;
+    if (programId) router.push({ pathname: "/personal-development-program/live/[id]", params: { id: programId } });
+    return;
+  }
+  if (kind === "arcGymReminder") {
+    const exerciseKind = data.arcGymExerciseKind === "memory" ? "memory" : "behaviour";
+    const exerciseId = typeof data.arcGymExerciseId === "string" ? data.arcGymExerciseId : null;
+    if (exerciseId) {
+      router.push(
+        exerciseKind === "memory"
+          ? { pathname: "/arc-gym/memory/[id]", params: { id: exerciseId } }
+          : { pathname: "/arc-gym/situation/[id]", params: { id: exerciseId } }
+      );
+    }
+    return;
+  }
+  cancelPendingReminder(kind);
+  router.push(resolveReminderRoute(kind));
 }

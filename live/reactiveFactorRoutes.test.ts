@@ -47,14 +47,13 @@ test("every factor route is registered in app/_layout.tsx", () => {
   }
 });
 
-test("ActiveTaskScreen's 'משהו מפריע' button (both pre-start and during-timer) routes to the new reactive chooser, never the old generic /live/select", () => {
-  const matches = activeTaskScreen.match(/pathname:\s*"\/tasks\/\[id\]\/factor",\s*params:\s*\{\s*id:\s*task\.id\s*\}/g) ?? [];
-  assert.equal(matches.length, 2, "both the pre-start and during-timer 'משהו מפריע' buttons must route to the new chooser");
+test("Simplified-architecture task, Phase 1: ActiveTaskScreen no longer offers 'משהו מפריע' -- the reactive factor chooser is hidden from normal navigation, never deleted (its own routes stay registered, see the test above)", () => {
+  assert.ok(!activeTaskScreen.includes('pathname: "/tasks/[id]/factor"'));
 });
 
-test("ActiveTaskScreen still offers 'בוא נעשה ARC עכשיו' straight to /live/select, pre-start and during the timer", () => {
-  const matches = activeTaskScreen.match(/pathname:\s*"\/live\/select",\s*params:\s*\{\s*returnToTaskId:\s*task\.id\s*\}/g) ?? [];
-  assert.ok(matches.length >= 2);
+test("Simplified-architecture task, Phase 1: ActiveTaskScreen no longer offers 'בוא נעשה ARC עכשיו' -- the old generic LIVE chooser is hidden from normal navigation, never deleted", () => {
+  assert.ok(!activeTaskScreen.includes('pathname: "/live/select"'));
+  assert.ok(!activeTaskScreen.includes("בוא נעשה ARC עכשיו"));
 });
 
 test("the chooser screen's routing switch names a real route for every one of the 9 categories' destination kinds", () => {

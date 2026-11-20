@@ -6,8 +6,428 @@ which includes the earlier Personal Development consolidation, PR #69/#70).
 in the uncommitted working tree.
 
 **Final verification (this pass):** `npx tsc --noEmit` clean · `node --test`
-(full suite) **3076/3076 passing** · `npx expo lint` clean.
+(full suite) **3169/3169 passing** · `npx expo lint` clean.
 **No manual/device testing has been performed on any of this.**
+
+**Commit state:** one checkpoint commit (`d25a54c6595a0d5a9ea4baa55cc4846a3610a93d`)
+was made and pushed to this branch under an explicit, one-time user
+authorization. That authorization was for that single commit only — the
+Phase 1 work described in the next section is, per the task's own
+standing default ("do not commit, push, merge, publish, deploy, or
+create a PR"), **uncommitted** in the working tree on top of that
+checkpoint.
+
+## Productivity & Personal Development upgrade (done, automatically verified)
+
+A later, separate request: continuous task-flow improvements (chronological
+ordering, a start-time alarm, a clear end-of-timer sound, pausing the
+task timer during ARC/Rest, auto-advance to the next task) plus a new
+"Manifest" task kind. Every existing function (Task Planning, Task
+LIVE, the timer, the ARC/Rest/Continue choices) is preserved; nothing
+was deleted.
+
+### Requirement 1 — chronological task ordering: already fully implemented, no code changed
+`arc/todaySchedule.ts`'s `buildTodaySections` already sorts every
+bucket chronologically (nearest-first), already promotes a single
+`currentOrNext` task (an active task always wins, otherwise the
+earliest-due), already highlights it visually
+(`taskCardEmphasized`), already supports recurring tasks, and already
+recomputes fresh on every load/edit (no caching to go stale). Verified
+against `arc/todaySchedule.test.ts`'s existing 19 tests, which already
+exhaustively cover this -- no new tests were needed.
+
+### Requirement 2 — start-time alarm (new)
+- `arc/taskScheduledStart.ts` (pure) -- `resolveNextTaskStartOccurrence`
+  mirrors `arc/routines.ts`'s own `resolveNextOccurrenceDate` exactly
+  (same day-offset walk, same "strictly after now" rule, deliberately
+  not completion-aware, matching that one existing precedent). Only
+  ever produces a candidate for a "planned" task.
+- `data/taskScheduledStart.ts` -- `rescheduleTaskStartNotification`/
+  `reconcileTaskScheduledStartNotifications` mirror
+  `data/routines.ts`'s own reschedule/reconcile split. A new
+  `ReminderKind`, `"taskScheduledStart"`, reuses the existing generic
+  `scheduleReminderNotification` (sound, background delivery, snooze/
+  dismiss all already handled by the OS exactly like every other
+  reminder in this app) and `Task.notificationId`/`notificationScheduledFor`
+  (already-reserved fields) -- no new storage key needed beyond the
+  kind itself.
+- Wired into `build/TaskEditorScreen.tsx`'s save (immediate reconcile)
+  and `build/TodayScreen.tsx`'s own focus reload (the same lazy
+  "reconcile on next relevant touch" pattern `reconcileRoutineNotifications`
+  already uses, so a recurring task's alarm keeps advancing to its next
+  qualifying day). Tapping it deep-links to the task's own screen,
+  exactly like every other task-kind reminder.
+- Guarded so it can never clobber a different pending notification
+  (e.g. a postponed-return reminder) on a task that isn't "planned."
+- 8 pure tests (`arc/taskScheduledStart.test.ts`) + 7 wiring tests
+  (`data/taskScheduledStart.test.ts`).
+
+### Requirement 3 — clear end-of-timer sound, never duplicated (new)
+`data/timerSound.ts`'s `playTimerCompletionSound` already existed for
+every OTHER real timed activity in this app but was never wired to the
+task timer specifically -- now is, via a new effect in
+`live/ActiveTaskScreen.tsx` gated by a ref keyed on the run's own id
+(`soundPlayedForRunId`), so it fires exactly once per run regardless of
+how many times the surrounding 1s re-render tick fires while the
+end-of-timer prompt stays on screen. The background/locked-phone case
+was already covered by the run's own scheduled OS notification (its
+own, separately-configured sound) -- untouched. 2 tests in
+`live/productivityUpgrade.test.ts`.
+
+### Requirement 4 — the task timer pauses during ARC/Rest (behavior change)
+Rest already had its own fully separate timer and was already only
+reachable after the main timer had already ended (nothing to pause).
+ARC is the real change: entering ARC from an ACTIVE (not yet ended)
+timer now calls the exact same `handlePause()` the explicit "השהיה"
+button already uses -- never a duplicated pause path -- before
+navigating, so ARC time is never counted as task work time. Returning
+lands back on the task in its already-paused state, ready for an
+explicit "המשך" tap (never auto-resumed without the trainee's own
+action, carrying over Phase 1's own "never force-start a timer"
+principle). No separate ARC-duration timer was built -- the new ARC
+LIVE flow is step-based (dwell gates), not duration-based, so pausing
+the task's own timer is what actually satisfies "ARC time is not
+deducted from work time"; this is a deliberate scope decision, not an
+oversight. `live/newArcLiveScreen.test.ts`'s own entry test was updated
+(not deleted) to assert the new, intentional pause-first behavior.
+
+### Requirement 5 — auto-advance to the next task (new)
+`live/ActiveTaskScreen.tsx`'s `handleComplete` now calls a new
+`advanceToNextTask`, which re-reads all tasks/completions and asks the
+SAME `buildTodaySections` Today's own dashboard already uses for
+"what's next" -- never a second, competing calculation -- then
+navigates there if it differs from the task just completed. The next
+task's own timer is never auto-started (no `autoStart` param); the
+trainee still starts it explicitly. A "planned" task not yet due now
+also shows "מתחיל בעוד X" (hours/minutes), computed from the exact same
+clock reading `arc/todaySchedule.ts`'s own bucketing already uses
+(`resolveTaskClockTime`, now exported for this reuse). 4 tests in
+`live/productivityUpgrade.test.ts`.
+
+### Requirement 6 — the "Manifest" task kind (new)
+- `arc/tasks.ts`: additive `taskKind: "standard" | "manifest"` +
+  `manifestProfile: ManifestProfile | null` (longTermGoal/desiredResult/
+  desiredIdentity/bodyLanguageDescription) -- every pre-existing Task
+  normalizes to `"standard"`/`null`, unaffected. A Manifest task is a
+  real Task: same model, same persistence, same Today/scheduling/
+  recurrence/notification machinery as any other -- **no new main
+  screen**, exactly as asked.
+- `arc/manifestTaskSteps.ts` (pure) -- a short, strictly LINEAR sequence
+  (no branching, unlike the new ARC LIVE's goal-type/unpleasant-area
+  branches, since Step A's setup is fixed once, never re-chosen per
+  run): visualize (5 progressive screens) -> awareness -> presence ->
+  acceptance -> regulation -> encoding (4 progressive screens) ->
+  identity action.
+- `arc/manifestTaskCopy.ts` (pure) -- reuses existing shared content
+  wherever it already exists: `getAwarenessInstruction`/
+  `getCombinedAttentionInstruction` (`arc/instructions.ts`, the same
+  functions the main ARC engine itself uses) for awareness/presence,
+  `getFreeBreathingLine` for regulation's buffer line, and the EXACT
+  already-sanctioned "דמיין שהמטרה הגדולה שלך כבר הושגה" observer-
+  perspective phrasing `arc/lifeManifestVisualization.ts`'s own
+  Major-Goal stage already uses and `arc/instructions.ts`'s safety
+  denylist already whitelists -- no new whitelist entry needed. Every
+  encoding line about the positive sensation uses this codebase's
+  established "notice/allow/let it expand" idiom, never "imagine
+  yourself FEELING X" (the exact pattern the denylist exists to catch).
+- `live/ManifestTaskLiveScreen.tsx` (route `/tasks/[id]/manifest`) --
+  renders only what the two pure modules above decide, same split as
+  `live/NewArcLiveScreen.tsx`. Finishing marks a one-time task complete
+  via the shared `completeTask`, or a recurring task's TODAY occurrence
+  via the shared `createTaskOccurrenceCompletion` -- never a third
+  completion mechanism.
+- `data/storage.ts` gained `loadManifestRunState`/`saveManifestRunState`/
+  `clearManifestRunState`, a single-slot store mirroring the new-ARC-
+  LIVE session's own shape, so an in-progress Manifest run survives
+  backgrounding/app-restart.
+- `build/TaskEditorScreen.tsx` gained a deterministic "סוג משימה" chip
+  picker (רגילה / Manifest) and, only when Manifest is selected, the
+  four Step-A setup fields -- defined once, never re-asked per run.
+- `live/ActiveTaskScreen.tsx`'s `handleStart` now checks `taskKind`
+  first: a Manifest task always opens its own guided run instead of
+  creating a `TaskTimerRun`, even via `autoStart` (Today's own "start"
+  card action) -- guarded in the function itself, not just the button
+  label, so there's no path that creates an inappropriate timer for a
+  Manifest task.
+- 14 pure tests (`arc/manifestTaskSteps.test.ts`/`arc/manifestTaskCopy.test.ts`,
+  including a full safety-denylist walk with both a full and a
+  completely blank profile) + 10 wiring tests
+  (`live/manifestTaskLiveScreen.test.ts`).
+
+### What still requires device testing
+Everything above is source-text/pure-logic verified only. Still needed
+on a real device: the start-time alarm actually firing with sound while
+backgrounded/locked and deep-linking correctly; the end-of-timer sound
+actually being audible and never doubling up with the background
+notification's own sound in a real foreground/background transition;
+pausing for ARC and resuming afterward with the displayed remaining
+time intact across a real app background/kill; auto-advance actually
+landing on the right next task and showing an accurate "starts in X"
+countdown; and the full Manifest run (visualize -> ARC -> identity
+action) read end-to-end for pacing/tone, plus its own run state
+surviving a real app kill mid-run.
+
+## Simplified architecture, Phase 2 — the new, self-contained ARC LIVE (done, automatically verified)
+
+Builds on Phase 1 below: the end-of-timer "צריך ARC" choice (and a new
+button that keeps the same entry available while the task timer is
+still running) now opens a REAL ARC LIVE flow instead of Phase 1's
+honest placeholder -- "there is no separate ARC BUILD; the user makes
+the necessary choices during LIVE." This is a genuinely new, independent
+module tree (`arc/newArcLive*.ts`, `live/NewArcLiveScreen.tsx`), never an
+extension of the old BUILD-driven engine (`arc/arcEngine.ts`,
+`live/ArcLiveRenderer.tsx`), since that engine's whole shape assumes a
+pre-authored `ArcBuildProfile` which has no equivalent here.
+
+### New files
+- `arc/newArcLiveTypes.ts` -- the session-state shape (every field the
+  task listed: goal type, desired ending, emotion + custom text,
+  thought, focus object/color, presence-completion flag, unpleasant
+  area + description, and the three continuity fields --
+  `supportiveBodyArea`/`supportiveSensation`/`positiveMovement`, each
+  exactly one field, read verbatim everywhere, never re-asked or
+  reworded), plus the fixed option lists (emotions, focus colors,
+  supportive sensations, body-scan region groups).
+- `arc/newArcLiveSteps.ts` -- the typed deterministic state machine:
+  `resolveNextStep`/`resolvePreviousStep` (pure "what comes next/what's
+  safely behind me"), `isStepSkippable`, `resolveProgress`, and one
+  small setter per piece of trainee input, each of which updates the
+  state and advances in one call. All 20 top-level steps and every
+  progressive sub-screen (visual field, sound awareness, the 7-region
+  body scan, Acceptance's 4 lines, Regulation's 3-4, Encoding's 5-6) are
+  sequenced here -- `live/NewArcLiveScreen.tsx` never decides what's
+  next itself.
+- `arc/newArcLiveCopy.ts` -- the actual Hebrew instruction text for
+  every (step, sub-screen) pair, reusing `arc/bodyRegionRoles.ts`'s
+  existing `BodyRegion`/labels for both the unpleasant and supportive
+  area pickers, `arc/bodyRegionMovementPresets.ts` for the supportive-
+  movement suggestions (capped at 3 with a "view more" expansion, per
+  the task's own display cap), and `arc/naturalBreathing.ts`'s existing
+  `getFreeBreathingLine` for Regulation's "buffer, never commanded"
+  breathing line.
+- `live/NewArcLiveScreen.tsx` (route `/tasks/[id]/arc`, replacing Phase
+  1's placeholder at the same route) -- renders exactly what the two
+  pure modules above decide: title, progress ("שלב X מתוך Y"), primary
+  instruction, at most two supporting lines, a dwell-gated "המשך"
+  (never auto-advancing, never trapping once the dwell elapses), "חזרה"
+  where safe, "דלג" where the step is optional, and each step's own
+  input widget (chips/text/body-area picker) where one exists.
+- `data/storage.ts` gained `loadNewArcLiveSession`/
+  `saveNewArcLiveSession`/`clearNewArcLiveSession` -- a single-slot
+  store, exact mirror of `loadTaskTimerRun`'s own shape/guarantees, so
+  the session survives backgrounding and app restart; resumed only when
+  its own `taskId` matches and it isn't already completed, otherwise a
+  fresh one starts (same "resume, never duplicate" convention used
+  throughout this codebase).
+- `arc/instructions.ts` gained exactly ONE new safety-denylist whitelist
+  entry ("את עצמך בסוף") for the Encoding result-imagery lines -- the
+  task's own literal "דמיין את סוף הפעולה..." line was reworded to
+  "דמיין את עצמך בסוף הפעולה..." (meaning preserved) specifically so it
+  reuses this one new, narrow exception rather than weakening the
+  denylist; verified the existing dangerous case
+  (`"דמיין את עצמך מרגיש חרדה."`) is still correctly flagged.
+
+### The continuity rule, concretely
+Steps 10-12 (Acceptance/Regulation/Encoding) all read
+`state.supportiveBodyArea`/`state.supportiveSensation`/
+`state.positiveMovement` directly -- selected exactly once in Step 9,
+never re-asked. Their role progresses exactly as specified: Acceptance
+begins the saved movement while holding attention on both areas (or
+just the supportive one, if no unpleasant area was selected);
+Regulation chooses to focus more on the supportive area/sensation and
+gently expands the same movement; Encoding lets the sensation spread
+from the same area while keeping the same movement and adding the
+goal-specific result imagery (desired ending + first action for an
+action goal; desired ending alone, never a forced task action, for
+emotion-only).
+
+### Two deliberate copy adjustments (safety-driven, meaning preserved)
+- Step 12's literal "דמיין שהתחושה מתרחבת בהדרגה..." was reworded to
+  "אפשר לתחושת X להתרחב בהדרגה..." -- avoiding the imagination-of-a-
+  sensation form `arc/instructions.ts`'s safety denylist exists to
+  block, using the exact "אפשר ל... להתרחב" idiom this codebase already
+  uses elsewhere for gentle sensation-expansion.
+- Step 12's action-goal result line ("דמיין את סוף הפעולה...") was
+  reworded to "דמיין את עצמך בסוף הפעולה..." to land inside the one new
+  whitelist exception described above (the emotion-only result line was
+  already phrased that way in the task's own spec text, so it needed no
+  change).
+
+### Entry points
+- End-of-timer "צריך ARC" (`live/ActiveTaskScreen.tsx`) always opens
+  `/tasks/[id]/arc` with the task's id, regardless of any linked
+  ArcBuild -- never `/build`, never the old `/live`/`/live/select`.
+- A new "צריך ARC" button is also shown while the task's main timer is
+  actively running (the task's own explicit requirement) -- it does not
+  stop or clear that timer, which keeps running (timestamp-based,
+  persisted independently of which screen is showing) and is exactly as
+  found on return.
+- Completion ("להתחיל עכשיו") clears the session and returns to
+  `/tasks/[id]` with `autoStart=1`. "לחזור למשימה בלי טיימר" returns the
+  same way without auto-starting. "להקטין את הצעד" reuses the existing
+  task editor (`/tasks/[id]/edit`) rather than a new screen. "לחזור
+  לתרגיל קצר" restarts the same flow fresh from Step 1. Emotion-only
+  completion offers "סיום"/"לבצע פעולה קטנة" (an explicitly optional
+  small action, never a forced one), both returning to the task
+  schedule.
+
+### Tests added
+- `arc/newArcLiveSteps.test.ts` (16 tests) -- the state machine: step
+  ordering, the thought/unpleasant-area skip branches (forward AND
+  backward), sub-screen counts for visual field/sound/body-scan/
+  Acceptance/Regulation/Encoding, `isStepSkippable`, progress, and every
+  setter.
+- `arc/newArcLiveCopy.test.ts` (13 tests) -- every one of the task's own
+  explicitly required continuity proofs (Acceptance begins the selected
+  movement; Regulation focuses on the selected area/sensation and
+  expands the selected movement; Encoding spreads from the selected area
+  and retains the selected movement; action encoding includes the
+  desired ending and first action; emotion-only encoding never
+  references a task action; no unpleasant area still reaches
+  Acceptance), natural breathing as an unmodified buffer, the "at most
+  two supporting lines" display cap, and a full walk of Acceptance/
+  Regulation/Encoding for both goal types and both unpleasant-area
+  states through `containsInductionPattern`.
+- `live/newArcLiveScreen.test.ts` (12 tests) -- route registration,
+  both ARC entry points (end-of-timer and active-timer, confirming the
+  latter never clears the running timer), persistence (functions
+  exported, resume-only-if-matching-and-not-completed), the shared
+  `commit()` save-on-every-change helper, every return-to-task path,
+  emotion-only completion, "no path opens /build or the old LIVE
+  chooser," and the dwell timer never auto-advancing on its own.
+- `build/phase1Simplification.test.ts`'s "ARC never opens BUILD" test
+  was updated (not deleted) to check the real new screen instead of
+  Phase 1's now-superseded placeholder.
+
+### What was NOT touched / explicitly out of scope (per the task's own list)
+Emotion selection, thought entry, point-focus, visual-field expansion,
+sound awareness, body scan, unpleasant/supportive-area selection,
+Acceptance, Regulation, Encoding, and the action-vs-emotion-only goal
+typing are now all IMPLEMENTED (this was the point of Phase 2) --
+nothing from that list remains deferred except what the task itself
+still defers beyond this: Google Calendar, Endel integration, and
+production deployment. No legacy ARC code, route, test, or persisted
+data was deleted. The one file actually removed,
+`live/ArcLivePlaceholderScreen.tsx`, was Phase 1's own scaffolding built
+specifically as a temporary stand-in for this exact phase -- not legacy
+ARC system code -- and is now genuinely superseded, not merely hidden.
+
+### What still requires device testing
+Everything here is source-text/pure-logic verified only (no React
+Native component renderer exists in this codebase). Still needed on a
+real device: the dwell timer's actual felt pacing (too slow/too fast);
+every chip/text-input screen's real RTL layout and touch targets; the
+body-scan and visual-field/sound-awareness progression actually reading
+as calm rather than tedious; the session actually surviving a real app
+kill mid-flow and resuming at the exact right step; the "עוד אפשרויות"
+(show more movements) expansion; and that "ARC" from an active timer
+and from the end-of-timer prompt both land correctly and that returning
+from either genuinely preserves the running/ended timer's own state.
+
+## Simplified architecture, Phase 1 — Task Planning + Task LIVE only (done, automatically verified)
+
+A separate, later product decision: ARCHI is being reduced to exactly
+two user-facing screens, Task Planning and Task LIVE, with no separate
+ARC BUILD. This Phase 1 pass hides everything else from normal
+navigation **without deleting any legacy source file, route, test, or
+persisted data** — see the "what remains preserved" list below.
+
+### What is now visible
+- **Task Planning is the app's root** (`app/index.tsx` now renders
+  `build/TodayScreen.tsx` directly — no more three-button mode chooser).
+  Shows current/overdue/later/unscheduled/completed tasks, each with
+  start/postpone/complete/edit actions, plus "כל המשימות" (the full
+  list/create screen, `/tasks`). Title and the current-task section now
+  read "תכנון משימות"/"המשימה עכשיו" per the task's own required Hebrew
+  labels.
+- **Task LIVE** (`live/ActiveTaskScreen.tsx`, route `/tasks/[id]`) now
+  shows only: task name, an explicitly labeled "הפעולה הראשונה", any
+  subtask, the timer, Start ("התחלה")/Pause ("השהיה")/Resume
+  ("המשך")/Finish-interval-early ("סיום מקטע"), Complete ("השלמת
+  משימה"), and Postpone ("דחיית המשימה"). The timer itself
+  (`arc/taskTimer.ts`), its persistence/restoration, and the timer-vs-
+  completion separation are all reused completely unchanged.
+- **The end-of-timer 3-choice prompt** is unchanged in shape and now
+  reads "צריך ARC" / "צריך מנוחה" / "להמשיך" (`arc/taskTimerEndChoice.ts`'s
+  own `TASK_TIMER_END_CHOICE_LABELS`, the one place all three labels are
+  defined). Rest still runs its own timestamp-based sub-timer, returns to
+  the same task, and schedules its own notification, all unchanged.
+  Continue still offers the next task without completing the current one.
+  "ARC" now **always** opens a new, honestly labeled placeholder
+  (`live/ArcLivePlaceholderScreen.tsx`, route `/tasks/[id]/arc`) — "ARC
+  LIVE בהכנה" — showing the task's own name and a single "חזרה למשימה"
+  button, regardless of whether the task has a linked ArcBuild. It never
+  opens `/build`, the BUILD editor, or the old `/live`/`/live/select`
+  chooser. Building the real, simplified ARC LIVE sequence is explicitly
+  deferred to Phase 2.
+
+### What was hidden (not deleted)
+From `app/index.tsx`: the "התפתחות אישית"/"השגת מטרה" mode buttons.
+From `build/TodayScreen.tsx`: the "הכנה" (prepare) card action and the
+bottom links to BUILD, the LIVE gate, Manifest Meditation, Insights, and
+the Coaching workspace.
+From `live/ActiveTaskScreen.tsx`: "משהו מפריע" (the reactive
+emotion/urge/thought/belief/presence/energy/practical/interruption
+chooser), "בוא נעשה ARC עכשיו" (the old ad-hoc LIVE chooser), "הכנה לפני
+המשימה" (preparation), and the optional "רפלקציה קצרה" (reflection) link.
+
+Every one of these screens, their own routes (`self-development/index`,
+`reach-your-goal/index`, `build/index`, `build/[id]`, `live/gate`,
+`live/select`, `manifest-meditation`, `coaching/index`,
+`coaching/prepare`, `tasks/insights`, `tasks/[id]/prepare`,
+`tasks/[id]/reflect`, the whole `tasks/[id]/factor/*` tree, and every
+Urge/Thought/Belief/Presence ARC + ArcGoal + Personal Development route)
+**stays registered in `app/_layout.tsx` exactly as before** — reachable
+by direct URL/deep link, just not linked from the new, simplified
+surface. No navigation guard was added to actively block entry, since
+none of these routes are reachable through anything the simplified
+screens themselves render; a stray old deep link would still work
+(intentional — "legacy routes may remain registered... but must not
+appear in normal navigation").
+
+### Mechanism
+No product-mode config module or scattered feature flags were added —
+there's no runtime mode switch to support. Exactly three files gate what
+the trainee can reach: `app/index.tsx`, `build/TodayScreen.tsx`, and
+`live/ActiveTaskScreen.tsx`. Everything else is unreached simply because
+nothing links to it anymore, which satisfies "the smallest maintainable
+mechanism" literally.
+
+### What remains preserved (untouched in this pass)
+`arc/tasks.ts` (Task model, status, archive), `data/storage.ts`
+(persistence, migrations, normalization), `arc/todaySchedule.ts`/
+`arc/taskOccurrence.ts` (Today's bucketing + recurrence), `arc/taskTimer.ts`
+(the timer itself), `data/notifications.ts` (scheduling/cancellation),
+`build/TaskEditorScreen.tsx`/`build/TasksListScreen.tsx` (task
+create/edit, including the linked-ArcGoal/ArcBuild/supportive-state
+fields — left as-is; these are optional fields on the SAME task editor,
+not a separate legacy screen), and every legacy screen/protocol/test
+listed above. `build/phase1Simplification.test.ts` proves the legacy
+data loaders are still exported and the legacy screen files still exist
+on disk.
+
+### Deferred to Phase 2
+The real, simplified ARC LIVE sequence (emotion selection, thought
+entry, point-focus, visual-field expansion, sound awareness, body scan,
+unpleasant-area selection, supportive body-area selection, Acceptance,
+Regulation, Encoding, Energy spread, result imagery, action-vs-emotion-
+only goal typing) — the current placeholder is a deliberate, honest
+stand-in, not a preview of that design. Also deferred: Google Calendar,
+Endel integration, and any production deployment.
+
+### What still requires device testing
+Everything in this pass is source-text-verified only (no React Native
+component renderer exists in this codebase). Still needed on a real
+device: confirming Home opens directly on Task Planning with no flash of
+the old chooser; the simplified Task LIVE screen's layout/RTL/touch
+targets; that "ARC" from the end-of-timer prompt reliably opens the
+placeholder and "חזרה למשימה" returns correctly; that Android's hardware
+back button from Task LIVE returns to Task Planning without losing the
+timer (this relies on expo-router's default Stack back behavior plus the
+timer's own persistence, both unchanged — not given a new, dedicated
+back-handler in this pass); and that a legacy deep link (e.g. to
+`/build` or `/manifest-meditation`) still opens correctly even though
+nothing in the new UI links to it.
 
 ## New productivity roadmap (Stages G–AF) — ALL STAGES COMPLETE (Stage AF consolidation)
 

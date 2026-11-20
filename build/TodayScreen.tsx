@@ -7,9 +7,12 @@ import { completeTask } from "../arc/tasks.ts";
 import type { Task } from "../arc/tasks.ts";
 import { createTaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
 import type { TaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
-import { buildTodaySections } from "../arc/todaySchedule.ts";
+import { buildTodaySections, resolveArcWindowClockTime } from "../arc/todaySchedule.ts";
 import type { TodayTaskEntry } from "../arc/todaySchedule.ts";
-import { appendTaskOccurrenceCompletion, loadTaskOccurrenceCompletions, loadTasks, upsertTask } from "../data/storage.ts";
+import { appendTaskOccurrenceCompletion, loadTaskOccurrenceCompletions, upsertTask } from "../data/storage.ts";
+import { resolveContinuousRoutineOutcome } from "../data/dailyRoutine.ts";
+import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
+import { reconcilePlannedArcAlarms, reconcileTaskAlarms } from "../data/taskAlarm.ts";
 import { TASK_STATUS_LABELS } from "./TasksListScreen.tsx";
 
 /**
@@ -33,14 +36,35 @@ import { TASK_STATUS_LABELS } from "./TasksListScreen.tsx";
  * arc/taskOccurrence.ts, never the other's completion mechanism), edit
  * (build/TaskEditorScreen.tsx, Stage H), and prepare
  * (live/PreparationScreen.tsx, Stage K).
+ *
+ * Psychology/Smiling/Positive-Reinforcement task: "after every
+ * successfully completed task" applies here too, not only to the full
+ * Task LIVE flow -- handleComplete below now opens
+ * live/PostTaskRewardScreen.tsx with `source=today` right after
+ * persisting the completion, for BOTH the recurring-occurrence and the
+ * one-time branch. That screen's own `source=today` behavior returns
+ * straight back here when finished/skipped, never pulling the trainee
+ * into a different task's own live screen just because they tapped
+ * this list's quick-complete button.
  */
 export default function TodayScreen() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [completions, setCompletions] = useState<TaskOccurrenceCompletion[]>([]);
 
   const reload = useCallback(() => {
-    Promise.all([loadTasks(), loadTaskOccurrenceCompletions()]).then(([loadedTasks, loadedCompletions]) => {
-      setTasks(loadedTasks);
+    // Productivity upgrade task, requirement 2: the same "lazily
+    // reconcile on next relevant touch" pattern reconcileRoutineNotifications
+    // already uses -- every time Today gains focus, each "planned"
+    // task's start alarm is brought back in sync with its own
+    // freshly-computed next occurrence (advancing a recurring task's
+    // alarm to its next qualifying day without requiring a re-save).
+    //
+    // ARC alarm task, section 7: reconcilePlannedArcAlarms runs
+    // alongside it so a "before_task" ARC alarm also stays in sync with
+    // its own linked task's time/recurrence/deletion/archival, without
+    // waiting for that specific exercise's own editor to be reopened.
+    Promise.all([reconcileTaskAlarms(), reconcilePlannedArcAlarms(), loadTaskOccurrenceCompletions()]).then(([reconciledTasks, , loadedCompletions]) => {
+      setTasks(reconciledTasks);
       setCompletions(loadedCompletions);
     });
   }, []);
@@ -52,11 +76,26 @@ export default function TodayScreen() {
       const entry = createTaskOccurrenceCompletion(task.id, new Date());
       await appendTaskOccurrenceCompletion(entry);
       setCompletions((previous) => [...previous, entry]);
+    } else {
+      const completed = completeTask(task, new Date().toISOString());
+      await upsertTask(completed);
+      setTasks((previous) => (previous ? previous.map((existing) => (existing.id === task.id ? completed : existing)) : previous));
+    }
+
+    // Continuous vs. Spaced Routines task: same mode-aware branch as
+    // build/DailyScheduleScreen.tsx's own handleComplete -- see that
+    // screen's doc for the full reasoning. Kept here too since Today
+    // (/today) is still a fully live, directly-reachable screen a
+    // routine task can be quick-completed from.
+    const continuousOutcome = await resolveContinuousRoutineOutcome(task, new Date());
+    if (continuousOutcome.isContinuous) {
+      await recordSilentTaskCompletionReward(task.id, new Date());
+      if (!continuousOutcome.nextTaskInPeriod) {
+        router.push({ pathname: "/tasks/[id]/reflect", params: { id: task.id, continuousRoutineSummary: "1" } });
+      }
       return;
     }
-    const completed = completeTask(task, new Date().toISOString());
-    await upsertTask(completed);
-    setTasks((previous) => (previous ? previous.map((existing) => (existing.id === task.id ? completed : existing)) : previous));
+    router.push({ pathname: "/tasks/[id]/post-task-reward", params: { id: task.id, source: "today" } });
   }
 
   if (tasks === null) {
@@ -72,7 +111,8 @@ export default function TodayScreen() {
   const sections = buildTodaySections(tasks, completions, new Date());
   const isEmpty =
     sections.overdue.length === 0 &&
-    sections.currentOrNext === null &&
+    sections.current === null &&
+    sections.nextTask === null &&
     sections.laterToday.length === 0 &&
     sections.unscheduled.length === 0 &&
     sections.completedToday.length === 0;
@@ -80,44 +120,46 @@ export default function TodayScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>היום</Text>
+        <Text style={styles.title}>תכנון משימות</Text>
 
         {isEmpty && <Text style={styles.hint}>אין משימות עדיין. אפשר להתחיל ב&quot;כל המשימות&quot; למטה.</Text>}
 
-        {sections.currentOrNext && (
+        {/* Task-categorization fix, requirement 1: ONLY an actually-started task -- never a stale overdue/upcoming one falling back into this slot. */}
+        {sections.current && (
           <View style={styles.sectionBlock}>
-            <Text style={styles.sectionTitle}>כרגע</Text>
-            <TaskCard entry={sections.currentOrNext} emphasized onComplete={handleComplete} />
+            <Text style={styles.sectionTitle}>המשימה עכשיו</Text>
+            <TaskCard entry={sections.current} emphasized onComplete={handleComplete} />
           </View>
         )}
 
         <TaskSection title="באיחור" entries={sections.overdue} onComplete={handleComplete} />
+
+        {/* Requirement 3: the nearest task whose own scheduled time hasn't
+            arrived yet -- shown once, separately from the rest of "מאוחר
+            יותר היום", even when it's still a while away (never only a
+            due-right-now one). Floating ARC/next-task display task:
+            when there is no such task at all, the row becomes an
+            explicit prompt to plan one instead of silently
+            disappearing -- never an overdue task shown in its place. */}
+        <View style={styles.sectionBlock}>
+          {sections.nextTask ? (
+            <>
+              <Text style={styles.sectionTitle}>המשימה הבאה</Text>
+              <TaskCard entry={sections.nextTask} onComplete={handleComplete} />
+            </>
+          ) : (
+            <Pressable style={styles.taskCard} onPress={() => router.push({ pathname: "/tasks/[id]/edit", params: { id: "new" } })}>
+              <Text style={styles.taskTitle}>תכנון משימה נוספת</Text>
+            </Pressable>
+          )}
+        </View>
+
         <TaskSection title="מאוחר יותר היום" entries={sections.laterToday} onComplete={handleComplete} />
         <TaskSection title="ללא תזמון" entries={sections.unscheduled} onComplete={handleComplete} />
         <TaskSection title="הושלמו היום" entries={sections.completedToday} onComplete={handleComplete} completedSection />
 
-        <Text style={styles.sectionTitle}>כניסות</Text>
         <Pressable style={[styles.button, styles.fullWidthButton]} onPress={() => router.push("/tasks")}>
           <Text style={styles.buttonText}>כל המשימות</Text>
-        </Pressable>
-        <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.push("/build")}>
-          <Text style={styles.secondaryButtonText}>בניית תרגול ARC (BUILD)</Text>
-        </Pressable>
-        <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.push("/live/gate")}>
-          <Text style={styles.secondaryButtonText}>לפני תרגול -- שאלון קצר</Text>
-        </Pressable>
-        <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.push("/manifest-meditation")}>
-          <Text style={styles.secondaryButtonText}>מדיטציית מניפסט</Text>
-        </Pressable>
-        <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.push("/tasks/insights")}>
-          <Text style={styles.secondaryButtonText}>תובנות</Text>
-        </Pressable>
-        <Pressable style={[styles.button, styles.secondaryButton, styles.fullWidthButton]} onPress={() => router.push("/coaching")}>
-          <Text style={styles.secondaryButtonText}>סדנת אימון</Text>
-        </Pressable>
-
-        <Pressable style={styles.backButton} onPress={() => router.replace("/")}>
-          <Text style={styles.backButtonText}>חזרה לבחירת מצב</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -146,6 +188,11 @@ function TaskSection({
   );
 }
 
+/** HH:MM, device-local, same convention as Task.scheduledTime's own string shape -- never re-parsed through a locale-sensitive formatter. */
+function formatClockTime(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 function TaskCard({
   entry,
   onComplete,
@@ -158,8 +205,24 @@ function TaskCard({
   completedSection?: boolean;
 }) {
   const { task } = entry;
+  // ARC-system upgrade task, Part 2: a task's own OPTIONAL ARC window,
+  // shown as its own tappable row ABOVE the task -- never required,
+  // never auto-added, never blocking the task's own "המשימה" row right
+  // below it.
+  const arcWindowClock = resolveArcWindowClockTime(task, entry.occurrenceDateLocal);
   return (
-    <View style={[styles.taskCard, emphasized && styles.taskCardEmphasized]}>
+    <View>
+      {arcWindowClock && (
+        <Pressable
+          style={styles.arcWindowRow}
+          onPress={() => router.push({ pathname: "/tasks/[id]/arc-window", params: { id: task.id } })}
+        >
+          <Text style={styles.arcWindowText}>
+            {`${formatClockTime(arcWindowClock)}–${task.scheduledTime} · ARC אופציונלי`}
+          </Text>
+        </Pressable>
+      )}
+      <View style={[styles.taskCard, emphasized && styles.taskCardEmphasized]}>
       <Pressable onPress={() => router.push({ pathname: "/tasks/[id]", params: { id: task.id } })}>
         <Text style={styles.taskTitle}>{task.title}</Text>
         {!!task.scheduledTime && <Text style={styles.taskMeta}>{task.scheduledTime}</Text>}
@@ -176,9 +239,6 @@ function TaskCard({
           >
             <Text style={styles.cardButtonText}>התחל</Text>
           </Pressable>
-          <Pressable style={styles.cardButton} onPress={() => router.push({ pathname: "/tasks/[id]/prepare", params: { id: task.id } })}>
-            <Text style={styles.cardButtonText}>הכנה</Text>
-          </Pressable>
           <Pressable
             style={styles.cardButton}
             onPress={() => router.push({ pathname: "/tasks/[id]", params: { id: task.id, openPostpone: "1" } })}
@@ -193,6 +253,7 @@ function TaskCard({
           </Pressable>
         </View>
       )}
+      </View>
     </View>
   );
 }
@@ -204,6 +265,8 @@ const styles = StyleSheet.create({
   hint: { fontSize: 14, textAlign: "right", color: "#666", marginBottom: 16 },
   sectionBlock: { marginBottom: 20 },
   sectionTitle: { fontSize: 17, fontWeight: "700", textAlign: "right", marginBottom: 8 },
+  arcWindowRow: { borderWidth: 1, borderColor: "#0a7ea4", borderStyle: "dashed", borderRadius: 8, padding: 8, marginBottom: 4 },
+  arcWindowText: { color: "#0a7ea4", fontSize: 12, textAlign: "right" },
   taskCard: { borderWidth: 1, borderColor: "#ddd", borderRadius: 10, padding: 14, marginBottom: 10 },
   taskCardEmphasized: { borderColor: "#0a7ea4", borderWidth: 2, backgroundColor: "#f7fbfd" },
   taskTitle: { fontSize: 16, fontWeight: "700", textAlign: "right" },
@@ -214,10 +277,6 @@ const styles = StyleSheet.create({
   cardButton: { borderWidth: 1, borderColor: "#0a7ea4", borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12 },
   cardButtonText: { color: "#0a7ea4", fontSize: 13, fontWeight: "600" },
   button: { backgroundColor: "#0a7ea4", paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, alignItems: "center" },
-  secondaryButton: { backgroundColor: "#3d8fa8" },
   fullWidthButton: { marginTop: 8 },
   buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-  secondaryButtonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
-  backButton: { marginTop: 28, alignItems: "center" },
-  backButtonText: { color: "#0a7ea4", fontSize: 15 },
 });

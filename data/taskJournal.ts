@@ -41,6 +41,7 @@ export type TaskJournalEntryKind =
   | "protocol_run_completed"
   | "postponed"
   | "task_completed"
+  | "task_skipped"
   | "session_reflection";
 
 export type TaskAttemptOutcome = "completed" | "paused" | "postponed" | "abandoned";

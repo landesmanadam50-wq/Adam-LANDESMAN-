@@ -1,5 +1,8 @@
+import { useLocalSearchParams } from "expo-router";
+
 import TasksListScreen from "../../build/TasksListScreen.tsx";
 
 export default function Tasks() {
-  return <TasksListScreen />;
+  const { noMoreTasks } = useLocalSearchParams<{ noMoreTasks?: string }>();
+  return <TasksListScreen noMoreTasksToday={noMoreTasks === "1"} />;
 }

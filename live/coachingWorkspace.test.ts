@@ -33,8 +33,8 @@ test("both routes render the correct screens", () => {
   assert.match(prepareRoute, /from ["']\.\.\/\.\.\/live\/CoachingSessionPrepScreen\.tsx["']/);
 });
 
-test("Today has a real Pressable to the coaching workspace", () => {
-  assert.match(todayScreen, /onPress={\(\) => router\.push\("\/coaching"\)}/);
+test("Simplified-architecture task, Phase 1: Today no longer links to the coaching workspace -- hidden from normal navigation, never deleted (the routes themselves stay registered, see the test above)", () => {
+  assert.ok(!todayScreen.includes('router.push("/coaching")'));
 });
 
 test("the workspace screen saves through upsertCoachingWorkspaceEntry (one entry per session, history preserved), never a single overwritten record", () => {

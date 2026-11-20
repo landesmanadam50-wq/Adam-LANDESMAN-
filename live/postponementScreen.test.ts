@@ -44,7 +44,7 @@ test("'unscheduled' is a real, explicit, selectable answer -- never only a fallb
 
 test("wanting ARC now routes to /live/select with returnToTaskId; declining routes to the Tasks list -- both AFTER saving the postponement, never before", () => {
   const confirmIndex = screen.indexOf("async function confirm()");
-  const confirmBody = screen.slice(confirmIndex, confirmIndex + 1700);
+  const confirmBody = screen.slice(confirmIndex, confirmIndex + 2300);
   const saveIndex = confirmBody.indexOf("await upsertTask(postponed)");
   const arcIndex = confirmBody.indexOf('pathname: "/live/select", params: { returnToTaskId: taskId }');
   const tasksIndex = confirmBody.indexOf('router.replace("/tasks")');
@@ -54,4 +54,17 @@ test("wanting ARC now routes to /live/select with returnToTaskId; declining rout
 
 test("the chosen supportive-state-for-next-time reuses the exact same 8 predefined chips as Stage K's preparation screen", () => {
   assert.match(screen, /import\s*\{[\s\S]*?PREPARATION_STATE_IDS[\s\S]*?PREPARATION_STATE_LABELS[\s\S]*?\}\s*from\s*["']\.\.\/arc\/preparationStates\.ts["']/);
+});
+
+// Psychology/Smiling/Positive-Reinforcement task, feature 3: this is the
+// ONLY call site that ever actually postpones a task -- the one place
+// the consecutive smile-reward streak must reset.
+test("confirm() resets the smile-reward streak via the shared recordPostponement, after saving the postponed task", () => {
+  assert.match(screen, /import\s*\{[\s\S]*?recordPostponement[\s\S]*?\}\s*from\s*["']\.\.\/arc\/postTaskRewards\.ts["']/);
+  const confirmIndex = screen.indexOf("async function confirm()");
+  const confirmBody = screen.slice(confirmIndex, confirmIndex + 2300);
+  const saveIndex = confirmBody.indexOf("await upsertTask(postponed)");
+  const recordIndex = confirmBody.indexOf("recordPostponement(rewardsState, rewardsToday)");
+  assert.ok(saveIndex !== -1 && recordIndex !== -1 && saveIndex < recordIndex);
+  assert.ok(confirmBody.includes("await savePostTaskRewardsState("));
 });

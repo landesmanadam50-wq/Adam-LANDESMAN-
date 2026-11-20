@@ -24,6 +24,8 @@ import type {
   ThoughtArc,
   UrgeArc,
 } from "../arc/types.ts";
+import { migratePostTaskRewardsState } from "../arc/postTaskRewards.ts";
+import type { PostTaskRewardsState } from "../arc/postTaskRewards.ts";
 import { deletePersonalDevelopmentProgramFromList, normalizePersonalDevelopmentProgram, upsertPersonalDevelopmentProgramInList } from "../arc/personalDevelopmentProgram.ts";
 import type { FrozenCombinedActionSnapshot } from "../arc/frozenCombinedActionRecovery.ts";
 import { splitProfileIntoArcBuilds } from "../arc/arcEngine.ts";
@@ -85,11 +87,72 @@ import { deleteTaskFromList, normalizeTask, upsertTaskInList } from "../arc/task
 import type { Task } from "../arc/tasks.ts";
 import { normalizeTaskJournalEntry } from "./taskJournal.ts";
 import type { TaskJournalEntry } from "./taskJournal.ts";
+import { normalizeTaskReflection } from "../arc/taskReflection.ts";
+import type { TaskReflection } from "../arc/taskReflection.ts";
+import { normalizeTaskStageProgress } from "../arc/taskStageProgress.ts";
+import type { TaskStageProgress } from "../arc/taskStageProgress.ts";
 import type { TaskTimerRun } from "../arc/taskTimer.ts";
 import type { TaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
+import type { TaskOccurrenceOverride } from "../arc/taskOccurrenceOverride.ts";
+import { upsertTaskOccurrenceOverride } from "../arc/taskOccurrenceOverride.ts";
+import type { DailyRoutineTemplate } from "../arc/dailyRoutine.ts";
+import { normalizeDailyRoutineTemplate } from "../arc/dailyRoutine.ts";
+import type { ContinuousRoutineGroup } from "../arc/continuousRoutineGroup.ts";
+import type { PostponementObstacleOutcome } from "../arc/postponementObstacle.ts";
+import { upsertPostponementObstacleOutcomeInList } from "../arc/postponementObstacle.ts";
+import type { DailyManifestSelection, DailyStartupSequenceState, PurposeManifest, PurposeManifestRotationState } from "../arc/purposeManifest.ts";
+import { emptyDailyStartupSequenceState, emptyPurposeManifestRotationState, normalizePurposeManifest, upsertPurposeManifestInList } from "../arc/purposeManifest.ts";
+import type { ArcGymBehaviorObstacles, ArcGymMemory, ArcGymMemoryExercise, ArcGymReminder, ArcGymSituation, ArcGymTrainingRecord } from "../arc/arcGym.ts";
+import {
+  normalizeArcGymMemoryExercise,
+  normalizeArcGymSituation,
+  upsertArcGymBehaviorObstaclesInList,
+  upsertArcGymMemoryExerciseInList,
+  upsertArcGymMemoryInList,
+  upsertArcGymReminderInList,
+  upsertArcGymSituationInList,
+  upsertArcGymTrainingRecordInList,
+} from "../arc/arcGym.ts";
+import type { ArcResultExercise } from "../arc/arcResult.ts";
+import { normalizeArcResultExercise, upsertArcResultExerciseInList } from "../arc/arcResult.ts";
+import type { ArcGymGoal, ArcGymGoalObjective } from "../arc/arcGymGoal.ts";
+import { upsertArcGymGoalInList, upsertArcGymGoalObjectiveInList } from "../arc/arcGymGoal.ts";
+import type { ArcFocusExercise } from "../arc/arcFocusExercise.ts";
+import { upsertArcFocusExerciseInList } from "../arc/arcFocusExercise.ts";
+import type { ArcGymMemoryCheckInProgress } from "../arc/arcGymMemoryCheckInProgress.ts";
+import type { ArcLearningTopic } from "../arc/arcLearningTopic.ts";
+import { normalizeArcLearningTopic, upsertArcLearningTopicInList } from "../arc/arcLearningTopic.ts";
+import type { ArcLearningInsight } from "../arc/arcLearningInsight.ts";
+import { normalizeArcLearningInsight, upsertArcLearningInsightInList } from "../arc/arcLearningInsight.ts";
+import type { ArcLearningRecallRecord, ArcLearningRecallSessionProgress, ArcLearningReviewSchedule } from "../arc/arcLearningReview.ts";
+import { normalizeArcLearningReviewSchedule, recordArcLearningRecall, upsertArcLearningReviewScheduleInList } from "../arc/arcLearningReview.ts";
+import type { ArcCreativityConnection } from "../arc/arcCreativityConnection.ts";
+import { normalizeArcCreativityConnection, upsertArcCreativityConnectionInList } from "../arc/arcCreativityConnection.ts";
+import type { ArcCreativityRecallRecord, ArcCreativityRecallSessionProgress, ArcCreativityReviewSchedule } from "../arc/arcCreativityReview.ts";
+import { normalizeArcCreativityReviewSchedule, recordArcCreativityRecall, upsertArcCreativityReviewScheduleInList } from "../arc/arcCreativityReview.ts";
+import type { ArcRecallRating } from "../arc/spacedRepetition.ts";
+import type { ManifestGoal } from "../arc/manifestGoals.ts";
+import { upsertManifestGoalInList } from "../arc/manifestGoals.ts";
+import type { DailyVisualizationDailyProgress, DailyVisualizationProfile } from "../arc/dailyVisualization.ts";
+import { normalizeDailyVisualizationDailyProgress, normalizeDailyVisualizationProfile } from "../arc/dailyVisualization.ts";
+import type { ArcFocusSettings } from "../arc/arcFocusSettings.ts";
+import { createDefaultArcFocusSettings, normalizeArcFocusSettings } from "../arc/arcFocusSettings.ts";
+import type { ArcFocusPracticeRecord, ArcFocusSession } from "../arc/arcFocusSession.ts";
+import { migrateLegacyArcFocusSession } from "../arc/arcFocusSession.ts";
 import type { ReviewLaterFactor } from "../arc/reviewLaterFactor.ts";
+import type { NewArcLiveSessionState } from "../arc/newArcLiveTypes.ts";
+import { migrateLegacyNewArcLiveStep } from "../arc/newArcLiveSteps.ts";
+import { DEFAULT_ARC_APPEARANCE_SETTINGS } from "../arc/arcAppearanceSettings.ts";
+import type { ArcAppearanceSettings } from "../arc/arcAppearanceSettings.ts";
+import { upsertDailyScheduleModeOverride } from "../arc/weeklyScheduleMode.ts";
+import type { DailyScheduleModeOverride, WeeklyScheduleMode } from "../arc/weeklyScheduleMode.ts";
+import type { ManifestRunState } from "../arc/manifestTaskSteps.ts";
 import { upsertCoachingWorkspaceEntryInList } from "../arc/coachingWorkspace.ts";
 import type { CoachingWorkspaceEntry } from "../arc/coachingWorkspace.ts";
+import { upsertBeliefInList } from "../arc/arcInsightBelief.ts";
+import type { ArcBelief, ArcInsight } from "../arc/arcInsightBelief.ts";
+import { deletePlannedArcFromList, normalizePlannedArc, upsertPlannedArcInList } from "../arc/plannedArc.ts";
+import type { PlannedArc } from "../arc/plannedArc.ts";
 
 const PROFILE_KEY = "archi.buildProfile.v2";
 const PROGRAM_SELECTION_KEY = "archi.programSelection.v1";
@@ -131,12 +194,35 @@ const TASKS_KEY = "archi.tasks.v1";
 const TASK_JOURNAL_KEY = "archi.taskJournal.v1";
 /** Hebrew BUILD/LIVE rework spec, page 4: a single-slot store for the ONE currently in-flight TaskTimerRun (arc/taskTimer.ts) -- a trainee works on one timed task at a time, same singleton-per-slot convention as TIMER_RUN_KEY's own ARC-internal timers, deliberately never merged with that key/type (see arc/taskTimer.ts's own module doc for why). */
 const TASK_TIMER_RUN_KEY = "archi.taskTimerRun.v1";
+/** Automatic Routine Builder: a single-slot store for the ONE recurring DailyRoutineTemplate (arc/dailyRoutine.ts) -- a trainee has exactly one daily routine template, same singleton convention as TASK_TIMER_RUN_KEY. Absent key means first-time setup hasn't run yet. Never read/written by TASKS_KEY -- the template's own task/break definitions are a separate, independent record from the real Task rows data/dailyRoutine.ts materializes from it. */
+const DAILY_ROUTINE_TEMPLATE_KEY = "archi.dailyRoutineTemplate.v1";
+const CONTINUOUS_ROUTINE_GROUPS_KEY = "archi.continuousRoutineGroups.v1";
+const CONTINUOUS_ROUTINE_PENDING_SMILES_KEY = "archi.continuousRoutinePendingSmiles.v1";
+/** Smart Postponement Flow: PostponementObstacleOutcome records (arc/postponementObstacle.ts) -- a trainee's own measurement data on which "what's stopping you" intervention they picked and whether it helped them start. Upsert-by-id (never strict append-only, see that module's own doc on why), independent of TASKS_KEY and TASK_JOURNAL_KEY. */
+const POSTPONEMENT_OBSTACLE_OUTCOMES_KEY = "archi.postponementObstacleOutcomes.v1";
 /** Productivity roadmap, Stage I: append-only per-occurrence completions for RECURRING tasks -- see arc/taskOccurrence.ts's own module doc for why this is a separate collection rather than a field on Task itself. */
 const TASK_OCCURRENCE_COMPLETIONS_KEY = "archi.taskOccurrenceCompletions.v1";
+const TASK_OCCURRENCE_OVERRIDES_KEY = "archi.taskOccurrenceOverrides.v1";
+/** Weekly & Daily Routine Redesign task, section 4: the PERMANENT, per-weekday (0-6) continuous/spaced setting -- the template itself, never cleared by an ordinary weekly reset. See arc/weeklyScheduleMode.ts's own module doc. */
+const WEEKLY_SCHEDULE_MODE_SETTINGS_KEY = "archi.weeklyScheduleModeSettings.v1";
+/** Same task: OPTIONAL, per-date overrides of the above -- cleared by a weekly reset, exactly like TASK_OCCURRENCE_OVERRIDES_KEY's own time/duration fields. */
+const DAILY_SCHEDULE_MODE_OVERRIDES_KEY = "archi.dailyScheduleModeOverrides.v1";
 /** Productivity roadmap, Stages Q/R/S: append-only "review later" factors (a new, unmatched urge/thought/belief captured during a task) -- see arc/reviewLaterFactor.ts's own module doc. */
 const REVIEW_LATER_FACTORS_KEY = "archi.reviewLaterFactors.v1";
+/** ARC-system upgrade task, Part E: append-only history of every captured "מה התובנה שלמדת?" answer -- exact mirror of REVIEW_LATER_FACTORS_KEY's own shape/guarantees. Never read/written by any existing key above; see arc/arcInsightBelief.ts's own module doc. */
+const ARC_INSIGHTS_KEY = "archi.arcInsights.v1";
+/** ARC-system upgrade task, Part E: the trainee's own reusable belief library (learned/new/updated) -- upsert-by-id, never a destructive overwrite of a different id (arc/arcInsightBelief.ts's upsertBeliefInList). Which belief is "active" for a given planned ARC is a field on that planned ARC's own record, never stored here. */
+const ARC_BELIEFS_KEY = "archi.arcBeliefs.v1";
+/** ARC-system upgrade task, Parts C/D: the trainee's own named, editable library of planned Full/Mini ARCs -- upsert-by-id, see arc/plannedArc.ts's own module doc. Never read/written by any existing ARC_BUILDS_KEY/MINI_ARC_BUILDS_KEY collection (the legacy, BUILD-driven library) -- a completely separate, additive mechanism. */
+const PLANNED_ARCS_KEY = "archi.plannedArcs.v1";
+/** ARC-system upgrade task, Part I: a single-slot marker set by live/NewArcLiveScreen.tsx right before handing back to a Task/Combined-track task whose identity action is about to happen -- "אם ARC ספונטני מקושר למשימה שעדיין מתבצעת, שאלת אמונת הזהות תופיע רק לאחר שהמשימה הושלמה בפועל." live/ActiveTaskScreen.tsx's handleComplete checks this (matched by taskId) to decide whether to show the identity-insight prompt before advancing -- never shown for a task that never went through this ARC path. Plain string, not JSON -- there is nothing else to store. */
+const PENDING_IDENTITY_INSIGHT_KEY = "archi.pendingIdentityInsightTaskId.v1";
 /** Productivity roadmap, Stage Z: the local, trainee-owned coaching workspace -- see arc/coachingWorkspace.ts's own module doc. */
 const COACHING_WORKSPACE_ENTRIES_KEY = "archi.coachingWorkspaceEntries.v1";
+/** Simplified-architecture task, Phase 2: a single-slot store for the ONE in-progress new-ARC-LIVE session (arc/newArcLiveTypes.ts) -- same singleton-per-slot convention as TASK_TIMER_RUN_KEY (a trainee runs one ARC LIVE session at a time), deliberately its own key, never merged with any older ARC-internal session/state key. */
+const NEW_ARC_LIVE_SESSION_KEY = "archi.newArcLiveSession.v1";
+/** Productivity & Personal Development upgrade task, requirement 6: a single-slot store for the ONE in-progress Manifest-task run (arc/manifestTaskSteps.ts) -- same singleton-per-slot convention as NEW_ARC_LIVE_SESSION_KEY, its own key since a Manifest run and a new-ARC-LIVE session are never the same thing. */
+const MANIFEST_RUN_STATE_KEY = "archi.manifestRunState.v1";
 /** Productivity roadmap, Stage AB: a single persisted flag -- has the trainee already seen the in-app explanation of why ARCHI asks for notification permission? Shown once, on live/ActiveTaskScreen.tsx, BEFORE the first action that would trigger the real OS permission dialog. */
 const NOTIFICATION_EXPLANATION_SEEN_KEY = "archi.notificationExplanationSeen.v1";
 
@@ -1170,6 +1256,327 @@ export async function getOrCreatePilotStartedAt(): Promise<string> {
 }
 
 /**
+ * Task-start alarm vibration task, requirement 7: the trainee's own
+ * choice of whether a task's "it's time to start" alarm (data/
+ * taskScheduledStart.ts) includes sound and/or vibration, kept separate
+ * since Android lets a channel be sound-only/vibration-only/both/
+ * neither (data/notifications.ts's resolveTaskStartChannelId). Both
+ * default to true (sound AND vibration, requirement 1) until the
+ * trainee changes them -- never silently off.
+ */
+export interface TaskAlarmPreferences {
+  soundEnabled: boolean;
+  vibrationEnabled: boolean;
+  /**
+   * Task Reflection Memory task, requirement 7: the trainee's own
+   * choice of whether a saved reflection (which may contain personal
+   * information) is ever shown in the task alarm's own notification --
+   * default true (requirement 2's behavior is the default), backfilled
+   * for every preference record saved before this field existed by the
+   * same `{...DEFAULT_TASK_ALARM_PREFERENCES, ...stored}` spread
+   * loadTaskAlarmPreferences already uses below, no separate migration
+   * needed. When false, the reflection is withheld from the
+   * notification's content entirely (title/body both fall back to the
+   * pre-existing default text) rather than only redacted on the lock
+   * screen specifically -- see data/taskAlarm.ts's own doc for why.
+   */
+  showReflectionOnLockScreen: boolean;
+}
+
+const TASK_ALARM_PREFERENCES_KEY = "archi.taskAlarmPreferences.v1";
+const DEFAULT_TASK_ALARM_PREFERENCES: TaskAlarmPreferences = { soundEnabled: true, vibrationEnabled: true, showReflectionOnLockScreen: true };
+
+export async function loadTaskAlarmPreferences(): Promise<TaskAlarmPreferences> {
+  const raw = await AsyncStorage.getItem(TASK_ALARM_PREFERENCES_KEY);
+  return raw ? { ...DEFAULT_TASK_ALARM_PREFERENCES, ...(JSON.parse(raw) as Partial<TaskAlarmPreferences>) } : DEFAULT_TASK_ALARM_PREFERENCES;
+}
+
+export async function saveTaskAlarmPreferences(preferences: TaskAlarmPreferences): Promise<void> {
+  await AsyncStorage.setItem(TASK_ALARM_PREFERENCES_KEY, JSON.stringify(preferences));
+}
+
+/**
+ * Nine Functional Improvements task, Improvement 8 ("Emotional
+ * Check-In on the Android Lock Screen"): defaults to OFF -- "a quiet,
+ * optional, user-ENABLED notification," never shown until the trainee
+ * explicitly turns it on in build/EmotionalCheckInNotificationSettingsScreen.tsx.
+ */
+export interface EmotionalCheckInNotificationSettings {
+  enabled: boolean;
+}
+
+const EMOTIONAL_CHECKIN_NOTIFICATION_SETTINGS_KEY = "archi.emotionalCheckInNotificationSettings.v1";
+const DEFAULT_EMOTIONAL_CHECKIN_NOTIFICATION_SETTINGS: EmotionalCheckInNotificationSettings = { enabled: false };
+
+export async function loadEmotionalCheckInNotificationSettings(): Promise<EmotionalCheckInNotificationSettings> {
+  const raw = await AsyncStorage.getItem(EMOTIONAL_CHECKIN_NOTIFICATION_SETTINGS_KEY);
+  return raw
+    ? { ...DEFAULT_EMOTIONAL_CHECKIN_NOTIFICATION_SETTINGS, ...(JSON.parse(raw) as Partial<EmotionalCheckInNotificationSettings>) }
+    : DEFAULT_EMOTIONAL_CHECKIN_NOTIFICATION_SETTINGS;
+}
+
+export async function saveEmotionalCheckInNotificationSettings(settings: EmotionalCheckInNotificationSettings): Promise<void> {
+  await AsyncStorage.setItem(EMOTIONAL_CHECKIN_NOTIFICATION_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+/**
+ * ARCHI -- Unified 7-Part Update task, Part 7.2 ("ARC APPEARANCE
+ * SETTINGS"): the one persistent point-color/circle-color pair --
+ * same single-blob load/save convention as every other settings type
+ * in this file. "Persist across app restarts... preserve current
+ * defaults until changed": a missing/partial stored blob always
+ * backfills from DEFAULT_ARC_APPEARANCE_SETTINGS (both fields null,
+ * meaning "use the app's own existing built-in default").
+ */
+const ARC_APPEARANCE_SETTINGS_KEY = "archi.arcAppearanceSettings.v1";
+
+export async function loadArcAppearanceSettings(): Promise<ArcAppearanceSettings> {
+  const raw = await AsyncStorage.getItem(ARC_APPEARANCE_SETTINGS_KEY);
+  return raw ? { ...DEFAULT_ARC_APPEARANCE_SETTINGS, ...(JSON.parse(raw) as Partial<ArcAppearanceSettings>) } : DEFAULT_ARC_APPEARANCE_SETTINGS;
+}
+
+export async function saveArcAppearanceSettings(settings: ArcAppearanceSettings): Promise<void> {
+  await AsyncStorage.setItem(ARC_APPEARANCE_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+/**
+ * ARCHI -- Unified Development Specification task, Part 4 ("INSIGHT
+ * SETTINGS"): the one persistent "show the Home-screen 'הוסף תובנה'
+ * button" preference -- same single-blob load/save convention as
+ * ARC_APPEARANCE_SETTINGS_KEY above. "For existing installations
+ * without a saved preference, default safely to ON": a missing stored
+ * value always backfills to `true`, never `false` -- OFF is only ever
+ * reached by an explicit trainee choice, same as every other
+ * opt-OUT-style toggle in this app.
+ */
+const SHOW_HOME_INSIGHT_BUTTON_KEY = "archi.showHomeInsightButton.v1";
+
+export async function loadShowHomeInsightButtonSetting(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(SHOW_HOME_INSIGHT_BUTTON_KEY);
+  return raw === null ? true : raw === "true";
+}
+
+export async function saveShowHomeInsightButtonSetting(value: boolean): Promise<void> {
+  await AsyncStorage.setItem(SHOW_HOME_INSIGHT_BUTTON_KEY, value ? "true" : "false");
+}
+
+/**
+ * "התבוננות וחיבור לעצמי" task: the trainee's own personal first name,
+ * asked once (on the self_observation_exercise screen, the first time
+ * it's reached with none saved) and never re-asked afterward. A single
+ * raw-string AsyncStorage key -- same minimal shape as
+ * SHOW_HOME_INSIGHT_BUTTON_KEY above -- since there is exactly one
+ * field, no JSON envelope is needed. `null` means "never saved."
+ */
+const PERSONAL_NAME_KEY = "archi.personalName.v1";
+
+export async function loadPersonalName(): Promise<string | null> {
+  return AsyncStorage.getItem(PERSONAL_NAME_KEY);
+}
+
+export async function savePersonalName(name: string): Promise<void> {
+  await AsyncStorage.setItem(PERSONAL_NAME_KEY, name);
+}
+
+/**
+ * Nine Functional Improvements task, Improvement 9 ("Configurable
+ * Morning Daily Visualization Alarm"): a single-slot, user-configured
+ * recurring alarm -- hour/minute/recurrenceDays mirror ScheduledRoutine's
+ * own exact field shape (data/routines.ts), so arc/routines.ts's
+ * already-tested resolveNextOccurrenceDate is reused DIRECTLY for this
+ * alarm's own next-occurrence math, never a second implementation.
+ * notificationId/scheduledFor are the SAME "native-armed bookkeeping,
+ * re-synced by reconciliation" pair every other alarm kind in this app
+ * already carries (TaskAlarmPreferences' siblings on Task/PlannedArc).
+ * `hasOfferedSetup` is permanent and separate from `enabled` -- the
+ * ONE-TIME offer (live/DailyStartupSequenceOverlay.tsx's own new
+ * "alarmOffer" step) is shown at most once ever, REGARDLESS of whether
+ * the trainee enabled the alarm or declined it; `enabled` alone is
+ * freely toggled afterward from build/MorningAlarmSettingsScreen.tsx
+ * without ever re-triggering that one-time offer.
+ */
+export interface MorningAlarmConfig {
+  enabled: boolean;
+  hour: number;
+  minute: number;
+  /** 0 = Sunday .. 6 = Saturday (Date.getDay() convention), matching ScheduledRoutine.recurrenceDays/TaskRecurrence.daysOfWeek. */
+  recurrenceDays: number[];
+  notificationId: string | null;
+  scheduledFor: string | null;
+  hasOfferedSetup: boolean;
+}
+
+const MORNING_ALARM_CONFIG_KEY = "archi.morningAlarmConfig.v1";
+const DEFAULT_MORNING_ALARM_CONFIG: MorningAlarmConfig = {
+  enabled: false,
+  hour: 7,
+  minute: 0,
+  recurrenceDays: [0, 1, 2, 3, 4, 5, 6],
+  notificationId: null,
+  scheduledFor: null,
+  hasOfferedSetup: false,
+};
+
+export async function loadMorningAlarmConfig(): Promise<MorningAlarmConfig> {
+  const raw = await AsyncStorage.getItem(MORNING_ALARM_CONFIG_KEY);
+  return raw ? { ...DEFAULT_MORNING_ALARM_CONFIG, ...(JSON.parse(raw) as Partial<MorningAlarmConfig>) } : DEFAULT_MORNING_ALARM_CONFIG;
+}
+
+export async function saveMorningAlarmConfig(config: MorningAlarmConfig): Promise<void> {
+  await AsyncStorage.setItem(MORNING_ALARM_CONFIG_KEY, JSON.stringify(config));
+}
+
+/**
+ * Floating task timer task, requirement 1's own closing line: "יש
+ * לאפשר למשתמש להפעיל או לכבות את הטיימר הצף בהגדרות האפליקציה." Only
+ * the floating WindowManager overlay itself is gated by this -- the
+ * ongoing notification (requirement 3) is never optional and keeps
+ * showing regardless, exactly as that requirement's own "אינה תחליף
+ * לטיימר הצף" instruction implies in both directions. Defaults to
+ * enabled (requirement 1 describes it as the normal, expected
+ * behavior) until the trainee turns it off.
+ */
+export interface FloatingTimerOverlayPreferences {
+  enabled: boolean;
+}
+
+const FLOATING_TIMER_OVERLAY_PREFERENCES_KEY = "archi.floatingTimerOverlayPreferences.v1";
+const DEFAULT_FLOATING_TIMER_OVERLAY_PREFERENCES: FloatingTimerOverlayPreferences = { enabled: true };
+
+export async function loadFloatingTimerOverlayPreferences(): Promise<FloatingTimerOverlayPreferences> {
+  const raw = await AsyncStorage.getItem(FLOATING_TIMER_OVERLAY_PREFERENCES_KEY);
+  return raw
+    ? { ...DEFAULT_FLOATING_TIMER_OVERLAY_PREFERENCES, ...(JSON.parse(raw) as Partial<FloatingTimerOverlayPreferences>) }
+    : DEFAULT_FLOATING_TIMER_OVERLAY_PREFERENCES;
+}
+
+export async function saveFloatingTimerOverlayPreferences(preferences: FloatingTimerOverlayPreferences): Promise<void> {
+  await AsyncStorage.setItem(FLOATING_TIMER_OVERLAY_PREFERENCES_KEY, JSON.stringify(preferences));
+}
+
+/**
+ * Critical-bug task ("Native Alarm Still Not Working"), Step 2: the
+ * record behind the "בדיקת שעון מעורר" (Test Alarm) diagnostic screen.
+ * `armError` is shown VERBATIM, never swallowed (the trainee's own
+ * explicit requirement: "יש להציג שגיאות במקום להתעלם מהן"). `firedAt`
+ * is set ONLY by data/taskAlarm.ts's own foreground-service handler,
+ * the moment the native ring actually starts -- an OBJECTIVE signal
+ * the scheduling truly worked end-to-end, never inferred from
+ * scheduling having merely been requested without error.
+ * soundHeard/vibrationFelt/alarmScreenShown are the trainee's own,
+ * necessarily self-reported answers (JS cannot detect real-world
+ * sound/vibration/screen-wake), recorded so the record stays complete
+ * even if the trainee backgrounds the app and returns later.
+ */
+export interface TaskAlarmTestResult {
+  scheduledAt: string;
+  fireAt: string;
+  armError: string | null;
+  firedAt: string | null;
+  soundHeard: boolean | null;
+  vibrationFelt: boolean | null;
+  alarmScreenShown: boolean | null;
+}
+
+const TASK_ALARM_TEST_RESULT_KEY = "archi.taskAlarmTestResult.v1";
+
+export async function loadTaskAlarmTestResult(): Promise<TaskAlarmTestResult | null> {
+  const raw = await AsyncStorage.getItem(TASK_ALARM_TEST_RESULT_KEY);
+  return raw ? (JSON.parse(raw) as TaskAlarmTestResult) : null;
+}
+
+export async function saveTaskAlarmTestResult(result: TaskAlarmTestResult): Promise<void> {
+  await AsyncStorage.setItem(TASK_ALARM_TEST_RESULT_KEY, JSON.stringify(result));
+}
+
+/**
+ * Critical-bug task ("Test Alarm Works, Scheduled Task Alarm Does
+ * Not"), Step 3: unlike TaskAlarmTestResult above (which schedules
+ * directly, bypassing Task Planning entirely), this traces a REAL task
+ * through the REAL path end to end -- created and saved exactly like
+ * any other task, scheduled via the exact same data/taskAlarm.ts
+ * functions build/TaskEditorScreen.tsx itself calls, so a difference
+ * between "the manual test works" and "a planned task doesn't" would
+ * show up here as hard evidence, not a guess.
+ * `registeredWithOsAfterArm`/`registeredWithOsOnLastCheck` come from
+ * notifee's own getTriggerNotificationIds() -- the OS's own bookkeeping,
+ * never this app's -- so a disconnect between "my code thinks it
+ * armed this" and "Android actually still has it scheduled" is
+ * directly visible, distinguishing "never scheduled" from "scheduled
+ * but silently dropped" from "scheduled, stayed registered, but never
+ * actually rang."
+ */
+export interface TaskAlarmRealTaskTestResult {
+  taskId: string;
+  taskTitle: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  savedAt: string;
+  fireAt: string | null;
+  armError: string | null;
+  registeredWithOsAfterArm: boolean;
+  registeredWithOsOnLastCheck: boolean;
+  firedAt: string | null;
+}
+
+const TASK_ALARM_REAL_TASK_TEST_RESULT_KEY = "archi.taskAlarmRealTaskTestResult.v1";
+
+export async function loadTaskAlarmRealTaskTestResult(): Promise<TaskAlarmRealTaskTestResult | null> {
+  const raw = await AsyncStorage.getItem(TASK_ALARM_REAL_TASK_TEST_RESULT_KEY);
+  return raw ? (JSON.parse(raw) as TaskAlarmRealTaskTestResult) : null;
+}
+
+export async function saveTaskAlarmRealTaskTestResult(result: TaskAlarmRealTaskTestResult): Promise<void> {
+  await AsyncStorage.setItem(TASK_ALARM_REAL_TASK_TEST_RESULT_KEY, JSON.stringify(result));
+}
+
+/**
+ * ARC alarm diagnostics task ("שעון ARC שאינו מצלצל"): exact mirror of
+ * TaskAlarmRealTaskTestResult above, generalized to three independently
+ * trackable kinds (standalone / before_task / mini) since section 5 of
+ * the spec explicitly asks to test all three separately, not just one
+ * shared slot. Same "OS's own bookkeeping, never just our own saved
+ * data" discipline -- registeredWithOsAfterArm/OnLastCheck come from
+ * notifee's own getTriggerNotificationIds().
+ */
+export type ArcAlarmTestKind = "standalone" | "before_task" | "mini";
+
+export interface ArcAlarmRealTestResult {
+  kind: ArcAlarmTestKind;
+  plannedArcId: string;
+  linkedTaskId: string | null;
+  savedAt: string;
+  fireAt: string | null;
+  armError: string | null;
+  registeredWithOsAfterArm: boolean;
+  registeredWithOsOnLastCheck: boolean;
+  firedAt: string | null;
+}
+
+const ARC_ALARM_REAL_TEST_RESULTS_KEY = "archi.arcAlarmRealTestResults.v1";
+
+function emptyArcAlarmRealTestResults(): Record<ArcAlarmTestKind, ArcAlarmRealTestResult | null> {
+  return { standalone: null, before_task: null, mini: null };
+}
+
+export async function loadArcAlarmRealTestResults(): Promise<Record<ArcAlarmTestKind, ArcAlarmRealTestResult | null>> {
+  const raw = await AsyncStorage.getItem(ARC_ALARM_REAL_TEST_RESULTS_KEY);
+  if (!raw) return emptyArcAlarmRealTestResults();
+  try {
+    const parsed = JSON.parse(raw) as Partial<Record<ArcAlarmTestKind, ArcAlarmRealTestResult>>;
+    return { ...emptyArcAlarmRealTestResults(), ...parsed };
+  } catch {
+    return emptyArcAlarmRealTestResults();
+  }
+}
+
+/** Upserts by kind -- never drops the other two kinds' own already-saved results. */
+export async function saveArcAlarmRealTestResult(result: ArcAlarmRealTestResult): Promise<void> {
+  const existing = await loadArcAlarmRealTestResults();
+  await AsyncStorage.setItem(ARC_ALARM_REAL_TEST_RESULTS_KEY, JSON.stringify({ ...existing, [result.kind]: result }));
+}
+
+/**
  * The shared timer-persistence model behind all three of ARCHI's real
  * timed activities -- the Beneficial Action Timer ("act"'s "performing"
  * sub-phase), the Success Focus / Success Coding Timer, and the
@@ -1328,7 +1735,11 @@ export type ReminderKind =
   /** Productivity roadmap, Stage AB: fires once the "I need rest" sub-timer (arc/taskTimer.ts's TaskTimerRun, kind "rest") completes -- tapping deep-links to the same task screen, which shows the rest timer's own "סיום המנוחה" state. */
   | "restTimerEnded"
   /** Productivity roadmap, Stage AB: fires at a postponed task's own chosen return time (Stage W's PostponementScreen, only when returnChoice is "specificTime") -- tapping deep-links straight to that task's own screen. */
-  | "postponedTaskReturn";
+  | "postponedTaskReturn"
+  /** Productivity upgrade task, requirement 2: fires at a "planned" task's own scheduledDate/scheduledTime (or, for a recurring task, its next qualifying day) -- "it's time to start this task." Tapping deep-links straight to that task's own screen (app/_layout.tsx's handleReminderResponse), same as the other task-kind reminders above. Reuses Task.notificationId/notificationScheduledFor -- a task only ever has ONE pending task-level notification at a time (this, taskTimerEnded's own active-timer notification lives on TaskTimerRun instead, restTimerEnded likewise, or postponedTaskReturn once postponed), so no new field was needed. */
+  | "taskScheduledStart"
+  /** ARCHI -- Unified Development Specification task, Part 2 ("ARC GYM REMINDERS"): own independent notification per ArcGymReminder (arc/arcGym.ts), never PendingReminder's one-per-kind model -- same "own notification per entity" treatment as "arcGoalTarget"/"routine" above. Tapping deep-links straight to the named exercise's own detail screen (never Task LIVE, never a timer -- this reminder kind never imposes one). */
+  | "arcGymReminder";
 
 export interface PendingReminder {
   kind: ReminderKind;
@@ -1742,6 +2153,92 @@ export async function deleteTask(id: string): Promise<void> {
   await saveTasks(deleteTaskFromList(tasks, id));
 }
 
+/** null means first-time routine setup hasn't completed yet -- callers show the setup wizard in that case. */
+export async function loadDailyRoutineTemplate(): Promise<DailyRoutineTemplate | null> {
+  const raw = await AsyncStorage.getItem(DAILY_ROUTINE_TEMPLATE_KEY);
+  if (!raw) return null;
+  try {
+    return normalizeDailyRoutineTemplate(JSON.parse(raw) as DailyRoutineTemplate);
+  } catch (error) {
+    console.warn("[storage] Stored DailyRoutineTemplate is not valid JSON -- treating as not-yet-set-up rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveDailyRoutineTemplate(template: DailyRoutineTemplate): Promise<void> {
+  await AsyncStorage.setItem(DAILY_ROUTINE_TEMPLATE_KEY, JSON.stringify(template));
+}
+
+/**
+ * Unified ARC & Productivity Update task, requirement 9: ad-hoc,
+ * per-day "select consecutive tasks, group as שגרה רצופה" groups --
+ * see arc/continuousRoutineGroup.ts's own module doc for how this
+ * differs from the pre-existing per-PERIOD routineMode toggle above.
+ * All groups across every date live in one array (groups are few and
+ * short-lived -- no per-date key needed), same convention as
+ * PostponementObstacleOutcome[] below.
+ */
+export async function loadContinuousRoutineGroups(): Promise<ContinuousRoutineGroup[]> {
+  const raw = await AsyncStorage.getItem(CONTINUOUS_ROUTINE_GROUPS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ContinuousRoutineGroup[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ContinuousRoutineGroups are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function saveContinuousRoutineGroups(groups: ContinuousRoutineGroup[]): Promise<void> {
+  await AsyncStorage.setItem(CONTINUOUS_ROUTINE_GROUPS_KEY, JSON.stringify(groups));
+}
+
+/**
+ * Requirement 9: "accumulate eligible smiles (not points) silently...
+ * one combined smile-reward experience at the end" -- a plain
+ * groupKey -> running-total map (see data/continuousRoutineGroup.ts's
+ * own add/take wrapper functions for the actual read-and-clear
+ * semantics that prevent a total from ever being consumed twice).
+ */
+export async function loadContinuousRoutinePendingSmiles(): Promise<Record<string, number>> {
+  const raw = await AsyncStorage.getItem(CONTINUOUS_ROUTINE_PENDING_SMILES_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch (error) {
+    console.warn("[storage] Stored continuous-routine pending-smiles map is not valid JSON -- treating as empty rather than crashing.", error);
+    return {};
+  }
+}
+
+export async function saveContinuousRoutinePendingSmiles(map: Record<string, number>): Promise<void> {
+  await AsyncStorage.setItem(CONTINUOUS_ROUTINE_PENDING_SMILES_KEY, JSON.stringify(map));
+}
+
+export async function loadPostponementObstacleOutcomes(): Promise<PostponementObstacleOutcome[]> {
+  const raw = await AsyncStorage.getItem(POSTPONEMENT_OBSTACLE_OUTCOMES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PostponementObstacleOutcome[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored PostponementObstacleOutcomes are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function savePostponementObstacleOutcomes(outcomes: PostponementObstacleOutcome[]): Promise<void> {
+  await AsyncStorage.setItem(POSTPONEMENT_OBSTACLE_OUTCOMES_KEY, JSON.stringify(outcomes));
+}
+
+/** Create or update -- upserts by id, see arc/postponementObstacle.ts's own upsertPostponementObstacleOutcomeInList. */
+export async function upsertPostponementObstacleOutcome(outcome: PostponementObstacleOutcome): Promise<void> {
+  const outcomes = await loadPostponementObstacleOutcomes();
+  await savePostponementObstacleOutcomes(upsertPostponementObstacleOutcomeInList(outcomes, outcome));
+}
+
 /**
  * Append-only, exact mirror of loadLifeManifestJournal/
  * appendLifeManifestJournalEntry. No update/delete function exists on
@@ -1766,6 +2263,30 @@ export async function appendTaskJournalEntry(entry: TaskJournalEntry): Promise<v
   await AsyncStorage.setItem(TASK_JOURNAL_KEY, JSON.stringify(existing));
 }
 
+/**
+ * Task Reflection Memory task: TaskReflection's own store -- a
+ * deliberately separate key from TASK_JOURNAL_KEY (see arc/
+ * taskReflection.ts's own doc for why), editable/deletable in full,
+ * unlike the Task journal above.
+ */
+const TASK_REFLECTIONS_KEY = "archi.taskReflections.v1";
+
+export async function loadTaskReflections(): Promise<TaskReflection[]> {
+  const raw = await AsyncStorage.getItem(TASK_REFLECTIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as TaskReflection[];
+    return Array.isArray(parsed) ? parsed.map(normalizeTaskReflection) : [];
+  } catch (error) {
+    console.warn("[storage] Stored Task reflections are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function saveTaskReflections(reflections: TaskReflection[]): Promise<void> {
+  await AsyncStorage.setItem(TASK_REFLECTIONS_KEY, JSON.stringify(reflections));
+}
+
 /** Single-slot read, mirroring loadTimerRun's own shape -- null when no task timer is currently in flight. `kind` defaults to "task" for a run persisted before that field existed (Stage J), so an in-flight main timer from an earlier app version is never misread as a rest timer. */
 export async function loadTaskTimerRun(): Promise<TaskTimerRun | null> {
   const raw = await AsyncStorage.getItem(TASK_TIMER_RUN_KEY);
@@ -1778,8 +2299,234 @@ export async function saveTaskTimerRun(run: TaskTimerRun): Promise<void> {
   await AsyncStorage.setItem(TASK_TIMER_RUN_KEY, JSON.stringify(run));
 }
 
+/**
+ * Unified Task Stages task: clearing the in-flight TaskTimerRun always
+ * clears its own TaskStageProgress in the SAME call -- the two are only
+ * ever meaningful together (a stage's own active timer IS the single
+ * TaskTimerRun currently in flight), so bundling this here means every
+ * existing call site that already clears the timer run (task
+ * completion, early finish, postponement) automatically stays correct
+ * with no change of its own, rather than needing a second clear call
+ * added at each one individually.
+ */
 export async function clearTaskTimerRun(): Promise<void> {
   await AsyncStorage.removeItem(TASK_TIMER_RUN_KEY);
+  await AsyncStorage.removeItem(TASK_STAGE_PROGRESS_KEY);
+}
+
+/**
+ * Unified Task Stages task: single-slot store for the ONE in-flight
+ * TaskStageProgress (arc/taskStageProgress.ts), exact mirror of
+ * TASK_TIMER_RUN_KEY's own singleton convention -- see that key's doc
+ * and clearTaskTimerRun above for why the two are always cleared
+ * together. Absent/null means either no staged task is currently
+ * active, or the active task has no stage breakdown at all.
+ */
+const TASK_STAGE_PROGRESS_KEY = "archi.taskStageProgress.v1";
+
+export async function loadTaskStageProgress(): Promise<TaskStageProgress | null> {
+  const raw = await AsyncStorage.getItem(TASK_STAGE_PROGRESS_KEY);
+  if (!raw) return null;
+  try {
+    return normalizeTaskStageProgress(JSON.parse(raw) as TaskStageProgress);
+  } catch (error) {
+    console.warn("[storage] Stored TaskStageProgress is not valid JSON -- treating as none rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveTaskStageProgress(progress: TaskStageProgress): Promise<void> {
+  await AsyncStorage.setItem(TASK_STAGE_PROGRESS_KEY, JSON.stringify(progress));
+}
+
+/** Single-slot read, exact mirror of loadTaskTimerRun's own shape -- null when no ARC LIVE session is currently in progress. The session must survive backgrounding and app restart (the task's own explicit requirement); this is the only mechanism that provides that, written on every step transition by live/NewArcLiveScreen.tsx. */
+export async function loadNewArcLiveSession(): Promise<NewArcLiveSessionState | null> {
+  const raw = await AsyncStorage.getItem(NEW_ARC_LIVE_SESSION_KEY);
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as NewArcLiveSessionState;
+  // Physical questionnaire placement task: backfills the two fields it
+  // added, for an in-flight session saved before they existed -- an
+  // empty array/null is exactly this session's own pre-existing state
+  // for those fields, never invented. Body region selection correction
+  // task: same backfill for the negative side's own new pair. Body
+  // Scan Upgrade task (required test 9, "saved selections are not
+  // overwritten by defaults"): same backfill for its own four new
+  // fields -- ?? only ever supplies the true empty/unset default for a
+  // session saved before this task existed, and never touches a
+  // present value (including an already-populated array/region) at all.
+  const backfilled: NewArcLiveSessionState = {
+    ...parsed,
+    // ARC Focus task: the true "not an ARC Focus preliminary" default
+    // for a session saved before this field existed -- never invented,
+    // same ?? convention as every field below.
+    arcFocusPracticeId: parsed.arcFocusPracticeId ?? null,
+    // ARC Gym + ARC Goal Integration task: the true "not an ARC Memory
+    // check-in" default for a session saved before this field existed --
+    // same ?? convention as arcFocusPracticeId above.
+    arcGymMemoryExerciseId: parsed.arcGymMemoryExerciseId ?? null,
+    // "התבוננות וחיבור לעצמי" task: the true "branch screen not yet
+    // answered" default for a session saved before this field existed.
+    selfObservationChoice: parsed.selfObservationChoice ?? null,
+    supportiveBodyAreas: parsed.supportiveBodyAreas ?? [],
+    supportiveBodyAreaCustomLabel: parsed.supportiveBodyAreaCustomLabel ?? null,
+    unpleasantBodyAreas: parsed.unpleasantBodyAreas ?? [],
+    unpleasantBodyAreaCustomLabel: parsed.unpleasantBodyAreaCustomLabel ?? null,
+    bodyScanContractionRegions: parsed.bodyScanContractionRegions ?? [],
+    bodyScanHeavinessRegions: parsed.bodyScanHeavinessRegions ?? [],
+    primaryOpeningBodyScanRegion: parsed.primaryOpeningBodyScanRegion ?? null,
+    primaryOpeningBodyScanSide: parsed.primaryOpeningBodyScanSide ?? null,
+    // ARC Full Sequence Update task, Part 13: backfills the four new
+    // desired-feeling fields for a session saved before this task
+    // existed -- the true, never-invented "not chosen/not yet present"
+    // default for each, same ?? convention as every field above.
+    desiredFeelingText: parsed.desiredFeelingText ?? null,
+    // ARCHI -- Combined Emotion & Supportive Feeling Selection task:
+    // backfills the one new override field -- null is exactly a
+    // pre-existing session's own true "no explicit override" state
+    // (resolveFinalSupportiveFeeling then falls through to the
+    // automatic mapping, same as it always has), never invented.
+    selectedSupportiveFeeling: parsed.selectedSupportiveFeeling ?? null,
+    customSupportiveFeelingText: parsed.customSupportiveFeelingText ?? null,
+    desiredFeelingBodyAreas: parsed.desiredFeelingBodyAreas ?? [],
+    desiredFeelingBodyAreaCustomLabel: parsed.desiredFeelingBodyAreaCustomLabel ?? null,
+    desiredFeelingNotYetPresent: parsed.desiredFeelingNotYetPresent ?? false,
+    // Final ARC Flow & Body Animation task, "Select Opening Regions":
+    // same backfill convention for the new multi-select opening-region
+    // field -- an empty array is exactly a pre-existing session's own
+    // true "nothing chosen yet" state, never invented. The old singular
+    // primaryOpeningBodyScanRegion/Side fields above are backfilled
+    // unchanged, still only for a session that predates even those.
+    //
+    // ARCHI -- Update ARC Body Sensation Selection: Green and Blue
+    // Logic task, section 8 ("preserve compatibility with existing ARC
+    // sessions... avoid destructive migrations"): a session saved
+    // before this task existed has plain {region, side} entries here,
+    // with no `role` field at all -- each is normalized to role
+    // "opening" (green), the EXACT SAME undifferentiated opening
+    // treatment every entry already had before blue/supportive even
+    // existed as a concept, never silently upgraded to "blue" (which
+    // would invent a supportive selection the trainee never actually
+    // made). A session saved AFTER this task already has `role` on
+    // every entry, so `entry.role ?? "opening"` is a no-op for it.
+    openingBodyScanRegions: (parsed.openingBodyScanRegions ?? []).map((entry) => ({ region: entry.region, side: entry.side, role: entry.role ?? "opening" })),
+    // ARCHI -- Universal ARC Routing, Emotion Identification & Android
+    // Shortcuts task, requirement 2/9: backfills the four new fields --
+    // the true "never chosen"/"not Task-LIVE-triggered" default for a
+    // session saved before this task existed, same ?? convention as
+    // every field above. A session resumed mid-flight with these
+    // defaulted to false still renders and advances correctly (see
+    // migrateLegacyNewArcLiveStep's own reality_acceptance/mode-A
+    // migration below for the one case that needs an explicit step
+    // move, not just a field default).
+    selectedCognitiveThought: parsed.selectedCognitiveThought ?? false,
+    selectedCognitiveInterpretation: parsed.selectedCognitiveInterpretation ?? false,
+    selectedCognitiveUrge: parsed.selectedCognitiveUrge ?? false,
+    isActiveTaskLiveOrigin: parsed.isActiveTaskLiveOrigin ?? false,
+    // ARCHI -- Unified Final Specification task, section 1: the true
+    // "not started via the combined 'מחשבה / דחף' shortcut" default for
+    // a session saved before this field existed -- same ?? convention
+    // as every field above; such a session's own emotion-step
+    // reachability is completely unaffected either way. (The field's
+    // earlier name, urgeShortcutPreset, was introduced so recently in
+    // this same codebase that no persisted session under that old name
+    // needs a migration path here -- a plain rename, not a shim.)
+    skipEmotionSelection: parsed.skipEmotionSelection ?? false,
+    // ARCHI -- Unified Final Specification task, section 2: a session
+    // saved before Action Selection existed, or one that never reached
+    // that step (isActiveTaskLiveOrigin/arcGymSituationId), simply has
+    // no selected action of its own -- Encoding/returnToTask both fall
+    // back to the existing firstAction-based behavior in that case.
+    selectedActionSource: parsed.selectedActionSource ?? null,
+    selectedActionTaskId: parsed.selectedActionTaskId ?? null,
+    selectedActionTitle: parsed.selectedActionTitle ?? null,
+    selectedActionFirstAction: parsed.selectedActionFirstAction ?? null,
+    selectedActionDurationMinutes: parsed.selectedActionDurationMinutes ?? null,
+    // ARCHI -- Action-Readiness Check ("בדיקת מוכנות לפעולה") task: a
+    // session saved before this step existed, or one that never
+    // reached it (e.g. "shortened," which never does), simply has no
+    // ratings/outcome of its own -- isStepReachable/DIRECT_ACTION_
+    // SKIPPED_STEPS both already treat null actionReadinessOutcome as
+    // "no decision made," so every existing session continues exactly
+    // as before.
+    unpleasantIntensityRating: parsed.unpleasantIntensityRating ?? null,
+    actionReadinessRating: parsed.actionReadinessRating ?? null,
+    actionReadinessOutcome: parsed.actionReadinessOutcome ?? null,
+    // ARCHI -- Free Breathing Intro & Persistent Very Pale Blue
+    // Background task: the true "intro not yet shown" default for a
+    // session saved before this task existed -- a session already
+    // mid-flight past where "free_breathing" would have sat simply
+    // never gets the persistent background for the rest of that one
+    // run (no destructive migration, no replayed intro); a brand-new
+    // session created after this task always walks through
+    // "free_breathing" normally and sets this itself.
+    freeBreathingIntroShown: parsed.freeBreathingIntroShown ?? false,
+  };
+  // ARC LIVE Body Scan and Protocol Restructuring task, section 9 /
+  // Final ARC Flow & Body Animation task: a session persisted while
+  // mid-flight on any now-removed step (supportive_sensation_select/
+  // supportive_movement_select/unpleasant_area_question/
+  // unpleasant_area_select/body_scan_heaviness/desired_feeling_locate)
+  // forward-migrates here, once, to the nearest still-active step --
+  // every other session passes through this call completely unchanged.
+  // See migrateLegacyNewArcLiveStep's own doc comment for exactly which
+  // step each one lands on.
+  return migrateLegacyNewArcLiveStep(backfilled);
+}
+
+export async function saveNewArcLiveSession(session: NewArcLiveSessionState): Promise<void> {
+  await AsyncStorage.setItem(NEW_ARC_LIVE_SESSION_KEY, JSON.stringify(session));
+}
+
+export async function clearNewArcLiveSession(): Promise<void> {
+  await AsyncStorage.removeItem(NEW_ARC_LIVE_SESSION_KEY);
+}
+
+/**
+ * Nine Functional Improvements task, Improvement 3 ("Internal Action"
+ * timer -- the emotional_action step's own meditation/tai-chi/
+ * relaxation/breathing choice): a single-slot store for the ONE
+ * in-flight internal-action timer, reusing arc/taskTimer.ts's own
+ * TaskTimerRun type and PURE pause/resume math exactly as-is (never a
+ * duplicated second implementation of that math) but under its OWN,
+ * separate key -- deliberately never TASK_TIMER_RUN_KEY itself, so
+ * starting this timer can never silently clobber (or be clobbered by) a
+ * real Task's own in-flight TaskTimerRun, and deliberately never
+ * TIMER_RUN_KEY's 7-kind ARC-internal union either (that type has no
+ * pause/resume at all -- see arc/taskTimer.ts's own module doc for why
+ * ARC's other internal timers never needed it, unlike this one).
+ * `taskId` on the stored run is this session's own arc/newArcLiveTypes.ts
+ * taskId (or its STANDALONE_ARC_TASK_ID sentinel for a standalone
+ * session) purely for consistency with the shared TaskTimerRun shape --
+ * nothing here ever reads it to resolve a real Task.
+ */
+const INTERNAL_ACTION_TIMER_RUN_KEY = "archi.internalActionTimerRun.v1";
+
+export async function loadInternalActionTimerRun(): Promise<TaskTimerRun | null> {
+  const raw = await AsyncStorage.getItem(INTERNAL_ACTION_TIMER_RUN_KEY);
+  return raw ? (JSON.parse(raw) as TaskTimerRun) : null;
+}
+
+export async function saveInternalActionTimerRun(run: TaskTimerRun): Promise<void> {
+  await AsyncStorage.setItem(INTERNAL_ACTION_TIMER_RUN_KEY, JSON.stringify(run));
+}
+
+export async function clearInternalActionTimerRun(): Promise<void> {
+  await AsyncStorage.removeItem(INTERNAL_ACTION_TIMER_RUN_KEY);
+}
+
+/** Single-slot read, same shape/guarantees as loadNewArcLiveSession -- null when no Manifest run is currently in progress. */
+export async function loadManifestRunState(): Promise<ManifestRunState | null> {
+  const raw = await AsyncStorage.getItem(MANIFEST_RUN_STATE_KEY);
+  if (!raw) return null;
+  return JSON.parse(raw) as ManifestRunState;
+}
+
+export async function saveManifestRunState(state: ManifestRunState): Promise<void> {
+  await AsyncStorage.setItem(MANIFEST_RUN_STATE_KEY, JSON.stringify(state));
+}
+
+export async function clearManifestRunState(): Promise<void> {
+  await AsyncStorage.removeItem(MANIFEST_RUN_STATE_KEY);
 }
 
 /** Exact mirror of loadRoutineOccurrenceCompletions -- defensive parse, empty list on anything unexpected, never a crash. */
@@ -1800,6 +2547,91 @@ export async function appendTaskOccurrenceCompletion(entry: TaskOccurrenceComple
   const existing = await loadTaskOccurrenceCompletions();
   existing.push(entry);
   await AsyncStorage.setItem(TASK_OCCURRENCE_COMPLETIONS_KEY, JSON.stringify(existing));
+}
+
+/**
+ * Fixed Weekly Routine task: the FULL list -- read-modify-write, same
+ * convention as saveTasks. The one caller that needs this (as opposed
+ * to appendTaskOccurrenceCompletion's own add-only path) is the Weekly
+ * Routine screen's own "reset this week's completions" action
+ * (arc/weeklyRoutine.ts's resetWeekCompletions), which must be able to
+ * REMOVE entries -- never possible through append alone.
+ */
+export async function saveTaskOccurrenceCompletions(completions: TaskOccurrenceCompletion[]): Promise<void> {
+  await AsyncStorage.setItem(TASK_OCCURRENCE_COMPLETIONS_KEY, JSON.stringify(completions));
+}
+
+/** Exact mirror of loadTaskOccurrenceCompletions -- defensive parse, empty list on anything unexpected, never a crash. */
+export async function loadTaskOccurrenceOverrides(): Promise<TaskOccurrenceOverride[]> {
+  const raw = await AsyncStorage.getItem(TASK_OCCURRENCE_OVERRIDES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as TaskOccurrenceOverride[];
+    if (!Array.isArray(parsed)) return [];
+    // Weekly & Daily Routine Redesign task: backfills timeIsManual for an
+    // override saved before this field existed -- every one of those WAS
+    // an explicit trainee edit (there was no auto-scheduler yet to have
+    // written it instead), so it backfills to `true`, never invented as
+    // `false` (which would wrongly let the auto-scheduler move a time the
+    // trainee actually fixed on purpose).
+    return parsed.map((entry) => ({ ...entry, timeIsManual: entry.timeIsManual ?? true }));
+  } catch (error) {
+    console.warn("[storage] Stored Task occurrence overrides are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write via arc/taskOccurrenceOverride.ts's own upsertTaskOccurrenceOverride, same convention as saveTasks. */
+export async function saveTaskOccurrenceOverrides(overrides: TaskOccurrenceOverride[]): Promise<void> {
+  await AsyncStorage.setItem(TASK_OCCURRENCE_OVERRIDES_KEY, JSON.stringify(overrides));
+}
+
+/** Create/replace one date's override -- read-modify-write via upsertTaskOccurrenceOverride, so a second edit to the same (taskId, date) replaces the first rather than accumulating. */
+export async function upsertTaskOccurrenceOverrideEntry(entry: TaskOccurrenceOverride): Promise<void> {
+  const existing = await loadTaskOccurrenceOverrides();
+  await saveTaskOccurrenceOverrides(upsertTaskOccurrenceOverride(existing, entry));
+}
+
+/** The permanent, per-weekday continuous/spaced settings -- {} (every weekday falls back to continuous via resolveWeekdayScheduleMode) when never configured. Defensive parse, same convention as every other list/map read in this file. */
+export async function loadWeeklyScheduleModeSettings(): Promise<Record<number, WeeklyScheduleMode>> {
+  const raw = await AsyncStorage.getItem(WEEKLY_SCHEDULE_MODE_SETTINGS_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<number, WeeklyScheduleMode>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    console.warn("[storage] Stored weekly schedule mode settings are not valid JSON -- treating as none rather than crashing.", error);
+    return {};
+  }
+}
+
+/** Always the FULL map -- callers read-modify-write via arc/weeklyScheduleMode.ts's own setWeekdayScheduleMode. */
+export async function saveWeeklyScheduleModeSettings(settings: Record<number, WeeklyScheduleMode>): Promise<void> {
+  await AsyncStorage.setItem(WEEKLY_SCHEDULE_MODE_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+/** Exact mirror of loadTaskOccurrenceOverrides -- defensive parse, empty list on anything unexpected, never a crash. */
+export async function loadDailyScheduleModeOverrides(): Promise<DailyScheduleModeOverride[]> {
+  const raw = await AsyncStorage.getItem(DAILY_SCHEDULE_MODE_OVERRIDES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as DailyScheduleModeOverride[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored daily schedule mode overrides are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Always the FULL list -- callers read-modify-write via arc/weeklyScheduleMode.ts's own upsertDailyScheduleModeOverride/resetWeekScheduleModeOverrides. */
+export async function saveDailyScheduleModeOverrides(overrides: DailyScheduleModeOverride[]): Promise<void> {
+  await AsyncStorage.setItem(DAILY_SCHEDULE_MODE_OVERRIDES_KEY, JSON.stringify(overrides));
+}
+
+/** Create/replace one date's mode override -- read-modify-write via upsertDailyScheduleModeOverride, so a second edit to the same date replaces the first rather than accumulating. */
+export async function upsertDailyScheduleModeOverrideEntry(entry: DailyScheduleModeOverride): Promise<void> {
+  const existing = await loadDailyScheduleModeOverrides();
+  await saveDailyScheduleModeOverrides(upsertDailyScheduleModeOverride(existing, entry));
 }
 
 /** Exact mirror of loadTaskOccurrenceCompletions -- defensive parse, empty list on anything unexpected, never a crash. */
@@ -1852,4 +2684,1119 @@ export async function hasSeenNotificationExplanation(): Promise<boolean> {
 
 export async function markNotificationExplanationSeen(): Promise<void> {
   await AsyncStorage.setItem(NOTIFICATION_EXPLANATION_SEEN_KEY, "true");
+}
+
+/**
+ * Psychology/Smiling/Positive-Reinforcement task, feature 1: which
+ * psychology fact was shown on the MOST RECENT app launch -- null
+ * before the very first launch. arc/psychologyFacts.ts's own
+ * resolveNextPsychologyFactIndex(lastFactIndex) decides the next one
+ * to show; this is the one place that index is persisted so it
+ * survives app restarts.
+ */
+export interface PsychologyFactProgress {
+  lastFactIndex: number | null;
+}
+
+const PSYCHOLOGY_FACT_PROGRESS_KEY = "archi.psychologyFactProgress.v1";
+const DEFAULT_PSYCHOLOGY_FACT_PROGRESS: PsychologyFactProgress = { lastFactIndex: null };
+
+export async function loadPsychologyFactProgress(): Promise<PsychologyFactProgress> {
+  try {
+    const raw = await AsyncStorage.getItem(PSYCHOLOGY_FACT_PROGRESS_KEY);
+    return raw ? { ...DEFAULT_PSYCHOLOGY_FACT_PROGRESS, ...(JSON.parse(raw) as Partial<PsychologyFactProgress>) } : DEFAULT_PSYCHOLOGY_FACT_PROGRESS;
+  } catch {
+    return DEFAULT_PSYCHOLOGY_FACT_PROGRESS;
+  }
+}
+
+export async function savePsychologyFactProgress(progress: PsychologyFactProgress): Promise<void> {
+  await AsyncStorage.setItem(PSYCHOLOGY_FACT_PROGRESS_KEY, JSON.stringify(progress));
+}
+
+/**
+ * Unified ARC & Productivity Update task, requirement 1 ("if ARC is
+ * interrupted, retain its progress and the pending morning step"):
+ * persisted (unlike live/DailyStartupSequenceOverlay.tsx's own
+ * in-memory `awaitingCheckInReturn`, which is lost on a process
+ * restart) so that choosing Full/Shortened ARC from the morning
+ * check-in survives the OS killing the app mid-session. Set true the
+ * instant the trainee picks Full/Shortened ARC from "checkin" --
+ * BEFORE navigating away -- and cleared only once the morning
+ * sequence has actually resumed into "fact" afterward. A later cold
+ * start's mount effect reads this to tell "an active session right
+ * now is the morning check-in's own ARC pathway, still in progress"
+ * apart from "an active session right now is something unrelated
+ * (e.g. a scheduled task's own ARC entry) that must not be treated as
+ * part of the morning sequence at all" -- the exact ambiguity that
+ * otherwise collapses "no session yet" and "session genuinely
+ * finished" into the same signal.
+ */
+export interface MorningFlowCheckInState {
+  awaitingArcCompletion: boolean;
+}
+
+const MORNING_FLOW_CHECK_IN_STATE_KEY = "archi.morningFlowCheckInState.v1";
+const DEFAULT_MORNING_FLOW_CHECK_IN_STATE: MorningFlowCheckInState = { awaitingArcCompletion: false };
+
+export async function loadMorningFlowCheckInState(): Promise<MorningFlowCheckInState> {
+  try {
+    const raw = await AsyncStorage.getItem(MORNING_FLOW_CHECK_IN_STATE_KEY);
+    return raw ? { ...DEFAULT_MORNING_FLOW_CHECK_IN_STATE, ...(JSON.parse(raw) as Partial<MorningFlowCheckInState>) } : DEFAULT_MORNING_FLOW_CHECK_IN_STATE;
+  } catch {
+    return DEFAULT_MORNING_FLOW_CHECK_IN_STATE;
+  }
+}
+
+export async function saveMorningFlowCheckInState(state: MorningFlowCheckInState): Promise<void> {
+  await AsyncStorage.setItem(MORNING_FLOW_CHECK_IN_STATE_KEY, JSON.stringify(state));
+}
+
+// ---------------------------------------------------------------------------
+// Manifest Upgrade task: PurposeManifest (arc/purposeManifest.ts) -- a
+// brand-new, independent collection, never read/written by
+// ManifestProfile (Task's own guided-run setup) or LifeManifest (the
+// Major Goal/Sub-goal/Target hierarchy). See that module's own doc for
+// why this is deliberately a THIRD, distinct "manifest" concept.
+// ---------------------------------------------------------------------------
+
+const PURPOSE_MANIFESTS_KEY = "archi.purposeManifests.v1";
+const PURPOSE_MANIFEST_ROTATION_KEY = "archi.purposeManifestRotation.v1";
+const PURPOSE_MANIFEST_DAILY_SELECTION_KEY = "archi.purposeManifestDailySelection.v1";
+const DAILY_STARTUP_SEQUENCE_STATE_KEY = "archi.dailyStartupSequenceState.v1";
+
+/**
+ * Final Manifest & Startup Popup Updates task: every manifest is run
+ * through normalizePurposeManifest -- a record saved before
+ * futureMantra/focusPointColor/futureBodyMovement existed must still
+ * load without crashing, with those fields simply defaulted to "" (see
+ * that function's own doc in arc/purposeManifest.ts). Never a
+ * destructive migration/rewrite of storage -- this only shapes what is
+ * returned to the caller in memory.
+ */
+export async function loadPurposeManifests(): Promise<PurposeManifest[]> {
+  const raw = await AsyncStorage.getItem(PURPOSE_MANIFESTS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PurposeManifest[];
+    return Array.isArray(parsed) ? parsed.map(normalizePurposeManifest) : [];
+  } catch (error) {
+    console.warn("[storage] Stored PurposeManifests are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function savePurposeManifests(manifests: PurposeManifest[]): Promise<void> {
+  await AsyncStorage.setItem(PURPOSE_MANIFESTS_KEY, JSON.stringify(manifests));
+}
+
+/** Create or update -- upserts by id, see arc/purposeManifest.ts's own upsertPurposeManifestInList. Never overwrites any OTHER manifest. */
+export async function upsertPurposeManifest(manifest: PurposeManifest): Promise<void> {
+  const manifests = await loadPurposeManifests();
+  await savePurposeManifests(upsertPurposeManifestInList(manifests, manifest));
+}
+
+export async function loadPurposeManifestRotation(): Promise<PurposeManifestRotationState> {
+  const raw = await AsyncStorage.getItem(PURPOSE_MANIFEST_ROTATION_KEY);
+  if (!raw) return emptyPurposeManifestRotationState();
+  try {
+    return { ...emptyPurposeManifestRotationState(), ...(JSON.parse(raw) as Partial<PurposeManifestRotationState>) };
+  } catch {
+    return emptyPurposeManifestRotationState();
+  }
+}
+
+export async function savePurposeManifestRotation(rotation: PurposeManifestRotationState): Promise<void> {
+  await AsyncStorage.setItem(PURPOSE_MANIFEST_ROTATION_KEY, JSON.stringify(rotation));
+}
+
+/** null means no selection has ever been made (or storage was cleared) -- the caller (data/purposeManifest.ts's resolveTodaysManifestSelection) treats that exactly like a stale/yesterday selection. */
+export async function loadDailyManifestSelection(): Promise<DailyManifestSelection | null> {
+  const raw = await AsyncStorage.getItem(PURPOSE_MANIFEST_DAILY_SELECTION_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as DailyManifestSelection;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveDailyManifestSelection(selection: DailyManifestSelection): Promise<void> {
+  await AsyncStorage.setItem(PURPOSE_MANIFEST_DAILY_SELECTION_KEY, JSON.stringify(selection));
+}
+
+export async function loadDailyStartupSequenceState(): Promise<DailyStartupSequenceState> {
+  const raw = await AsyncStorage.getItem(DAILY_STARTUP_SEQUENCE_STATE_KEY);
+  if (!raw) return emptyDailyStartupSequenceState();
+  try {
+    return { ...emptyDailyStartupSequenceState(), ...(JSON.parse(raw) as Partial<DailyStartupSequenceState>) };
+  } catch {
+    return emptyDailyStartupSequenceState();
+  }
+}
+
+export async function saveDailyStartupSequenceState(state: DailyStartupSequenceState): Promise<void> {
+  await AsyncStorage.setItem(DAILY_STARTUP_SEQUENCE_STATE_KEY, JSON.stringify(state));
+}
+
+// ---------------------------------------------------------------------------
+// Manifest Goals & Automatic Task Scheduling task: ManifestGoal
+// (arc/manifestGoals.ts) -- a brand-new, lightweight collection. The
+// TASKS under a goal are never stored here as a second copy; they are
+// ordinary Tasks in TASKS_KEY above, linked back via their own
+// purposeManifestId/purposeManifestGoalId fields. See data/manifestGoals.ts
+// for the goal/task orchestration logic built on top of these primitives.
+// ---------------------------------------------------------------------------
+
+const MANIFEST_GOALS_KEY = "archi.manifestGoals.v1";
+
+export async function loadManifestGoals(): Promise<ManifestGoal[]> {
+  const raw = await AsyncStorage.getItem(MANIFEST_GOALS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ManifestGoal[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ManifestGoals are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function saveManifestGoals(goals: ManifestGoal[]): Promise<void> {
+  await AsyncStorage.setItem(MANIFEST_GOALS_KEY, JSON.stringify(goals));
+}
+
+/** Create or update -- upserts by id, see arc/manifestGoals.ts's own upsertManifestGoalInList. */
+export async function upsertManifestGoal(goal: ManifestGoal): Promise<void> {
+  const goals = await loadManifestGoals();
+  await saveManifestGoals(upsertManifestGoalInList(goals, goal));
+}
+
+// ---------------------------------------------------------------------------
+// Daily Visualization, Body Awareness & Morning Preparation task:
+// arc/dailyVisualization.ts's DailyVisualizationProfile (cross-day) and
+// DailyVisualizationDailyProgress (one record, reset every local day) --
+// a brand-new, independent feature. The alarm's own single-slot
+// notification state is kept here too, same convention as every other
+// single-slot alarm-tracking field in this file.
+// ---------------------------------------------------------------------------
+
+const DAILY_VISUALIZATION_PROFILE_KEY = "archi.dailyVisualizationProfile.v1";
+const DAILY_VISUALIZATION_PROGRESS_KEY = "archi.dailyVisualizationProgress.v1";
+const DAILY_VISUALIZATION_ALARM_STATE_KEY = "archi.dailyVisualizationAlarmState.v1";
+
+export async function loadDailyVisualizationProfile(): Promise<DailyVisualizationProfile | null> {
+  const raw = await AsyncStorage.getItem(DAILY_VISUALIZATION_PROFILE_KEY);
+  if (!raw) return null;
+  try {
+    return normalizeDailyVisualizationProfile(JSON.parse(raw) as DailyVisualizationProfile);
+  } catch (error) {
+    console.warn("[storage] Stored DailyVisualizationProfile is not valid JSON -- treating as never set rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveDailyVisualizationProfile(profile: DailyVisualizationProfile): Promise<void> {
+  await AsyncStorage.setItem(DAILY_VISUALIZATION_PROFILE_KEY, JSON.stringify(profile));
+}
+
+/** null means no record at all exists yet for ANY day -- every caller checks the record's own dateLocal against today before treating it as relevant (arc/dailyVisualization.ts's isDailyVisualizationDoneForToday/resolveResumableProgress), never assumed here. */
+export async function loadDailyVisualizationDailyProgress(): Promise<DailyVisualizationDailyProgress | null> {
+  const raw = await AsyncStorage.getItem(DAILY_VISUALIZATION_PROGRESS_KEY);
+  if (!raw) return null;
+  try {
+    return normalizeDailyVisualizationDailyProgress(JSON.parse(raw) as DailyVisualizationDailyProgress);
+  } catch (error) {
+    console.warn("[storage] Stored DailyVisualizationDailyProgress is not valid JSON -- treating as not-yet-started rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveDailyVisualizationDailyProgress(progress: DailyVisualizationDailyProgress): Promise<void> {
+  await AsyncStorage.setItem(DAILY_VISUALIZATION_PROGRESS_KEY, JSON.stringify(progress));
+}
+
+export interface DailyVisualizationAlarmState {
+  notificationId: string | null;
+  scheduledFor: string | null;
+}
+
+function emptyDailyVisualizationAlarmState(): DailyVisualizationAlarmState {
+  return { notificationId: null, scheduledFor: null };
+}
+
+export async function loadDailyVisualizationAlarmState(): Promise<DailyVisualizationAlarmState> {
+  const raw = await AsyncStorage.getItem(DAILY_VISUALIZATION_ALARM_STATE_KEY);
+  if (!raw) return emptyDailyVisualizationAlarmState();
+  try {
+    return { ...emptyDailyVisualizationAlarmState(), ...(JSON.parse(raw) as Partial<DailyVisualizationAlarmState>) };
+  } catch {
+    return emptyDailyVisualizationAlarmState();
+  }
+}
+
+export async function saveDailyVisualizationAlarmState(state: DailyVisualizationAlarmState): Promise<void> {
+  await AsyncStorage.setItem(DAILY_VISUALIZATION_ALARM_STATE_KEY, JSON.stringify(state));
+}
+
+/**
+ * Psychology/Smiling/Positive-Reinforcement task, feature 4: which
+ * positive-imagery prompt was shown after the MOST RECENT completed
+ * task -- null before the first one. Mirrors PsychologyFactProgress
+ * exactly, for the separate rotation in arc/positiveImagery.ts.
+ */
+export interface PositiveImageryProgress {
+  lastImageryIndex: number | null;
+}
+
+const POSITIVE_IMAGERY_PROGRESS_KEY = "archi.positiveImageryProgress.v1";
+const DEFAULT_POSITIVE_IMAGERY_PROGRESS: PositiveImageryProgress = { lastImageryIndex: null };
+
+export async function loadPositiveImageryProgress(): Promise<PositiveImageryProgress> {
+  try {
+    const raw = await AsyncStorage.getItem(POSITIVE_IMAGERY_PROGRESS_KEY);
+    return raw ? { ...DEFAULT_POSITIVE_IMAGERY_PROGRESS, ...(JSON.parse(raw) as Partial<PositiveImageryProgress>) } : DEFAULT_POSITIVE_IMAGERY_PROGRESS;
+  } catch {
+    return DEFAULT_POSITIVE_IMAGERY_PROGRESS;
+  }
+}
+
+export async function savePositiveImageryProgress(progress: PositiveImageryProgress): Promise<void> {
+  await AsyncStorage.setItem(POSITIVE_IMAGERY_PROGRESS_KEY, JSON.stringify(progress));
+}
+
+/**
+ * Psychology/Smiling/Positive-Reinforcement task, features 2+3: the
+ * single persisted record behind arc/postTaskRewards.ts's own
+ * PostTaskRewardsState -- see that module's doc for the full shape and
+ * the rules governing it. Missing/corrupt storage falls back to a
+ * fresh state anchored on TODAY (never an invented past anchor date),
+ * exactly like every other load function in this file. A record saved
+ * under the pre-"Smile & Grow" points-based shape is migrated via
+ * arc/postTaskRewards.ts's own migratePostTaskRewardsState before
+ * being returned, so a trainee's already-earned smiles are never lost
+ * just because the points system was later removed.
+ */
+const POST_TASK_REWARDS_STATE_KEY = "archi.postTaskRewardsState.v1";
+
+export async function loadPostTaskRewardsState(): Promise<PostTaskRewardsState | null> {
+  try {
+    const raw = await AsyncStorage.getItem(POST_TASK_REWARDS_STATE_KEY);
+    if (!raw) return null;
+    return migratePostTaskRewardsState(JSON.parse(raw)) as PostTaskRewardsState;
+  } catch {
+    return null;
+  }
+}
+
+export async function savePostTaskRewardsState(state: PostTaskRewardsState): Promise<void> {
+  await AsyncStorage.setItem(POST_TASK_REWARDS_STATE_KEY, JSON.stringify(state));
+}
+
+/**
+ * ARC-system upgrade task, Part E: append-only, exact mirror of
+ * loadReviewLaterFactors/appendReviewLaterFactor. No update/delete
+ * function exists on purpose -- a captured insight is permanent history,
+ * never edited or removed just because a later belief was formulated
+ * from it (spec rule: editing a planned belief never changes the
+ * original experience retroactively).
+ */
+export async function loadArcInsights(): Promise<ArcInsight[]> {
+  const raw = await AsyncStorage.getItem(ARC_INSIGHTS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcInsight[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ARC insights are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function appendArcInsight(entry: ArcInsight): Promise<void> {
+  const existing = await loadArcInsights();
+  existing.push(entry);
+  await AsyncStorage.setItem(ARC_INSIGHTS_KEY, JSON.stringify(existing));
+}
+
+/**
+ * ARCHI -- Unified Development Specification task, Part 5 ("INSIGHT
+ * COLLECTION"): replaces the entry with the SAME id, or appends a new
+ * one -- never drops an existing row, never merges two different ids
+ * into one. The one write path "view/edit/delete" and "link/unlink a
+ * task" both funnel through (edit and link are both just field
+ * updates on the SAME record), so appendArcInsight above stays the
+ * one-shot "just captured this, never existed before" path and this
+ * is everything afterward.
+ */
+export async function upsertArcInsight(insight: ArcInsight): Promise<void> {
+  const existing = await loadArcInsights();
+  const index = existing.findIndex((candidate) => candidate.id === insight.id);
+  const next = index === -1 ? [...existing, insight] : existing.map((candidate) => (candidate.id === insight.id ? insight : candidate));
+  await AsyncStorage.setItem(ARC_INSIGHTS_KEY, JSON.stringify(next));
+}
+
+/**
+ * Part 5: "Delete it with confirmation" -- the confirmation itself is
+ * the caller's own UI responsibility (a plain Alert, same convention
+ * as every other destructive action in this app); this is only ever
+ * called once that confirmation has already happened. Deleting an
+ * insight never touches any task it was linked to -- "completing,
+ * postponing, or deleting a linked task must not delete the original
+ * insight" is the same guarantee in reverse: neither record's own
+ * deletion ever cascades into the other.
+ */
+export async function deleteArcInsight(id: string): Promise<void> {
+  const existing = await loadArcInsights();
+  await AsyncStorage.setItem(ARC_INSIGHTS_KEY, JSON.stringify(existing.filter((candidate) => candidate.id !== id)));
+}
+
+/** Defensive parse, empty list on anything unexpected, never a crash -- exact mirror of loadCoachingWorkspaceEntries. */
+export async function loadArcBeliefs(): Promise<ArcBelief[]> {
+  const raw = await AsyncStorage.getItem(ARC_BELIEFS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcBelief[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ARC beliefs are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Create or update -- upserts by id, never drops a different belief's own row (arc/arcInsightBelief.ts's upsertBeliefInList, spec rule 15: a new belief never deletes/overwrites an existing one). */
+export async function upsertArcBelief(belief: ArcBelief): Promise<void> {
+  const beliefs = await loadArcBeliefs();
+  await AsyncStorage.setItem(ARC_BELIEFS_KEY, JSON.stringify(upsertBeliefInList(beliefs, belief)));
+}
+
+/** Defensive parse, empty list on anything unexpected, never a crash -- exact mirror of loadArcBeliefs. Every item is run through normalizePlannedArc (ARC alarm task) so a record saved before that feature existed still loads with its alarm fields safely defaulted, never crashing an unguarded reader. */
+export async function loadPlannedArcs(): Promise<PlannedArc[]> {
+  const raw = await AsyncStorage.getItem(PLANNED_ARCS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PlannedArc[];
+    return Array.isArray(parsed) ? parsed.map(normalizePlannedArc) : [];
+  } catch (error) {
+    console.warn("[storage] Stored planned ARCs are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Create or update -- upserts by id (arc/plannedArc.ts's upsertPlannedArcInList). Editing a draft here never reaches back into the session it was generated from. */
+export async function upsertPlannedArc(item: PlannedArc): Promise<void> {
+  const items = await loadPlannedArcs();
+  await AsyncStorage.setItem(PLANNED_ARCS_KEY, JSON.stringify(upsertPlannedArcInList(items, item)));
+}
+
+export async function deletePlannedArc(id: string): Promise<void> {
+  const items = await loadPlannedArcs();
+  await AsyncStorage.setItem(PLANNED_ARCS_KEY, JSON.stringify(deletePlannedArcFromList(items, id)));
+}
+
+/** ARC alarm task: always the FULL list -- callers read-modify-write, matching saveTasks/every other batched saveX function here. Used by data/taskAlarm.ts's reconcilePlannedArcAlarms so reconciling several items costs one write, not one per item. */
+export async function savePlannedArcs(items: PlannedArc[]): Promise<void> {
+  await AsyncStorage.setItem(PLANNED_ARCS_KEY, JSON.stringify(items));
+}
+
+/** Part I: null when no task is currently awaiting its post-action identity-insight prompt. */
+export async function loadPendingIdentityInsightTaskId(): Promise<string | null> {
+  return (await AsyncStorage.getItem(PENDING_IDENTITY_INSIGHT_KEY)) || null;
+}
+
+export async function savePendingIdentityInsightTaskId(taskId: string): Promise<void> {
+  await AsyncStorage.setItem(PENDING_IDENTITY_INSIGHT_KEY, taskId);
+}
+
+export async function clearPendingIdentityInsightTaskId(): Promise<void> {
+  await AsyncStorage.removeItem(PENDING_IDENTITY_INSIGHT_KEY);
+}
+
+// ---------------------------------------------------------------------------
+// ARC GYM task: four new, additive collections -- situations, per-behavior
+// obstacles, per-situation memory, and training history. Every one of them
+// only ever REFERENCES an existing PurposeManifest/FutureBehavior by id
+// (never copies or migrates that data), and none of this is read by any
+// pre-existing screen -- see arc/arcGym.ts's own module doc for the full
+// "reuse, never duplicate" rationale.
+// ---------------------------------------------------------------------------
+
+const ARC_GYM_SITUATIONS_KEY = "archi.arcGymSituations.v1";
+const ARC_GYM_BEHAVIOR_OBSTACLES_KEY = "archi.arcGymBehaviorObstacles.v1";
+const ARC_GYM_MEMORIES_KEY = "archi.arcGymMemories.v1";
+const ARC_GYM_TRAINING_RECORDS_KEY = "archi.arcGymTrainingRecords.v1";
+
+export async function loadArcGymSituations(): Promise<ArcGymSituation[]> {
+  const raw = await AsyncStorage.getItem(ARC_GYM_SITUATIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcGymSituation[];
+    return Array.isArray(parsed) ? parsed.map(normalizeArcGymSituation) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcGymSituations are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcGymSituations(situations: ArcGymSituation[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_GYM_SITUATIONS_KEY, JSON.stringify(situations));
+}
+
+export async function upsertArcGymSituationEntry(situation: ArcGymSituation): Promise<void> {
+  const situations = await loadArcGymSituations();
+  await saveArcGymSituations(upsertArcGymSituationInList(situations, situation));
+}
+
+export async function loadArcGymBehaviorObstacles(): Promise<ArcGymBehaviorObstacles[]> {
+  const raw = await AsyncStorage.getItem(ARC_GYM_BEHAVIOR_OBSTACLES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcGymBehaviorObstacles[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcGymBehaviorObstacles are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcGymBehaviorObstacles(records: ArcGymBehaviorObstacles[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_GYM_BEHAVIOR_OBSTACLES_KEY, JSON.stringify(records));
+}
+
+export async function upsertArcGymBehaviorObstaclesEntry(record: ArcGymBehaviorObstacles): Promise<void> {
+  const records = await loadArcGymBehaviorObstacles();
+  await saveArcGymBehaviorObstacles(upsertArcGymBehaviorObstaclesInList(records, record));
+}
+
+/**
+ * Privacy requirement (section 13): thoughts and body-sensation history
+ * are sensitive -- this collection, like every other AsyncStorage
+ * collection in this app, is local-device-only, never sent to any
+ * notification/logging surface. No code anywhere reads ArcGymMemory
+ * for a notification body or a console log beyond the same best-effort
+ * JSON-parse-failure warning every other collection here already uses
+ * (which never includes the record's own content, only the fact that
+ * parsing failed).
+ */
+export async function loadArcGymMemories(): Promise<ArcGymMemory[]> {
+  const raw = await AsyncStorage.getItem(ARC_GYM_MEMORIES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcGymMemory[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored ArcGymMemories are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveArcGymMemories(memories: ArcGymMemory[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_GYM_MEMORIES_KEY, JSON.stringify(memories));
+}
+
+export async function upsertArcGymMemoryEntry(memory: ArcGymMemory): Promise<void> {
+  const memories = await loadArcGymMemories();
+  await saveArcGymMemories(upsertArcGymMemoryInList(memories, memory));
+}
+
+export async function loadArcGymTrainingRecords(): Promise<ArcGymTrainingRecord[]> {
+  const raw = await AsyncStorage.getItem(ARC_GYM_TRAINING_RECORDS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcGymTrainingRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored ArcGymTrainingRecords are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveArcGymTrainingRecords(records: ArcGymTrainingRecord[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_GYM_TRAINING_RECORDS_KEY, JSON.stringify(records));
+}
+
+export async function upsertArcGymTrainingRecordEntry(record: ArcGymTrainingRecord): Promise<void> {
+  const records = await loadArcGymTrainingRecords();
+  await saveArcGymTrainingRecords(upsertArcGymTrainingRecordInList(records, record));
+}
+
+const ARC_GYM_MEMORY_EXERCISES_KEY = "archi.arcGymMemoryExercises.v1";
+
+/**
+ * ARCHI -- Unified Development Specification task, Part 1: storage for
+ * the NEW ArcGymMemoryExercise type -- its own key, entirely separate
+ * from ARC_GYM_SITUATIONS_KEY/ARC_GYM_MEMORIES_KEY above, since it is
+ * a second, independent ARC GYM exercise type, never a variant of the
+ * Behaviour exercise's own situations.
+ */
+export async function loadArcGymMemoryExercises(): Promise<ArcGymMemoryExercise[]> {
+  const raw = await AsyncStorage.getItem(ARC_GYM_MEMORY_EXERCISES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcGymMemoryExercise[];
+    return Array.isArray(parsed) ? parsed.map(normalizeArcGymMemoryExercise) : [];
+  } catch {
+    console.warn("[storage] Stored ArcGymMemoryExercises are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveArcGymMemoryExercises(exercises: ArcGymMemoryExercise[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_GYM_MEMORY_EXERCISES_KEY, JSON.stringify(exercises));
+}
+
+export async function upsertArcGymMemoryExerciseEntry(exercise: ArcGymMemoryExercise): Promise<void> {
+  const exercises = await loadArcGymMemoryExercises();
+  await saveArcGymMemoryExercises(upsertArcGymMemoryExerciseInList(exercises, exercise));
+}
+
+export async function deleteArcGymMemoryExerciseEntry(id: string): Promise<void> {
+  const exercises = await loadArcGymMemoryExercises();
+  await saveArcGymMemoryExercises(exercises.filter((exercise) => exercise.id !== id));
+}
+
+const ARC_RESULT_EXERCISES_KEY = "archi.arcResultExercises.v1";
+
+/**
+ * ARCHI -- ARC Result: Automatic, Optional Suggestion Without Extra
+ * Shortcuts task: storage for the NEW ArcResultExercise type -- its
+ * own key, entirely separate from the Behaviour/Memory exercise keys
+ * above, since it is a third, independent ARC GYM exercise type.
+ */
+export async function loadArcResultExercises(): Promise<ArcResultExercise[]> {
+  const raw = await AsyncStorage.getItem(ARC_RESULT_EXERCISES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcResultExercise[];
+    return Array.isArray(parsed) ? parsed.map(normalizeArcResultExercise) : [];
+  } catch {
+    console.warn("[storage] Stored ArcResultExercises are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveArcResultExercises(exercises: ArcResultExercise[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_RESULT_EXERCISES_KEY, JSON.stringify(exercises));
+}
+
+export async function upsertArcResultExerciseEntry(exercise: ArcResultExercise): Promise<void> {
+  const exercises = await loadArcResultExercises();
+  await saveArcResultExercises(upsertArcResultExerciseInList(exercises, exercise));
+}
+
+export async function deleteArcResultExerciseEntry(id: string): Promise<void> {
+  const exercises = await loadArcResultExercises();
+  await saveArcResultExercises(exercises.filter((exercise) => exercise.id !== id));
+}
+
+const ARC_GYM_REMINDERS_KEY = "archi.arcGymReminders.v1";
+
+/**
+ * ARCHI -- Unified Development Specification task, Part 2: storage for
+ * ArcGymReminder -- any number of independent reminders, for either
+ * ARC GYM exercise type, each with its own notificationId (never
+ * PendingReminder's one-per-kind model, same reasoning as
+ * data/arcGoalTargetReminders.ts's own module doc).
+ */
+export async function loadArcGymReminders(): Promise<ArcGymReminder[]> {
+  const raw = await AsyncStorage.getItem(ARC_GYM_REMINDERS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcGymReminder[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored ArcGymReminders are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveArcGymReminders(reminders: ArcGymReminder[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_GYM_REMINDERS_KEY, JSON.stringify(reminders));
+}
+
+export async function upsertArcGymReminderEntry(reminder: ArcGymReminder): Promise<void> {
+  const reminders = await loadArcGymReminders();
+  await saveArcGymReminders(upsertArcGymReminderInList(reminders, reminder));
+}
+
+export async function deleteArcGymReminderEntry(id: string): Promise<void> {
+  const reminders = await loadArcGymReminders();
+  await saveArcGymReminders(reminders.filter((reminder) => reminder.id !== id));
+}
+
+// ---------------------------------------------------------------------------
+// ARC Focus task: a fourth, independent ARC GYM exercise type -- its own
+// keys, entirely separate from the Behaviour/Memory/Result keys above.
+// Reuses the real Task/weekly-routine/daily-plan/taskOccurrenceOverride
+// machinery for scheduling (no calendar/record of its own here); these
+// three collections are only the exercise's own settings, in-progress
+// session, and completed-session history. See arc/arcFocusSession.ts's
+// own module doc for the "reuse, never duplicate" rationale.
+// ---------------------------------------------------------------------------
+
+const ARC_FOCUS_SETTINGS_KEY = "archi.arcFocusSettings.v1";
+
+interface ArcFocusSettingsStore {
+  default: ArcFocusSettings;
+  byTaskId: Record<string, ArcFocusSettings>;
+}
+
+async function loadArcFocusSettingsStore(): Promise<ArcFocusSettingsStore> {
+  const raw = await AsyncStorage.getItem(ARC_FOCUS_SETTINGS_KEY);
+  if (!raw) return { default: createDefaultArcFocusSettings(), byTaskId: {} };
+  try {
+    const parsed = JSON.parse(raw) as Partial<ArcFocusSettingsStore>;
+    return {
+      default: normalizeArcFocusSettings(parsed.default),
+      byTaskId: parsed.byTaskId && typeof parsed.byTaskId === "object" ? parsed.byTaskId : {},
+    };
+  } catch {
+    console.warn("[storage] Stored ArcFocusSettings are not valid JSON -- returning defaults rather than crashing.");
+    return { default: createDefaultArcFocusSettings(), byTaskId: {} };
+  }
+}
+
+async function saveArcFocusSettingsStore(store: ArcFocusSettingsStore): Promise<void> {
+  await AsyncStorage.setItem(ARC_FOCUS_SETTINGS_KEY, JSON.stringify(store));
+}
+
+/** `taskId` omitted (or null) reads/writes the standalone "last used" default (quick-start from ARC GYM); a scheduled task's own id reads/writes that task's own override, settings read falling back to the default when that task has never customized its own. */
+export async function loadArcFocusSettings(taskId?: string | null): Promise<ArcFocusSettings> {
+  const store = await loadArcFocusSettingsStore();
+  if (taskId && store.byTaskId[taskId]) return normalizeArcFocusSettings(store.byTaskId[taskId]);
+  return store.default;
+}
+
+export async function saveArcFocusSettings(settings: ArcFocusSettings, taskId?: string | null): Promise<void> {
+  const store = await loadArcFocusSettingsStore();
+  if (taskId) {
+    await saveArcFocusSettingsStore({ ...store, byTaskId: { ...store.byTaskId, [taskId]: settings } });
+  } else {
+    await saveArcFocusSettingsStore({ ...store, default: settings });
+  }
+}
+
+const ARC_FOCUS_SESSION_KEY = "archi.arcFocusSession.v1";
+
+/**
+ * Single resumable slot, mirroring loadNewArcLiveSession's own
+ * convention -- there is only ever one ARC Focus session in flight at a
+ * time, surviving backgrounding/app-restart exactly like that session
+ * and like arc/taskTimer.ts's own single-slot TaskTimerRun.
+ */
+export async function loadArcFocusSession(): Promise<ArcFocusSession | null> {
+  const raw = await AsyncStorage.getItem(ARC_FOCUS_SESSION_KEY);
+  if (!raw) return null;
+  try {
+    return migrateLegacyArcFocusSession(JSON.parse(raw), new Date().toISOString());
+  } catch {
+    console.warn("[storage] Stored ArcFocusSession is not valid JSON -- treating as no session in progress rather than crashing.");
+    return null;
+  }
+}
+
+export async function saveArcFocusSession(session: ArcFocusSession): Promise<void> {
+  await AsyncStorage.setItem(ARC_FOCUS_SESSION_KEY, JSON.stringify(session));
+}
+
+/** Only ever called after a completed session's own summary record has already been durably saved (see buildArcFocusPracticeRecord) -- so a crash between "session completed" and "summary saved" resumes into the summary step itself, never silently dropping the result or double-saving it. */
+export async function clearArcFocusSession(): Promise<void> {
+  await AsyncStorage.removeItem(ARC_FOCUS_SESSION_KEY);
+}
+
+const ARC_FOCUS_PRACTICE_HISTORY_KEY = "archi.arcFocusPracticeHistory.v1";
+
+/** Append-only completed-session summaries, for the summary/review screen. */
+export async function loadArcFocusPracticeHistory(): Promise<ArcFocusPracticeRecord[]> {
+  const raw = await AsyncStorage.getItem(ARC_FOCUS_PRACTICE_HISTORY_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcFocusPracticeRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored ArcFocusPracticeHistory is not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+export async function saveArcFocusPracticeRecord(record: ArcFocusPracticeRecord): Promise<void> {
+  const history = await loadArcFocusPracticeHistory();
+  await AsyncStorage.setItem(ARC_FOCUS_PRACTICE_HISTORY_KEY, JSON.stringify([...history, record]));
+}
+
+// ---------------------------------------------------------------------------
+// ARC Gym + ARC Goal Integration task: ArcGymGoal/ArcGymGoalObjective/
+// ArcFocusExercise -- all brand-new keys, nothing pre-existing to
+// backfill. ArcGymMemoryCheckInProgress is a single resumable slot,
+// mirroring loadArcFocusSession's own convention above.
+// ---------------------------------------------------------------------------
+
+const ARC_GYM_GOALS_KEY = "archi.arcGymGoals.v1";
+
+export async function loadArcGymGoals(): Promise<ArcGymGoal[]> {
+  const raw = await AsyncStorage.getItem(ARC_GYM_GOALS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcGymGoal[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcGymGoals are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcGymGoals(goals: ArcGymGoal[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_GYM_GOALS_KEY, JSON.stringify(goals));
+}
+
+export async function upsertArcGymGoalEntry(goal: ArcGymGoal): Promise<void> {
+  const goals = await loadArcGymGoals();
+  await saveArcGymGoals(upsertArcGymGoalInList(goals, goal));
+}
+
+export async function deleteArcGymGoalEntry(id: string): Promise<void> {
+  const goals = await loadArcGymGoals();
+  await saveArcGymGoals(goals.filter((goal) => goal.id !== id));
+}
+
+const ARC_GYM_GOAL_OBJECTIVES_KEY = "archi.arcGymGoalObjectives.v1";
+
+export async function loadArcGymGoalObjectives(): Promise<ArcGymGoalObjective[]> {
+  const raw = await AsyncStorage.getItem(ARC_GYM_GOAL_OBJECTIVES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcGymGoalObjective[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcGymGoalObjectives are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Exported (not wrapped) so callers doing a bulk operation across one goal's objectives -- e.g. reorderArcGymGoalObjectives's own full-list return -- can save directly, same convention as saveManifestGoals above. */
+export async function saveArcGymGoalObjectives(objectives: ArcGymGoalObjective[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_GYM_GOAL_OBJECTIVES_KEY, JSON.stringify(objectives));
+}
+
+export async function upsertArcGymGoalObjectiveEntry(objective: ArcGymGoalObjective): Promise<void> {
+  const objectives = await loadArcGymGoalObjectives();
+  await saveArcGymGoalObjectives(upsertArcGymGoalObjectiveInList(objectives, objective));
+}
+
+export async function deleteArcGymGoalObjectiveEntry(id: string): Promise<void> {
+  const objectives = await loadArcGymGoalObjectives();
+  await saveArcGymGoalObjectives(objectives.filter((objective) => objective.id !== id));
+}
+
+const ARC_FOCUS_EXERCISES_KEY = "archi.arcFocusExercises.v1";
+
+export async function loadArcFocusExercises(): Promise<ArcFocusExercise[]> {
+  const raw = await AsyncStorage.getItem(ARC_FOCUS_EXERCISES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcFocusExercise[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcFocusExercises are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcFocusExercises(exercises: ArcFocusExercise[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_FOCUS_EXERCISES_KEY, JSON.stringify(exercises));
+}
+
+export async function upsertArcFocusExerciseEntry(exercise: ArcFocusExercise): Promise<void> {
+  const exercises = await loadArcFocusExercises();
+  await saveArcFocusExercises(upsertArcFocusExerciseInList(exercises, exercise));
+}
+
+export async function deleteArcFocusExerciseEntry(id: string): Promise<void> {
+  const exercises = await loadArcFocusExercises();
+  await saveArcFocusExercises(exercises.filter((exercise) => exercise.id !== id));
+}
+
+const ARC_GYM_MEMORY_CHECK_IN_PROGRESS_KEY = "archi.arcGymMemoryCheckInProgress.v1";
+
+/**
+ * Single resumable slot, mirroring loadArcFocusSession's own convention --
+ * at most one ARC Memory check-in resume is ever in flight. Written once
+ * (live/NewArcLiveScreen.tsx's finishArcGymMemoryCheckIn, on actually
+ * finishing the preliminary ARC) and consumed exactly once
+ * (live/ArcGymMemoryVisualizationScreen.tsx, on focus) -- never touches
+ * ArcGymMemory/ArcGymTrainingRecord, kept deliberately separate.
+ */
+export async function loadArcGymMemoryCheckInProgress(): Promise<ArcGymMemoryCheckInProgress | null> {
+  const raw = await AsyncStorage.getItem(ARC_GYM_MEMORY_CHECK_IN_PROGRESS_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ArcGymMemoryCheckInProgress;
+  } catch {
+    console.warn("[storage] Stored ArcGymMemoryCheckInProgress is not valid JSON -- treating as no resume in progress rather than crashing.");
+    return null;
+  }
+}
+
+export async function saveArcGymMemoryCheckInProgress(progress: ArcGymMemoryCheckInProgress): Promise<void> {
+  await AsyncStorage.setItem(ARC_GYM_MEMORY_CHECK_IN_PROGRESS_KEY, JSON.stringify(progress));
+}
+
+export async function clearArcGymMemoryCheckInProgress(): Promise<void> {
+  await AsyncStorage.removeItem(ARC_GYM_MEMORY_CHECK_IN_PROGRESS_KEY);
+}
+
+// ============================================================
+// ARC Learning + ARC Creativity + Integrated Spaced Repetition
+// ============================================================
+
+const ARC_LEARNING_TOPICS_KEY = "archi.arcLearningTopics.v1";
+
+export async function loadArcLearningTopics(): Promise<ArcLearningTopic[]> {
+  const raw = await AsyncStorage.getItem(ARC_LEARNING_TOPICS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcLearningTopic[];
+    return Array.isArray(parsed) ? parsed.map(normalizeArcLearningTopic) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcLearningTopics are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcLearningTopics(topics: ArcLearningTopic[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_LEARNING_TOPICS_KEY, JSON.stringify(topics));
+}
+
+export async function upsertArcLearningTopicEntry(topic: ArcLearningTopic): Promise<void> {
+  const topics = await loadArcLearningTopics();
+  await saveArcLearningTopics(upsertArcLearningTopicInList(topics, topic));
+}
+
+/** Never cascades -- leaves any insight that pointed at this topic with a dangling topicId, same convention as every other delete<Type>Entry in this file. */
+export async function deleteArcLearningTopicEntry(id: string): Promise<void> {
+  const topics = await loadArcLearningTopics();
+  await saveArcLearningTopics(topics.filter((topic) => topic.id !== id));
+}
+
+const ARC_LEARNING_INSIGHTS_KEY = "archi.arcLearningInsights.v1";
+
+export async function loadArcLearningInsights(): Promise<ArcLearningInsight[]> {
+  const raw = await AsyncStorage.getItem(ARC_LEARNING_INSIGHTS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcLearningInsight[];
+    return Array.isArray(parsed) ? parsed.map(normalizeArcLearningInsight) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcLearningInsights are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcLearningInsights(insights: ArcLearningInsight[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_LEARNING_INSIGHTS_KEY, JSON.stringify(insights));
+}
+
+export async function upsertArcLearningInsightEntry(insight: ArcLearningInsight): Promise<void> {
+  const insights = await loadArcLearningInsights();
+  await saveArcLearningInsights(upsertArcLearningInsightInList(insights, insight));
+}
+
+/** Never cascades -- leaves this insight's own review schedule/recall history and any ArcCreativityConnection referencing it in place, dangling by id, same convention as every other delete<Type>Entry in this file. */
+export async function deleteArcLearningInsightEntry(id: string): Promise<void> {
+  const insights = await loadArcLearningInsights();
+  await saveArcLearningInsights(insights.filter((insight) => insight.id !== id));
+}
+
+const ARC_LEARNING_REVIEW_SCHEDULES_KEY = "archi.arcLearningReviewSchedules.v1";
+
+export async function loadArcLearningReviewSchedules(): Promise<ArcLearningReviewSchedule[]> {
+  const raw = await AsyncStorage.getItem(ARC_LEARNING_REVIEW_SCHEDULES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcLearningReviewSchedule[];
+    const now = new Date().toISOString();
+    return Array.isArray(parsed) ? parsed.map((schedule) => normalizeArcLearningReviewSchedule(schedule, now)) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcLearningReviewSchedules are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcLearningReviewSchedules(schedules: ArcLearningReviewSchedule[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_LEARNING_REVIEW_SCHEDULES_KEY, JSON.stringify(schedules));
+}
+
+export async function upsertArcLearningReviewScheduleEntry(schedule: ArcLearningReviewSchedule): Promise<void> {
+  const schedules = await loadArcLearningReviewSchedules();
+  await saveArcLearningReviewSchedules(upsertArcLearningReviewScheduleInList(schedules, schedule));
+}
+
+export async function deleteArcLearningReviewScheduleEntry(insightId: string): Promise<void> {
+  const schedules = await loadArcLearningReviewSchedules();
+  await saveArcLearningReviewSchedules(schedules.filter((schedule) => schedule.insightId !== insightId));
+}
+
+const ARC_LEARNING_RECALL_RECORDS_KEY = "archi.arcLearningRecallRecords.v1";
+
+export async function loadArcLearningRecallRecords(): Promise<ArcLearningRecallRecord[]> {
+  const raw = await AsyncStorage.getItem(ARC_LEARNING_RECALL_RECORDS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcLearningRecallRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcLearningRecallRecords are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcLearningRecallRecords(records: ArcLearningRecallRecord[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_LEARNING_RECALL_RECORDS_KEY, JSON.stringify(records));
+}
+
+/**
+ * Records one completed individual-insight recall: loads both the
+ * schedule and history collections, advances them together via
+ * arc/arcLearningReview.ts's own recordArcLearningRecall (one call, so
+ * the two can never drift apart), and persists both. The one
+ * orchestration entry point every recall-completion call site (direct
+ * ARC Learning interface, a weekly review block, a flexible daily
+ * review task) should call -- never duplicated inline.
+ */
+export async function recordArcLearningRecallEntry(insightId: string, rating: ArcRecallRating, recordId: string, now: string): Promise<void> {
+  const [schedules, records] = await Promise.all([loadArcLearningReviewSchedules(), loadArcLearningRecallRecords()]);
+  const result = recordArcLearningRecall(schedules, records, insightId, rating, recordId, now);
+  await Promise.all([saveArcLearningReviewSchedules(result.schedules), saveArcLearningRecallRecords(result.records)]);
+}
+
+const ARC_LEARNING_RECALL_SESSION_PROGRESS_KEY = "archi.arcLearningRecallSessionProgress.v1";
+
+/** Single resumable slot, same convention as loadArcGymMemoryCheckInProgress above -- at most one ARC Learning recall queue is ever in flight. */
+export async function loadArcLearningRecallSessionProgress(): Promise<ArcLearningRecallSessionProgress | null> {
+  const raw = await AsyncStorage.getItem(ARC_LEARNING_RECALL_SESSION_PROGRESS_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ArcLearningRecallSessionProgress;
+  } catch {
+    console.warn("[storage] Stored ArcLearningRecallSessionProgress is not valid JSON -- treating as no session in progress rather than crashing.");
+    return null;
+  }
+}
+
+export async function saveArcLearningRecallSessionProgress(progress: ArcLearningRecallSessionProgress): Promise<void> {
+  await AsyncStorage.setItem(ARC_LEARNING_RECALL_SESSION_PROGRESS_KEY, JSON.stringify(progress));
+}
+
+export async function clearArcLearningRecallSessionProgress(): Promise<void> {
+  await AsyncStorage.removeItem(ARC_LEARNING_RECALL_SESSION_PROGRESS_KEY);
+}
+
+const ARC_CREATIVITY_CONNECTIONS_KEY = "archi.arcCreativityConnections.v1";
+
+export async function loadArcCreativityConnections(): Promise<ArcCreativityConnection[]> {
+  const raw = await AsyncStorage.getItem(ARC_CREATIVITY_CONNECTIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcCreativityConnection[];
+    return Array.isArray(parsed) ? parsed.map(normalizeArcCreativityConnection) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcCreativityConnections are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcCreativityConnections(connections: ArcCreativityConnection[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_CREATIVITY_CONNECTIONS_KEY, JSON.stringify(connections));
+}
+
+export async function upsertArcCreativityConnectionEntry(connection: ArcCreativityConnection): Promise<void> {
+  const connections = await loadArcCreativityConnections();
+  await saveArcCreativityConnections(upsertArcCreativityConnectionInList(connections, connection));
+}
+
+/** Never cascades -- leaves both referenced insights and this connection's own review schedule/recall history dangling by id, same convention as every other delete<Type>Entry in this file. */
+export async function deleteArcCreativityConnectionEntry(id: string): Promise<void> {
+  const connections = await loadArcCreativityConnections();
+  await saveArcCreativityConnections(connections.filter((connection) => connection.id !== id));
+}
+
+const ARC_CREATIVITY_REVIEW_SCHEDULES_KEY = "archi.arcCreativityReviewSchedules.v1";
+
+export async function loadArcCreativityReviewSchedules(): Promise<ArcCreativityReviewSchedule[]> {
+  const raw = await AsyncStorage.getItem(ARC_CREATIVITY_REVIEW_SCHEDULES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcCreativityReviewSchedule[];
+    const now = new Date().toISOString();
+    return Array.isArray(parsed) ? parsed.map((schedule) => normalizeArcCreativityReviewSchedule(schedule, now)) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcCreativityReviewSchedules are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcCreativityReviewSchedules(schedules: ArcCreativityReviewSchedule[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_CREATIVITY_REVIEW_SCHEDULES_KEY, JSON.stringify(schedules));
+}
+
+export async function upsertArcCreativityReviewScheduleEntry(schedule: ArcCreativityReviewSchedule): Promise<void> {
+  const schedules = await loadArcCreativityReviewSchedules();
+  await saveArcCreativityReviewSchedules(upsertArcCreativityReviewScheduleInList(schedules, schedule));
+}
+
+export async function deleteArcCreativityReviewScheduleEntry(connectionId: string): Promise<void> {
+  const schedules = await loadArcCreativityReviewSchedules();
+  await saveArcCreativityReviewSchedules(schedules.filter((schedule) => schedule.connectionId !== connectionId));
+}
+
+const ARC_CREATIVITY_RECALL_RECORDS_KEY = "archi.arcCreativityRecallRecords.v1";
+
+export async function loadArcCreativityRecallRecords(): Promise<ArcCreativityRecallRecord[]> {
+  const raw = await AsyncStorage.getItem(ARC_CREATIVITY_RECALL_RECORDS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcCreativityRecallRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcCreativityRecallRecords are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveArcCreativityRecallRecords(records: ArcCreativityRecallRecord[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_CREATIVITY_RECALL_RECORDS_KEY, JSON.stringify(records));
+}
+
+/**
+ * Mode D's own recall-completion orchestration -- the exact mirror of
+ * recordArcLearningRecallEntry above, kept on a fully separate pair of
+ * storage keys so connection recall history can never be confused with,
+ * or counted as, individual-insight recall history.
+ */
+export async function recordArcCreativityRecallEntry(connectionId: string, rating: ArcRecallRating, recordId: string, now: string): Promise<void> {
+  const [schedules, records] = await Promise.all([loadArcCreativityReviewSchedules(), loadArcCreativityRecallRecords()]);
+  const result = recordArcCreativityRecall(schedules, records, connectionId, rating, recordId, now);
+  await Promise.all([saveArcCreativityReviewSchedules(result.schedules), saveArcCreativityRecallRecords(result.records)]);
+}
+
+const ARC_CREATIVITY_RECALL_SESSION_PROGRESS_KEY = "archi.arcCreativityRecallSessionProgress.v1";
+
+/** Single resumable slot for Mode D's own cumulative recall queue -- fully separate from ArcLearningRecallSessionProgress's own slot above. */
+export async function loadArcCreativityRecallSessionProgress(): Promise<ArcCreativityRecallSessionProgress | null> {
+  const raw = await AsyncStorage.getItem(ARC_CREATIVITY_RECALL_SESSION_PROGRESS_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ArcCreativityRecallSessionProgress;
+  } catch {
+    console.warn("[storage] Stored ArcCreativityRecallSessionProgress is not valid JSON -- treating as no session in progress rather than crashing.");
+    return null;
+  }
+}
+
+export async function saveArcCreativityRecallSessionProgress(progress: ArcCreativityRecallSessionProgress): Promise<void> {
+  await AsyncStorage.setItem(ARC_CREATIVITY_RECALL_SESSION_PROGRESS_KEY, JSON.stringify(progress));
+}
+
+export async function clearArcCreativityRecallSessionProgress(): Promise<void> {
+  await AsyncStorage.removeItem(ARC_CREATIVITY_RECALL_SESSION_PROGRESS_KEY);
 }

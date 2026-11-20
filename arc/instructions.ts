@@ -102,9 +102,34 @@ export const INDUCTION_PATTERN_DENYLIST: RegExp[] = [
   // you act according to your values" (arc/manifestMeditation.ts's
   // "day_imagery" stage) -- a desired, values-aligned FUTURE day, same
   // already-achieved/desired-outcome category as (8)/(9), never an
-  // interfering state. Any other "imagine" usage -- e.g. imagining a
+  // (12) the simplified ARC LIVE task's own Encoding result-imagery
+  // step (arc/newArcLiveCopy.ts) -- "imagine yourself at the end of
+  // the action/exercise, [with the desired ending/feeling you
+  // defined]" -- the imagined content is always the trainee's own
+  // earlier-stated desiredEnding (Step 1), the same already-desired-
+  // outcome category as (5)/(8)/(9)/(11), never an interfering state.
+  // (13) the Final ARC Flow & Body Animation task's own Encoding &
+  // Action mantra (arc/newArcLiveCopy.ts's resolveEncodingMantra) --
+  // "...ומדמיין את עצמי [הפעולה הראשונה שבחר]" -- the exact same
+  // already-desired-action category as (1)/(4), just FIRST person
+  // ("עצמי") instead of second ("עצמך"), since this mantra speaks as
+  // "אני" throughout rather than addressing the trainee as "אתה". The
+  // imagined content is always firstAction, the trainee's own earlier-
+  // chosen positive action, never the interfering state.
+  // (14) the Unified ARC & Productivity Update task's own rewritten
+  // resolveEncodingMantra -- "...ומדמיין את עצמי מבצע את [הפעולה]" --
+  // the FIRST-person counterpart of the already-whitelisted "את עצמך
+  // מבצע" above (same mechanism, same already-chosen-action content,
+  // just spoken as "אני" instead of addressing "אתה").
+  // (15) the ARCHI Universal ARC Routing task's own Active-Task-LIVE
+  // Encoding mantra (resolveEncodingMantra, requirement 9) -- "...
+  // ומדמיין שאני ממשיך את המשימה." -- the same already-chosen-action
+  // category as (13)/(14), just naming the already-in-progress task
+  // itself (never a new/different action) when this ARC session was
+  // triggered from WITHIN that task's own active timer.
+  // Any other "imagine" usage -- e.g. imagining a
   // feeling/craving/distraction directly -- still trips this pattern.
-  /דמיין(?! את עצמך מתחיל| לרגע את מה שקרה| את עצמך לרגע| את עצמך מבצע| שהפעולה מצליחה| את המצב מהצד| שאתה מזהה את הרגע| שהמטרה הגדולה שלך כבר הושגה| שתת־המטרה| שאתה חווה את הרגע דרך העיניים שלך| את הרגע הבא| יום שבו אתה פועל)/,
+  /דמיין(?! את עצמך מתחיל| לרגע את מה שקרה| את עצמך לרגע| את עצמך מבצע| שהפעולה מצליחה| את המצב מהצד| שאתה מזהה את הרגע| שהמטרה הגדולה שלך כבר הושגה| שתת־המטרה| שאתה חווה את הרגע דרך העיניים שלך| את הרגע הבא| יום שבו אתה פועל| את עצמך בסוף| את עצמי מבצע| את עצמי| שאני ממשיך את המשימה)/,
   /תחזק את/,
   // "hold/keep X in awareness/mind/the head" -- covers "בתודעה"/"בראש"
   // in addition to "במודעות".

@@ -39,3 +39,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local APK builds / build logs (not source)
+*.apk
+build-output/
+build-*.log

@@ -19,7 +19,7 @@ import {
   suggestPersonalSentencesFromIdentityProfiles,
   suggestValuesFromIdentityProfiles,
 } from "../arc/manifestMeditationDataSources.ts";
-import { buildTodaySections } from "../arc/todaySchedule.ts";
+import { buildTodaySections, resolveMostUrgentEntry } from "../arc/todaySchedule.ts";
 import { createEmptyTask, generateTaskId } from "../arc/tasks.ts";
 import { loadIdentityProfiles, loadTaskOccurrenceCompletions, loadTasks, upsertTask } from "../data/storage.ts";
 
@@ -73,7 +73,7 @@ export default function ManifestMeditationScreen() {
         setSuggestedHabits(suggestHabitsFromRecurringTasks(tasks));
         setSuggestedSentences(suggestPersonalSentencesFromIdentityProfiles(profiles));
         const today = buildTodaySections(tasks, completions, new Date());
-        const currentTask = today.currentOrNext?.task ?? null;
+        const currentTask = resolveMostUrgentEntry(today)?.task ?? null;
         setSuggestedTodaysAction(currentTask ? currentTask.currentAction ?? currentTask.firstAction : null);
       });
     }, [])

@@ -26,21 +26,36 @@ test("the reflect route is registered in app/_layout.tsx", () => {
 
 test("the route passes the id param straight through to SessionReflectionScreen", () => {
   assert.match(route, /from ["']\.\.\/\.\.\/\.\.\/live\/SessionReflectionScreen\.tsx["']/);
-  assert.ok(route.includes("SessionReflectionScreen taskId={id}"));
+  assert.match(route, /<SessionReflectionScreen\s*\n?\s*taskId=\{id\}/);
 });
 
-test("the reflection is reached only via an optional link shown once a task is completed, never forced", () => {
-  assert.match(activeTaskScreen, /pathname:\s*"\/tasks\/\[id\]\/reflect",\s*params:\s*\{\s*id:\s*task\.id\s*\}/);
-  const completedBlockIndex = activeTaskScreen.indexOf('task.status === "completed" ? (');
-  const completedBlock = activeTaskScreen.slice(completedBlockIndex, completedBlockIndex + 400);
-  assert.ok(completedBlock.includes("רפלקציה קצרה"));
+// Alarm-timer integration task, requirement 6: re-linked from
+// ActiveTaskScreen's own handleComplete/finishIdentityInsight -- "at
+// completion, the appropriate reflection appears, then automatic
+// transition to the next task." Previously (Simplified-architecture
+// task, Phase 1) this screen was deliberately left registered but
+// unreachable from normal navigation; this task reconnects it on
+// purpose.
+test("ActiveTaskScreen links to the reflection screen from BOTH completion paths -- the plain complete (its own non-continuous fallback AND its continuous-routine summary branch), and after the identity-insight prompt finishes", () => {
+  const occurrences = activeTaskScreen.split('pathname: "/tasks/[id]/reflect"').length - 1;
+  assert.equal(occurrences, 3, "handleComplete's two branches (continuous-summary, non-continuous fallback) plus finishIdentityInsight");
 });
 
-test("the reflection screen itself has an explicit skip/dismiss action that saves nothing, never blocking on an answer", () => {
-  assert.ok(screen.includes('onPress={() => router.back()}'));
+// Psychology/Smiling/Positive-Reinforcement task: "דלג" no longer
+// advances directly -- it opens live/PostTaskRewardScreen.tsx (which is
+// what now actually performs the "advance to next task" redirect, once
+// the trainee finishes/skips that screen's own smiling/imagery exercise).
+test("the reflection screen's 'דלג' (skip) action saves nothing, never blocking on an answer, and opens the shared post-task-reward screen -- requirement 6 applies whether or not the trainee answered anything", () => {
+  const skipIndex = screen.indexOf("<Pressable style={styles.skipLink}");
+  const skipBody = screen.slice(skipIndex, skipIndex + 120);
+  assert.ok(skipBody.includes("onPress={goToPostTaskReward}"));
+  const goFnIndex = screen.indexOf("function goToPostTaskReward()");
+  const goFnBody = screen.slice(goFnIndex, goFnIndex + 200);
+  assert.ok(goFnBody.includes('pathname: "/tasks/[id]/post-task-reward"'));
 });
 
-test("finishing the reflection saves exactly one 'session_reflection' journal entry via the shared createTaskJournalEntry/appendTaskJournalEntry, never a parallel store", () => {
-  assert.match(screen, /import\s*\{[\s\S]*?appendTaskJournalEntry[\s\S]*?\}\s*from\s*["']\.\.\/data\/storage\.ts["']/);
-  assert.ok(screen.includes('kind: "session_reflection"'));
+test("Unified ARC & Productivity Update task, requirement 5: finishing the reflection saves via the shared saveNewTaskReflection, never the old 'session_reflection' TaskJournalEntry (removed from this screen entirely -- the simplified one-question reflection reuses the pre-existing single-field TaskReflection model instead)", () => {
+  assert.match(screen, /import\s*\{\s*saveNewTaskReflection\s*\}\s*from\s*["']\.\.\/data\/taskReflection\.ts["']/);
+  assert.ok(!screen.includes('kind: "session_reflection"'), "no new session_reflection journal entry is ever written from this screen any more");
+  assert.ok(!screen.includes("appendTaskJournalEntry("), "appendTaskJournalEntry is no longer CALLED from this screen (a doc comment may still mention the function by name)");
 });

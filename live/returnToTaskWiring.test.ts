@@ -6,13 +6,18 @@ import { fileURLToPath } from "node:url";
 /**
  * live/returnToTaskWiring.test.ts
  *
- * Productivity roadmap, Stage J: source-text regression guard proving
- * the `returnToTaskId` param is threaded, under the exact same name,
- * all the way from ActiveTaskScreen's own "משהו מפריע"/"בוא נעשה ARC
- * עכשיו" buttons, through LiveModeSelectScreen's "ARC רגיל" push, into
- * LiveSessionScreen's own completion routing -- and that it ONLY
- * changes the plain (no routine/thenIdentityGoalId/fourWeekGoalId/
- * pdProgramId) completion path, never any of those other special cases.
+ * Productivity roadmap, Stage J: originally proved `returnToTaskId`
+ * was threaded from ActiveTaskScreen's own "משהו מפריע"/"בוא נעשה ARC
+ * עכשיו" buttons through LiveModeSelectScreen's "ARC רגיל" push into
+ * LiveSessionScreen's own completion routing.
+ *
+ * Simplified-architecture task, Phase 1: those two ActiveTaskScreen
+ * buttons are now hidden (the first two tests below guard that), so
+ * `returnToTaskId` is no longer threaded FROM ActiveTaskScreen -- but
+ * LiveModeSelectScreen/LiveSessionScreen's own `returnToTaskId`
+ * handling is legacy infrastructure, not deleted, and still correct if
+ * anything else ever sets the param (the remaining tests below keep
+ * guarding exactly that, unchanged).
  */
 function readSource(relativePath: string): string {
   const path = fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
@@ -23,14 +28,15 @@ const activeTaskScreen = readSource("live/ActiveTaskScreen.tsx");
 const liveModeSelect = readSource("build/LiveModeSelectScreen.tsx");
 const liveSession = readSource("live/LiveSessionScreen.tsx");
 
-test("every ActiveTaskScreen path into /live/select ('משהו מפריע', 'בוא נעשה ARC עכשיו', and the end-of-timer 'start_arc' choice with no linked build) forwards returnToTaskId: task.id", () => {
-  const matches = activeTaskScreen.match(/pathname:\s*"\/live\/select",\s*params:\s*\{\s*returnToTaskId:\s*task\.id\s*\}/g) ?? [];
-  assert.equal(matches.length, 3, "all three call sites must forward the same returnToTaskId param");
+test("Simplified-architecture task, Phase 1: ActiveTaskScreen no longer pushes to /live/select at all -- 'משהו מפריע'/'בוא נעשה ARC עכשיו' are hidden, and the end-of-timer 'start_arc' choice no longer branches on a linked build", () => {
+  assert.ok(!activeTaskScreen.includes('"/live/select"'));
+  assert.ok(!activeTaskScreen.includes("resolveArcChoiceDestination"));
 });
 
-test("ActiveTaskScreen's 'open the linked practice' (start_arc, open_linked) goes straight to /live with buildId AND returnToTaskId, never the BUILD editor", () => {
-  assert.match(activeTaskScreen, /pathname:\s*"\/live",\s*params:\s*\{\s*buildId:\s*destination\.arcBuildId,\s*returnToTaskId:\s*task\.id\s*\}/);
-  assert.ok(!activeTaskScreen.includes('router.push({ pathname: "/build/[id]", params: { id: destination.arcBuildId } })'), "must no longer open the editor for 'open the linked practice'");
+test("ActiveTaskScreen's end-of-timer ARC choice goes to the new placeholder with the task id, never /live, never the BUILD editor, regardless of any linked build", () => {
+  assert.match(activeTaskScreen, /pathname:\s*"\/tasks\/\[id\]\/arc",\s*params:\s*\{\s*id:\s*task\.id\s*\}/);
+  assert.ok(!activeTaskScreen.includes('pathname: "/live"'));
+  assert.ok(!activeTaskScreen.includes('pathname: "/build/[id]"'));
 });
 
 test("LiveModeSelectScreen reads returnToTaskId and forwards it onto the ARC רגיל push to /live", () => {

@@ -77,6 +77,21 @@ test("audit catches other induction-style phrasings", () => {
   assert.equal(containsInductionPattern("תחזק את תחושת הביקורת לרגע."), true);
 });
 
+test("whitelist entry 13: the Final ARC Flow & Body Animation task's first-person Encoding mantra ('...ומדמיין את עצמי [action]') passes the denylist, same as its second-person 'עצמך' sibling", () => {
+  assert.equal(containsInductionPattern("אני נוכח, מאפשר לתחושה התומכת להתפשט, ומדמיין את עצמי ללמוד קואוצ'ינג."), false);
+  assert.equal(containsInductionPattern("אני נוכח, מאפשר לתחושה התומכת להתפשט, ומדמיין את עצמי לכתוב דוח."), false);
+  // the emotion_only variant never reaches "דמיין" at all, so it is
+  // trivially safe regardless of this whitelist entry.
+  assert.equal(containsInductionPattern("אני נוכח, מאפשר לתחושה התומכת להתפשט."), false);
+});
+
+test("whitelist entry 13 stays narrow: a first-person 'דמיין את עצמי' imagining something OTHER than an already-chosen action still trips the pattern once its own continuation differs", () => {
+  // Sanity check that the new alternative didn't accidentally widen into
+  // a catch-all -- "דמיין" with no recognized continuation at all (first-
+  // or second-person) is still blocked.
+  assert.equal(containsInductionPattern("דמיין חרדה חזקה."), true);
+});
+
 test("audit does not flag the corrected awareness/encoding instructions", () => {
   assert.equal(containsInductionPattern(getAwarenessInstruction()), false);
   assert.equal(containsInductionPattern(getCombinedAttentionInstruction()), false);

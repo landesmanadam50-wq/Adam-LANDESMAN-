@@ -5,6 +5,8 @@ import {
   completeTask,
   createEmptyTask,
   deleteTaskFromList,
+  ensureTimePlanningTaskInList,
+  findActiveTask,
   generateTaskId,
   generateTaskJournalEntryId,
   generateTaskSubtaskId,
@@ -13,6 +15,8 @@ import {
   postponeTask,
   setTaskCurrentAction,
   startTask,
+  TIME_PLANNING_DEFAULT_DURATION_MINUTES,
+  TIME_PLANNING_TASK_ID,
   toggleTaskSubtaskCompletion,
   unarchiveTask,
   upsertTaskInList,
@@ -39,12 +43,15 @@ test("createEmptyTask defaults currentAction to firstAction and starts in planne
   assert.equal(task.defaultSupportiveStateId, null);
   assert.deepEqual(task.subtasks, []);
   assert.equal(task.schemaVersion, 1);
+  assert.equal(task.order, null, "Fixed Weekly Routine / Flexible Daily Routine task: no manual order override by default -- sorts by time");
+  assert.equal(task.calendarEntryKind, null, "no standalone break/ARC marker by default -- an ordinary task");
 });
 
 test("normalizeTask backfills every field on a record missing everything added after ship, without throwing", () => {
   const legacy = { id: "task-2", title: "Legacy task", createdAt: NOW, updatedAt: NOW } as unknown as Task;
   const normalized = normalizeTask(legacy);
   assert.equal(normalized.description, null);
+  assert.equal(normalized.location, null, "Final Morning Flow Requirements Audit task: backfilled to null, same as every other optional field added after ship");
   assert.equal(normalized.scheduledDate, null);
   assert.equal(normalized.scheduledTime, null);
   assert.equal(normalized.expectedDurationMinutes, null);
@@ -63,6 +70,12 @@ test("normalizeTask backfills every field on a record missing everything added a
   assert.equal(normalized.notificationId, null);
   assert.equal(normalized.notificationScheduledFor, null);
   assert.equal(normalized.completedAt, null);
+  assert.equal(normalized.purposeManifestId, null);
+  assert.equal(normalized.purposeManifestGoalId, null);
+  assert.equal(normalized.purposeManifestTaskOrder, null);
+  assert.equal(normalized.order, null, "Fixed Weekly Routine / Flexible Daily Routine task: backfilled to null, same as every other optional field added after ship");
+  assert.equal(normalized.calendarEntryKind, null);
+  assert.equal(normalized.arcLearningReviewTopicId, null, "ARC Learning + ARC Creativity + Integrated Spaced Repetition task: backfilled to null, same as every other optional field added after ship");
   assert.equal(normalized.schemaVersion, 1);
 });
 
@@ -72,12 +85,36 @@ test("normalizeTask falls back currentAction to firstAction when only currentAct
   assert.equal(normalized.currentAction, "Open the document");
 });
 
+test("createEmptyTask defaults location to null -- optional, never required", () => {
+  const task = createEmptyTask("task-1", "Write the report", "Open the document", NOW);
+  assert.equal(task.location, null);
+});
+
+test("createEmptyTask defaults arcLearningReviewTopicId to null -- meaningless for every taskKind except arcLearningReview, where null means every topic", () => {
+  const task = createEmptyTask("task-1", "Write the report", "Open the document", NOW);
+  assert.equal(task.arcLearningReviewTopicId, null);
+});
+
+test("normalizeTask never overwrites an already-set arcLearningReviewTopicId", () => {
+  const task = { ...makeTask(), arcLearningReviewTopicId: "topic-1" };
+  const normalized = normalizeTask(task);
+  assert.equal(normalized.arcLearningReviewTopicId, "topic-1");
+});
+
 test("normalizeTask never overwrites fields that are already present", () => {
-  const task = makeTask({ description: "Quarterly numbers", status: "active", scheduledDate: "2026-09-27" });
+  const task = makeTask({ description: "Quarterly numbers", location: "המשרד", status: "active", scheduledDate: "2026-09-27" });
   const normalized = normalizeTask(task);
   assert.equal(normalized.description, "Quarterly numbers");
+  assert.equal(normalized.location, "המשרד");
   assert.equal(normalized.status, "active");
   assert.equal(normalized.scheduledDate, "2026-09-27");
+});
+
+test("normalizeTask never overwrites an already-set order/calendarEntryKind", () => {
+  const task = makeTask({ order: 3, calendarEntryKind: "break" });
+  const normalized = normalizeTask(task);
+  assert.equal(normalized.order, 3);
+  assert.equal(normalized.calendarEntryKind, "break");
 });
 
 test("startTask sets status to active and clears any leftover postponement fields", () => {
@@ -181,6 +218,34 @@ test("deleteTaskFromList removes exactly the matching task and is a no-op for an
   assert.equal(noop.length, 2);
 });
 
+// --- Nine Functional Improvements task, Improvement 2 (time-planning task + timer) ---
+
+test("ensureTimePlanningTaskInList creates the reserved time-planning task with a default duration when none exists yet", () => {
+  const { task, tasks } = ensureTimePlanningTaskInList([], NOW);
+  assert.equal(task.id, TIME_PLANNING_TASK_ID);
+  assert.equal(task.expectedDurationMinutes, TIME_PLANNING_DEFAULT_DURATION_MINUTES);
+  assert.equal(task.taskKind, "standard");
+  assert.equal(task.scheduledDate, null, "must stay unscheduled so it never clutters FlexibleDailyScreen's own daily list");
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].id, TIME_PLANNING_TASK_ID);
+});
+
+test("ensureTimePlanningTaskInList returns the EXISTING task unchanged (never a second one) when one is already present", () => {
+  const existing = makeTask({ id: TIME_PLANNING_TASK_ID, title: "תכנון הזמן שלי", expectedDurationMinutes: 40, status: "paused" });
+  const otherTask = makeTask({ id: "task-2" });
+  const { task, tasks } = ensureTimePlanningTaskInList([otherTask, existing], LATER);
+  assert.equal(task, existing, "must return the SAME object -- never overwrite a saved duration or in-flight status just by ensuring it exists");
+  assert.equal(tasks.length, 2, "never duplicates -- the list is returned unchanged when the task already exists");
+  assert.equal(tasks, tasks, "sanity");
+});
+
+test("ensureTimePlanningTaskInList never mutates the input list when the task already exists", () => {
+  const existing = makeTask({ id: TIME_PLANNING_TASK_ID });
+  const originalTasks = [existing];
+  const { tasks } = ensureTimePlanningTaskInList(originalTasks, NOW);
+  assert.equal(tasks, originalTasks);
+});
+
 test("generateTaskId / generateTaskSubtaskId / generateTaskJournalEntryId produce distinct, correctly-prefixed ids", () => {
   const taskIds = new Set(Array.from({ length: 20 }, () => generateTaskId()));
   assert.equal(taskIds.size, 20);
@@ -193,4 +258,70 @@ test("generateTaskId / generateTaskSubtaskId / generateTaskJournalEntryId produc
   const journalIds = new Set(Array.from({ length: 20 }, () => generateTaskJournalEntryId()));
   assert.equal(journalIds.size, 20);
   for (const id of journalIds) assert.match(id, /^task-journal-/);
+});
+
+// ARC-system upgrade task ("ARC ספונטני ויצירת ARC מתוכנן"), Part 2:
+// arcWindowMinutesBefore is purely additive -- never required, never
+// auto-set.
+
+test("createEmptyTask defaults arcWindowMinutesBefore to null -- no ARC window unless explicitly set", () => {
+  const task = createEmptyTask("t1", "כותרת", "פעולה", "2026-01-01T00:00:00.000Z");
+  assert.equal(task.arcWindowMinutesBefore, null);
+});
+
+test("normalizeTask backfills arcWindowMinutesBefore to null for a record saved before this field existed, never inventing a value", () => {
+  const legacy = { ...createEmptyTask("t1", "כותרת", "פעולה", "2026-01-01T00:00:00.000Z") } as Task;
+  delete (legacy as Partial<Task>).arcWindowMinutesBefore;
+  const normalized = normalizeTask(legacy);
+  assert.equal(normalized.arcWindowMinutesBefore, null);
+});
+
+test("normalizeTask preserves an already-set arcWindowMinutesBefore", () => {
+  const task = { ...createEmptyTask("t1", "כותרת", "פעולה", "2026-01-01T00:00:00.000Z"), arcWindowMinutesBefore: 5 };
+  assert.equal(normalizeTask(task).arcWindowMinutesBefore, 5);
+});
+
+// Manifest Goals & Automatic Task Scheduling task: purposeManifestId/
+// purposeManifestGoalId/purposeManifestTaskOrder are purely additive --
+// never required, never auto-set, and completely unrelated to the
+// pre-existing taskKind/manifestProfile fields above.
+
+test("createEmptyTask defaults purposeManifestId/purposeManifestGoalId/purposeManifestTaskOrder to null -- no goal link unless explicitly set", () => {
+  const task = createEmptyTask("t1", "כותרת", "פעולה", "2026-01-01T00:00:00.000Z");
+  assert.equal(task.purposeManifestId, null);
+  assert.equal(task.purposeManifestGoalId, null);
+  assert.equal(task.purposeManifestTaskOrder, null);
+});
+
+test("normalizeTask backfills purposeManifestId/purposeManifestGoalId/purposeManifestTaskOrder to null for a record saved before these fields existed, never inventing a value, and never crashing", () => {
+  const legacy = { ...createEmptyTask("t1", "כותרת", "פעולה", "2026-01-01T00:00:00.000Z") } as Task;
+  delete (legacy as Partial<Task>).purposeManifestId;
+  delete (legacy as Partial<Task>).purposeManifestGoalId;
+  delete (legacy as Partial<Task>).purposeManifestTaskOrder;
+  const normalized = normalizeTask(legacy);
+  assert.equal(normalized.purposeManifestId, null);
+  assert.equal(normalized.purposeManifestGoalId, null);
+  assert.equal(normalized.purposeManifestTaskOrder, null);
+});
+
+test("normalizeTask preserves already-set purposeManifestId/purposeManifestGoalId/purposeManifestTaskOrder", () => {
+  const task = { ...createEmptyTask("t1", "כותרת", "פעולה", "2026-01-01T00:00:00.000Z"), purposeManifestId: "m1", purposeManifestGoalId: "g1", purposeManifestTaskOrder: 2 };
+  const normalized = normalizeTask(task);
+  assert.equal(normalized.purposeManifestId, "m1");
+  assert.equal(normalized.purposeManifestGoalId, "g1");
+  assert.equal(normalized.purposeManifestTaskOrder, 2);
+});
+
+// --- Unified Emotional Check-In and Task Postponement System: findActiveTask ---
+
+test("required test: findActiveTask returns the one task whose status is 'active', never a merely 'paused' one", () => {
+  const planned = makeTask({ id: "t1", status: "planned" });
+  const active = makeTask({ id: "t2", status: "active" });
+  const paused = makeTask({ id: "t3", status: "paused" });
+  assert.equal(findActiveTask([planned, active, paused])?.id, "t2");
+});
+
+test("required test: findActiveTask returns null when no task is active", () => {
+  assert.equal(findActiveTask([]), null);
+  assert.equal(findActiveTask([makeTask({ status: "planned" }), makeTask({ status: "paused" })]), null);
 });
