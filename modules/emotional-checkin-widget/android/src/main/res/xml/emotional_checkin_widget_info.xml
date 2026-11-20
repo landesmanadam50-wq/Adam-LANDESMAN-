@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ARCHI — Home-Screen Widget Sync task, section 3: the widget's
+  content is no longer fully static (current/next task, mood-row 3rd
+  button) — EmotionalCheckInWidgetProvider.kt now pushes an explicit
+  update on every relevant task/schedule change via
+  EmotionalCheckInWidgetModule's own update() function (the SAME
+  mechanism/call sites that already refresh the floating cube), which
+  is the PRIMARY way this widget stays current — never something this
+  periodic value alone is relied on for. updatePeriodMillis is kept as
+  a secondary, best-effort safety net only (e.g. recovering after a
+  process death that happened to drop a pending push) — Android
+  enforces a practical floor of ~30 minutes regardless of a smaller
+  value configured here, so this is deliberately NOT a substitute for
+  real-time sync and must never be described as one; the one genuinely
+  live-ticking element (the current task's remaining-time Chronometer)
+  relies on RemoteViews' own native Chronometer ticking instead, not on
+  this interval. targetCellWidth/Height/minWidth/minHeight/resizeMode
+  are all unchanged from before this task — the existing placed
+  widget's size on a trainee's home screen is never force-resized by
+  this change; a short/compact placement still gets the same vertical
+  stack, just clipped per normal Android widget behavior, which the
+  final report calls out as a real-device check.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+  android:minWidth="250dp"
+  android:minHeight="110dp"
+  android:targetCellWidth="4"
+  android:targetCellHeight="1"
+  android:updatePeriodMillis="1800000"
+  android:initialLayout="@layout/emotional_checkin_widget"
+  android:resizeMode="horizontal|vertical"
+  android:widgetCategory="home_screen" />

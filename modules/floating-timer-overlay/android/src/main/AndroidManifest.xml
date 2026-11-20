@@ -1,0 +1,25 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!--
+      Floating task timer task, requirement 1+3: this one Service hosts
+      BOTH the system-wide floating overlay (WindowManager.addView over
+      other apps) AND the required ongoing notification: a foreground
+      service must show a notification by Android's own rule, so the
+      ongoing notification IS that service's own foreground notification,
+      never a second, separate one. "specialUse" is Android 14+'s own
+      generic foreground-service type for a long-running use case with no
+      dedicated built-in type (there is no official "floating overlay"
+      type), declared here matching this exact Service, so there is no
+      risk of the manifest-vs-runtime-type mismatch that broke the task
+      alarm's own foreground service earlier in this project.
+    -->
+    <service
+      android:name=".OverlayService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="floating_task_timer" />
+    </service>
+  </application>
+</manifest>

@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Unified Emotional Check-In and Task Postponement System, section 2:
+  the widget's own compact, RTL-compatible layout. RemoteViews only
+  supports a limited view set (FrameLayout/LinearLayout/RelativeLayout
+  as containers, TextView/Button/ImageView/ImageButton/Chronometer as
+  leaves) — every clickable element here is a plain TextView, made
+  clickable entirely via EmotionalCheckInWidgetProvider's own
+  setOnClickPendingIntent calls (RemoteViews has no onClick XML
+  attribute of its own). android:layoutDirection="rtl" on the root
+  flips the row's visual order to match Hebrew reading direction
+  (רightmost-first) while the children stay listed in the SAME
+  "פחות טוב, סבבה, ישר למשימה" order the in-app check-in bar
+  (build/FlexibleDailyScreen.tsx) already uses with its own
+  row-reverse layout — one consistent reading order everywhere this
+  same choice appears.
+
+  ARCHI — Home-Screen Widget Sync task: the ORIGINAL title + 3-button
+  row above is kept byte-for-byte in structure (same ids, same emoji,
+  same background/padding) so the widget's recognizable appearance on
+  the home screen never changes — everything below it is new, purely
+  additive. The three sections below mirror the floating cube's own
+  unified panel (OverlayService.kt's ensureOverlayAdded): a cognitive
+  ("🧠 מחשבה / דחף") row, a current-task row (name + a native
+  Chronometer counting the remaining time down, visible only while a
+  task session is active/paused), a next-task section (summary text +
+  "עבור למשימה הבאה"), and a standalone "💡 הוסף תובנה" button.
+  EmotionalCheckInWidgetProvider.kt toggles widget_current_task_section's
+  visibility and widget_button_next_task's (😄) visibility oppositely,
+  exactly like the cube's own isIdle-driven currentTaskRowView/
+  moodDirectToTaskView toggle.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:layoutDirection="rtl"
+  android:orientation="vertical"
+  android:background="@drawable/widget_background"
+  android:padding="10dp">
+
+  <TextView
+    android:id="@+id/widget_title"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="ARCHI — איך אתה מרגיש כרגע?"
+    android:textColor="#0a7ea4"
+    android:textSize="13sp"
+    android:textStyle="bold"
+    android:gravity="center"
+    android:paddingBottom="8dp" />
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal">
+
+    <TextView
+      android:id="@+id/widget_button_full_arc"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginEnd="4dp"
+      android:background="@drawable/widget_button_background"
+      android:gravity="center"
+      android:paddingTop="10dp"
+      android:paddingBottom="10dp"
+      android:text="😟&#10;פחות טוב"
+      android:textSize="13sp"
+      android:textColor="#333333" />
+
+    <TextView
+      android:id="@+id/widget_button_shortened_arc"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginStart="4dp"
+      android:layout_marginEnd="4dp"
+      android:background="@drawable/widget_button_background"
+      android:gravity="center"
+      android:paddingTop="10dp"
+      android:paddingBottom="10dp"
+      android:text="🙂&#10;סבבה"
+      android:textSize="13sp"
+      android:textColor="#333333" />
+
+    <!--
+      ARCHI — Home-Screen Widget Sync task, section 2: visibility is
+      now toggled by EmotionalCheckInWidgetProvider.kt (VISIBLE only
+      while idle — no active/paused Task LIVE session), mirroring the
+      cube's own moodDirectToTaskView exactly. The id/choice/request
+      code are all unchanged; only the label text was updated to the
+      cube's own current wording, so the two surfaces read identically.
+    -->
+    <TextView
+      android:id="@+id/widget_button_next_task"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginStart="4dp"
+      android:background="@drawable/widget_button_background"
+      android:gravity="center"
+      android:paddingTop="10dp"
+      android:paddingBottom="10dp"
+      android:text="😄&#10;ישר למשימה"
+      android:textSize="13sp"
+      android:textColor="#333333" />
+
+  </LinearLayout>
+
+  <!-- Section 1: the combined cognitive shortcut — own full-width row directly below the mood row, same as the cube's own urgeRow placement. Available regardless of idle/active state. -->
+  <TextView
+    android:id="@+id/widget_button_cognitive"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:background="@drawable/widget_button_background"
+    android:gravity="center"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
+    android:text="🧠 מחשבה / דחף"
+    android:textSize="12sp"
+    android:textColor="#333333" />
+
+  <!-- Section 2+3: the current-task row — GONE while idle, VISIBLE while a task session is active/paused. The Chronometer is RemoteViews' own officially supported ticking-timer view (also used in notifications), set via RemoteViews.setChronometer(base, format, started) — it ticks using the system's own elapsedRealtime clock, with no need for this provider's own process to stay alive or for a periodic push to keep seconds moving. A countdown (base set in the future) is shown as a negative elapsed time; Chronometer formats a negative value with a leading "-" automatically, never a fabricated/approximate display. -->
+  <LinearLayout
+    android:id="@+id/widget_current_task_section"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/widget_button_background"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp"
+    android:visibility="gone">
+
+    <TextView
+      android:id="@+id/widget_current_task_title"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:textSize="12sp"
+      android:textColor="#0a7ea4"
+      android:textStyle="bold"
+      android:maxLines="1"
+      android:ellipsize="end" />
+
+    <Chronometer
+      android:id="@+id/widget_current_task_timer"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="6dp"
+      android:textSize="13sp"
+      android:textColor="#0a7ea4"
+      android:textStyle="bold" />
+
+  </LinearLayout>
+
+  <!-- Section 1+2+3+4: the next-scheduled-task section — always present (empty-state text when nothing is scheduled, mirroring the cube's own nextScheduledTaskSummaryLine), with its own "עבור למשימה הבאה" action. -->
+  <LinearLayout
+    android:id="@+id/widget_next_task_section"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:orientation="vertical"
+    android:background="@drawable/widget_button_background"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="2dp">
+
+    <TextView
+      android:id="@+id/widget_next_task_info"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:textSize="11sp"
+      android:textColor="#555555"
+      android:maxLines="2"
+      android:ellipsize="end" />
+
+    <TextView
+      android:id="@+id/widget_button_next_task_action"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:gravity="center"
+      android:paddingTop="6dp"
+      android:paddingBottom="6dp"
+      android:text="עבור למשימה הבאה"
+      android:textSize="12sp"
+      android:textColor="#0a7ea4"
+      android:textStyle="bold" />
+
+  </LinearLayout>
+
+  <!--
+    ARCHI — Consolidated Implementation Request, Part 13.1: "➕ הוסף
+    משימה" and "💡 הוסף תובנה" together, in one logically-grouped
+    row — both always available regardless of idle/active state, same
+    as the insight button already was. Two half-width TextViews rather
+    than two separate full-width rows, so this stays compact on a
+    small/resizable placement (Part 13.3).
+  -->
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:orientation="horizontal">
+
+    <TextView
+      android:id="@+id/widget_button_add_task"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginEnd="4dp"
+      android:background="@drawable/widget_button_background"
+      android:gravity="center"
+      android:paddingTop="8dp"
+      android:paddingBottom="8dp"
+      android:text="➕ הוסף משימה"
+      android:textSize="12sp"
+      android:textColor="#333333" />
+
+    <!-- Section 7 (always available, idle or active/paused alike): "הוסף תובנה" — same deep-link destination convention as the cube's own insightView. -->
+    <TextView
+      android:id="@+id/widget_button_insight"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginStart="4dp"
+      android:background="@drawable/widget_button_background"
+      android:gravity="center"
+      android:paddingTop="8dp"
+      android:paddingBottom="8dp"
+      android:text="💡 הוסף תובנה"
+      android:textSize="12sp"
+      android:textColor="#333333" />
+
+  </LinearLayout>
+
+</LinearLayout>

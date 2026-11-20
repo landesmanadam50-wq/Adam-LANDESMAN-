@@ -1,0 +1,30 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!--
+      Unified Emotional Check-In and Task Postponement System,
+      section 2: a genuine native Android Home Screen Widget —
+      AppWidgetProvider is a plain BroadcastReceiver the launcher binds
+      to; this one <receiver> entry (merged into the app's own
+      manifest by Expo's local-module autolinking, the exact same
+      mechanism modules/floating-timer-overlay already uses for its
+      own <service> entry) is the WHOLE registration a widget needs —
+      no Activity, no Service, no separate "widget host" of our own.
+      android:exported="true" is REQUIRED for a widget provider (the
+      launcher, a different app/process, must be able to deliver the
+      APPWIDGET_UPDATE broadcast to it) — never a security concern
+      here, since this receiver only ever reads its own static layout/
+      intent configuration, never any trainee data.
+    -->
+    <receiver
+      android:name=".EmotionalCheckInWidgetProvider"
+      android:exported="true"
+      android:label="ARCHI -- איך אתה מרגיש?">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/emotional_checkin_widget_info" />
+    </receiver>
+  </application>
+</manifest>
