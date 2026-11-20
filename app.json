@@ -47,7 +47,15 @@
           ]
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "reactNativeArchitectures": ["arm64-v8a"]
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
