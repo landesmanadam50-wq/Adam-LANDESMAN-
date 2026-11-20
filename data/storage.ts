@@ -120,6 +120,7 @@ import { upsertArcGymGoalInList, upsertArcGymGoalObjectiveInList } from "../arc/
 import type { ArcFocusExercise } from "../arc/arcFocusExercise.ts";
 import { upsertArcFocusExerciseInList } from "../arc/arcFocusExercise.ts";
 import type { ArcGymMemoryCheckInProgress } from "../arc/arcGymMemoryCheckInProgress.ts";
+import type { ArcDecisionSession } from "../arc/arcDecision.ts";
 import type { ArcLearningTopic } from "../arc/arcLearningTopic.ts";
 import { normalizeArcLearningTopic, upsertArcLearningTopicInList } from "../arc/arcLearningTopic.ts";
 import type { ArcLearningInsight } from "../arc/arcLearningInsight.ts";
@@ -3550,6 +3551,54 @@ export async function saveArcGymMemoryCheckInProgress(progress: ArcGymMemoryChec
 
 export async function clearArcGymMemoryCheckInProgress(): Promise<void> {
   await AsyncStorage.removeItem(ARC_GYM_MEMORY_CHECK_IN_PROGRESS_KEY);
+}
+
+// ---------------------------------------------------------------------------
+// ARC Decision -- "קבלת החלטות": single resumable in-progress slot (mirroring
+// loadArcFocusSession's own convention -- at most one ARC Decision flow is
+// ever in flight, whichever entry point started it) + an append-only history
+// of completed sessions, for the data-retention checklist in arc/arcDecision.ts.
+// ---------------------------------------------------------------------------
+
+const ARC_DECISION_IN_PROGRESS_KEY = "archi.arcDecisionInProgress.v1";
+
+export async function loadArcDecisionInProgress(): Promise<ArcDecisionSession | null> {
+  const raw = await AsyncStorage.getItem(ARC_DECISION_IN_PROGRESS_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ArcDecisionSession;
+  } catch {
+    console.warn("[storage] Stored ArcDecisionSession is not valid JSON -- treating as no session in progress rather than crashing.");
+    return null;
+  }
+}
+
+export async function saveArcDecisionInProgress(session: ArcDecisionSession): Promise<void> {
+  await AsyncStorage.setItem(ARC_DECISION_IN_PROGRESS_KEY, JSON.stringify(session));
+}
+
+export async function clearArcDecisionInProgress(): Promise<void> {
+  await AsyncStorage.removeItem(ARC_DECISION_IN_PROGRESS_KEY);
+}
+
+const ARC_DECISION_HISTORY_KEY = "archi.arcDecisionHistory.v1";
+
+export async function loadArcDecisionHistory(): Promise<ArcDecisionSession[]> {
+  const raw = await AsyncStorage.getItem(ARC_DECISION_HISTORY_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcDecisionSession[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored ArcDecisionHistory is not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+/** Appends a completed session's own final record -- called once, right after completeArcDecisionSession, never before. */
+export async function recordArcDecisionHistory(session: ArcDecisionSession): Promise<void> {
+  const history = await loadArcDecisionHistory();
+  await AsyncStorage.setItem(ARC_DECISION_HISTORY_KEY, JSON.stringify([...history, session]));
 }
 
 // ============================================================

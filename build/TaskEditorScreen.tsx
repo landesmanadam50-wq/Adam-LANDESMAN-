@@ -55,15 +55,20 @@ export default function TaskEditorScreen({
   id,
   occurrenceDate = null,
   initialScheduledDate = null,
+  initialTitle = null,
 }: {
   id: string;
   occurrenceDate?: string | null;
   /** Weekly & Daily Routine Redesign task: prefills a brand-new task's own scheduledDate -- e.g. the Flexible Daily Routine's own "+ משימה" direct-add action, for the exact date it was pressed from. Never applies to an EXISTING task (reload() below always overwrites the draft from that task's own real data once it loads), and ignored entirely once `id` isn't "new". */
   initialScheduledDate?: string | null;
+  /** ARC Decision task: prefills a brand-new task's own title from a chosen decision option -- e.g. ARC Gym's own "הפוך את ההחלטה למשימה" action. Same isNew-only, never-auto-saves rule as initialScheduledDate above -- the trainee still has to review/confirm and explicitly press "יצירת משימה". */
+  initialTitle?: string | null;
 }) {
   const isNew = id === "new";
   const [existingTask, setExistingTask] = useState<Task | null>(null);
-  const [draft, setDraft] = useState<TaskDraft>(() => (isNew && initialScheduledDate ? { ...createEmptyTaskDraft(), scheduledDate: initialScheduledDate } : createEmptyTaskDraft()));
+  const [draft, setDraft] = useState<TaskDraft>(() =>
+    isNew ? { ...createEmptyTaskDraft(), ...(initialScheduledDate ? { scheduledDate: initialScheduledDate } : {}), ...(initialTitle ? { title: initialTitle } : {}) } : createEmptyTaskDraft()
+  );
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [arcGoals, setArcGoals] = useState<ArcGoal[]>([]);
   const [arcBuilds, setArcBuilds] = useState<ArcBuild[]>([]);

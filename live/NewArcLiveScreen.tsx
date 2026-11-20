@@ -324,7 +324,14 @@ import {
   upsertArcGymTrainingRecordEntry,
   upsertPlannedArc,
   upsertTask,
+  loadArcDecisionInProgress,
+  saveArcDecisionInProgress,
+  clearArcDecisionInProgress,
+  recordArcDecisionHistory,
 } from "../data/storage.ts";
+import ArcDecisionFlow from "./components/ArcDecisionFlow.tsx";
+import { createArcDecisionSession, completeArcDecisionSession } from "../arc/arcDecision.ts";
+import type { ArcDecisionOption, ArcDecisionSession } from "../arc/arcDecision.ts";
 // ARCHI -- ARC Result: Automatic, Optional Suggestion Without Extra
 // Shortcuts task, section 3: the one shared check every post-ARC
 // completion path uses before resolving its own destination -- never
@@ -473,6 +480,49 @@ export default function NewArcLiveScreen({
     if (!trimmed) return;
     savePersonalName(trimmed);
     setPersonalName(trimmed);
+  }
+  /**
+   * ARC Decision task: an inline overlay, never a navigation away from
+   * this screen -- "אני לא יודע" (renderActionSelector() below) opens
+   * it, replacing only the action-selection sub-UI; canceling or
+   * finishing just clears this local state, so the ARC session itself
+   * (taskId/firstAction/taskTitle/timers) is never touched by any of
+   * it except the one, final setSelectedAction call on finish. Resumed
+   * on focus from the single in-progress slot, scoped to THIS exact ARC
+   * session (arcSessionId === taskId) so a stale decision left over
+   * from a different task's session is never restored here.
+   */
+  const [arcDecisionSession, setArcDecisionSession] = useState<ArcDecisionSession | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      loadArcDecisionInProgress().then((progress) => {
+        if (progress && progress.source === "arc" && progress.arcSessionId === taskId && !progress.completedAt) {
+          setArcDecisionSession(progress);
+        }
+      });
+    }, [taskId])
+  );
+  function startArcDecision() {
+    const created = createArcDecisionSession("arc", taskId, session!.isActiveTaskLiveOrigin ? taskId : null, now);
+    saveArcDecisionInProgress(created);
+    setArcDecisionSession(created);
+  }
+  function handleArcDecisionChange(next: ArcDecisionSession) {
+    saveArcDecisionInProgress(next);
+    setArcDecisionSession(next);
+  }
+  function handleArcDecisionCancel() {
+    clearArcDecisionInProgress();
+    setArcDecisionSession(null);
+  }
+  function handleArcDecisionFinish(decisionSession: ArcDecisionSession, chosenOption: ArcDecisionOption) {
+    const completed = completeArcDecisionSession(decisionSession, now);
+    recordArcDecisionHistory(completed);
+    clearArcDecisionInProgress();
+    setArcDecisionSession(null);
+    const availableMinutes = resolveMinutesUntilNextTask(dailyPlanEntries, taskId, new Date());
+    const clampedDuration = availableMinutes !== null ? Math.max(1, Math.min(10, availableMinutes)) : 10;
+    commit(setSelectedAction(session!, { source: "temporaryAction", title: chosenOption.text, durationMinutes: clampedDuration }, now));
   }
   const [conflict, setConflict] = useState<ArcSessionConflict | null>(null);
   const [draftText, setDraftText] = useState("");
@@ -1583,6 +1633,23 @@ export default function NewArcLiveScreen({
   // (action_selection/mini_action_selection being permanently
   // unreachable), never a separate screen.
   function renderActionSelector() {
+    // ARC Decision task: an inline overlay, replacing only this
+    // sub-UI -- the trainee's active task/firstAction/session context
+    // above never changes while this is shown (see arcDecisionSession's
+    // own doc, near its useState declaration). Canceling or finishing
+    // both clear this overlay and fall back to the exact same picker
+    // below, never a navigation away from this screen.
+    if (arcDecisionSession) {
+      return (
+        <ArcDecisionFlow
+          session={arcDecisionSession}
+          onChange={handleArcDecisionChange}
+          onCancel={handleArcDecisionCancel}
+          finishLabel="המשך"
+          onFinish={handleArcDecisionFinish}
+        />
+      );
+    }
     const nowDate = new Date();
     const candidates = dailyPlanEntries.filter((entry) => entry.task.id !== taskId && !entry.isCompletedToday && entry.task.status !== "archived");
     const dueEntry = resolveNextScheduledTaskAfter(dailyPlanEntries, taskId);
@@ -1661,6 +1728,15 @@ export default function NewArcLiveScreen({
             <Text style={styles.primaryButtonText}>המשך עם הפעולה הזו</Text>
           </Pressable>
         </View>
+        {/*
+         * ARCHI -- ARC Decision task: "בלחיצה עליו, ייפתח ARC Decision"
+         * -- offered alongside the existing options above, never
+         * replacing them. Opens the shared flow inline (see the
+         * arcDecisionSession check at the top of this function).
+         */}
+        <Pressable style={styles.secondaryButton} onPress={startArcDecision}>
+          <Text style={styles.secondaryButtonText}>אני לא יודע</Text>
+        </Pressable>
       </View>
     );
   }
@@ -3496,32 +3572,42 @@ export default function NewArcLiveScreen({
 
         {renderBody()}
 
-        <View style={styles.navRow}>
-          {previous && (
-            <Pressable
-              onPress={() => {
-                // Nine Functional Improvements task, Improvement 3:
-                // going back from the timer phase (subIndex 1) to
-                // re-pick the action (subIndex 0) discards any
-                // in-flight internal-action timer -- it belonged to the
-                // action being abandoned, never silently resumed
-                // against whatever gets picked next.
-                if (session!.currentStep === "emotional_action" && session!.subIndex === 1) {
-                  clearInternalActionTimerRun();
-                  setInternalActionRun(null);
-                }
-                commit(goBack(session, now));
-              }}
-            >
-              <Text style={styles.linkText}>חזרה</Text>
-            </Pressable>
-          )}
-          {skippable && (
-            <Pressable onPress={() => commit(advanceWithSkip(session, now))}>
-              <Text style={styles.linkText}>דלג</Text>
-            </Pressable>
-          )}
-        </View>
+        {/*
+         * ARC Decision task: while the inline overlay is showing, its
+         * OWN back/cancel controls (live/components/ArcDecisionFlow.tsx)
+         * are the only navigation on screen -- the generic ARC step
+         * back/skip below must stay hidden, since "חזרה" here would
+         * otherwise step the underlying ARC session itself backward
+         * (goBack), which is never what the overlay's own "חזרה" means.
+         */}
+        {!arcDecisionSession && (
+          <View style={styles.navRow}>
+            {previous && (
+              <Pressable
+                onPress={() => {
+                  // Nine Functional Improvements task, Improvement 3:
+                  // going back from the timer phase (subIndex 1) to
+                  // re-pick the action (subIndex 0) discards any
+                  // in-flight internal-action timer -- it belonged to the
+                  // action being abandoned, never silently resumed
+                  // against whatever gets picked next.
+                  if (session!.currentStep === "emotional_action" && session!.subIndex === 1) {
+                    clearInternalActionTimerRun();
+                    setInternalActionRun(null);
+                  }
+                  commit(goBack(session, now));
+                }}
+              >
+                <Text style={styles.linkText}>חזרה</Text>
+              </Pressable>
+            )}
+            {skippable && (
+              <Pressable onPress={() => commit(advanceWithSkip(session, now))}>
+                <Text style={styles.linkText}>דלג</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       {/*

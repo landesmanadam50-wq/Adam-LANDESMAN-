@@ -850,7 +850,7 @@ test("checkpoint (never a separate 'internal action' concept, never duplicate ti
 });
 
 test("checkpoint (going back discards the abandoned action's own timer): the shared 'חזרה' button clears the persisted internal-action run before calling goBack whenever it is leaving emotional_action's own subIndex 1", () => {
-  const backIndex = screen.indexOf('onPress={() => {\n                // Nine Functional Improvements task, Improvement 3:');
+  const backIndex = screen.indexOf('onPress={() => {\n                  // Nine Functional Improvements task, Improvement 3:');
   assert.ok(backIndex >= 0);
   const backBody = screen.slice(backIndex, backIndex + 700);
   assert.ok(backBody.includes('session!.currentStep === "emotional_action" && session!.subIndex === 1'));

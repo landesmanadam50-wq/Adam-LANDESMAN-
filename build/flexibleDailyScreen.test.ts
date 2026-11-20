@@ -126,7 +126,8 @@ test("'+ משימה' opens the shared task editor directly, prefilled with THIS 
 test("'+ משימה' prefills the task editor's own new-task draft via initialScheduledDate, so a task added from a specific date starts correctly scheduled there", () => {
   const editorScreen = readSource("build/TaskEditorScreen.tsx");
   assert.match(editorScreen, /initialScheduledDate\s*=\s*null/);
-  assert.ok(editorScreen.includes("isNew && initialScheduledDate"));
+  assert.ok(editorScreen.includes("isNew ? { ...createEmptyTaskDraft()"));
+  assert.ok(editorScreen.includes("initialScheduledDate ? { scheduledDate: initialScheduledDate }"));
   const editRoute = readSource("app/tasks/[id]/edit.tsx");
   assert.ok(editRoute.includes("scheduledDate"));
   assert.ok(editRoute.includes("initialScheduledDate={scheduledDate ?? null}"));

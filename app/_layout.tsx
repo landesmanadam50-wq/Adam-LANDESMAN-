@@ -129,6 +129,7 @@ export default function RootLayout() {
             scheduled task's own settings, via ?taskId=) -- see
             arc/arcFocusSession.ts's own module doc. */}
         <Stack.Screen name="arc-gym/arc-focus" options={{ title: "ARC Focus" }} />
+        <Stack.Screen name="arc-gym/decision" options={{ title: "ARC Decision" }} />
         {/* ARC Learning + ARC Creativity + Integrated Spaced Repetition
             task: ARC Learning is a fully independent system from ARC
             Gym/ARC Goal, reached only from its own home card (never

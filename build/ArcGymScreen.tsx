@@ -69,6 +69,17 @@ export default function ArcGymScreen() {
           <Text style={styles.arcFocusLinkText}>🎯 ARC Focus</Text>
         </Pressable>
 
+        {/*
+         * ARC Decision task: a fifth, independent ARC GYM exercise type
+         * -- a short decision-making tool, reached only from here (and
+         * from the "אני לא יודע" button inside ARC LIVE's own
+         * action-selection step), same precedent as Memory/Result/Focus
+         * above.
+         */}
+        <Pressable style={styles.decisionLinkCard} onPress={() => router.push("/arc-gym/decision")}>
+          <Text style={styles.decisionLinkText}>🤔 ARC Decision — קבלת החלטות</Text>
+        </Pressable>
+
         {behaviors === null && <Text style={styles.hint}>טוען...</Text>}
 
         {behaviors !== null && behaviors.length === 0 && (
@@ -107,8 +118,10 @@ const styles = StyleSheet.create({
   memoryLinkText: { color: "#7B1FA2", fontSize: 15, fontWeight: "600", textAlign: "right" },
   resultLinkCard: { borderWidth: 1, borderColor: "#B8860B", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 12 },
   resultLinkText: { color: "#B8860B", fontSize: 15, fontWeight: "600", textAlign: "right" },
-  arcFocusLinkCard: { borderWidth: 1, borderColor: "#1565C0", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 20 },
+  arcFocusLinkCard: { borderWidth: 1, borderColor: "#1565C0", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 12 },
   arcFocusLinkText: { color: "#1565C0", fontSize: 15, fontWeight: "600", textAlign: "right" },
+  decisionLinkCard: { borderWidth: 1, borderColor: "#2E7D32", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 20 },
+  decisionLinkText: { color: "#2E7D32", fontSize: 15, fontWeight: "600", textAlign: "right" },
   question: { fontSize: 16, fontWeight: "700", textAlign: "right", marginBottom: 12 },
   chipColumn: { gap: 10 },
   optionCard: { borderWidth: 1, borderColor: "#0a7ea4", borderRadius: 12, padding: 16, alignItems: "flex-end" },
