@@ -4,7 +4,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
 import type { ArcResultExercise } from "../arc/arcResult.ts";
-import { loadArcResultExercises } from "../data/storage.ts";
+import { loadArcResultExercises, loadPositiveMemories, loadPositiveMemorySelectionHistory, savePositiveMemorySelectionHistory } from "../data/storage.ts";
+// Positive Memory, Success Recall & Quick Capture task, section 9: the
+// SAME reusable selection engine encoding's own visualization uses,
+// with its success-based ranking strategy -- never a second,
+// independently-written matcher.
+import { selectPositiveMemoryForTaskSuccess } from "../arc/positiveMemorySelection.ts";
+import type { PositiveMemory } from "../arc/positiveMemory.ts";
+import { recordPositiveMemorySelection } from "../arc/positiveMemorySelectionHistory.ts";
 
 /**
  * live/ArcResultPracticeScreen.tsx (route /arc-result-practice/[id])
@@ -44,12 +51,58 @@ export default function ArcResultPracticeScreen({
   origin?: "arc-gym" | null;
 }) {
   const [exercise, setExercise] = useState<ArcResultExercise | null>(null);
+  /**
+   * Positive Memory, Success Recall & Quick Capture task, section 9
+   * ("automatic success selection in ARC Success"): a real, previously
+   * documented success relevant to this exercise's own linked task --
+   * additive, never replacing any of the four existing fields above.
+   * Defaults to inert/null, so an exercise reached with no linked task
+   * (taskId null) or with no relevant documented success renders this
+   * screen exactly as before.
+   */
+  const [pastSuccessMemory, setPastSuccessMemory] = useState<PositiveMemory | null>(null);
+  const [pastSuccessDismissed, setPastSuccessDismissed] = useState(false);
+  const [pastSuccessExcludedIds, setPastSuccessExcludedIds] = useState<string[]>([]);
 
   useFocusEffect(
     useCallback(() => {
       loadArcResultExercises().then((exercises) => setExercise(exercises.find((candidate) => candidate.id === id) ?? null));
-    }, [id])
+      setPastSuccessDismissed(false);
+      setPastSuccessExcludedIds([]);
+      if (!taskId) {
+        setPastSuccessMemory(null);
+        return;
+      }
+      (async () => {
+        const [memories, history] = await Promise.all([loadPositiveMemories(), loadPositiveMemorySelectionHistory()]);
+        const picked = selectPositiveMemoryForTaskSuccess(memories, taskId, {}, history, []);
+        setPastSuccessMemory(picked);
+        if (picked) {
+          const updatedHistory = recordPositiveMemorySelection(history, picked.id, "arc_success", taskId, new Date().toISOString());
+          await savePositiveMemorySelectionHistory(updatedHistory);
+        }
+      })();
+    }, [id, taskId])
   );
+
+  /** "הצלחה אחרת": re-selects among real, non-fabricated past successes, never inventing one. */
+  const handlePastSuccessAnother = useCallback(async () => {
+    if (!taskId || !pastSuccessMemory) return;
+    const [memories, history] = await Promise.all([loadPositiveMemories(), loadPositiveMemorySelectionHistory()]);
+    const excludeIds = [...pastSuccessExcludedIds, pastSuccessMemory.id];
+    const picked = selectPositiveMemoryForTaskSuccess(memories, taskId, {}, history, excludeIds);
+    setPastSuccessExcludedIds(excludeIds);
+    setPastSuccessMemory(picked);
+    if (picked) {
+      const updatedHistory = recordPositiveMemorySelection(history, picked.id, "arc_success", taskId, new Date().toISOString());
+      await savePositiveMemorySelectionHistory(updatedHistory);
+    }
+  }, [taskId, pastSuccessMemory, pastSuccessExcludedIds]);
+
+  /** "דלג": only ever dismisses this additive block -- the original ARC Success practice below continues completely unaffected. */
+  const handlePastSuccessSkip = useCallback(() => {
+    setPastSuccessDismissed(true);
+  }, []);
 
   function finish() {
     if (origin === "arc-gym") {
@@ -76,6 +129,27 @@ export default function ArcResultPracticeScreen({
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
+        {pastSuccessMemory && !pastSuccessDismissed && (
+          <View style={styles.pastSuccessCard}>
+            <Text style={styles.pastSuccessPrompt}>דמיין את הרגע שבו הצלחת לבצע את הפעולה הזאת בעבר.</Text>
+            <Text style={styles.pastSuccessTitle}>{pastSuccessMemory.title}</Text>
+            {pastSuccessMemory.successDescription?.trim() ? <Text style={styles.pastSuccessDetail}>{pastSuccessMemory.successDescription}</Text> : null}
+            {(pastSuccessMemory.location && pastSuccessMemory.location.trim()) || pastSuccessMemory.occurredAt.trim() ? (
+              <Text style={styles.pastSuccessDetail}>
+                {[pastSuccessMemory.location, pastSuccessMemory.occurredAt].filter((part): part is string => !!part && part.trim().length > 0).join(" -- ")}
+              </Text>
+            ) : null}
+            {pastSuccessMemory.whatWasSpecial.trim() ? <Text style={styles.pastSuccessDetail}>{pastSuccessMemory.whatWasSpecial}</Text> : null}
+            <View style={styles.pastSuccessActions}>
+              <Pressable style={styles.secondaryButton} onPress={handlePastSuccessAnother}>
+                <Text style={styles.secondaryButtonText}>הצלחה אחרת</Text>
+              </Pressable>
+              <Pressable style={styles.secondaryButton} onPress={handlePastSuccessSkip}>
+                <Text style={styles.secondaryButtonText}>דלג</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
         <Text style={styles.sectionLabel}>נקודת מיקוד</Text>
         <Text style={styles.sectionText}>{exercise.focusPoint}</Text>
 
@@ -120,4 +194,11 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   gymHomeButton: { borderWidth: 1, borderColor: "#0a7ea4", paddingVertical: 16, borderRadius: 12, alignItems: "center", marginTop: 12 },
   gymHomeButtonText: { color: "#0a7ea4", fontWeight: "700", fontSize: 16 },
+  pastSuccessCard: { backgroundColor: "#FFF8E1", borderRadius: 14, padding: 20, marginBottom: 12 },
+  pastSuccessPrompt: { fontSize: 17, fontWeight: "700", textAlign: "right", color: "#333", marginBottom: 10 },
+  pastSuccessTitle: { fontSize: 16, fontWeight: "600", textAlign: "right", color: "#333", marginBottom: 6 },
+  pastSuccessDetail: { fontSize: 14, textAlign: "right", color: "#555", marginBottom: 6 },
+  pastSuccessActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 14 },
+  secondaryButton: { borderWidth: 1, borderColor: "#0a7ea4", paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, alignItems: "center" },
+  secondaryButtonText: { color: "#0a7ea4", fontSize: 15 },
 });

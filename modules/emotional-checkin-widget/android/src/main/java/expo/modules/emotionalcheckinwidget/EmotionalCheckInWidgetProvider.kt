@@ -50,6 +50,7 @@ class EmotionalCheckInWidgetProvider : AppWidgetProvider() {
     private const val REQUEST_CODE_NEXT_TASK_ACTION = 1005
     private const val REQUEST_CODE_INSIGHT = 1006
     private const val REQUEST_CODE_ADD_TASK = 1007
+    private const val REQUEST_CODE_POSITIVE_EVENT = 1008
 
     /**
      * Called by EmotionalCheckInWidgetModule.update() -- persists the
@@ -130,6 +131,11 @@ class EmotionalCheckInWidgetProvider : AppWidgetProvider() {
       // same convention as the insight button right next to it.
       views.setOnClickPendingIntent(R.id.widget_button_add_task, buildAddTaskPendingIntent(context))
 
+      // Positive Memory, Success Recall & Quick Capture task, section
+      // 3B: "✨ הוסף אירוע חיובי" -- always available, idle or
+      // active/paused alike, same convention as the insight button.
+      views.setOnClickPendingIntent(R.id.widget_button_positive_event, buildPositiveEventPendingIntent(context, state.taskId))
+
       return views
     }
 
@@ -173,6 +179,24 @@ class EmotionalCheckInWidgetProvider : AppWidgetProvider() {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }
       return PendingIntent.getActivity(context, REQUEST_CODE_INSIGHT, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
+    /**
+     * Positive Memory, Success Recall & Quick Capture task, section 3B:
+     * "✨ הוסף אירוע חיובי" -- while active/paused, deep-links with
+     * addPositiveEvent=1 so Task LIVE opens the documentation entry
+     * screen with this task's own id as its return context; while
+     * idle, opens the entry screen directly -- the SAME destination
+     * convention as buildInsightPendingIntent above / the cube's own
+     * openAddPositiveEvent().
+     */
+    private fun buildPositiveEventPendingIntent(context: Context, taskId: String): PendingIntent {
+      val uri = if (taskId.isEmpty()) "archi://positive-memories/new" else "archi://tasks/$taskId?addPositiveEvent=1"
+      val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+        setPackage(context.packageName)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      return PendingIntent.getActivity(context, REQUEST_CODE_POSITIVE_EVENT, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
     /**

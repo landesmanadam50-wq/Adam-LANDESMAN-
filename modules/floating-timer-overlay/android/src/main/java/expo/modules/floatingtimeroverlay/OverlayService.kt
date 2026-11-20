@@ -160,6 +160,10 @@ class OverlayService : Service() {
     // Timer task: the SAME source-level debounce discipline as every
     // other tappable region above, for the new "🏋️ ARC Gym" shortcut.
     private const val ARC_GYM_OPEN_DEBOUNCE_MS = 1500L
+    // Positive Memory, Success Recall & Quick Capture task, section 3A:
+    // the SAME source-level debounce discipline, for the new "✨ הוסף
+    // אירוע חיובי" shortcut.
+    private const val ADD_POSITIVE_EVENT_TAP_DEBOUNCE_MS = 1500L
   }
 
   private val handler = Handler(Looper.getMainLooper())
@@ -200,6 +204,10 @@ class OverlayService : Service() {
   // threading taskId through its deep link, since opening ARC Gym must
   // never touch the active task/timer in any way.
   private var arcGymView: TextView? = null
+  // Positive Memory, Success Recall & Quick Capture task, section 3A:
+  // the same precedent as insightView/arcGymView above -- "✨ הוסף
+  // אירוע חיובי," always available, both idle and active/paused.
+  private var positiveEventView: TextView? = null
   // ARCHI -- Collapsible and Expandable Modes task: `pillView` is the
   // tiny collapsed-mode summary (timer or next-task time); `expandedContentView`
   // wraps EVERYTHING this task already built (the collapse button's own
@@ -218,6 +226,7 @@ class OverlayService : Service() {
   private var lastNextTaskTapAtMs: Long = 0L
   private var lastInsightTapAtMs: Long = 0L
   private var lastArcGymOpenAtMs: Long = 0L
+  private var lastPositiveEventTapAtMs: Long = 0L
 
   private var taskId: String = ""
   private var title: String = ""
@@ -789,6 +798,16 @@ class OverlayService : Service() {
         setPadding(10, 8, 10, 8)
       }
 
+      // --- Positive Memory, Success Recall & Quick Capture task,
+      // section 3A: "✨ הוסף אירוע חיובי" -- same row style as
+      // insightTextView, always available idle or active/paused.
+      val positiveEventTextView = TextView(this).apply {
+        text = "✨ הוסף אירוע חיובי"
+        setTextColor(Color.WHITE)
+        textSize = 12f
+        setPadding(10, 8, 10, 8)
+      }
+
       // --- Collapsible and Expandable Modes task: a clearly visible
       // collapse button, its own distinct row at the TOP of the
       // expanded panel (so it's the first thing seen, never buried
@@ -820,6 +839,7 @@ class OverlayService : Service() {
         addView(nextTaskSection)
         addView(insightTextView)
         addView(arcGymTextView)
+        addView(positiveEventTextView)
       }
 
       // --- Collapsible and Expandable Modes task: the collapsed-mode
@@ -894,6 +914,7 @@ class OverlayService : Service() {
         nextTaskActionTextView,
         insightTextView,
         arcGymTextView,
+        positiveEventTextView,
         collapseButtonTextView,
         urgeTextView,
         params
@@ -913,6 +934,7 @@ class OverlayService : Service() {
       nextTaskActionView = nextTaskActionTextView
       insightView = insightTextView
       arcGymView = arcGymTextView
+      positiveEventView = positiveEventTextView
       pillView = pillTextView
       expandedContentView = expandedContent
       collapseButtonView = collapseButtonTextView
@@ -943,6 +965,7 @@ class OverlayService : Service() {
       nextTaskActionView = null
       insightView = null
       arcGymView = null
+      positiveEventView = null
       pillView = null
       expandedContentView = null
       collapseButtonView = null
@@ -1006,6 +1029,7 @@ class OverlayService : Service() {
     nextTaskActionView: View,
     insightView: View,
     arcGymView: View,
+    positiveEventView: View,
     collapseButtonView: View,
     urgeView: View,
     params: WindowManager.LayoutParams
@@ -1022,6 +1046,7 @@ class OverlayService : Service() {
     var downOnNextTaskAction = false
     var downOnInsight = false
     var downOnArcGym = false
+    var downOnPositiveEvent = false
     var downOnCollapseButton = false
     var downOnUrge = false
 
@@ -1041,6 +1066,7 @@ class OverlayService : Service() {
           downOnNextTaskAction = isPointInsideView(view, nextTaskActionView, event.x, event.y)
           downOnInsight = isPointInsideView(view, insightView, event.x, event.y)
           downOnArcGym = isPointInsideView(view, arcGymView, event.x, event.y)
+          downOnPositiveEvent = isPointInsideView(view, positiveEventView, event.x, event.y)
           downOnCollapseButton = isPointInsideView(view, collapseButtonView, event.x, event.y)
           downOnUrge = isPointInsideView(view, urgeView, event.x, event.y)
           true
@@ -1096,6 +1122,8 @@ class OverlayService : Service() {
             openAddInsight()
           } else if (downOnArcGym) {
             openArcGym()
+          } else if (downOnPositiveEvent) {
+            openAddPositiveEvent()
           } else {
             openTaskLive()
           }
@@ -1299,6 +1327,32 @@ class OverlayService : Service() {
     if (now - lastInsightTapAtMs < ADD_INSIGHT_TAP_DEBOUNCE_MS) return
     lastInsightTapAtMs = now
     val uri = if (taskId.isEmpty()) "archi://insights/new" else "archi://tasks/$taskId?addInsight=1"
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+      setPackage(packageName)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+      startActivity(intent)
+    } catch (_: Exception) {
+      // No matching activity to resolve to -- nothing more this side can do.
+    }
+  }
+
+  /**
+   * Positive Memory, Success Recall & Quick Capture task, section 3A:
+   * "✨ הוסף אירוע חיובי" -- the exact same destination convention as
+   * openAddInsight() right above: while a task is active/paused,
+   * deep-links into Task LIVE with addPositiveEvent=1 so
+   * live/ActiveTaskScreen.tsx can open the documentation entry screen
+   * WITH this task's own id as its return context (never finishing,
+   * canceling, resetting or restarting the active task/timer); while
+   * idle, opens the entry screen directly with no task context.
+   */
+  private fun openAddPositiveEvent() {
+    val now = System.currentTimeMillis()
+    if (now - lastPositiveEventTapAtMs < ADD_POSITIVE_EVENT_TAP_DEBOUNCE_MS) return
+    lastPositiveEventTapAtMs = now
+    val uri = if (taskId.isEmpty()) "archi://positive-memories/new" else "archi://tasks/$taskId?addPositiveEvent=1"
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
       setPackage(packageName)
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

@@ -139,6 +139,7 @@ export default function ActiveTaskScreen({
   completeStage = false,
   nextTask = false,
   addInsight = false,
+  addPositiveEvent = false,
 }: {
   taskId: string;
   autoStart?: boolean;
@@ -149,6 +150,8 @@ export default function ActiveTaskScreen({
   nextTask?: boolean;
   /** ARCHI -- Unified Floating Overlay & Mini ARC Improvements task: the unified floating panel's own "💡 הוסף תובנה" button, while a task session is active/paused, deep-links here with addInsight=1 -- opens the existing insight editor with this task as its return context, never a second insight editor. */
   addInsight?: boolean;
+  /** Positive Memory, Success Recall & Quick Capture task, section 3A: the floating cube's/Android widget's own "✨ הוסף אירוע חיובי" button, while a task session is active/paused, deep-links here with addPositiveEvent=1 -- opens the positive-event documentation entry screen with this task as its return context, never finishing/canceling/resetting the active task or timer. */
+  addPositiveEvent?: boolean;
 }) {
   const [task, setTask] = useState<Task | null>(null);
   /**
@@ -422,6 +425,19 @@ export default function ActiveTaskScreen({
       router.push({ pathname: "/insights/new", params: { returnToTaskId: task.id } });
       return;
     }
+    // Positive Memory, Success Recall & Quick Capture task, section 3A:
+    // the SAME convention as addInsight right above -- the floating
+    // cube's/Android widget's own "✨ הוסף אירוע חיובי" button, while a
+    // task session is active/paused, opens the documentation entry
+    // screen with this task's own id as its return context. Never
+    // pauses/touches the timer: the entry screen only asks which event
+    // type to document, exactly like the insight editor's own
+    // instantaneous-write assumption above.
+    if (addPositiveEvent) {
+      autoActionConsumed.current = true;
+      router.push({ pathname: "/positive-memories/new", params: { returnToTaskId: task.id } });
+      return;
+    }
     if (timerRun || restRun) {
       autoActionConsumed.current = true;
       return;
@@ -443,7 +459,7 @@ export default function ActiveTaskScreen({
       // fully intact and still reachable from inside this same flow.
       router.push({ pathname: "/tasks/[id]/postpone-obstacle", params: { id: taskId } });
     }
-  }, [task, timerRun, restRun, autoStart, openPostpone, needArc, completeStage, nextTask, addInsight, taskId]);
+  }, [task, timerRun, restRun, autoStart, openPostpone, needArc, completeStage, nextTask, addInsight, addPositiveEvent, taskId]);
 
   if (!task) {
     return (

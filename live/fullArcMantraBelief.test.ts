@@ -60,7 +60,7 @@ test("Full ARC's 'encoding' case renders ArcBodyMantraCircle and persists the au
 test("Unified ARC & Productivity Update task, requirement 4: Mini ARC's own 'mini_encoding' case still exists as its own distinct step, but its free-text mantra/belief inputs are gone -- it now persists the SAME auto-computed resolveEncodingMantra Full ARC's own encoding step uses, preserving (never inventing) any legacy miniBeliefText already on the session", () => {
   const caseIndex = screen.indexOf('case "mini_encoding":');
   assert.ok(caseIndex !== -1, "mini_encoding must still exist as its own distinct case");
-  const caseBody = screen.slice(caseIndex, caseIndex + 600);
+  const caseBody = screen.slice(caseIndex, caseIndex + 900);
   assert.ok(!caseBody.includes('placeholder="מנטרה אישית'), "the free-text mantra input is gone");
   assert.ok(!caseBody.includes('placeholder="אמונה לתרגול'), "the free-text belief input is gone");
   assert.ok(caseBody.includes('setMiniEncoding(session!, resolveEncodingMantra(session!), session!.miniBeliefText ?? "", now)'));

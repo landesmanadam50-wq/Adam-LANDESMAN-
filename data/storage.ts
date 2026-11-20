@@ -133,6 +133,13 @@ import { normalizeArcCreativityReviewSchedule, recordArcCreativityRecall, upsert
 import type { ArcRecallRating } from "../arc/spacedRepetition.ts";
 import type { ManifestGoal } from "../arc/manifestGoals.ts";
 import { upsertManifestGoalInList } from "../arc/manifestGoals.ts";
+import type { PositiveMemory } from "../arc/positiveMemory.ts";
+import { normalizePositiveMemory, upsertPositiveMemoryInList } from "../arc/positiveMemory.ts";
+import type { PositiveMemoryDraft } from "../arc/positiveMemoryDraft.ts";
+import { finalizePositiveMemoryDraft, normalizePositiveMemoryDraft, upsertPositiveMemoryDraftInList } from "../arc/positiveMemoryDraft.ts";
+import type { PositiveMemorySelectionHistoryEntry } from "../arc/positiveMemorySelectionHistory.ts";
+import { upsertLastEncodingFeeling } from "../arc/lastEncodingFeeling.ts";
+import type { LastEncodingFeelingRecord } from "../arc/lastEncodingFeeling.ts";
 import type { DailyVisualizationDailyProgress, DailyVisualizationProfile } from "../arc/dailyVisualization.ts";
 import { normalizeDailyVisualizationDailyProgress, normalizeDailyVisualizationProfile } from "../arc/dailyVisualization.ts";
 import type { ArcFocusSettings } from "../arc/arcFocusSettings.ts";
@@ -3799,4 +3806,132 @@ export async function saveArcCreativityRecallSessionProgress(progress: ArcCreati
 
 export async function clearArcCreativityRecallSessionProgress(): Promise<void> {
   await AsyncStorage.removeItem(ARC_CREATIVITY_RECALL_SESSION_PROGRESS_KEY);
+}
+
+/**
+ * Positive Memory, Success Recall & Quick Capture task, Stage A: the
+ * ONE persistent library of finalized positive memories -- section 7's
+ * own "an automatically saved draft is not a completed positive
+ * memory" is why drafts live in a completely separate collection
+ * (below) that this loader never touches.
+ */
+const POSITIVE_MEMORIES_KEY = "archi.positiveMemories.v1";
+
+export async function loadPositiveMemories(): Promise<PositiveMemory[]> {
+  const raw = await AsyncStorage.getItem(POSITIVE_MEMORIES_KEY);
+  if (!raw) return [];
+  const now = new Date().toISOString();
+  try {
+    const parsed = JSON.parse(raw) as PositiveMemory[];
+    return Array.isArray(parsed) ? parsed.map((memory) => normalizePositiveMemory(memory, now)) : [];
+  } catch (error) {
+    console.warn("[storage] Stored PositiveMemories are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function savePositiveMemories(memories: PositiveMemory[]): Promise<void> {
+  await AsyncStorage.setItem(POSITIVE_MEMORIES_KEY, JSON.stringify(memories));
+}
+
+export async function upsertPositiveMemoryEntry(memory: PositiveMemory): Promise<void> {
+  const memories = await loadPositiveMemories();
+  await savePositiveMemories(upsertPositiveMemoryInList(memories, memory));
+}
+
+export async function deletePositiveMemoryEntry(id: string): Promise<void> {
+  const memories = await loadPositiveMemories();
+  await savePositiveMemories(memories.filter((memory) => memory.id !== id));
+}
+
+const POSITIVE_MEMORY_DRAFTS_KEY = "archi.positiveMemoryDrafts.v1";
+
+/** Section 7: "support multiple independent drafts" -- a collection, never a single resumable slot. */
+export async function loadPositiveMemoryDrafts(): Promise<PositiveMemoryDraft[]> {
+  const raw = await AsyncStorage.getItem(POSITIVE_MEMORY_DRAFTS_KEY);
+  if (!raw) return [];
+  const now = new Date().toISOString();
+  try {
+    const parsed = JSON.parse(raw) as PositiveMemoryDraft[];
+    return Array.isArray(parsed) ? parsed.map((draft) => normalizePositiveMemoryDraft(draft, now)) : [];
+  } catch (error) {
+    console.warn("[storage] Stored PositiveMemoryDrafts are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function savePositiveMemoryDrafts(drafts: PositiveMemoryDraft[]): Promise<void> {
+  await AsyncStorage.setItem(POSITIVE_MEMORY_DRAFTS_KEY, JSON.stringify(drafts));
+}
+
+export async function upsertPositiveMemoryDraftEntry(draft: PositiveMemoryDraft): Promise<void> {
+  const drafts = await loadPositiveMemoryDrafts();
+  await savePositiveMemoryDrafts(upsertPositiveMemoryDraftInList(drafts, draft));
+}
+
+export async function deletePositiveMemoryDraftEntry(id: string): Promise<void> {
+  const drafts = await loadPositiveMemoryDrafts();
+  await savePositiveMemoryDrafts(drafts.filter((draft) => draft.id !== id));
+}
+
+/**
+ * Section 12: the ONE place a draft is turned into a real memory AND
+ * removed from the drafts collection, in one call -- so a caller can
+ * never persist the finalized memory while accidentally leaving the
+ * now-stale draft behind (which would otherwise resurface as "resume
+ * previous documentation" for an already-saved memory).
+ */
+export async function finalizePositiveMemoryDraftEntry(draft: PositiveMemoryDraft, memoryId: string, now: string): Promise<PositiveMemory> {
+  const memory = finalizePositiveMemoryDraft(draft, memoryId, now);
+  await upsertPositiveMemoryEntry(memory);
+  await deletePositiveMemoryDraftEntry(draft.id);
+  return memory;
+}
+
+const POSITIVE_MEMORY_SELECTION_HISTORY_KEY = "archi.positiveMemorySelectionHistory.v1";
+
+export async function loadPositiveMemorySelectionHistory(): Promise<PositiveMemorySelectionHistoryEntry[]> {
+  const raw = await AsyncStorage.getItem(POSITIVE_MEMORY_SELECTION_HISTORY_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PositiveMemorySelectionHistoryEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored PositiveMemorySelectionHistory is not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function savePositiveMemorySelectionHistory(history: PositiveMemorySelectionHistoryEntry[]): Promise<void> {
+  await AsyncStorage.setItem(POSITIVE_MEMORY_SELECTION_HISTORY_KEY, JSON.stringify(history));
+}
+
+const LAST_ENCODING_FEELING_KEY = "archi.lastEncodingFeelingByTask.v1";
+
+async function loadLastEncodingFeelings(): Promise<LastEncodingFeelingRecord[]> {
+  const raw = await AsyncStorage.getItem(LAST_ENCODING_FEELING_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as LastEncodingFeelingRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored LastEncodingFeelingRecord list is not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveLastEncodingFeelings(records: LastEncodingFeelingRecord[]): Promise<void> {
+  await AsyncStorage.setItem(LAST_ENCODING_FEELING_KEY, JSON.stringify(records));
+}
+
+/** Overwrites (never accumulates a history) the one real supportive feeling resolved during this task's most recent ARC encoding step -- a display convenience for the post-completion reflection screen, never a source of truth for memory selection. */
+export async function recordLastEncodingFeelingForTask(taskId: string, feeling: string, now: string): Promise<void> {
+  const records = await loadLastEncodingFeelings();
+  await saveLastEncodingFeelings(upsertLastEncodingFeeling(records, taskId, feeling, now));
+}
+
+export async function loadLastEncodingFeelingForTask(taskId: string): Promise<string | null> {
+  const records = await loadLastEncodingFeelings();
+  const match = records.find((record) => record.taskId === taskId);
+  return match ? match.feeling : null;
 }

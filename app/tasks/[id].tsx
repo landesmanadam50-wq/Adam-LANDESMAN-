@@ -2,7 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import ActiveTaskScreen from "../../live/ActiveTaskScreen.tsx";
 
 export default function TaskDetail() {
-  const { id, autoStart, openPostpone, needArc, completeStage, nextTask, addInsight } = useLocalSearchParams<{
+  const { id, autoStart, openPostpone, needArc, completeStage, nextTask, addInsight, addPositiveEvent } = useLocalSearchParams<{
     id: string;
     autoStart?: string;
     openPostpone?: string;
@@ -10,6 +10,7 @@ export default function TaskDetail() {
     completeStage?: string;
     nextTask?: string;
     addInsight?: string;
+    addPositiveEvent?: string;
   }>();
   return (
     <ActiveTaskScreen
@@ -20,6 +21,7 @@ export default function TaskDetail() {
       completeStage={completeStage === "1"}
       nextTask={nextTask === "1"}
       addInsight={addInsight === "1"}
+      addPositiveEvent={addPositiveEvent === "1"}
     />
   );
 }

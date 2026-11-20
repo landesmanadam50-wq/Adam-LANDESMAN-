@@ -736,6 +736,13 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
             <Pressable style={styles.settingsLink} onPress={() => router.push("/insights")}>
               <Text style={styles.settingsLinkText}>📚 אוסף תובנות</Text>
             </Pressable>
+            {/* Positive Memory, Success Recall & Quick Capture task, section 3: the ONE in-app entry point into positive-event documentation, mirroring the insight shortcuts right above it. */}
+            <Pressable style={styles.settingsLink} onPress={() => router.push("/positive-memories/new")}>
+              <Text style={styles.settingsLinkText}>✨ הוסף אירוע חיובי</Text>
+            </Pressable>
+            <Pressable style={styles.settingsLink} onPress={() => router.push("/positive-memories")}>
+              <Text style={styles.settingsLinkText}>📖 אירועים חיוביים</Text>
+            </Pressable>
           </View>
         )}
 

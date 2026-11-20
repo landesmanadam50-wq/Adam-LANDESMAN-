@@ -239,4 +239,18 @@
 
   </LinearLayout>
 
+  <!-- Positive Memory, Success Recall & Quick Capture task, section 3B: "✨ הוסף אירוע חיובי" — always available, idle or active/paused alike, same deep-link destination convention as the cube's own positiveEventView/the row above's widget_button_insight. -->
+  <TextView
+    android:id="@+id/widget_button_positive_event"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:background="@drawable/widget_button_background"
+    android:gravity="center"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
+    android:text="✨ הוסף אירוע חיובי"
+    android:textSize="12sp"
+    android:textColor="#333333" />
+
 </LinearLayout>

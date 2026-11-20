@@ -307,6 +307,10 @@ import {
   loadArcResultExercises,
   loadInternalActionTimerRun,
   loadNewArcLiveSession,
+  loadPositiveMemories,
+  loadPositiveMemorySelectionHistory,
+  savePositiveMemorySelectionHistory,
+  recordLastEncodingFeelingForTask,
   loadPersonalName,
   loadPlannedArcs,
   loadTaskTimerRun,
@@ -353,6 +357,12 @@ import {
 } from "../arc/arcGym.ts";
 import type { ArcGymCheckInChoice } from "../arc/arcGym.ts";
 import { createArcGymMemoryCheckInProgress } from "../arc/arcGymMemoryCheckInProgress.ts";
+// Positive Memory, Success Recall & Quick Capture task, section 8: the
+// ONE reusable selection engine (arc/positiveMemorySelection.ts) -- never
+// a second, independently-written matcher for Encoding.
+import { selectPositiveMemoryForFeeling } from "../arc/positiveMemorySelection.ts";
+import type { PositiveMemory } from "../arc/positiveMemory.ts";
+import { recordPositiveMemorySelection } from "../arc/positiveMemorySelectionHistory.ts";
 
 const ACTION_ENDING_SUGGESTIONS = ["התחלתי את הצעד הראשון", "השלמתי את הפעולה", "פעלתי ברוגע", "נשארתי ממוקד"];
 
@@ -620,6 +630,21 @@ export default function NewArcLiveScreen({
   const [tempActionTitleDraft, setTempActionTitleDraft] = useState("");
   const [tempActionDurationDraft, setTempActionDurationDraft] = useState("10");
   const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Positive Memory, Success Recall & Quick Capture task, section 8
+   * ("automatic memory selection during ARC encoding"): a documented
+   * real positive memory matching the session's own resolved
+   * supportive feeling, auto-selected via the ONE reusable selection
+   * engine (arc/positiveMemorySelection.ts) -- defaults to inert/null
+   * so that whenever no match exists (the vast majority of existing
+   * regression-tested sessions, which have no positive-memory library
+   * at all), rendering below falls straight through to the EXISTING,
+   * completely unchanged <ArcBodyMantraCircle> encoding screen.
+   */
+  const [positiveMemoryForEncoding, setPositiveMemoryForEncoding] = useState<PositiveMemory | null>(null);
+  const [positiveMemoryEncodingDismissed, setPositiveMemoryEncodingDismissed] = useState(false);
+  const [positiveMemoryEncodingExcludedIds, setPositiveMemoryEncodingExcludedIds] = useState<string[]>([]);
+  const positiveMemoryEncodingResolvedKeyRef = useRef<string | null>(null);
 
   const reload = useCallback(() => {
     // Part B.1: a standalone (not task-linked) spontaneous session has
@@ -921,6 +946,82 @@ export default function NewArcLiveScreen({
       if (dwellTimerRef.current) clearTimeout(dwellTimerRef.current);
     };
   }, [session?.currentStep, session?.subIndex]);
+
+  /**
+   * Positive Memory, Success Recall & Quick Capture task, section 8:
+   * resolves a matching documented positive memory exactly once per
+   * encoding entry (keyed by step+feeling, via
+   * positiveMemoryEncodingResolvedKeyRef -- never re-resolved on every
+   * render, and never while leaving the encoding step, when the ref is
+   * cleared so the next encoding entry resolves fresh). A documented
+   * feeling match is REQUIRED (resolveFinalSupportiveFeeling returning
+   * null -- no feeling resolved at all -- leaves the state at its inert
+   * default, so the existing <ArcBodyMantraCircle> renders exactly as
+   * before). Never invents a memory: selectPositiveMemoryForFeeling
+   * only ever returns a real, previously-saved PositiveMemory or null.
+   */
+  useEffect(() => {
+    if (!session || (session.currentStep !== "encoding" && session.currentStep !== "mini_encoding")) {
+      positiveMemoryEncodingResolvedKeyRef.current = null;
+      return;
+    }
+    const feeling = resolveFinalSupportiveFeeling(session);
+    if (!feeling) {
+      positiveMemoryEncodingResolvedKeyRef.current = null;
+      setPositiveMemoryForEncoding(null);
+      return;
+    }
+    const resolvedKey = `${session.currentStep}:${feeling.feeling.trim().toLowerCase()}`;
+    if (positiveMemoryEncodingResolvedKeyRef.current === resolvedKey) return;
+    positiveMemoryEncodingResolvedKeyRef.current = resolvedKey;
+    let cancelled = false;
+    (async () => {
+      const [memories, history] = await Promise.all([loadPositiveMemories(), loadPositiveMemorySelectionHistory()]);
+      if (cancelled) return;
+      const contextTaskId = session.taskId === STANDALONE_ARC_TASK_ID ? null : session.taskId;
+      const picked = selectPositiveMemoryForFeeling(memories, feeling.feeling, { taskId: contextTaskId }, history, []);
+      setPositiveMemoryForEncoding(picked);
+      setPositiveMemoryEncodingDismissed(false);
+      setPositiveMemoryEncodingExcludedIds([]);
+      if (picked) {
+        const updatedHistory = recordPositiveMemorySelection(history, picked.id, "encoding_feeling", feeling.feeling.trim().toLowerCase(), new Date().toISOString());
+        await savePositiveMemorySelectionHistory(updatedHistory);
+      }
+      // Positive Memory task, section 10: a lightweight, overwritten-
+      // not-accumulated record of the REAL feeling resolved in
+      // encoding for this real (non-standalone) task -- so the
+      // post-completion reflection screen can personalize its own
+      // question 2 without ever guessing/assuming a feeling.
+      if (contextTaskId) {
+        await recordLastEncodingFeelingForTask(contextTaskId, feeling.feeling, new Date().toISOString());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.currentStep, session]);
+
+  /** "אירוע אחר": re-selects a different eligible documented memory for the same feeling, never fabricating one. */
+  const handlePositiveMemoryEncodingAnother = useCallback(async () => {
+    if (!session || !positiveMemoryForEncoding) return;
+    const feeling = resolveFinalSupportiveFeeling(session);
+    if (!feeling) return;
+    const [memories, history] = await Promise.all([loadPositiveMemories(), loadPositiveMemorySelectionHistory()]);
+    const excludeIds = [...positiveMemoryEncodingExcludedIds, positiveMemoryForEncoding.id];
+    const contextTaskId = session.taskId === STANDALONE_ARC_TASK_ID ? null : session.taskId;
+    const picked = selectPositiveMemoryForFeeling(memories, feeling.feeling, { taskId: contextTaskId }, history, excludeIds);
+    setPositiveMemoryEncodingExcludedIds(excludeIds);
+    setPositiveMemoryForEncoding(picked);
+    if (picked) {
+      const updatedHistory = recordPositiveMemorySelection(history, picked.id, "encoding_feeling", feeling.feeling.trim().toLowerCase(), new Date().toISOString());
+      await savePositiveMemorySelectionHistory(updatedHistory);
+    }
+  }, [session, positiveMemoryForEncoding, positiveMemoryEncodingExcludedIds]);
+
+  /** "דלג": continues with the original, unchanged encoding flow for the rest of this encoding step. */
+  const handlePositiveMemoryEncodingSkip = useCallback(() => {
+    setPositiveMemoryEncodingDismissed(true);
+  }, []);
 
   // Nine Functional Improvements task, Improvement 3: ticks the
   // displayed remaining time once a second while the internal-action
@@ -1558,6 +1659,44 @@ export default function NewArcLiveScreen({
           {availableMinutes !== null && <Text style={styles.hint}>{`יש ${availableMinutes} דקות עד המשימה המתוזמנת הבאה -- המשך יוגבל לזמן הזה.`}</Text>}
           <Pressable style={[styles.primaryButton, !tempActionTitleDraft.trim() && styles.disabledButton]} disabled={!tempActionTitleDraft.trim()} onPress={chooseTemporaryAction}>
             <Text style={styles.primaryButtonText}>המשך עם הפעולה הזו</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  /**
+   * Positive Memory, Success Recall & Quick Capture task, section 8:
+   * shown INSTEAD of <ArcBodyMantraCircle> only while a matching,
+   * non-dismissed documented positive memory exists for this encoding
+   * step -- "דלג" falls through to the existing, unchanged circle for
+   * the remainder of this exact encoding step (no re-fetch), and
+   * "אירוע אחר" only ever swaps in another REAL documented memory,
+   * never inventing one. Preserves all existing encoding functionality
+   * untouched: this never persists the session step itself, so
+   * advancing still happens via the normal <ArcBodyMantraCircle>
+   * once the user skips or there is nothing left to show.
+   */
+  function renderPositiveMemoryEncodingBlock(memory: PositiveMemory) {
+    const feelingEntry = memory.feelings[0] ?? null;
+    return (
+      <View style={styles.positiveMemoryCard}>
+        <Text style={styles.positiveMemoryPrompt}>דמיין את הרגע שבו חווית את התחושה הזאת.</Text>
+        {feelingEntry && <Text style={styles.positiveMemoryFeeling}>{feelingEntry.feeling}</Text>}
+        <Text style={styles.positiveMemoryTitle}>{memory.title}</Text>
+        {feelingEntry?.moment.trim() ? <Text style={styles.positiveMemoryDetail}>{feelingEntry.moment}</Text> : null}
+        {(memory.location && memory.location.trim()) || memory.occurredAt.trim() ? (
+          <Text style={styles.positiveMemoryDetail}>
+            {[memory.location, memory.occurredAt].filter((part): part is string => !!part && part.trim().length > 0).join(" -- ")}
+          </Text>
+        ) : null}
+        {memory.whatWasSpecial.trim() ? <Text style={styles.positiveMemoryDetail}>{memory.whatWasSpecial}</Text> : null}
+        <View style={styles.positiveMemoryActions}>
+          <Pressable style={styles.secondaryButton} onPress={handlePositiveMemoryEncodingAnother}>
+            <Text style={styles.secondaryButtonText}>אירוע אחר</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryButton} onPress={handlePositiveMemoryEncodingSkip}>
+            <Text style={styles.secondaryButtonText}>דלג</Text>
           </Pressable>
         </View>
       </View>
@@ -2930,6 +3069,9 @@ export default function NewArcLiveScreen({
       // free-text mantra/belief input (replaced entirely by this
       // auto-computed mantra).
       case "encoding":
+        if (positiveMemoryForEncoding && !positiveMemoryEncodingDismissed) {
+          return renderPositiveMemoryEncodingBlock(positiveMemoryForEncoding);
+        }
         return (
           <ArcBodyMantraCircle
             stage="encoding"
@@ -3275,6 +3417,9 @@ export default function NewArcLiveScreen({
       // already resolveEncodingMantra) and the body-focused detail stay
       // together on this one screen, never split into two.
       case "mini_encoding":
+        if (positiveMemoryForEncoding && !positiveMemoryEncodingDismissed) {
+          return renderPositiveMemoryEncodingBlock(positiveMemoryForEncoding);
+        }
         return (
           <ArcBodyMantraCircle
             stage="encoding"
@@ -3546,6 +3691,12 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
   secondaryButton: { borderWidth: 1, borderColor: "#0a7ea4", paddingVertical: 12, borderRadius: 10, alignItems: "center" },
   secondaryButtonText: { color: "#0a7ea4", fontSize: 15 },
+  positiveMemoryCard: { backgroundColor: "#FFF8E1", borderRadius: 14, padding: 20, marginTop: 12 },
+  positiveMemoryPrompt: { fontSize: 17, fontWeight: "700", textAlign: "right", color: "#333", marginBottom: 10 },
+  positiveMemoryFeeling: { fontSize: 15, fontWeight: "600", textAlign: "right", color: "#8A6D00", marginBottom: 6 },
+  positiveMemoryTitle: { fontSize: 16, fontWeight: "600", textAlign: "right", color: "#333", marginBottom: 6 },
+  positiveMemoryDetail: { fontSize: 14, textAlign: "right", color: "#555", marginBottom: 6 },
+  positiveMemoryActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 14 },
   disabledButton: { opacity: 0.5 },
   navRow: { flexDirection: "row-reverse", justifyContent: "flex-end", gap: 20, marginTop: 20 },
   linkText: { color: "#666", fontSize: 14 },

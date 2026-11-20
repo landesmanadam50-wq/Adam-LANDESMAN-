@@ -90,7 +90,7 @@ test("a ✓ button is rendered in the active-timer block, calling handleComplete
 
 test("the floating overlay's own ✓ button deep-links here with completeStage=1, consumed by the SAME auto-action effect that already handles needArc=1 and autoStart -- checked before the generic 'timer already running' early-return, since this action is only meaningful while a timer IS running", () => {
   const effectIndex = screen.indexOf("if (autoActionConsumed.current) return;");
-  const effectBody = screen.slice(effectIndex, effectIndex + 3200);
+  const effectBody = screen.slice(effectIndex, effectIndex + 3850);
   const completeStageIndex = effectBody.indexOf("if (completeStage) {");
   const timerRunningIndex = effectBody.indexOf("if (timerRun || restRun) {");
   assert.ok(completeStageIndex !== -1 && timerRunningIndex !== -1 && completeStageIndex < timerRunningIndex);
