@@ -142,6 +142,14 @@ export default function RootLayout() {
         <Stack.Screen name="arc-gym/perspective/index" options={{ title: "ARC Perspective" }} />
         <Stack.Screen name="arc-gym/perspective/[id]" options={{ title: "אירוע" }} />
         <Stack.Screen name="arc-perspective/[id]" options={{ title: "ARC Perspective" }} />
+        {/* ARC Saving, Trigger Management & Quick-Action Buttons task:
+            own independent entry card (never nested under arc-gym/*),
+            same convention as arc-learning/arc-creativity above. */}
+        <Stack.Screen name="arc-saving/index" options={{ title: "ARC Saving" }} />
+        <Stack.Screen name="arc-saving/trigger/[id]" options={{ title: "טריגר" }} />
+        <Stack.Screen name="arc-saving/active-triggers" options={{ title: "עריכת טריגרים" }} />
+        <Stack.Screen name="arc-saving/activate" options={{ title: "ARC Save" }} />
+        <Stack.Screen name="arc-saving/review" options={{ title: "ARC Saving" }} />
         {/* ARC Learning + ARC Creativity + Integrated Spaced Repetition
             task: ARC Learning is a fully independent system from ARC
             Gym/ARC Goal, reached only from its own home card (never

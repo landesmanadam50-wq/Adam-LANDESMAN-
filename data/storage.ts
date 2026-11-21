@@ -123,6 +123,8 @@ import type { ArcGymMemoryCheckInProgress } from "../arc/arcGymMemoryCheckInProg
 import type { ArcDecisionSession } from "../arc/arcDecision.ts";
 import type { ArcPerspectiveEvent, ArcPerspectiveSession } from "../arc/arcPerspective.ts";
 import { upsertArcPerspectiveEventInList, upsertArcPerspectiveSessionInList } from "../arc/arcPerspective.ts";
+import type { ArcSavedExercise, ArcSavedBodyOption, ArcTrigger, ArcSavingPendingReview } from "../arc/arcSaving.ts";
+import { upsertArcSavedExerciseInList, upsertArcSavedBodyOptionInList, upsertArcTriggerInList } from "../arc/arcSaving.ts";
 import type { ArcLearningTopic } from "../arc/arcLearningTopic.ts";
 import { normalizeArcLearningTopic, upsertArcLearningTopicInList } from "../arc/arcLearningTopic.ts";
 import type { ArcLearningInsight } from "../arc/arcLearningInsight.ts";
@@ -2378,6 +2380,12 @@ export async function loadNewArcLiveSession(): Promise<NewArcLiveSessionState | 
     // default for a session saved before this field existed -- same ??
     // convention as arcFocusPracticeId/arcGymMemoryExerciseId above.
     arcPerspectiveId: parsed.arcPerspectiveId ?? null,
+    // ARC Saving task: the true "not launched from a trigger/saved
+    // exercise" default for a session saved before these two fields
+    // existed -- same ?? convention as every parallel id field above.
+    arcSavingBodyOptionId: parsed.arcSavingBodyOptionId ?? null,
+    arcSavingExerciseId: parsed.arcSavingExerciseId ?? null,
+    arcSavingTriggerIdForNewOption: parsed.arcSavingTriggerIdForNewOption ?? null,
     // "התבוננות וחיבור לעצמי" task: the true "branch screen not yet
     // answered" default for a session saved before this field existed.
     selfObservationChoice: parsed.selfObservationChoice ?? null,
@@ -3681,6 +3689,134 @@ export async function saveArcPerspectiveInProgress(session: ArcPerspectiveSessio
 
 export async function clearArcPerspectiveInProgress(): Promise<void> {
   await AsyncStorage.removeItem(ARC_PERSPECTIVE_IN_PROGRESS_KEY);
+}
+
+// ---------------------------------------------------------------------------
+// ARC Saving, Trigger Management & Quick-Action Buttons task: four strictly
+// separate entities (arc/arcSaving.ts's own doc), each with its own storage
+// key -- never a combined blob, so deleting/editing one never risks
+// corrupting another. Same load/save/upsert shape as every other section in
+// this file.
+// ---------------------------------------------------------------------------
+
+const ARC_SAVED_EXERCISES_KEY = "archi.arcSavedExercises.v1";
+
+/** (a) Standalone, trigger-independent saved exercises -- build/ArcSavingScreen.tsx's own "התרגילים השמורים שלי" list. */
+export async function loadArcSavedExercises(): Promise<ArcSavedExercise[]> {
+  const raw = await AsyncStorage.getItem(ARC_SAVED_EXERCISES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcSavedExercise[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcSavedExercises are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcSavedExerciseEntry(exercise: ArcSavedExercise): Promise<void> {
+  const exercises = await loadArcSavedExercises();
+  await AsyncStorage.setItem(ARC_SAVED_EXERCISES_KEY, JSON.stringify(upsertArcSavedExerciseInList(exercises, exercise)));
+}
+
+/** Deleting a saved exercise never deletes a body option promoted FROM it (ArcSavedBodyOption.sourceSavedExerciseId simply stops resolving to a live exercise, same "delete never cascades" convention as every other link in this codebase) -- spec section 14: "מחיקת תרגיל שמור תסיר קיצורים שאינם תקפים, אך לא תמחק את ההיסטוריה." */
+export async function deleteArcSavedExerciseEntry(id: string): Promise<void> {
+  const exercises = await loadArcSavedExercises();
+  await AsyncStorage.setItem(ARC_SAVED_EXERCISES_KEY, JSON.stringify(exercises.filter((entry) => entry.id !== id)));
+}
+
+const ARC_SAVED_BODY_OPTIONS_KEY = "archi.arcSavedBodyOptions.v1";
+
+/** (c) Every reusable body option across every trigger -- a trigger merely holds a list of these ids (arc/arcSaving.ts's own ArcTrigger.bodyOptionIds), never a copy of the option itself, so two triggers can genuinely share one option. */
+export async function loadArcSavedBodyOptions(): Promise<ArcSavedBodyOption[]> {
+  const raw = await AsyncStorage.getItem(ARC_SAVED_BODY_OPTIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcSavedBodyOption[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcSavedBodyOptions are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcSavedBodyOptionEntry(option: ArcSavedBodyOption): Promise<void> {
+  const options = await loadArcSavedBodyOptions();
+  await AsyncStorage.setItem(ARC_SAVED_BODY_OPTIONS_KEY, JSON.stringify(upsertArcSavedBodyOptionInList(options, option)));
+}
+
+/** Deletes one option only -- the caller (build/ArcTriggerEditorScreen.tsx) is separately responsible for calling removeBodyOptionFromTrigger on every trigger that referenced it, never implied here. */
+export async function deleteArcSavedBodyOptionEntry(id: string): Promise<void> {
+  const options = await loadArcSavedBodyOptions();
+  await AsyncStorage.setItem(ARC_SAVED_BODY_OPTIONS_KEY, JSON.stringify(options.filter((entry) => entry.id !== id)));
+}
+
+const ARC_TRIGGERS_KEY = "archi.arcTriggers.v1";
+
+/** (b) The master trigger list -- independent of which triggers are currently "active"/displayed (see ACTIVE_ARC_TRIGGER_IDS_KEY below). */
+export async function loadArcTriggers(): Promise<ArcTrigger[]> {
+  const raw = await AsyncStorage.getItem(ARC_TRIGGERS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcTrigger[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcTriggers are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcTriggerEntry(trigger: ArcTrigger): Promise<void> {
+  const triggers = await loadArcTriggers();
+  await AsyncStorage.setItem(ARC_TRIGGERS_KEY, JSON.stringify(upsertArcTriggerInList(triggers, trigger)));
+}
+
+/** Deletes a trigger from the master list. The caller is separately responsible for pruning it out of the active list (pruneActiveTriggerList below) -- never implied automatically here, matching arc/arcSaving.ts's own deleteArcTriggerFromList doc. */
+export async function deleteArcTriggerEntry(id: string): Promise<void> {
+  const triggers = await loadArcTriggers();
+  await AsyncStorage.setItem(ARC_TRIGGERS_KEY, JSON.stringify(triggers.filter((entry) => entry.id !== id)));
+}
+
+const ACTIVE_ARC_TRIGGER_IDS_KEY = "archi.activeArcTriggerIds.v1";
+
+/** (d) The trainee's own currently-displayed trigger shortcuts, in display order -- spec section 16: a fourth entity, deliberately separate from the trigger list itself. Removing a trigger from this list never deletes it from loadArcTriggers above (section 9.2/14). */
+export async function loadActiveArcTriggerIds(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(ACTIVE_ARC_TRIGGER_IDS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as string[];
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+  } catch (error) {
+    console.warn("[storage] Stored active ARC trigger ids are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+/** Plain full-array replace -- add/remove/swap/reorder (arc/arcSaving.ts's own pure helpers) are all computed client-side first, then persisted in one call, so every surface reading this key always sees one consistent, already-ordered list. */
+export async function saveActiveArcTriggerIds(ids: string[]): Promise<void> {
+  await AsyncStorage.setItem(ACTIVE_ARC_TRIGGER_IDS_KEY, JSON.stringify(ids));
+}
+
+const ARC_SAVING_PENDING_REVIEW_KEY = "archi.arcSavingPendingReview.v1";
+
+/** Single resumable slot carried across the ARC round-trip -- see arc/arcSaving.ts's own ArcSavingPendingReview doc. Read exactly once by build/ArcSavingReviewScreen.tsx on focus. */
+export async function loadArcSavingPendingReview(): Promise<ArcSavingPendingReview | null> {
+  const raw = await AsyncStorage.getItem(ARC_SAVING_PENDING_REVIEW_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ArcSavingPendingReview;
+  } catch {
+    console.warn("[storage] Stored ArcSavingPendingReview is not valid JSON -- treating as no review pending rather than crashing.");
+    return null;
+  }
+}
+
+export async function saveArcSavingPendingReview(review: ArcSavingPendingReview): Promise<void> {
+  await AsyncStorage.setItem(ARC_SAVING_PENDING_REVIEW_KEY, JSON.stringify(review));
+}
+
+export async function clearArcSavingPendingReview(): Promise<void> {
+  await AsyncStorage.removeItem(ARC_SAVING_PENDING_REVIEW_KEY);
 }
 
 // ============================================================

@@ -33,7 +33,9 @@ test("the routine-day route is registered and the route file renders FlexibleDai
 // output directly.
 test("resolves the GIVEN date's plan via resolveDailyPlan, reading tasks/overrides/completions/schedule-mode settings together, then applies the effective continuous/spaced schedule", () => {
   const fnIndex = screen.indexOf("const reload = useCallback");
-  const fnBody = screen.slice(fnIndex, fnIndex + 1600);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (1600 -> 1900) to fit the new active-triggers load this reload() grew.
+  const fnBody = screen.slice(fnIndex, fnIndex + 1900);
   assert.ok(fnBody.includes("resolveDailyPlan(tasks, overrides, completions, dateLocal, dateObj)"));
   assert.ok(fnBody.includes("applyScheduleMode(plan, effectiveMode)"));
   assert.ok(fnBody.includes("resolveEffectiveScheduleMode(weekday, dateLocal, weekdaySettings, dateModeOverrides)"));
@@ -342,7 +344,9 @@ test("the time-planning card is visible on Home (today mode), additive to the ex
 
 test("reload() loads this exact date's own continuous-routine groups via loadContinuousRoutineGroupsForDate(dateLocal), alongside the existing plan-resolution reads", () => {
   const fnIndex = screen.indexOf("const reload = useCallback(async () => {");
-  const fnBody = screen.slice(fnIndex, fnIndex + 900);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (900 -> 1100) to fit the new active-triggers load this reload() grew.
+  const fnBody = screen.slice(fnIndex, fnIndex + 1100);
   assert.ok(fnBody.includes("loadContinuousRoutineGroupsForDate(dateLocal)"));
   assert.ok(fnBody.includes("setContinuousGroups(groupsForDate);"));
 });

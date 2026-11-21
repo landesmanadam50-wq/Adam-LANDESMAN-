@@ -47,53 +47,53 @@ test("createNewArcLiveSessionState accepts an explicit sourcePlannedArcId, store
 
 test("sessionMatchesRequest: identical mode AND identical sourcePlannedArcId (both null) match", () => {
   const session = createNewArcLiveSessionState("t1", "כותרת", "פעולה", NOW, "plannedFull", null);
-  const request: ArcSessionRequest = { arcInvocationMode: "plannedFull", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null };
+  const request: ArcSessionRequest = { arcInvocationMode: "plannedFull", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
   assert.equal(sessionMatchesRequest(session, request), true);
 });
 
 test("sessionMatchesRequest: identical mode AND identical specific draft id match", () => {
   const session = createNewArcLiveSessionState("t1", "כותרת", "פעולה", NOW, "plannedMini", "draft-1");
-  const request: ArcSessionRequest = { arcInvocationMode: "plannedMini", sourcePlannedArcId: "draft-1", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null };
+  const request: ArcSessionRequest = { arcInvocationMode: "plannedMini", sourcePlannedArcId: "draft-1", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
   assert.equal(sessionMatchesRequest(session, request), true);
 });
 
 test("sessionMatchesRequest: same arcInvocationMode but a DIFFERENT specific draft id never matches", () => {
   const session = createNewArcLiveSessionState("t1", "כותרת", "פעולה", NOW, "plannedFull", "draft-1");
-  const request: ArcSessionRequest = { arcInvocationMode: "plannedFull", sourcePlannedArcId: "draft-2", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null };
+  const request: ArcSessionRequest = { arcInvocationMode: "plannedFull", sourcePlannedArcId: "draft-2", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
   assert.equal(sessionMatchesRequest(session, request), false);
 });
 
 test("sessionMatchesRequest: a session tied to a specific draft never matches an ad-hoc (sourcePlannedArcId: null) request of the same mode, and vice versa", () => {
   const draftSession = createNewArcLiveSessionState("t1", "כותרת", "פעולה", NOW, "plannedFull", "draft-1");
-  const adHocRequest: ArcSessionRequest = { arcInvocationMode: "plannedFull", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null };
+  const adHocRequest: ArcSessionRequest = { arcInvocationMode: "plannedFull", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
   assert.equal(sessionMatchesRequest(draftSession, adHocRequest), false);
 
   const adHocSession = createNewArcLiveSessionState("t1", "כותרת", "פעולה", NOW, "plannedFull", null);
-  const draftRequest: ArcSessionRequest = { arcInvocationMode: "plannedFull", sourcePlannedArcId: "draft-1", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null };
+  const draftRequest: ArcSessionRequest = { arcInvocationMode: "plannedFull", sourcePlannedArcId: "draft-1", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
   assert.equal(sessionMatchesRequest(adHocSession, draftRequest), false);
 });
 
 test("sessionMatchesRequest: different arcInvocationMode never matches, even with the same sourcePlannedArcId", () => {
   const session = createNewArcLiveSessionState("t1", "כותרת", "פעולה", NOW, "plannedFull", "draft-1");
-  const request: ArcSessionRequest = { arcInvocationMode: "plannedMini", sourcePlannedArcId: "draft-1", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null };
+  const request: ArcSessionRequest = { arcInvocationMode: "plannedMini", sourcePlannedArcId: "draft-1", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
   assert.equal(sessionMatchesRequest(session, request), false);
 });
 
 test("sessionMatchesRequest: spontaneous vs. a planned mode never matches", () => {
   const session = createNewArcLiveSessionState("t1", "כותרת", "פעולה", NOW, "spontaneous", null);
-  const request: ArcSessionRequest = { arcInvocationMode: "plannedFull", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null };
+  const request: ArcSessionRequest = { arcInvocationMode: "plannedFull", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
   assert.equal(sessionMatchesRequest(session, request), false);
 });
 
 test("describeArcSessionConfig names the specific saved draft when one is given, distinguishing Full from Mini", () => {
-  assert.equal(describeArcSessionConfig({ arcInvocationMode: "plannedFull", sourcePlannedArcId: "draft-1", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null }, "לפני פגישה"), "ARC מלא מתוכנן: לפני פגישה");
-  assert.equal(describeArcSessionConfig({ arcInvocationMode: "plannedMini", sourcePlannedArcId: "draft-1", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null }, "לפני פגישה"), "Mini ARC מתוכנן: לפני פגישה");
+  assert.equal(describeArcSessionConfig({ arcInvocationMode: "plannedFull", sourcePlannedArcId: "draft-1", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null }, "לפני פגישה"), "ARC מלא מתוכנן: לפני פגישה");
+  assert.equal(describeArcSessionConfig({ arcInvocationMode: "plannedMini", sourcePlannedArcId: "draft-1", arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null }, "לפני פגישה"), "Mini ARC מתוכנן: לפני פגישה");
 });
 
 test("describeArcSessionConfig falls back to a generic mode label when no draft name is known (ad-hoc, or a deleted draft)", () => {
-  assert.equal(describeArcSessionConfig({ arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null }, null), "ARC ספונטני");
-  assert.equal(describeArcSessionConfig({ arcInvocationMode: "plannedFull", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null }, null), "ARC מלא");
-  assert.equal(describeArcSessionConfig({ arcInvocationMode: "plannedMini", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null }, null), "Mini ARC");
+  assert.equal(describeArcSessionConfig({ arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null }, null), "ARC ספונטני");
+  assert.equal(describeArcSessionConfig({ arcInvocationMode: "plannedFull", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null }, null), "ARC מלא");
+  assert.equal(describeArcSessionConfig({ arcInvocationMode: "plannedMini", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null }, null), "Mini ARC");
 });
 
 // --- ARC Perspective task, scenario 23: prevent duplicate/colliding sessions ---
@@ -101,19 +101,55 @@ test("describeArcSessionConfig falls back to a generic mode label when no draft 
 test("23. sessionMatchesRequest distinguishes two DIFFERENT ArcPerspectiveSessions requested one after another -- never silently resuming session A's unfinished preliminary ARC in place of session B's new request", () => {
   const base = createNewArcLiveSessionState("t1", "כותרת", "פעולה", NOW, "spontaneous", null);
   const sessionForA = { ...base, arcPerspectiveId: "perspective-A" };
-  const requestForA: ArcSessionRequest = { arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: "perspective-A" };
-  const requestForB: ArcSessionRequest = { arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: "perspective-B" };
+  const requestForA: ArcSessionRequest = { arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: "perspective-A", arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
+  const requestForB: ArcSessionRequest = { arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: "perspective-B", arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
   assert.equal(sessionMatchesRequest(sessionForA, requestForA), true);
   assert.equal(sessionMatchesRequest(sessionForA, requestForB), false);
 });
 
 test("describeArcSessionConfig names the preliminary-ARC-before-ARC-Perspective case before falling through to the plain mode label", () => {
   assert.equal(
-    describeArcSessionConfig({ arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: "perspective-1" }, null),
+    describeArcSessionConfig({ arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: "perspective-1", arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null }, null),
     "ARC מלא לפני שינוי פרספקטיבה"
   );
   assert.equal(
-    describeArcSessionConfig({ arcInvocationMode: "shortened", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: "perspective-1" }, null),
+    describeArcSessionConfig({ arcInvocationMode: "shortened", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: "perspective-1", arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null }, null),
     "ARC מקוצר לפני שינוי פרספקטיבה"
   );
+});
+
+// --- ARC Saving, Trigger Management & Quick-Action Buttons task ---
+
+test("sessionMatchesRequest distinguishes an ARC Saving session from an otherwise-identical plain session -- a trigger-activated run never silently resumes/is resumed by an unrelated spontaneous one", () => {
+  const base = createNewArcLiveSessionState("t1", "כותרת", "פעולה", NOW, "spontaneous", null);
+  const plainRequest: ArcSessionRequest = { arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
+  const savingRequest: ArcSessionRequest = { ...plainRequest, arcSavingBodyOptionId: "option-1" };
+  assert.equal(sessionMatchesRequest(base, plainRequest), true);
+  assert.equal(sessionMatchesRequest(base, savingRequest), false);
+
+  const sessionForOption = { ...base, arcSavingBodyOptionId: "option-1" };
+  assert.equal(sessionMatchesRequest(sessionForOption, savingRequest), true);
+  assert.equal(sessionMatchesRequest(sessionForOption, { ...savingRequest, arcSavingBodyOptionId: "option-2" }), false, "two DIFFERENT body options must never cross-resume each other's unfinished session");
+});
+
+test("sessionMatchesRequest also distinguishes by arcSavingExerciseId and arcSavingTriggerIdForNewOption independently of arcSavingBodyOptionId", () => {
+  const base = createNewArcLiveSessionState("t1", "כותרת", "פעולה", NOW, "spontaneous", null);
+  const requestA: ArcSessionRequest = { arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: "exercise-1", arcSavingTriggerIdForNewOption: null };
+  const requestB: ArcSessionRequest = { ...requestA, arcSavingExerciseId: "exercise-2" };
+  const sessionForA = { ...base, arcSavingExerciseId: "exercise-1" };
+  assert.equal(sessionMatchesRequest(sessionForA, requestA), true);
+  assert.equal(sessionMatchesRequest(sessionForA, requestB), false);
+
+  const requestFreshRegions: ArcSessionRequest = { ...requestA, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: "trigger-1" };
+  const sessionFreshRegions = { ...base, arcSavingTriggerIdForNewOption: "trigger-1" };
+  assert.equal(sessionMatchesRequest(sessionFreshRegions, requestFreshRegions), true);
+  assert.equal(sessionMatchesRequest(sessionFreshRegions, { ...requestFreshRegions, arcSavingTriggerIdForNewOption: "trigger-2" }), false);
+});
+
+test("describeArcSessionConfig names the ARC Saving case, checked BEFORE the ARC Perspective/ARC Focus/ARC GYM cases and before falling through to the plain mode label", () => {
+  const savingRequest: ArcSessionRequest = { arcInvocationMode: "spontaneous", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: "option-1", arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null };
+  assert.equal(describeArcSessionConfig(savingRequest, null), "ARC מלא מתוך ARC Saving");
+  assert.equal(describeArcSessionConfig({ ...savingRequest, arcInvocationMode: "shortened" }, null), "ARC מקוצר מתוך ARC Saving");
+  // Even with an arcPerspectiveId ALSO set, ARC Saving's own label must win (the engine is built so these are mutually exclusive in practice, but the label precedence itself must still be deterministic).
+  assert.equal(describeArcSessionConfig({ ...savingRequest, arcPerspectiveId: "perspective-1" }, null), "ARC מלא מתוך ARC Saving");
 });

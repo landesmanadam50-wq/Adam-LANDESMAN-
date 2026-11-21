@@ -50,7 +50,7 @@ test("/arc-perspective/[id] wraps ArcPerspectiveFlowScreen and parses mode/event
 test("22. app/tasks/[id]/arc.tsx threads arcPerspectiveId straight through to NewArcLiveScreen, alongside (never replacing) the existing params", () => {
   assert.match(
     arcRoute,
-    /arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId, morningFlowCheckIn \} = useLocalSearchParams/
+    /arcGymSituationId,\s*arcFocusPracticeId,\s*arcGymMemoryExerciseId,\s*arcPerspectiveId,\s*arcSavingBodyOptionId,\s*arcSavingExerciseId,\s*arcSavingTriggerIdForNewOption,\s*morningFlowCheckIn,?\s*\}\s*=\s*useLocalSearchParams/
   );
   assert.ok(arcRoute.includes("arcPerspectiveId={arcPerspectiveId ?? null}"));
 });

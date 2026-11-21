@@ -22,7 +22,7 @@ const route = readSource("app/tasks/[id]/arc.tsx");
 const screen = readSource("live/NewArcLiveScreen.tsx");
 
 test("the route reads 'mini'/'spontaneous'/'shortened' params and resolves them to exactly one startMode, never guessing from anything else", () => {
-  assert.match(route, /const \{ id, mini, spontaneous, shortened, skipEmotionSelection, plannedArcId, autoStartAfter, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId, morningFlowCheckIn \} = useLocalSearchParams/);
+  assert.match(route, /const \{\s*id,\s*mini,\s*spontaneous,\s*shortened,\s*skipEmotionSelection,\s*plannedArcId,\s*autoStartAfter,\s*arcGymSituationId,\s*arcFocusPracticeId,\s*arcGymMemoryExerciseId,\s*arcPerspectiveId,\s*arcSavingBodyOptionId,\s*arcSavingExerciseId,\s*arcSavingTriggerIdForNewOption,\s*morningFlowCheckIn,?\s*\}\s*=\s*useLocalSearchParams/);
   assert.ok(route.includes("startMode={resolveStartMode(mini, spontaneous, shortened)}"));
   assert.match(route, /if \(mini === "1"\) return "plannedMini";/);
   assert.match(route, /if \(spontaneous === "1"\) return "spontaneous";/);
@@ -31,7 +31,9 @@ test("the route reads 'mini'/'spontaneous'/'shortened' params and resolves them 
 
 test("the screen only applies startMode when creating a FRESH session -- an existing, resumed session keeps its own already-persisted arcInvocationMode", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 9000);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (9000 -> 10500) to fit the new arcSavingSnapshot resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 10500);
   assert.ok(reloadBody.includes("existing.taskId === taskId && !existing.completedAt"));
   assert.ok(reloadBody.includes("createNewArcLiveSessionState(taskId, task.title, task.firstAction, buildNow, startMode, null, skipEmotionSelection)"));
 });

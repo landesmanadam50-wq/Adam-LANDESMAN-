@@ -1568,3 +1568,42 @@ test("every other existing Full ARC entry point (לא נעים/סבבה/direct t
   assert.equal(plainFull.skipEmotionSelection, false);
   assert.equal(shortened.skipEmotionSelection, false);
 });
+
+// --- ARC Saving, Trigger Management & Quick-Action Buttons task ---
+
+test("arcSavingBodyOptionId/arcSavingExerciseId: a trigger-activated session walks straight from body_scan to acceptance, skipping body_scan_contraction entirely -- the trainee never re-selects contraction regions a saved option already answered", () => {
+  const withOption: NewArcLiveSessionState = { ...fresh(), currentStep: "body_scan", arcSavingBodyOptionId: "option-1" };
+  const { step } = resolveNextStep(withOption);
+  assert.equal(step, "acceptance");
+});
+
+test("arcSavingBodyOptionId/arcSavingExerciseId: from acceptance, body_scan_opening_region and supportive_area_select are both skipped -- the walk lands on acceptance_part_two, never re-asking for the opening/support region a saved option already answered", () => {
+  const withOption: NewArcLiveSessionState = { ...fresh(), currentStep: "acceptance", arcSavingBodyOptionId: "option-1" };
+  const { step } = resolveNextStep(withOption);
+  assert.equal(step, "acceptance_part_two");
+});
+
+test("arcSavingExerciseId has the exact same skip effect as arcSavingBodyOptionId -- 'תרגל שוב' on a standalone saved exercise skips body-region re-selection the same way a trigger's body option does", () => {
+  const withExercise: NewArcLiveSessionState = { ...fresh(), currentStep: "body_scan", arcSavingExerciseId: "exercise-1" };
+  const { step } = resolveNextStep(withExercise);
+  assert.equal(step, "acceptance");
+});
+
+test("arcSaving skip has ZERO effect once past the skipped region-selection screens -- regulation and every step after it are reached exactly like any other Full ARC session (the trainee can still see/adjust the pre-filled sensation/movement there)", () => {
+  const withOption: NewArcLiveSessionState = { ...fresh(), currentStep: "acceptance_part_two", arcSavingBodyOptionId: "option-1" };
+  const without: NewArcLiveSessionState = { ...fresh(), currentStep: "acceptance_part_two" };
+  assert.deepEqual(resolveNextStep(withOption), resolveNextStep(without));
+});
+
+test("arcSavingTriggerIdForNewOption (the 'בחירת אזורי גוף מחדש' path) has NO skip effect at all -- a fresh-regions session walks through body_scan_contraction/body_scan_opening_region exactly like an ordinary session, since there is no pre-existing body option to reuse", () => {
+  const freshRegions: NewArcLiveSessionState = { ...fresh(), currentStep: "body_scan", arcSavingTriggerIdForNewOption: "trigger-1" };
+  const ordinary: NewArcLiveSessionState = { ...fresh(), currentStep: "body_scan" };
+  assert.deepEqual(resolveNextStep(freshRegions), resolveNextStep(ordinary));
+});
+
+test("arcSavingBodyOptionId/arcSavingExerciseId default to null for every pre-existing call site -- createNewArcLiveSessionState never requires them, purely additive", () => {
+  const state = createNewArcLiveSessionState("t1", "לכתוב דוח", "לפתוח את המחשב", NOW, "spontaneous");
+  assert.equal(state.arcSavingBodyOptionId, null);
+  assert.equal(state.arcSavingExerciseId, null);
+  assert.equal(state.arcSavingTriggerIdForNewOption, null);
+});

@@ -216,7 +216,9 @@ test("required test 22 (no duplicate ARC sessions): ArcSessionRequest/sessionMat
 
 test("required test 22 continued: a fresh ARC GYM training-history record is created ONLY inside reload()'s '!existingUnfinished' branch (a genuinely new session), never on a mere resume of an already-matching unfinished one -- so re-opening the same training screen twice in a row never doubles the history", () => {
   const reloadIndex = liveScreen.indexOf("const reload = useCallback");
-  const reloadBody = liveScreen.slice(reloadIndex, reloadIndex + 10000);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (10000 -> 13000) to fit the new arcSavingSnapshot resolution reload() grew.
+  const reloadBody = liveScreen.slice(reloadIndex, reloadIndex + 13000);
   const freshBranchIndex = reloadBody.indexOf("if (!existingUnfinished) {");
   const resumeBranchIndex = reloadBody.indexOf("if (sessionMatchesRequest(existingUnfinished, request)) {");
   assert.ok(freshBranchIndex !== -1 && resumeBranchIndex !== -1 && freshBranchIndex < resumeBranchIndex);
@@ -265,7 +267,7 @@ test("required test 24: all 6 ARC GYM routes are registered in app/_layout.tsx w
 });
 
 test("required test 24 continued: the /tasks/[id]/arc route accepts arcGymSituationId as an independent, optional param and threads it straight through to NewArcLiveScreen, without disturbing the existing mini/spontaneous/shortened/plannedArcId/autoStartAfter params", () => {
-  assert.match(arcRoute, /const \{ id, mini, spontaneous, shortened, skipEmotionSelection, plannedArcId, autoStartAfter, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId, morningFlowCheckIn \} = useLocalSearchParams/);
+  assert.match(arcRoute, /const \{\s*id,\s*mini,\s*spontaneous,\s*shortened,\s*skipEmotionSelection,\s*plannedArcId,\s*autoStartAfter,\s*arcGymSituationId,\s*arcFocusPracticeId,\s*arcGymMemoryExerciseId,\s*arcPerspectiveId,\s*arcSavingBodyOptionId,\s*arcSavingExerciseId,\s*arcSavingTriggerIdForNewOption,\s*morningFlowCheckIn,?\s*\}\s*=\s*useLocalSearchParams/);
   assert.ok(arcRoute.includes("arcGymSituationId={arcGymSituationId ?? null}"));
 });
 

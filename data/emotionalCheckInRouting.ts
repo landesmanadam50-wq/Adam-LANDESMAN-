@@ -131,6 +131,23 @@ interface NavigateOptions {
    * practice must keep linking to whichever task was already active.
    */
   arcPerspectiveId?: string;
+  /**
+   * ARC Saving task: references the arc/arcSaving.ts ArcSavedBodyOption
+   * this ARC run should pre-fill from, OR the ArcSavedExercise for a
+   * standalone "תרגל שוב" (exactly one of the two is ever set). A
+   * sibling param threaded straight through to /tasks/[id]/arc,
+   * persisted on the ARC session itself (arcSavingBodyOptionId) so
+   * arc/newArcLiveSteps.ts's own isStepReachable can skip the body-
+   * region-selection steps. UNLIKE arcGymSituationId/arcGymMemoryExerciseId
+   * above, this never forces `id` to the standalone sentinel -- the
+   * caller (handleArcSavingCheckInChoice below) has already resolved the
+   * correct real-or-standalone taskId itself, since a trigger can be
+   * activated mid-task without disturbing it.
+   */
+  arcSavingBodyOptionId?: string;
+  arcSavingExerciseId?: string;
+  /** ARC Saving task, spec section 6's own "בחירת אזורי גוף מחדש" path: set only when picking body regions fresh for an already-known trigger (never pre-fills anything -- see arc/newArcLiveTypes.ts's own doc). Mutually exclusive with the two fields above. */
+  arcSavingTriggerIdForNewOption?: string;
 }
 
 function navigateTo(target: Parameters<typeof router.push>[0], options: NavigateOptions): void {
@@ -164,6 +181,9 @@ export async function openFullArc(taskId: string | null, options: NavigateOption
   if (options.arcGymMemoryExerciseId) params.arcGymMemoryExerciseId = options.arcGymMemoryExerciseId;
   if (options.arcFocusPracticeId) params.arcFocusPracticeId = options.arcFocusPracticeId;
   if (options.arcPerspectiveId) params.arcPerspectiveId = options.arcPerspectiveId;
+  if (options.arcSavingBodyOptionId) params.arcSavingBodyOptionId = options.arcSavingBodyOptionId;
+  if (options.arcSavingExerciseId) params.arcSavingExerciseId = options.arcSavingExerciseId;
+  if (options.arcSavingTriggerIdForNewOption) params.arcSavingTriggerIdForNewOption = options.arcSavingTriggerIdForNewOption;
   if (options.morningFlowCheckIn) params.morningFlowCheckIn = "1";
   navigateTo({ pathname: "/tasks/[id]/arc", params }, options);
 }
@@ -176,6 +196,9 @@ export async function openShortenedArc(taskId: string | null, options: NavigateO
   if (options.arcGymMemoryExerciseId) params.arcGymMemoryExerciseId = options.arcGymMemoryExerciseId;
   if (options.arcFocusPracticeId) params.arcFocusPracticeId = options.arcFocusPracticeId;
   if (options.arcPerspectiveId) params.arcPerspectiveId = options.arcPerspectiveId;
+  if (options.arcSavingBodyOptionId) params.arcSavingBodyOptionId = options.arcSavingBodyOptionId;
+  if (options.arcSavingExerciseId) params.arcSavingExerciseId = options.arcSavingExerciseId;
+  if (options.arcSavingTriggerIdForNewOption) params.arcSavingTriggerIdForNewOption = options.arcSavingTriggerIdForNewOption;
   if (options.morningFlowCheckIn) params.morningFlowCheckIn = "1";
   navigateTo({ pathname: "/tasks/[id]/arc", params }, options);
 }
@@ -362,4 +385,27 @@ export async function handleArcFocusCheckInChoice(choice: ArcFocusMoodChoice, op
 export async function handleArcPerspectiveCheckInChoice(choice: "full_arc" | "shortened_arc", options: { arcPerspectiveId: string; taskId: string }): Promise<void> {
   if (choice === "full_arc") return openFullArc(options.taskId, { arcPerspectiveId: options.arcPerspectiveId });
   return openShortenedArc(options.taskId, { arcPerspectiveId: options.arcPerspectiveId });
+}
+
+/**
+ * ARC Saving task: the mood-check-in → ARC round-trip for a trigger-
+ * driven (or standalone saved-exercise) ARC Saving activation. Exactly
+ * one of `arcSavingBodyOptionId`/`arcSavingExerciseId` is ever set by
+ * the caller (build/ArcSavingActivateScreen.tsx) -- never both, never
+ * neither. `options.taskId` is ALWAYS already resolved by that caller to
+ * either the standalone sentinel or the trainee's own real active task
+ * (never forced), same contract as handleArcPerspectiveCheckInChoice
+ * above, so a trigger activated mid-task never disturbs that task's own
+ * timer/context.
+ */
+export async function handleArcSavingCheckInChoice(
+  choice: "full_arc" | "shortened_arc",
+  options: { arcSavingBodyOptionId: string | null; arcSavingExerciseId: string | null; arcSavingTriggerIdForNewOption: string | null; taskId: string }
+): Promise<void> {
+  const navOptions: NavigateOptions = {};
+  if (options.arcSavingBodyOptionId) navOptions.arcSavingBodyOptionId = options.arcSavingBodyOptionId;
+  if (options.arcSavingExerciseId) navOptions.arcSavingExerciseId = options.arcSavingExerciseId;
+  if (options.arcSavingTriggerIdForNewOption) navOptions.arcSavingTriggerIdForNewOption = options.arcSavingTriggerIdForNewOption;
+  if (choice === "full_arc") return openFullArc(options.taskId, navOptions);
+  return openShortenedArc(options.taskId, navOptions);
 }

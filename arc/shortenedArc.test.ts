@@ -131,9 +131,9 @@ test("required test: a shortened, EMOTION-ONLY session also reaches 'complete' d
 });
 
 test("required test: describeArcSessionConfig gives 'shortened' its own distinct, correctly-labeled description -- never confused with Mini ARC's own label", () => {
-  const label = describeArcSessionConfig({ arcInvocationMode: "shortened", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null }, null);
+  const label = describeArcSessionConfig({ arcInvocationMode: "shortened", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null }, null);
   assert.equal(label, "ARC מקוצר");
-  assert.notEqual(label, describeArcSessionConfig({ arcInvocationMode: "plannedMini", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null }, null));
+  assert.notEqual(label, describeArcSessionConfig({ arcInvocationMode: "plannedMini", sourcePlannedArcId: null, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcSavingBodyOptionId: null, arcSavingExerciseId: null, arcSavingTriggerIdForNewOption: null }, null));
 });
 
 test("required test: a shortened session's own goalType is NOT restricted the way a standalone session's is -- when linked to a real task, all three tracks (action/emotion_only/combined) remain available, exactly like Full ARC", () => {

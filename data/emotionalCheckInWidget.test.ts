@@ -119,14 +119,14 @@ test("required test 3 (widget navigation when ARCHI is closed): each PendingInte
   assert.ok(providerKt.includes("PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE"));
 });
 
-test("each of the eight tappable widget actions uses its OWN PendingIntent request code -- never sharing one, which would let Android collapse two choices into the same cached Intent", () => {
+test("each of the nine tappable widget actions uses its OWN PendingIntent request code -- never sharing one, which would let Android collapse two choices into the same cached Intent", () => {
   const codes = [...providerKt.matchAll(/REQUEST_CODE_\w+ = (\d+)/g)].map((match) => match[1]);
   assert.equal(
     codes.length,
-    8,
-    "the 3 original mood buttons plus cognitive/next-task-action/insight/add-task (ARCHI -- Consolidated Implementation Request, Part 13.1) plus positive-event (Positive Memory, Success Recall & Quick Capture task)"
+    9,
+    "the 3 original mood buttons plus cognitive/next-task-action/insight/add-task (ARCHI -- Consolidated Implementation Request, Part 13.1) plus positive-event (Positive Memory, Success Recall & Quick Capture task) plus arc-save (ARC Saving, Trigger Management & Quick-Action Buttons task)"
   );
-  assert.equal(new Set(codes).size, 8, "all eight request codes must be distinct");
+  assert.equal(new Set(codes).size, 9, "all nine request codes must be distinct");
 });
 
 test("required test 18 (Android widget behavior after device reboot): onUpdate is the only lifecycle method needed -- the launcher itself re-adds every already-placed widget and re-invokes onUpdate after boot (standard AppWidgetProvider behavior), so no custom boot-completed handling is required or present here", () => {
@@ -215,8 +215,8 @@ test("required test 1 (all buttons present): the layout declares all 8 tappable 
   }
   assert.ok(layout.includes("🧠 מחשבה / דחף"));
   assert.ok(layout.includes("עבור למשימה הבאה"));
-  assert.ok(layout.includes("💡 הוסף תובנה"));
-  assert.ok(layout.includes("➕ הוסף משימה"));
+  assert.ok(layout.includes("+ תובנה"));
+  assert.ok(layout.includes("+ משימה"));
   assert.ok(layout.includes("Chronometer"), "the current-task timer must be a genuine RemoteViews-supported Chronometer, never a plain TextView this provider would need its own tick loop to update");
 });
 

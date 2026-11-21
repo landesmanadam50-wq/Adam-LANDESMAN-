@@ -164,6 +164,18 @@ class OverlayService : Service() {
     // the SAME source-level debounce discipline, for the new "✨ הוסף
     // אירוע חיובי" shortcut.
     private const val ADD_POSITIVE_EVENT_TAP_DEBOUNCE_MS = 1500L
+    // ARC Saving, Trigger Management & Quick-Action Buttons task,
+    // section 7: the SAME source-level debounce discipline, for the two
+    // new quick-action shortcuts ("➕ משימה"/"💾 ARC Save").
+    private const val ADD_TASK_TAP_DEBOUNCE_MS = 1500L
+    private const val ARC_SAVING_OPEN_DEBOUNCE_MS = 1500L
+    // Section 7's own "רקע ירוק מלא ואחיד" requirement: the ONE shared
+    // solid (fully opaque, never translucent like every other row's own
+    // #CC... background) green hex for all four quick-action buttons --
+    // the SAME value Home's own build/FlexibleDailyScreen.tsx
+    // (quickActionButton style) and the widget's own
+    // widget_quick_action_background.xml drawable use.
+    private const val QUICK_ACTION_BACKGROUND = "#FF2E7D32"
   }
 
   private val handler = Handler(Looper.getMainLooper())
@@ -208,6 +220,14 @@ class OverlayService : Service() {
   // the same precedent as insightView/arcGymView above -- "✨ הוסף
   // אירוע חיובי," always available, both idle and active/paused.
   private var positiveEventView: TextView? = null
+  // ARC Saving, Trigger Management & Quick-Action Buttons task, section
+  // 7: the two new quick-action rows -- "➕ משימה" (task-independent,
+  // same convention as arcGymView) and "💾 ARC Save" (opens the
+  // trigger-activation picker). Both share the SAME solid-green
+  // background as insightView/positiveEventView above, which this task
+  // also restyles in place.
+  private var addTaskView: TextView? = null
+  private var arcSavingView: TextView? = null
   // ARCHI -- Collapsible and Expandable Modes task: `pillView` is the
   // tiny collapsed-mode summary (timer or next-task time); `expandedContentView`
   // wraps EVERYTHING this task already built (the collapse button's own
@@ -227,6 +247,8 @@ class OverlayService : Service() {
   private var lastInsightTapAtMs: Long = 0L
   private var lastArcGymOpenAtMs: Long = 0L
   private var lastPositiveEventTapAtMs: Long = 0L
+  private var lastAddTaskTapAtMs: Long = 0L
+  private var lastArcSavingOpenAtMs: Long = 0L
 
   private var taskId: String = ""
   private var title: String = ""
@@ -774,14 +796,20 @@ class OverlayService : Service() {
         addView(nextTaskActionTextView)
       }
 
-      // --- Unified panel, section 7: "💡 הוסף תובנה" -- always
-      // available, both idle and active/paused, per the spec's own
-      // explicit requirement.
+      // --- Unified panel, section 7: "+ תובנה" -- always available,
+      // both idle and active/paused, per the spec's own explicit
+      // requirement. ARC Saving, Trigger Management & Quick-Action
+      // Buttons task, section 7: restyled with the shared SOLID green
+      // background (never translucent/text-only) and a shortened label
+      // -- same hex/label as Home's own quickActionButton style and the
+      // widget's own drawable; the underlying deep link/destination is
+      // completely unchanged.
       val insightTextView = TextView(this).apply {
-        text = "💡 הוסף תובנה"
+        text = "+ תובנה"
         setTextColor(Color.WHITE)
         textSize = 12f
-        setPadding(10, 8, 10, 8)
+        setPadding(14, 10, 14, 10)
+        setBackgroundColor(Color.parseColor(QUICK_ACTION_BACKGROUND))
       }
 
       // --- Add Direct ARC Gym Access from Home and the Floating Timer
@@ -799,13 +827,43 @@ class OverlayService : Service() {
       }
 
       // --- Positive Memory, Success Recall & Quick Capture task,
-      // section 3A: "✨ הוסף אירוע חיובי" -- same row style as
-      // insightTextView, always available idle or active/paused.
+      // section 3A: "+ אירוע חיובי" -- same row style as
+      // insightTextView, always available idle or active/paused. ARC
+      // Saving task, section 7: restyled with the same solid-green
+      // background + shortened label as insightTextView above.
       val positiveEventTextView = TextView(this).apply {
-        text = "✨ הוסף אירוע חיובי"
+        text = "+ אירוע חיובי"
         setTextColor(Color.WHITE)
         textSize = 12f
-        setPadding(10, 8, 10, 8)
+        setPadding(14, 10, 14, 10)
+        setBackgroundColor(Color.parseColor(QUICK_ACTION_BACKGROUND))
+      }
+
+      // --- ARC Saving, Trigger Management & Quick-Action Buttons task,
+      // section 7: "+ משימה" -- the cube's own first quick-action for
+      // task creation (the widget already has one; the cube never did).
+      // Task-independent, same precedent as arcGymView -- opening the
+      // task editor must never touch the active task/timer.
+      val addTaskTextView = TextView(this).apply {
+        text = "+ משימה"
+        setTextColor(Color.WHITE)
+        textSize = 12f
+        setPadding(14, 10, 14, 10)
+        setBackgroundColor(Color.parseColor(QUICK_ACTION_BACKGROUND))
+      }
+
+      // --- ARC Saving, Trigger Management & Quick-Action Buttons task,
+      // section 8+12: "+ ARC Save" -- the fourth quick-action, opening
+      // the trigger-activation picker. Task-independent at the deep-link
+      // level (no taskId threaded through) -- the destination screen
+      // itself resolves the real-or-standalone task, same convention as
+      // every other ARC Saving entry point.
+      val arcSavingTextView = TextView(this).apply {
+        text = "+ ARC Save"
+        setTextColor(Color.WHITE)
+        textSize = 12f
+        setPadding(14, 10, 14, 10)
+        setBackgroundColor(Color.parseColor(QUICK_ACTION_BACKGROUND))
       }
 
       // --- Collapsible and Expandable Modes task: a clearly visible
@@ -838,8 +896,10 @@ class OverlayService : Service() {
         addView(currentTaskRow)
         addView(nextTaskSection)
         addView(insightTextView)
-        addView(arcGymTextView)
+        addView(addTaskTextView)
         addView(positiveEventTextView)
+        addView(arcSavingTextView)
+        addView(arcGymTextView)
       }
 
       // --- Collapsible and Expandable Modes task: the collapsed-mode
@@ -917,6 +977,8 @@ class OverlayService : Service() {
         positiveEventTextView,
         collapseButtonTextView,
         urgeTextView,
+        addTaskTextView,
+        arcSavingTextView,
         params
       )
 
@@ -935,6 +997,8 @@ class OverlayService : Service() {
       insightView = insightTextView
       arcGymView = arcGymTextView
       positiveEventView = positiveEventTextView
+      addTaskView = addTaskTextView
+      arcSavingView = arcSavingTextView
       pillView = pillTextView
       expandedContentView = expandedContent
       collapseButtonView = collapseButtonTextView
@@ -966,6 +1030,8 @@ class OverlayService : Service() {
       insightView = null
       arcGymView = null
       positiveEventView = null
+      addTaskView = null
+      arcSavingView = null
       pillView = null
       expandedContentView = null
       collapseButtonView = null
@@ -1012,13 +1078,16 @@ class OverlayService : Service() {
    * any tap expands (see the ACTION_UP branch below -- the pill is the
    * only visible child, so no hit-test is even needed); while expanded,
    * the collapse button, ✓ (complete stage), the three mood
-   * buttons, "🧠 מחשבה / דחף", "עבור למשימה הבאה", "💡 הוסף תובנה", "🏋️ ARC
-   * Gym", and finally -- anywhere else on the container -- Task LIVE (a no-op while idle, since
-   * openTaskLive() itself already guards on an empty taskId) -- exactly
-   * preserving the pre-existing tap-to-open behavior for every
-   * pre-existing region, extended with the new ones. Dragging itself
-   * works identically whether collapsed or expanded, since it's still
-   * the same one container/one set of LayoutParams either way.
+   * buttons, "🧠 מחשבה / דחף", "עבור למשימה הבאה", the four uniform solid-
+   * green quick-action buttons ("+ תובנה", "🏋️ ARC Gym", "+ אירוע חיובי",
+   * "+ משימה", "+ ARC Save" -- ARC Saving, Trigger Management & Quick-
+   * Action Buttons task section 7/12), and finally -- anywhere else on
+   * the container -- Task LIVE (a no-op while idle, since openTaskLive()
+   * itself already guards on an empty taskId) -- exactly preserving the
+   * pre-existing tap-to-open behavior for every pre-existing region,
+   * extended with the new ones. Dragging itself works identically
+   * whether collapsed or expanded, since it's still the same one
+   * container/one set of LayoutParams either way.
    */
   private fun attachDragAndTapHandling(
     view: View,
@@ -1032,6 +1101,8 @@ class OverlayService : Service() {
     positiveEventView: View,
     collapseButtonView: View,
     urgeView: View,
+    addTaskView: View,
+    arcSavingView: View,
     params: WindowManager.LayoutParams
   ) {
     var initialX = 0
@@ -1049,6 +1120,8 @@ class OverlayService : Service() {
     var downOnPositiveEvent = false
     var downOnCollapseButton = false
     var downOnUrge = false
+    var downOnAddTask = false
+    var downOnArcSaving = false
 
     view.setOnTouchListener { _, event ->
       val wm = windowManager ?: return@setOnTouchListener false
@@ -1069,6 +1142,8 @@ class OverlayService : Service() {
           downOnPositiveEvent = isPointInsideView(view, positiveEventView, event.x, event.y)
           downOnCollapseButton = isPointInsideView(view, collapseButtonView, event.x, event.y)
           downOnUrge = isPointInsideView(view, urgeView, event.x, event.y)
+          downOnAddTask = isPointInsideView(view, addTaskView, event.x, event.y)
+          downOnArcSaving = isPointInsideView(view, arcSavingView, event.x, event.y)
           true
         }
         MotionEvent.ACTION_MOVE -> {
@@ -1124,6 +1199,10 @@ class OverlayService : Service() {
             openArcGym()
           } else if (downOnPositiveEvent) {
             openAddPositiveEvent()
+          } else if (downOnAddTask) {
+            openAddTask()
+          } else if (downOnArcSaving) {
+            openArcSaving()
           } else {
             openTaskLive()
           }
@@ -1395,6 +1474,52 @@ class OverlayService : Service() {
     }
   }
 
+  /**
+   * ARC Saving, Trigger Management & Quick-Action Buttons task, section
+   * 7: "+ משימה" -- opens the existing Add Task flow (TaskEditorScreen
+   * via app/tasks/[id]/edit.tsx), the SAME route the widget's own
+   * buildAddTaskPendingIntent and Home's own build/FlexibleDailyScreen.tsx
+   * quick-action already use -- never a second task-creation screen.
+   * Task-independent: no taskId to carry, this is always a brand-new
+   * task.
+   */
+  private fun openAddTask() {
+    val now = System.currentTimeMillis()
+    if (now - lastAddTaskTapAtMs < ADD_TASK_TAP_DEBOUNCE_MS) return
+    lastAddTaskTapAtMs = now
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("archi://tasks/new/edit")).apply {
+      setPackage(packageName)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+      startActivity(intent)
+    } catch (_: Exception) {
+      // No matching activity to resolve to -- nothing more this side can do.
+    }
+  }
+
+  /**
+   * ARC Saving, Trigger Management & Quick-Action Buttons task, sections
+   * 8+12: "+ ARC Save" -- opens build/ArcSavingActivateScreen.tsx (the
+   * same trigger-activation picker the Home screen's own "+ ARC Save"
+   * button and trigger chips open), never starting ARC automatically on
+   * its own (section 8) -- this deep link only ever opens the picker.
+   */
+  private fun openArcSaving() {
+    val now = System.currentTimeMillis()
+    if (now - lastArcSavingOpenAtMs < ARC_SAVING_OPEN_DEBOUNCE_MS) return
+    lastArcSavingOpenAtMs = now
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("archi://arc-saving/activate")).apply {
+      setPackage(packageName)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+      startActivity(intent)
+    } catch (_: Exception) {
+      // No matching activity to resolve to -- nothing more this side can do.
+    }
+  }
+
   private fun removeOverlayIfAdded() {
     val container = overlayContainer ?: return
     try {
@@ -1415,6 +1540,9 @@ class OverlayService : Service() {
     nextTaskActionView = null
     insightView = null
     arcGymView = null
+    positiveEventView = null
+    addTaskView = null
+    arcSavingView = null
     pillView = null
     expandedContentView = null
     collapseButtonView = null

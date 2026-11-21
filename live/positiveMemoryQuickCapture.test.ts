@@ -25,8 +25,8 @@ const widgetProviderKt = readSource("modules/emotional-checkin-widget/android/sr
 const activeTaskScreen = readSource("live/ActiveTaskScreen.tsx");
 const taskRoute = readSource("app/tasks/[id].tsx");
 
-test("section 3A: the floating cube's expanded panel gets a '✨ הוסף אירוע חיובי' row, added to the SAME expandedContent container as every other action row", () => {
-  assert.ok(overlayKt.includes('text = "✨ הוסף אירוע חיובי"'));
+test("section 3A: the floating cube's expanded panel gets a '+ אירוע חיובי' row (shortened per the ARC Saving/Quick-Action Buttons task's uniform 4-button restyle), added to the SAME expandedContent container as every other action row", () => {
+  assert.ok(overlayKt.includes('text = "+ אירוע חיובי"'));
   const expandedContentIndex = overlayKt.indexOf("val expandedContent = LinearLayout(this).apply {");
   const expandedContentBody = overlayKt.slice(expandedContentIndex, expandedContentIndex + 400);
   assert.ok(expandedContentBody.includes("addView(positiveEventTextView)"));
@@ -53,9 +53,9 @@ test("section 3A: the tap dispatcher hit-tests and routes to the new action, wit
   assert.ok(overlayKt.includes("} else if (downOnPositiveEvent) {\n            openAddPositiveEvent()"));
 });
 
-test("section 3B: the Android widget layout gets its own always-visible '✨ הוסף אירוע חיובי' button, and every XML comment stays well-formed (no literal '--')", () => {
+test("section 3B: the Android widget layout gets its own always-visible '+ אירוע חיובי' button (shortened per the ARC Saving/Quick-Action Buttons task's uniform 4-button restyle), and every XML comment stays well-formed (no literal '--')", () => {
   assert.ok(widgetXml.includes('android:id="@+id/widget_button_positive_event"'));
-  assert.ok(widgetXml.includes('android:text="✨ הוסף אירוע חיובי"'));
+  assert.ok(widgetXml.includes('android:text="+ אירוע חיובי"'));
   const commentBodies = [...widgetXml.matchAll(/<!--([\s\S]*?)-->/g)].map((match) => match[1]);
   for (const body of commentBodies) {
     assert.ok(!body.includes("--"), `XML comment body must never contain a literal '--': ${body.slice(0, 80)}`);

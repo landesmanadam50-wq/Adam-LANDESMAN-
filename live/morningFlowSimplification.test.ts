@@ -89,7 +89,7 @@ test("section 1: openFullArc/openShortenedArc thread morningFlowCheckIn into the
 });
 
 test("section 1: the /tasks/[id]/arc route parses morningFlowCheckIn and threads it straight through to NewArcLiveScreen, alongside (never replacing) the existing params", () => {
-  assert.match(arcRoute, /arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId, morningFlowCheckIn \} = useLocalSearchParams/);
+  assert.match(arcRoute, /arcGymSituationId,\s*arcFocusPracticeId,\s*arcGymMemoryExerciseId,\s*arcPerspectiveId,\s*arcSavingBodyOptionId,\s*arcSavingExerciseId,\s*arcSavingTriggerIdForNewOption,\s*morningFlowCheckIn,?\s*\}\s*=\s*useLocalSearchParams/);
   assert.ok(arcRoute.includes('morningFlowCheckIn={morningFlowCheckIn === "1"}'));
 });
 
@@ -102,8 +102,11 @@ test("section 1: returnToTask's own morningFlowCheckIn branch always goes back t
   // task: widened again (5300 -> 6000) to fit the new
   // arcGymMemoryExerciseId branch, then again (6000 -> 7700) to fit the
   // combined Behaviour+Success scheduled-practice branching, then
-  // again (7700 -> 8400) to fit the new arcPerspectiveId branch.
-  const fnBody = liveScreen.slice(fnIndex, fnIndex + 8700);
+  // again (7700 -> 8400) to fit the new arcPerspectiveId branch. ARC
+  // Saving, Trigger Management & Quick-Action Buttons task: widened
+  // again (8400 -> 10700) to fit the new
+  // arcSavingBodyOptionId/arcSavingExerciseId/arcSavingTriggerIdForNewOption branch.
+  const fnBody = liveScreen.slice(fnIndex, fnIndex + 10700);
   const morningFlowIndex = fnBody.indexOf("if (morningFlowCheckIn) {");
   const standaloneIndex = fnBody.indexOf("if (taskId === STANDALONE_ARC_TASK_ID) {");
   assert.ok(morningFlowIndex !== -1 && standaloneIndex !== -1 && morningFlowIndex < standaloneIndex, "the morningFlowCheckIn branch must be checked BEFORE the standalone-destination branch, so it overrides it");

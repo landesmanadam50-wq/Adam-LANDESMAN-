@@ -167,3 +167,34 @@ test("5/22. handleArcPerspectiveCheckInChoice forwards the caller's own ALREADY-
   assert.ok(fnBody.includes('if (choice === "full_arc") return openFullArc(options.taskId, { arcPerspectiveId: options.arcPerspectiveId });'));
   assert.ok(fnBody.includes("return openShortenedArc(options.taskId, { arcPerspectiveId: options.arcPerspectiveId });"));
 });
+
+// --- ARC Saving, Trigger Management & Quick-Action Buttons task ---
+
+test("openFullArc/openShortenedArc both thread arcSavingBodyOptionId/arcSavingExerciseId/arcSavingTriggerIdForNewOption through to their own params, and never add them to the standalone-forcing condition -- a trigger activated mid-task must never disturb that task's own timer", () => {
+  for (const fnName of ["export async function openFullArc(", "export async function openShortenedArc("]) {
+    const fnIndex = module_.indexOf(fnName);
+    const fnBody = module_.slice(fnIndex, module_.indexOf("\n}", fnIndex));
+    assert.ok(fnBody.includes("if (options.arcSavingBodyOptionId) params.arcSavingBodyOptionId = options.arcSavingBodyOptionId;"));
+    assert.ok(fnBody.includes("if (options.arcSavingExerciseId) params.arcSavingExerciseId = options.arcSavingExerciseId;"));
+    assert.ok(fnBody.includes("if (options.arcSavingTriggerIdForNewOption) params.arcSavingTriggerIdForNewOption = options.arcSavingTriggerIdForNewOption;"));
+    assert.ok(
+      fnBody.includes("const id = options.arcGymSituationId || options.arcGymMemoryExerciseId ? STANDALONE_ARC_TASK_ID : taskId ?? (await resolveHomeCheckInTaskId());"),
+      "none of the three ARC Saving fields must ever be added to the standalone-forcing condition"
+    );
+  }
+});
+
+test("handleArcSavingCheckInChoice forwards the caller's own ALREADY-RESOLVED taskId verbatim to openFullArc/openShortenedArc -- same contract as handleArcPerspectiveCheckInChoice, since build/ArcSavingActivateScreen.tsx has already resolved real-or-standalone before calling this", () => {
+  const fnIndex = module_.indexOf("export async function handleArcSavingCheckInChoice(");
+  const fnBody = module_.slice(fnIndex, module_.indexOf("\n}", fnIndex));
+  assert.ok(fnBody.includes('if (choice === "full_arc") return openFullArc(options.taskId, navOptions);'));
+  assert.ok(fnBody.includes("return openShortenedArc(options.taskId, navOptions);"));
+});
+
+test("handleArcSavingCheckInChoice only forwards whichever of the 3 ARC Saving fields is actually set -- never passing a null through as a literal param (which would otherwise read as the string 'null' in the URL)", () => {
+  const fnIndex = module_.indexOf("export async function handleArcSavingCheckInChoice(");
+  const fnBody = module_.slice(fnIndex, module_.indexOf("\n}", fnIndex));
+  assert.ok(fnBody.includes("if (options.arcSavingBodyOptionId) navOptions.arcSavingBodyOptionId = options.arcSavingBodyOptionId;"));
+  assert.ok(fnBody.includes("if (options.arcSavingExerciseId) navOptions.arcSavingExerciseId = options.arcSavingExerciseId;"));
+  assert.ok(fnBody.includes("if (options.arcSavingTriggerIdForNewOption) navOptions.arcSavingTriggerIdForNewOption = options.arcSavingTriggerIdForNewOption;"));
+});

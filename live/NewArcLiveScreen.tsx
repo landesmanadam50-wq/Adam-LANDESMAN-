@@ -330,11 +330,15 @@ import {
   recordArcDecisionHistory,
   loadArcPerspectiveInProgress,
   saveArcPerspectiveInProgress,
+  loadArcSavedBodyOptions,
+  loadArcSavedExercises,
+  saveArcSavingPendingReview,
 } from "../data/storage.ts";
 import ArcDecisionFlow from "./components/ArcDecisionFlow.tsx";
 import { createArcDecisionSession, completeArcDecisionSession } from "../arc/arcDecision.ts";
 import type { ArcDecisionOption, ArcDecisionSession } from "../arc/arcDecision.ts";
 import { advanceArcPerspectiveFromMoodCheckIn } from "../arc/arcPerspective.ts";
+import { applyArcBodyProtocolSnapshotToSession, captureArcBodyProtocolSnapshot, findArcSavedBodyOptionById, findArcSavedExerciseById } from "../arc/arcSaving.ts";
 // ARCHI -- ARC Result: Automatic, Optional Suggestion Without Extra
 // Shortcuts task, section 3: the one shared check every post-ARC
 // completion path uses before resolving its own destination -- never
@@ -440,6 +444,9 @@ export default function NewArcLiveScreen({
   arcFocusPracticeId = null,
   arcGymMemoryExerciseId = null,
   arcPerspectiveId = null,
+  arcSavingBodyOptionId = null,
+  arcSavingExerciseId = null,
+  arcSavingTriggerIdForNewOption = null,
   morningFlowCheckIn = false,
 }: {
   taskId: string;
@@ -456,6 +463,12 @@ export default function NewArcLiveScreen({
   arcGymMemoryExerciseId?: string | null;
   /** ARC Perspective task: non-null only when this session is the preliminary ARC (😟/🙂 check-in choice) inserted between ARC Perspective's own "event" and "perspective_shift" steps -- see arc/newArcLiveTypes.ts's own doc on NewArcLiveSessionState.arcPerspectiveId. Same shape as arcFocusPracticeId: never forces taskId to the standalone sentinel -- the caller (build/ArcPerspectiveFlowScreen.tsx) has already resolved the real-or-standalone taskId itself, since a real-time practice must keep linking to whichever task was already active. */
   arcPerspectiveId?: string | null;
+  /** ARC Saving task: non-null only when this session was started from a trigger's own chosen arc/arcSaving.ts ArcSavedBodyOption (build/ArcSavingActivateScreen.tsx) -- see arc/newArcLiveTypes.ts's own doc on NewArcLiveSessionState.arcSavingBodyOptionId. Same shape as arcPerspectiveId/arcFocusPracticeId: never forces taskId to the standalone sentinel. Mutually exclusive with arcSavingExerciseId below -- at most one is ever set. */
+  arcSavingBodyOptionId?: string | null;
+  /** ARC Saving task: non-null only for a standalone "תרגל שוב" on an existing ArcSavedExercise (build/ArcSavingScreen.tsx) -- see arc/newArcLiveTypes.ts's own doc on NewArcLiveSessionState.arcSavingExerciseId. */
+  arcSavingExerciseId?: string | null;
+  /** ARC Saving task: non-null only for the "בחירת אזורי גוף מחדש" path (build/ArcSavingActivateScreen.tsx) -- see arc/newArcLiveTypes.ts's own doc on NewArcLiveSessionState.arcSavingTriggerIdForNewOption. Never pre-fills anything. */
+  arcSavingTriggerIdForNewOption?: string | null;
   /** Morning Flow Simplification task: true only when this session was started from live/DailyStartupSequenceOverlay.tsx's own "checkin" step -- a pure navigation hint (never persisted on the session itself, unlike arcGymSituationId above) read only by returnToTask() below. */
   morningFlowCheckIn?: boolean;
 }) {
@@ -722,7 +735,9 @@ export default function NewArcLiveScreen({
       loadInternalActionTimerRun(),
       loadTaskTimerRun(),
       resolveTodaysScheduledPlan(nowDate),
-    ]).then(([task, existing, items, beliefs, arcGymSituations, internalActionRun, taskTimerRun, scheduledPlan]) => {
+      loadArcSavedBodyOptions(),
+      loadArcSavedExercises(),
+    ]).then(([task, existing, items, beliefs, arcGymSituations, internalActionRun, taskTimerRun, scheduledPlan, arcSavedBodyOptions, arcSavedExercises]) => {
       if (!task) return;
       setInternalActionRun(internalActionRun);
       setDailyPlanEntries(scheduledPlan);
@@ -745,6 +760,17 @@ export default function NewArcLiveScreen({
       // already-resolved text baked onto the session itself.
       const arcGymSituation = arcGymSituationId ? arcGymSituations.find((candidate) => candidate.id === arcGymSituationId) ?? null : null;
       const arcGymVisualizationText = arcGymSituation ? resolveArcGymActionVisualization(arcGymSituation) : null;
+      // ARC Saving task: resolved ONCE here (the IO layer), mirroring
+      // arcGymSituation above -- exactly one of the two is ever non-null
+      // (the caller, build/ArcSavingActivateScreen.tsx/ArcSavingScreen.tsx,
+      // never sets both). A deleted-in-the-meantime option/exercise falls
+      // back to null -- never inventing data for a vanished one, same
+      // convention as plannedArcId's own "no longer exists" fallback.
+      const arcSavingSnapshot = arcSavingBodyOptionId
+        ? findArcSavedBodyOptionById(arcSavedBodyOptions, arcSavingBodyOptionId)?.snapshot ?? null
+        : arcSavingExerciseId
+          ? findArcSavedExerciseById(arcSavedExercises, arcSavingExerciseId)?.snapshot ?? null
+          : null;
 
       // What's actually being requested right now -- either a specific
       // saved PlannedArc (plannedArcId), prefilled exactly the way
@@ -763,8 +789,21 @@ export default function NewArcLiveScreen({
             arcFocusPracticeId: null,
             arcGymMemoryExerciseId: null,
             arcPerspectiveId: null,
+            arcSavingBodyOptionId: null,
+            arcSavingExerciseId: null,
+            arcSavingTriggerIdForNewOption: null,
           }
-        : { arcInvocationMode: startMode, sourcePlannedArcId: null, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId };
+        : {
+            arcInvocationMode: startMode,
+            sourcePlannedArcId: null,
+            arcGymSituationId,
+            arcFocusPracticeId,
+            arcGymMemoryExerciseId,
+            arcPerspectiveId,
+            arcSavingBodyOptionId,
+            arcSavingExerciseId,
+            arcSavingTriggerIdForNewOption,
+          };
       const buildFresh = (buildNow: string): NewArcLiveSessionState => {
         const base = requestedItem
           ? createSessionFromPlannedArcFields(
@@ -821,7 +860,25 @@ export default function NewArcLiveScreen({
         // the exact right in-progress ArcPerspectiveSession once this
         // preliminary ARC finishes.
         const withArcPerspective = arcPerspectiveId ? { ...withArcGymMemory, arcPerspectiveId } : withArcGymMemory;
-        return { ...withArcPerspective, isActiveTaskLiveOrigin };
+        // ARC Saving task: the id is stamped unconditionally (same as
+        // every parallel field above, for returnToTask() to find its way
+        // back), and -- unlike those -- the body/sensation/regulation
+        // snapshot is also applied here, ONCE, at creation, so
+        // isStepReachable's own arcSavingBodyOptionId skip-branches (see
+        // arc/newArcLiveSteps.ts) have real pre-filled data to skip past.
+        // A null arcSavingSnapshot (option/exercise deleted in the
+        // meantime) still stamps the id -- the trainee simply walks the
+        // ordinary, un-pre-filled body-selection steps instead, never a
+        // crash or a silently invented snapshot.
+        const withArcSavingId = arcSavingBodyOptionId
+          ? { ...withArcPerspective, arcSavingBodyOptionId }
+          : arcSavingExerciseId
+            ? { ...withArcPerspective, arcSavingExerciseId }
+            : arcSavingTriggerIdForNewOption
+              ? { ...withArcPerspective, arcSavingTriggerIdForNewOption }
+              : withArcPerspective;
+        const withArcSaving = arcSavingSnapshot ? applyArcBodyProtocolSnapshotToSession(withArcSavingId, arcSavingSnapshot) : withArcSavingId;
+        return { ...withArcSaving, isActiveTaskLiveOrigin };
       };
       const requestedLabel = describeArcSessionConfig(request, requestedItem?.name ?? null);
 
@@ -873,6 +930,9 @@ export default function NewArcLiveScreen({
             arcFocusPracticeId: existingUnfinished.arcFocusPracticeId,
             arcGymMemoryExerciseId: existingUnfinished.arcGymMemoryExerciseId,
             arcPerspectiveId: existingUnfinished.arcPerspectiveId,
+            arcSavingBodyOptionId: existingUnfinished.arcSavingBodyOptionId,
+            arcSavingExerciseId: existingUnfinished.arcSavingExerciseId,
+            arcSavingTriggerIdForNewOption: existingUnfinished.arcSavingTriggerIdForNewOption,
           },
           existingPlannedArcName
         ),
@@ -880,7 +940,19 @@ export default function NewArcLiveScreen({
         buildRequested: () => buildFresh(new Date().toISOString()),
       });
     });
-  }, [taskId, startMode, skipEmotionSelection, plannedArcId, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId]);
+  }, [
+    taskId,
+    startMode,
+    skipEmotionSelection,
+    plannedArcId,
+    arcGymSituationId,
+    arcFocusPracticeId,
+    arcGymMemoryExerciseId,
+    arcPerspectiveId,
+    arcSavingBodyOptionId,
+    arcSavingExerciseId,
+    arcSavingTriggerIdForNewOption,
+  ]);
 
   function resumeExistingSession() {
     if (!conflict) return;
@@ -1321,6 +1393,34 @@ export default function NewArcLiveScreen({
         await saveArcPerspectiveInProgress(advanceArcPerspectiveFromMoodCheckIn(progress));
       }
       router.replace({ pathname: "/arc-perspective/[id]", params: { id: session.arcPerspectiveId } });
+      return;
+    }
+    // ARC Saving task: this ARC run was launched from a trigger's own
+    // chosen ArcSavedBodyOption (or a standalone ArcSavedExercise's own
+    // "תרגל שוב") -- never resolved as a normal task completion. The
+    // final, possibly-edited snapshot is captured and handed to the
+    // single-slot pending-review record (saveArcSavingPendingReview);
+    // build/ArcSavingReviewScreen.tsx reads it once on its next focus
+    // and runs the real divergence check there (never here -- this
+    // function stays a plain navigation call, no Alert). `taskId` is
+    // carried through UNCHANGED, same as arcFocusPracticeId/
+    // arcPerspectiveId above -- never forced, so a trigger activated
+    // mid-task returns to that exact task.
+    if (session?.arcSavingBodyOptionId || session?.arcSavingExerciseId || session?.arcSavingTriggerIdForNewOption) {
+      await saveArcSavingPendingReview({
+        bodyOptionId: session.arcSavingBodyOptionId,
+        exerciseId: session.arcSavingExerciseId,
+        triggerIdForNewOption: session.arcSavingTriggerIdForNewOption,
+        finalSnapshot: captureArcBodyProtocolSnapshot(session),
+        activeTaskId: taskId === STANDALONE_ARC_TASK_ID ? null : taskId,
+        completedAt: new Date().toISOString(),
+      });
+      // A single, static route -- never a per-id dynamic segment -- since
+      // there is only ever at most one pending ArcSavingPendingReview at
+      // a time (same "one resumable slot" convention as every other
+      // in-progress record in this codebase); the review screen reads it
+      // directly rather than trusting a route param for its own logic.
+      router.replace("/arc-saving/review");
       return;
     }
     // Morning Flow Simplification task, section 1: "after completing

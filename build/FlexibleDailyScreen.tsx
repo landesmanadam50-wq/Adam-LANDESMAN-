@@ -12,10 +12,13 @@ import { resolveEffectiveScheduleMode, WEEKLY_SPACED_GAP_PRESETS } from "../arc/
 import type { WeeklyScheduleMode } from "../arc/weeklyScheduleMode.ts";
 import { isTaskTimerRunStale } from "../arc/taskTimer.ts";
 import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
+import type { ArcTrigger } from "../arc/arcSaving.ts";
 import {
   deleteTask,
   getTask,
+  loadActiveArcTriggerIds,
   loadArcGymGoals,
+  loadArcTriggers,
   loadDailyScheduleModeOverrides,
   loadFloatingTimerOverlayPreferences,
   loadShowHomeInsightButtonSetting,
@@ -136,20 +139,26 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
   const [togglingOverlay, setTogglingOverlay] = useState(false);
   /** ARC Gym + ARC Goal Integration task: read-only, for the additive goal-title badge on each row below -- never affects scheduling/ordering. */
   const [arcGymGoals, setArcGymGoals] = useState<ArcGymGoal[]>([]);
+  /** ARC Saving task, section 11: the trainee's own currently-active trigger shortcuts, in display order -- reloaded on every focus, same convention as showHomeInsightButton above, so a change made via "עריכת טריגרים" is reflected the instant the trainee comes back to Home. */
+  const [activeTriggers, setActiveTriggers] = useState<ArcTrigger[]>([]);
 
   const reload = useCallback(async () => {
-    const [tasks, overrides, completions, weekdaySettings, dateModeOverrides, groupsForDate, showInsightButton, overlayPreferences, goals] = await Promise.all([
-      loadTasks(),
-      loadTaskOccurrenceOverrides(),
-      loadTaskOccurrenceCompletions(),
-      loadWeeklyScheduleModeSettings(),
-      loadDailyScheduleModeOverrides(),
-      loadContinuousRoutineGroupsForDate(dateLocal),
-      loadShowHomeInsightButtonSetting(),
-      loadFloatingTimerOverlayPreferences(),
-      loadArcGymGoals(),
-    ]);
+    const [tasks, overrides, completions, weekdaySettings, dateModeOverrides, groupsForDate, showInsightButton, overlayPreferences, goals, allTriggers, activeTriggerIds] =
+      await Promise.all([
+        loadTasks(),
+        loadTaskOccurrenceOverrides(),
+        loadTaskOccurrenceCompletions(),
+        loadWeeklyScheduleModeSettings(),
+        loadDailyScheduleModeOverrides(),
+        loadContinuousRoutineGroupsForDate(dateLocal),
+        loadShowHomeInsightButtonSetting(),
+        loadFloatingTimerOverlayPreferences(),
+        loadArcGymGoals(),
+        loadArcTriggers(),
+        loadActiveArcTriggerIds(),
+      ]);
     setArcGymGoals(goals);
+    setActiveTriggers(activeTriggerIds.map((id) => allTriggers.find((trigger) => trigger.id === id)).filter((trigger): trigger is ArcTrigger => !!trigger));
     setShowHomeInsightButton(showInsightButton);
     setOverlayActive(overlayPreferences.enabled);
     setContinuousGroups(groupsForDate);
@@ -727,6 +736,55 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
             button reuses the existing, already-correct home/lock-
             screen setup screen (/tasks/emotional-checkin-settings)
             verbatim -- "do not create a duplicate settings system." */}
+        {/*
+         * ARC Saving, Trigger Management & Quick-Action Buttons task,
+         * section 7+11: the four quick-action buttons, restyled with a
+         * SOLID green background (never a border/text-only look) and
+         * shortened labels -- "+ תובנה"/"+ אירוע חיובי" keep their exact
+         * existing destinations/gating (showHomeInsightButton) verbatim,
+         * "+ משימה" is new here (the same /tasks/[id]/edit route
+         * TasksListScreen.tsx's own "הוסף משימה" button already uses),
+         * and "+ ARC Save" opens the trigger-activation picker. Pulled
+         * out of settingsRow below, which keeps only the view/collection
+         * links (⚙️/📱/📜/📚/📖) -- never duplicated, never recreated.
+         */}
+        {isTodayMode && (
+          <View style={styles.quickActionsRow}>
+            {showHomeInsightButton && (
+              <Pressable style={styles.quickActionButton} onPress={() => router.push("/insights/new")}>
+                <Text style={styles.quickActionButtonText}>+ תובנה</Text>
+              </Pressable>
+            )}
+            <Pressable style={styles.quickActionButton} onPress={() => router.push({ pathname: "/tasks/[id]/edit", params: { id: "new" } })}>
+              <Text style={styles.quickActionButtonText}>+ משימה</Text>
+            </Pressable>
+            <Pressable style={styles.quickActionButton} onPress={() => router.push("/positive-memories/new")}>
+              <Text style={styles.quickActionButtonText}>+ אירוע חיובי</Text>
+            </Pressable>
+            <Pressable style={styles.quickActionButton} onPress={() => router.push("/arc-saving/activate")}>
+              <Text style={styles.quickActionButtonText}>+ ARC Save</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* ARC Saving task, section 11: the trainee's own currently-
+            active trigger shortcuts -- tapping one opens the SAME
+            activate flow "+ ARC Save" opens, pre-selecting that trigger
+            so the trainee skips straight to its own body-option/mood
+            choice (never auto-starting ARC on its own, per section 8). */}
+        {isTodayMode && activeTriggers.length > 0 && (
+          <View style={styles.activeTriggersBlock}>
+            <Text style={styles.activeTriggersTitle}>הטריגרים שלי כרגע</Text>
+            <View style={styles.activeTriggersRow}>
+              {activeTriggers.map((trigger) => (
+                <Pressable key={trigger.id} style={styles.activeTriggerChip} onPress={() => router.push({ pathname: "/arc-saving/activate", params: { triggerId: trigger.id } })}>
+                  <Text style={styles.activeTriggerChipText}>{trigger.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
+
         {isTodayMode && (
           <View style={styles.settingsRow}>
             <Pressable style={styles.settingsLink} onPress={() => router.push("/settings")}>
@@ -750,28 +808,14 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
             <Pressable style={styles.settingsLink} onPress={() => router.push("/purpose-manifests")}>
               <Text style={styles.settingsLinkText}>📜 מניפסט</Text>
             </Pressable>
-            {/*
-             * ARCHI -- Unified Development Specification task, Part 3
-             * ("ADD INSIGHTS FROM THE HOME SCREEN") / Part 11 ("HOME
-             * SCREEN ORGANIZATION"): "הוסף תובנה" is gated by the
-             * Settings toggle (showHomeInsightButton, reloaded on every
-             * focus) -- "אוסף תובנות" always shows, since the spec's
-             * own Part 11 list has no toggle for it.
-             */}
-            {showHomeInsightButton && (
-              <Pressable style={styles.settingsLink} onPress={() => router.push("/insights/new")}>
-                <Text style={styles.settingsLinkText}>💡 הוסף תובנה</Text>
-              </Pressable>
-            )}
             <Pressable style={styles.settingsLink} onPress={() => router.push("/insights")}>
               <Text style={styles.settingsLinkText}>📚 אוסף תובנות</Text>
             </Pressable>
-            {/* Positive Memory, Success Recall & Quick Capture task, section 3: the ONE in-app entry point into positive-event documentation, mirroring the insight shortcuts right above it. */}
-            <Pressable style={styles.settingsLink} onPress={() => router.push("/positive-memories/new")}>
-              <Text style={styles.settingsLinkText}>✨ הוסף אירוע חיובי</Text>
-            </Pressable>
             <Pressable style={styles.settingsLink} onPress={() => router.push("/positive-memories")}>
               <Text style={styles.settingsLinkText}>📖 אירועים חיוביים</Text>
+            </Pressable>
+            <Pressable style={styles.settingsLink} onPress={() => router.push("/arc-saving")}>
+              <Text style={styles.settingsLinkText}>💾 ARC Saving</Text>
             </Pressable>
           </View>
         )}
@@ -996,6 +1040,23 @@ const styles = StyleSheet.create({
   settingsRow: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 10, marginBottom: 14 },
   settingsLink: { borderWidth: 1, borderColor: "#0a7ea4", borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12 },
   settingsLinkText: { color: "#0a7ea4", fontSize: 13, fontWeight: "600" },
+  /*
+   * ARC Saving, Trigger Management & Quick-Action Buttons task, section
+   * 7: the ONE shared solid-green quick-action look -- same background/
+   * radius/height/typography/spacing for all four buttons, on all three
+   * surfaces (Home here; the cube's OverlayService.kt and the widget's
+   * own XML drawable use the SAME #2E7D32 hex, never a different shade).
+   * flexWrap lets the row reflow to two lines on a narrow/small screen
+   * (section 29) instead of clipping or horizontally scrolling.
+   */
+  quickActionsRow: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 8, marginBottom: 14 },
+  quickActionButton: { backgroundColor: "#2E7D32", borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, minWidth: 80, alignItems: "center" },
+  quickActionButtonText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  activeTriggersBlock: { marginBottom: 14 },
+  activeTriggersTitle: { fontSize: 13, fontWeight: "700", color: "#444", textAlign: "right", marginBottom: 6 },
+  activeTriggersRow: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 8 },
+  activeTriggerChip: { backgroundColor: "#eef7f0", borderWidth: 1, borderColor: "#2E7D32", borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12 },
+  activeTriggerChipText: { color: "#2E7D32", fontSize: 12, fontWeight: "700" },
   modeRow: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 6, marginTop: 8 },
   modeChip: { backgroundColor: "#F0F0F0", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8 },
   modeChipSelected: { backgroundColor: "#0a7ea4" },

@@ -19,7 +19,7 @@ import android.widget.RemoteViews
  * AndroidManifest.xml, merged into the app's manifest the same way
  * modules/floating-timer-overlay's own Service already is).
  *
- * Each of the three (now five) tappable actions opens ARCHI directly
+ * Each of the (now many) tappable actions opens ARCHI directly
  * into its own flow via the SAME `archi://...` deep links
  * (check-in choices through app/check-in.tsx -> data/emotionalCheckInRouting.ts;
  * task/insight routes through the SAME archi://tasks/$taskId... scheme
@@ -51,6 +51,7 @@ class EmotionalCheckInWidgetProvider : AppWidgetProvider() {
     private const val REQUEST_CODE_INSIGHT = 1006
     private const val REQUEST_CODE_ADD_TASK = 1007
     private const val REQUEST_CODE_POSITIVE_EVENT = 1008
+    private const val REQUEST_CODE_ARC_SAVE = 1009
 
     /**
      * Called by EmotionalCheckInWidgetModule.update() -- persists the
@@ -136,6 +137,12 @@ class EmotionalCheckInWidgetProvider : AppWidgetProvider() {
       // active/paused alike, same convention as the insight button.
       views.setOnClickPendingIntent(R.id.widget_button_positive_event, buildPositiveEventPendingIntent(context, state.taskId))
 
+      // ARC Saving, Trigger Management & Quick-Action Buttons task,
+      // section 8/13: "+ ARC Save" -- always available, idle or
+      // active/paused alike; task-independent, same as buildAddTaskPendingIntent
+      // below (the activate screen resolves the active task itself).
+      views.setOnClickPendingIntent(R.id.widget_button_arc_save, buildArcSavePendingIntent(context))
+
       return views
     }
 
@@ -215,6 +222,23 @@ class EmotionalCheckInWidgetProvider : AppWidgetProvider() {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }
       return PendingIntent.getActivity(context, REQUEST_CODE_ADD_TASK, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
+    /**
+     * ARC Saving, Trigger Management & Quick-Action Buttons task,
+     * sections 8+13: "+ ARC Save" -- opens build/ArcSavingActivateScreen.tsx
+     * (the same trigger-activation picker Home's own "+ ARC Save" button
+     * and the floating cube's openArcSaving() open), never starting ARC
+     * automatically on its own -- this deep link only ever opens the
+     * picker. Task-independent, same as buildAddTaskPendingIntent above
+     * (the destination screen resolves the active task itself).
+     */
+    private fun buildArcSavePendingIntent(context: Context): PendingIntent {
+      val intent = Intent(Intent.ACTION_VIEW, Uri.parse("archi://arc-saving/activate")).apply {
+        setPackage(context.packageName)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      return PendingIntent.getActivity(context, REQUEST_CODE_ARC_SAVE, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
   }
 

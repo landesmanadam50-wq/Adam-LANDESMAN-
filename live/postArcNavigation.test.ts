@@ -64,8 +64,11 @@ function returnToTaskBody(): string {
   // branch. ARC Gym + ARC Goal Integration task: widened again
   // (5200 -> 6500) to fit the new arcGymMemoryExerciseId branch. ARC
   // Perspective task: widened again (6500 -> 8400) to fit the new
-  // arcPerspectiveId branch.
-  return screen.slice(fnIndex, fnIndex + 8700);
+  // arcPerspectiveId branch. ARC Saving, Trigger Management &
+  // Quick-Action Buttons task: widened again (8400 -> 10700) to fit the
+  // new arcSavingBodyOptionId/arcSavingExerciseId/
+  // arcSavingTriggerIdForNewOption branch.
+  return screen.slice(fnIndex, fnIndex + 10700);
 }
 
 // ARCHI -- ARC Result task, section 3: the generic (non-overridden)

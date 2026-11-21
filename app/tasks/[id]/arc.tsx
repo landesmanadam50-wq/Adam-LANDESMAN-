@@ -25,7 +25,23 @@ function resolveStartMode(mini?: string, spontaneous?: string, shortened?: strin
 }
 
 export default function TaskArc() {
-  const { id, mini, spontaneous, shortened, skipEmotionSelection, plannedArcId, autoStartAfter, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId, morningFlowCheckIn } = useLocalSearchParams<{
+  const {
+    id,
+    mini,
+    spontaneous,
+    shortened,
+    skipEmotionSelection,
+    plannedArcId,
+    autoStartAfter,
+    arcGymSituationId,
+    arcFocusPracticeId,
+    arcGymMemoryExerciseId,
+    arcPerspectiveId,
+    arcSavingBodyOptionId,
+    arcSavingExerciseId,
+    arcSavingTriggerIdForNewOption,
+    morningFlowCheckIn,
+  } = useLocalSearchParams<{
     id: string;
     mini?: string;
     spontaneous?: string;
@@ -44,6 +60,9 @@ export default function TaskArc() {
     arcFocusPracticeId?: string;
     arcGymMemoryExerciseId?: string;
     arcPerspectiveId?: string;
+    arcSavingBodyOptionId?: string;
+    arcSavingExerciseId?: string;
+    arcSavingTriggerIdForNewOption?: string;
     morningFlowCheckIn?: string;
   }>();
   return (
@@ -57,6 +76,9 @@ export default function TaskArc() {
       arcFocusPracticeId={arcFocusPracticeId ?? null}
       arcGymMemoryExerciseId={arcGymMemoryExerciseId ?? null}
       arcPerspectiveId={arcPerspectiveId ?? null}
+      arcSavingBodyOptionId={arcSavingBodyOptionId ?? null}
+      arcSavingExerciseId={arcSavingExerciseId ?? null}
+      arcSavingTriggerIdForNewOption={arcSavingTriggerIdForNewOption ?? null}
       morningFlowCheckIn={morningFlowCheckIn === "1"}
     />
   );

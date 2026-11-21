@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ARC Saving, Trigger Management & Quick-Action Buttons task, section 7:
+  the shared SOLID green background for all four quick-action buttons
+  ("+ תובנה"/"+ משימה"/"+ אירוע חיובי"/"+ ARC Save"), matching the same
+  #2E7D32 shade and 12dp corner radius used by Home's own
+  quickActionButton style and the floating cube's QUICK_ACTION_BACKGROUND
+  constant — kept as its own drawable (not a reuse of
+  widget_button_background) because every other widget button stays on
+  the plain white background; only these four switch to solid green.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+  <solid android:color="#2E7D32" />
+  <corners android:radius="12dp" />
+</shape>

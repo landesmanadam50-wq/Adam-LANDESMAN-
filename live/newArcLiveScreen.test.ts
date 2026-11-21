@@ -261,7 +261,9 @@ test("body_scan_opening_region (Screen Two) restricts selectableRegions to resol
 
 test("the screen resumes an existing persisted session only when its own taskId matches and it isn't already completed -- never resuming a finished or a different task's session", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 9000);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (9000 -> 10500) to fit the new arcSavingSnapshot resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 10500);
   assert.ok(reloadBody.includes("existing.taskId === taskId"));
   assert.ok(reloadBody.includes("!existing.completedAt"));
 });
@@ -286,8 +288,11 @@ test("return-to-task: reaching 'complete' automatically completes the session, c
   // task: widened again (5300 -> 6500) to fit the new
   // arcGymMemoryExerciseId branch, then again (6500 -> 7700) to fit
   // the combined Behaviour+Success scheduled-practice branching, then
-  // again (7700 -> 8400) to fit the new arcPerspectiveId branch.
-  const returnToTaskBody = screen.slice(returnToTaskIndex, returnToTaskIndex + 8700);
+  // again (7700 -> 8400) to fit the new arcPerspectiveId branch. ARC
+  // Saving, Trigger Management & Quick-Action Buttons task: widened
+  // again (8400 -> 10700) to fit the new
+  // arcSavingBodyOptionId/arcSavingExerciseId/arcSavingTriggerIdForNewOption branch.
+  const returnToTaskBody = screen.slice(returnToTaskIndex, returnToTaskIndex + 10700);
   assert.ok(returnToTaskBody.includes("clearNewArcLiveSession()"));
   // ARCHI -- ARC Result task, section 3: the final fallback destination
   // now goes through routeToTaskOrArcResultSuggestion (which itself
@@ -370,7 +375,7 @@ test("the dwell timer only ever delays enabling Continue -- it never auto-advanc
 test("the screen accepts an optional plannedArcId prop, defaulting to null for every ad-hoc entry point (mid-task buttons, end-of-timer choice)", () => {
   assert.match(
     screen,
-    /plannedArcId = null,\s*autoStartAfter = false,\s*arcGymSituationId = null,\s*arcFocusPracticeId = null,\s*arcGymMemoryExerciseId = null,\s*arcPerspectiveId = null,\s*morningFlowCheckIn = false,?\s*\}:\s*\{\s*taskId: string;\s*startMode\?: ArcInvocationMode;[\s\S]*?skipEmotionSelection\?: boolean;\s*plannedArcId\?: string \| null;\s*autoStartAfter\?: boolean;/
+    /plannedArcId = null,\s*autoStartAfter = false,\s*arcGymSituationId = null,\s*arcFocusPracticeId = null,\s*arcGymMemoryExerciseId = null,\s*arcPerspectiveId = null,\s*arcSavingBodyOptionId = null,\s*arcSavingExerciseId = null,\s*arcSavingTriggerIdForNewOption = null,\s*morningFlowCheckIn = false,?\s*\}:\s*\{\s*taskId: string;\s*startMode\?: ArcInvocationMode;[\s\S]*?skipEmotionSelection\?: boolean;\s*plannedArcId\?: string \| null;\s*autoStartAfter\?: boolean;/
   );
 });
 
@@ -392,7 +397,9 @@ test("the screen accepts an optional autoStartAfter prop, defaulting to false fo
 
 test("reload() resolves what's requested from plannedArcId (looking the draft up by id, never inventing one for a since-deleted draft) BEFORE comparing it against any existing unfinished session", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 9000);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (9000 -> 10500) to fit the new arcSavingSnapshot resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 10500);
   assert.ok(reloadBody.includes("const requestedItem = plannedArcId ? plannedArcsById.get(plannedArcId) ?? null : null;"));
   const requestedItemIndex = reloadBody.indexOf("const requestedItem");
   const existingUnfinishedIndex = reloadBody.indexOf("const existingUnfinished");
@@ -401,7 +408,9 @@ test("reload() resolves what's requested from plannedArcId (looking the draft up
 
 test("reload(): no existing unfinished session -- starts and persists a fresh one immediately, exactly as before this fix", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 9400);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (9400 -> 10700) to fit the new arcSavingSnapshot resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 10700);
   const branchIndex = reloadBody.indexOf("if (!existingUnfinished) {");
   const branchBody = reloadBody.slice(branchIndex, branchIndex + 200);
   assert.ok(branchBody.includes("setSession(fresh)"));
@@ -410,7 +419,9 @@ test("reload(): no existing unfinished session -- starts and persists a fresh on
 
 test("reload(): an existing unfinished session of the SAME type and configuration (sessionMatchesRequest) is resumed silently -- never overwritten, never surfaced as a conflict", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 9900);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (9900 -> 12300) to fit the new arcSavingSnapshot resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 12300);
   const branchIndex = reloadBody.indexOf("if (sessionMatchesRequest(existingUnfinished, request)) {");
   const branchBody = reloadBody.slice(branchIndex, branchIndex + 250);
   assert.ok(branchBody.includes("setSession(existingUnfinished)"));
@@ -419,10 +430,14 @@ test("reload(): an existing unfinished session of the SAME type and configuratio
 
 test("reload(): an existing unfinished session of a DIFFERENT type/configuration sets conflict state instead of silently resuming or discarding it (requirements 3/4)", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 11200);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (11200 -> 14300) to fit the new arcSavingSnapshot resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 14300);
   assert.ok(reloadBody.includes("setConflict({"));
   const conflictBlockIndex = reloadBody.indexOf("setConflict({");
-  const conflictBlockBody = reloadBody.slice(conflictBlockIndex, conflictBlockIndex + 750);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (750 -> 950) since the conflict block itself grew slightly.
+  const conflictBlockBody = reloadBody.slice(conflictBlockIndex, conflictBlockIndex + 950);
   assert.ok(conflictBlockBody.includes("existing: existingUnfinished"));
   assert.ok(conflictBlockBody.includes("existingLabel:"));
   assert.ok(conflictBlockBody.includes("requestedLabel"));
@@ -832,7 +847,9 @@ test("checkpoint (Start/Pause/Resume/Finish): handleStartInternalActionTimer cre
 
 test("checkpoint (persists across interruptions): the run is loaded from its own persisted slot inside reload()'s Promise.all, so it survives backgrounding/app restart exactly like the ARC LIVE session itself", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback(");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 1200);
+  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
+  // (1200 -> 1400) to fit the new arcSavingSnapshot resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 1400);
   assert.ok(reloadBody.includes("loadInternalActionTimerRun()"));
   assert.ok(reloadBody.includes("setInternalActionRun(internalActionRun)"));
 });

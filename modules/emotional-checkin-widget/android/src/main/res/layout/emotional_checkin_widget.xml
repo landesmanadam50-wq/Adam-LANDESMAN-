@@ -195,12 +195,13 @@
   </LinearLayout>
 
   <!--
-    ARCHI — Consolidated Implementation Request, Part 13.1: "➕ הוסף
-    משימה" and "💡 הוסף תובנה" together, in one logically-grouped
-    row — both always available regardless of idle/active state, same
-    as the insight button already was. Two half-width TextViews rather
-    than two separate full-width rows, so this stays compact on a
-    small/resizable placement (Part 13.3).
+    ARC Saving, Trigger Management & Quick-Action Buttons task, section
+    7+13: the four uniform, SOLID-green quick-action buttons — "+
+    תובנה"/"+ משימה"/"+ אירוע חיובי"/"+ ARC Save" — same shortened
+    labels and identical widget_quick_action_background as Home's own
+    quickActionsRow and the floating cube's restyled buttons, laid out
+    as a compact 2x2 grid (two rows of two half-width TextViews) so the
+    block stays usable on a small/resizable widget placement.
   -->
   <LinearLayout
     android:layout_width="match_parent"
@@ -209,48 +210,74 @@
     android:orientation="horizontal">
 
     <TextView
-      android:id="@+id/widget_button_add_task"
-      android:layout_width="0dp"
-      android:layout_height="wrap_content"
-      android:layout_weight="1"
-      android:layout_marginEnd="4dp"
-      android:background="@drawable/widget_button_background"
-      android:gravity="center"
-      android:paddingTop="8dp"
-      android:paddingBottom="8dp"
-      android:text="➕ הוסף משימה"
-      android:textSize="12sp"
-      android:textColor="#333333" />
-
-    <!-- Section 7 (always available, idle or active/paused alike): "הוסף תובנה" — same deep-link destination convention as the cube's own insightView. -->
-    <TextView
       android:id="@+id/widget_button_insight"
       android:layout_width="0dp"
       android:layout_height="wrap_content"
       android:layout_weight="1"
-      android:layout_marginStart="4dp"
-      android:background="@drawable/widget_button_background"
+      android:layout_marginEnd="4dp"
+      android:background="@drawable/widget_quick_action_background"
       android:gravity="center"
       android:paddingTop="8dp"
       android:paddingBottom="8dp"
-      android:text="💡 הוסף תובנה"
+      android:text="+ תובנה"
       android:textSize="12sp"
-      android:textColor="#333333" />
+      android:textStyle="bold"
+      android:textColor="#FFFFFF" />
+
+    <TextView
+      android:id="@+id/widget_button_add_task"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginStart="4dp"
+      android:background="@drawable/widget_quick_action_background"
+      android:gravity="center"
+      android:paddingTop="8dp"
+      android:paddingBottom="8dp"
+      android:text="+ משימה"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="#FFFFFF" />
 
   </LinearLayout>
 
-  <!-- Positive Memory, Success Recall & Quick Capture task, section 3B: "✨ הוסף אירוע חיובי" — always available, idle or active/paused alike, same deep-link destination convention as the cube's own positiveEventView/the row above's widget_button_insight. -->
-  <TextView
-    android:id="@+id/widget_button_positive_event"
+  <LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="6dp"
-    android:background="@drawable/widget_button_background"
-    android:gravity="center"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp"
-    android:text="✨ הוסף אירוע חיובי"
-    android:textSize="12sp"
-    android:textColor="#333333" />
+    android:orientation="horizontal">
+
+    <TextView
+      android:id="@+id/widget_button_positive_event"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginEnd="4dp"
+      android:background="@drawable/widget_quick_action_background"
+      android:gravity="center"
+      android:paddingTop="8dp"
+      android:paddingBottom="8dp"
+      android:text="+ אירוע חיובי"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="#FFFFFF" />
+
+    <!-- ARC Saving, Trigger Management & Quick-Action Buttons task, section 8/13: "+ ARC Save" — opens build/ArcSavingActivateScreen.tsx (the trigger-activation picker), never starting ARC automatically on its own. -->
+    <TextView
+      android:id="@+id/widget_button_arc_save"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginStart="4dp"
+      android:background="@drawable/widget_quick_action_background"
+      android:gravity="center"
+      android:paddingTop="8dp"
+      android:paddingBottom="8dp"
+      android:text="+ ARC Save"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:textColor="#FFFFFF" />
+
+  </LinearLayout>
 
 </LinearLayout>

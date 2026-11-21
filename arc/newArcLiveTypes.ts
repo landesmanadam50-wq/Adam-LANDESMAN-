@@ -1000,6 +1000,50 @@ export interface NewArcLiveSessionState {
    */
   arcPerspectiveId: string | null;
 
+  /**
+   * ARC Saving, Trigger Management & Quick-Action Buttons task: set when
+   * this session was launched from a trigger's own chosen
+   * ArcSavedBodyOption (build/ArcSavingActivateScreen.tsx) -- the body/
+   * sensation/regulation/encoding fields below are pre-filled from that
+   * option's snapshot ONCE, at session creation (arc/arcSaving.ts's own
+   * applyArcBodyProtocolSnapshotToSession), never re-applied on reload.
+   * Same parallel-field convention as arcPerspectiveId above: never
+   * forces taskId to the standalone sentinel -- the activate screen has
+   * already resolved the real-or-standalone taskId itself (mid-task use
+   * preserves whatever task was already active). isStepReachable (see
+   * arc/newArcLiveSteps.ts) skips the body-REGION-selection steps only
+   * (body_scan_contraction/body_scan_opening_region/
+   * supportive_area_select) -- Regulation itself always stays reachable,
+   * so the trainee can still see/adjust the pre-filled values; any edit
+   * there is exactly the divergence the end-of-session review screen
+   * checks for. Null for the "בחירת אזורי גוף מחדש" path (spec section
+   * 6), which starts an ordinary, un-pre-filled session for the same
+   * trigger instead.
+   */
+  arcSavingBodyOptionId: string | null;
+  /**
+   * Same mechanism as arcSavingBodyOptionId above, for "תרגל שוב" on a
+   * standalone ArcSavedExercise (never trigger-attached) --
+   * build/ArcSavingScreen.tsx's own management list. Kept as a separate
+   * field (never a fake/synthetic body-option id) so "trigger-driven"
+   * and "standalone saved exercise" stay the two, cleanly distinct
+   * entry points the spec itself keeps apart (section 16: "יש לשמור על
+   * ההבחנה בין טריגר, תרגיל שמור, אפשרות גוף וסשן ARC חדש").
+   */
+  arcSavingExerciseId: string | null;
+  /**
+   * ARC Saving task, spec section 6's own "בחירת אזורי גוף מחדש" path:
+   * set only when the trainee chose to pick body regions FRESH for an
+   * already-known trigger, rather than reusing one of its saved options
+   * -- mutually exclusive with arcSavingBodyOptionId/arcSavingExerciseId
+   * above (never pre-fills anything; isStepReachable's own skip-branches
+   * never check this field). Its only job is letting returnToTask()
+   * below still route to the ARC Saving review screen, which offers
+   * "add this as the trigger's first/next option" instead of the usual
+   * add-new/update-existing/don't-save three-way choice.
+   */
+  arcSavingTriggerIdForNewOption: string | null;
+
   currentStep: NewArcLiveStepId;
   subIndex: number;
   currentStepEnteredAt: string;
@@ -1107,6 +1151,9 @@ export function createNewArcLiveSessionState(
     arcFocusPracticeId: null,
     arcGymMemoryExerciseId: null,
     arcPerspectiveId: null,
+    arcSavingBodyOptionId: null,
+    arcSavingExerciseId: null,
+    arcSavingTriggerIdForNewOption: null,
     currentStep: "goal_select",
     subIndex: 0,
     currentStepEnteredAt: now,
@@ -1164,6 +1211,12 @@ export interface ArcSessionRequest {
   arcGymMemoryExerciseId: string | null;
   /** ARC Perspective task: same rationale as arcGymSituationId above, applied to ARC Perspective's own preliminary check-in ARC -- without this, two different ArcPerspectiveSessions requested one after another would otherwise compare equal and silently resume the wrong one. null for every non-ARC-Perspective request. */
   arcPerspectiveId: string | null;
+  /** ARC Saving task: same rationale as arcGymSituationId above, applied to a trigger-driven preliminary check-in ARC -- without this, two different ArcSavedBodyOption activations requested one after another would otherwise compare equal and silently resume the wrong one. null for every non-ARC-Saving request. */
+  arcSavingBodyOptionId: string | null;
+  /** Same rationale, for "תרגל שוב" on a standalone ArcSavedExercise. null for every other request. */
+  arcSavingExerciseId: string | null;
+  /** Same rationale, for the "בחירת אזורי גוף מחדש" path on a known trigger. null for every other request. */
+  arcSavingTriggerIdForNewOption: string | null;
 }
 
 /**
@@ -1185,12 +1238,17 @@ export function sessionMatchesRequest(session: NewArcLiveSessionState, request: 
     session.arcGymSituationId === request.arcGymSituationId &&
     session.arcFocusPracticeId === request.arcFocusPracticeId &&
     session.arcGymMemoryExerciseId === request.arcGymMemoryExerciseId &&
-    session.arcPerspectiveId === request.arcPerspectiveId
+    session.arcPerspectiveId === request.arcPerspectiveId &&
+    session.arcSavingBodyOptionId === request.arcSavingBodyOptionId &&
+    session.arcSavingExerciseId === request.arcSavingExerciseId &&
+    session.arcSavingTriggerIdForNewOption === request.arcSavingTriggerIdForNewOption
   );
 }
 
 /** A short, human Hebrew label for one ARC "type and configuration" -- used only by the resume/start/cancel conflict prompt, never by the ordinary step content (arc/newArcLiveCopy.ts stays the only owner of in-session copy). */
 export function describeArcSessionConfig(request: ArcSessionRequest, plannedArcName: string | null): string {
+  if (request.arcSavingBodyOptionId || request.arcSavingExerciseId || request.arcSavingTriggerIdForNewOption)
+    return request.arcInvocationMode === "shortened" ? "ARC מקוצר מתוך ARC Saving" : "ARC מלא מתוך ARC Saving";
   if (request.arcPerspectiveId) return request.arcInvocationMode === "shortened" ? "ARC מקוצר לפני שינוי פרספקטיבה" : "ARC מלא לפני שינוי פרספקטיבה";
   if (request.arcFocusPracticeId) return request.arcInvocationMode === "shortened" ? "ARC מקוצר לפני ARC Focus" : "ARC מלא לפני ARC Focus";
   if (request.arcGymMemoryExerciseId) return request.arcInvocationMode === "shortened" ? "ARC מקוצר לפני תרגיל זיכרון" : "ARC מלא לפני תרגיל זיכרון";

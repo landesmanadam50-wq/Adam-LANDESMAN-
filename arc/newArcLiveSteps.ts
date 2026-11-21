@@ -999,6 +999,18 @@ function isStepReachable(step: NewArcLiveStepId, state: NewArcLiveSessionState):
   // "spontaneous", never "shortened" -- this is never a second
   // shortened-ARC variant).
   if (state.skipEmotionSelection && step === "emotion") return false;
+  // ARC Saving task: a session launched from a trigger's own chosen
+  // ArcSavedBodyOption (arcSavingBodyOptionId set) already has its body-
+  // region fields pre-filled by arc/arcSaving.ts's own
+  // applyArcBodyProtocolSnapshotToSession at creation -- the spec's own
+  // "המשתמש אינו צריך לבחור מחדש את אזורי הגוף" (section 2) /
+  // "אין לדלג על שלבי הוויסות עצמם, אלא רק על הצורך להזין מחדש נתוני
+  // גוף שמורים" (same section). So only the three REGION-selection
+  // screens are skipped, exactly the "skipEmotionSelection" template
+  // above -- "regulation" itself (where the trainee can still see/adjust
+  // the pre-filled sensation/movement) and every other step stay fully
+  // reachable and unaffected.
+  if ((state.arcSavingBodyOptionId || state.arcSavingExerciseId) && (step === "body_scan_contraction" || step === "body_scan_opening_region" || step === "supportive_area_select")) return false;
   // ARCHI -- Move Action Selection into the Existing Regulation Screen
   // task: "action_selection"/"mini_action_selection" are now PERMANENTLY
   // unreachable, for every session -- their own functionality (pick an

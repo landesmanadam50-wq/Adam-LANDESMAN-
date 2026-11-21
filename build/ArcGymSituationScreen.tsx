@@ -15,6 +15,7 @@ import {
 } from "../arc/arcGym.ts";
 import type { ArcGymCheckInChoice, ArcGymMemory, ArcGymReminder, ArcGymSituation, ArcGymTrainingRecord } from "../arc/arcGym.ts";
 import type { ArcPerspectiveSession } from "../arc/arcPerspective.ts";
+import type { ArcTrigger } from "../arc/arcSaving.ts";
 import { BODY_SCAN_REGION_LABELS } from "../arc/bodyScanRegions.ts";
 import { BODY_REGION_LABELS } from "../arc/bodyRegionRoles.ts";
 import { findPairedArcResultForSituation, pairArcResultWithBehaviour, unpairArcResultFromBehaviour } from "../arc/arcResult.ts";
@@ -30,6 +31,7 @@ import {
   loadArcGymTrainingRecords,
   loadArcPerspectiveSessions,
   loadArcResultExercises,
+  loadArcTriggers,
   loadTasks,
   upsertArcGymMemoryEntry,
   upsertArcGymSituationEntry,
@@ -72,6 +74,7 @@ export default function ArcGymSituationScreen({ id }: { id: string }) {
   const [showGoalLinking, setShowGoalLinking] = useState(false);
   const [perspectiveSessions, setPerspectiveSessions] = useState<ArcPerspectiveSession[]>([]);
   const [showPerspectivePicker, setShowPerspectivePicker] = useState(false);
+  const [linkedTriggers, setLinkedTriggers] = useState<ArcTrigger[]>([]);
 
   const reload = useCallback(() => {
     Promise.all([
@@ -83,7 +86,8 @@ export default function ArcGymSituationScreen({ id }: { id: string }) {
       loadTasks(),
       loadArcGymGoals(),
       loadArcPerspectiveSessions(),
-    ]).then(([situations, memories, trainingRecords, allReminders, allResults, allTasks, allGoals, allPerspectiveSessions]) => {
+      loadArcTriggers(),
+    ]).then(([situations, memories, trainingRecords, allReminders, allResults, allTasks, allGoals, allPerspectiveSessions, allTriggers]) => {
       const found = situations.find((candidate) => candidate.id === id) ?? null;
       setSituation(found);
       setMemory(memories.find((candidate) => candidate.situationId === id) ?? null);
@@ -93,6 +97,7 @@ export default function ArcGymSituationScreen({ id }: { id: string }) {
       setScheduledTask(allTasks.find((task) => task.linkedArcGymSituationId === id) ?? null);
       setGoals(allGoals);
       setPerspectiveSessions(allPerspectiveSessions.filter((session) => session.completedAt !== null));
+      setLinkedTriggers(allTriggers.filter((trigger) => trigger.linkedArcGymSituationId === id));
     });
   }, [id]);
 
@@ -391,6 +396,22 @@ export default function ArcGymSituationScreen({ id }: { id: string }) {
               )}
             </View>
           )}
+        </View>
+
+        {/*
+         * ARC Saving task, spec section 15 ("לראות את הטריגרים
+         * המקושרים"): read-only -- the link itself is always created
+         * from the trigger's own editor screen (build/ArcTriggerEditorScreen.tsx's
+         * own "קשר ל-ARC Behaviour" picker), never duplicated here.
+         */}
+        <View style={styles.remindersBlock}>
+          <Text style={styles.sectionTitle}>ARC Saving מקושר</Text>
+          {linkedTriggers.length === 0 && <Text style={styles.hint}>אין עדיין טריגר מקושר.</Text>}
+          {linkedTriggers.map((trigger) => (
+            <Pressable key={trigger.id} onPress={() => router.push({ pathname: "/arc-saving/trigger/[id]", params: { id: trigger.id } })}>
+              <Text style={styles.linkText}>{trigger.label}</Text>
+            </Pressable>
+          ))}
         </View>
 
         {/*
