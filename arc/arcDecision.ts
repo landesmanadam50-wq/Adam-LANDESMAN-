@@ -21,14 +21,16 @@
 export type ArcDecisionSource = "arc_gym" | "arc";
 
 /**
- * Fixed order, matching the spec's own required sequence exactly:
- * "הגדרת אפשרויות <- דמיון כל האפשרויות ביחד <- מיקוד בנקודה <- בחירה
- * מתוך האפשרויות שהוגדרו." Never reordered, never skipped, never given
- * extra steps -- see this module's own ARC_DECISION_STEP_ORDER below.
+ * First-step task ("הבנת הסיטואציה"): a new leading step, "situation",
+ * added before the original four. Fixed order, matching the spec's own
+ * required sequence exactly: "הבנת הסיטואציה <- הגדרת אפשרויות <- דמיון
+ * כל האפשרויות ביחד <- מיקוד בנקודה <- בחירה מתוך האפשרויות שהוגדרו."
+ * Never reordered, never skipped, never given extra steps -- see this
+ * module's own ARC_DECISION_STEP_ORDER below.
  */
-export type ArcDecisionStep = "options" | "imagine_all" | "focus_point" | "choose";
+export type ArcDecisionStep = "situation" | "options" | "imagine_all" | "focus_point" | "choose";
 
-export const ARC_DECISION_STEP_ORDER: ArcDecisionStep[] = ["options", "imagine_all", "focus_point", "choose"];
+export const ARC_DECISION_STEP_ORDER: ArcDecisionStep[] = ["situation", "options", "imagine_all", "focus_point", "choose"];
 
 export interface ArcDecisionOption {
   id: string;
@@ -55,6 +57,26 @@ export interface ArcDecisionSession {
   arcSessionId: string | null;
   /** The task that was actively running (Task LIVE origin) when this was launched, if any. Null for "arc_gym" and for a spontaneous/standalone ARC session. */
   activeTaskId: string | null;
+  /**
+   * First-step task: "מה הסיטואציה כרגע?" -- required to leave the
+   * "situation" step (canAdvanceFromArcDecisionSituation below), but
+   * stored as a plain string (never null) so the field's own TextInput
+   * can bind to it directly, the same convention TaskDraft's own text
+   * fields use. Whitespace-only text is treated as empty by the gate,
+   * but kept verbatim here -- trimming only ever happens at the gate
+   * check, never silently rewriting what the trainee typed.
+   */
+  situationDescription: string;
+  /**
+   * "איזו תוצאה היית רוצה להשיג?" -- entirely optional (spec: "לא בכל
+   * סיטואציה יש תוצאה מוגדרת"), so advancing never requires this to be
+   * non-empty. Also a plain string for the same direct-binding reason
+   * as situationDescription; resolveArcDecisionDesiredOutcome below is
+   * the one place that turns a blank/whitespace-only value into null,
+   * so nothing downstream ever has to invent or guess at an outcome the
+   * trainee left blank.
+   */
+  desiredOutcome: string;
   /** Always in entry order -- never resorted, even after edits. */
   options: ArcDecisionOption[];
   currentStep: ArcDecisionStep;
@@ -78,13 +100,41 @@ export function createArcDecisionSession(source: ArcDecisionSource, arcSessionId
     source,
     arcSessionId,
     activeTaskId,
+    situationDescription: "",
+    desiredOutcome: "",
     options: [],
-    currentStep: "options",
+    currentStep: "situation",
     chosenOptionId: null,
     createdTaskId: null,
     startedAt: now,
     completedAt: null,
   };
+}
+
+/** Mirrors the TextInput's own value exactly -- never trimmed here, so the trainee can type/edit freely; the gate (canAdvanceFromArcDecisionSituation) is the one place whitespace-only text is treated as empty. */
+export function setArcDecisionSituation(session: ArcDecisionSession, situationDescription: string): ArcDecisionSession {
+  return { ...session, situationDescription };
+}
+
+/** Same direct-mirror convention as setArcDecisionSituation -- optional, so nothing here ever validates or rejects an empty value. */
+export function setArcDecisionDesiredOutcome(session: ArcDecisionSession, desiredOutcome: string): ArcDecisionSession {
+  return { ...session, desiredOutcome };
+}
+
+/** "המשתמש חייב להזין תיאור של הסיטואציה כדי להמשיך" -- the one gate on leaving the situation step. */
+export function canAdvanceFromArcDecisionSituation(session: ArcDecisionSession): boolean {
+  return session.situationDescription.trim().length > 0;
+}
+
+export function advanceArcDecisionToOptions(session: ArcDecisionSession): ArcDecisionSession {
+  if (!canAdvanceFromArcDecisionSituation(session)) return session;
+  return { ...session, currentStep: "options" };
+}
+
+/** Never invents a desired outcome the trainee left blank -- a whitespace-only (or never-typed) value resolves to null, exactly like resolveChosenArcDecisionOption's own "nothing chosen" null. */
+export function resolveArcDecisionDesiredOutcome(session: ArcDecisionSession): string | null {
+  const trimmed = session.desiredOutcome.trim();
+  return trimmed ? trimmed : null;
 }
 
 /** Ignores a blank entry rather than adding an empty option -- the trainee's own "+ הוסף אפשרות" action never creates a silently-unusable row. */
@@ -129,11 +179,15 @@ export function advanceArcDecisionToChoose(session: ArcDecisionSession): ArcDeci
 }
 
 /**
- * Back navigation, one step at a time, never below "options". Landing
- * back on "options" clears any existing chosenOptionId -- "אם המשתמש
- * חוזר לשלב הראשון ועורך את האפשרויות, ודא שהרשימה המעודכנת היא זו
- * שמוצגת בסיום": the trainee must choose again from whatever the list
- * looks like now, never carry a choice made against the old list.
+ * Back navigation, one step at a time, never below "situation" (the
+ * new first step). Landing back on "options" clears any existing
+ * chosenOptionId -- "אם המשתמש חוזר לשלב הראשון ועורך את האפשרויות, ודא
+ * שהרשימה המעודכנת היא זו שמוצגת בסיום": the trainee must choose again
+ * from whatever the list looks like now, never carry a choice made
+ * against the old list. Landing back on "situation" itself never
+ * clears situationDescription/desiredOutcome -- "לא לאבד את המידע
+ * במעבר בין שלבים," so whatever was already written is shown again
+ * exactly as left.
  */
 export function goToPreviousArcDecisionStep(session: ArcDecisionSession): ArcDecisionSession {
   const index = ARC_DECISION_STEP_ORDER.indexOf(session.currentStep);

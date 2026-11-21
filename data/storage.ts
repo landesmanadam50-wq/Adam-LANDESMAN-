@@ -3566,7 +3566,11 @@ export async function loadArcDecisionInProgress(): Promise<ArcDecisionSession | 
   const raw = await AsyncStorage.getItem(ARC_DECISION_IN_PROGRESS_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as ArcDecisionSession;
+    const parsed = JSON.parse(raw) as ArcDecisionSession;
+    // First-step task ("הבנת הסיטואציה"): backfills a session persisted
+    // before these two fields existed -- never crashes, never invents a
+    // non-empty value, matches this app's own `?? default` convention.
+    return { ...parsed, situationDescription: parsed.situationDescription ?? "", desiredOutcome: parsed.desiredOutcome ?? "" };
   } catch {
     console.warn("[storage] Stored ArcDecisionSession is not valid JSON -- treating as no session in progress rather than crashing.");
     return null;

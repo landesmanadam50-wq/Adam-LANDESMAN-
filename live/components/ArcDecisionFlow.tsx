@@ -6,11 +6,15 @@ import {
   advanceArcDecisionToChoose,
   advanceArcDecisionToFocusPoint,
   advanceArcDecisionToImagineAll,
+  advanceArcDecisionToOptions,
   canAdvanceFromArcDecisionOptions,
+  canAdvanceFromArcDecisionSituation,
   chooseArcDecisionOption,
   goToPreviousArcDecisionStep,
   removeArcDecisionOption,
   resolveChosenArcDecisionOption,
+  setArcDecisionDesiredOutcome,
+  setArcDecisionSituation,
   updateArcDecisionOption,
 } from "../../arc/arcDecision.ts";
 import type { ArcDecisionOption, ArcDecisionSession } from "../../arc/arcDecision.ts";
@@ -68,7 +72,7 @@ export default function ArcDecisionFlow({ session, onChange, onCancel, finishLab
 
   const header = (
     <View style={styles.topRow}>
-      {session.currentStep !== "options" && (
+      {session.currentStep !== "situation" && (
         <Pressable onPress={() => onChange(goToPreviousArcDecisionStep(session))}>
           <Text style={styles.linkText}>חזרה</Text>
         </Pressable>
@@ -78,6 +82,38 @@ export default function ArcDecisionFlow({ session, onChange, onCancel, finishLab
       </Pressable>
     </View>
   );
+
+  if (session.currentStep === "situation") {
+    const canAdvance = canAdvanceFromArcDecisionSituation(session);
+    return (
+      <View>
+        {header}
+        <Text style={styles.fieldLabel}>מה הסיטואציה כרגע?</Text>
+        <Text style={styles.fieldHint}>תאר מה מתרחש כרגע במציאות שלך.</Text>
+        <TextInput
+          style={[styles.textInput, styles.multilineInput]}
+          value={session.situationDescription}
+          onChangeText={(text) => onChange(setArcDecisionSituation(session, text))}
+          textAlign="right"
+          multiline
+          placeholder="לדוגמה: אני נמצא באוטובוס, יש פקקים בדרך."
+        />
+        <Text style={[styles.fieldLabel, styles.secondFieldLabel]}>איזו תוצאה היית רוצה להשיג? (לא חובה)</Text>
+        <Text style={styles.fieldHint}>אם יש תוצאה מסוימת שאתה רוצה להגיע אליה, תאר אותה. אפשר גם לדלג.</Text>
+        <TextInput
+          style={styles.textInput}
+          value={session.desiredOutcome}
+          onChangeText={(text) => onChange(setArcDecisionDesiredOutcome(session, text))}
+          textAlign="right"
+          placeholder="לדוגמה: להגיע הביתה."
+        />
+        {!canAdvance && <Text style={styles.hint}>יש לתאר את הסיטואציה כדי להמשיך.</Text>}
+        <Pressable style={[styles.primaryButton, !canAdvance && styles.disabledButton]} disabled={!canAdvance} onPress={() => onChange(advanceArcDecisionToOptions(session))}>
+          <Text style={styles.primaryButtonText}>המשך</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   if (session.currentStep === "options") {
     const canAdvance = canAdvanceFromArcDecisionOptions(session);
@@ -184,6 +220,10 @@ const styles = StyleSheet.create({
   removeLink: { color: "#b00020", fontSize: 13 },
   prompt: { fontSize: 18, textAlign: "right", color: "#333", marginBottom: 18, lineHeight: 27 },
   hint: { fontSize: 13, color: "#888", textAlign: "right", marginBottom: 8 },
+  fieldLabel: { fontSize: 16, fontWeight: "700", textAlign: "right", color: "#333", marginBottom: 4 },
+  secondFieldLabel: { marginTop: 18 },
+  fieldHint: { fontSize: 13, color: "#777", textAlign: "right", marginBottom: 8 },
+  multilineInput: { minHeight: 90, textAlignVertical: "top" },
   optionEditRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#eee" },
   optionRowText: { flex: 1, fontSize: 15, textAlign: "right" },
   optionRowActions: { flexDirection: "row-reverse", gap: 14 },

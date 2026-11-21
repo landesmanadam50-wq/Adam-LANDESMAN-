@@ -24,6 +24,31 @@ function readSource(relativePath: string): string {
 
 const flow = readSource("live/components/ArcDecisionFlow.tsx");
 
+// --- First-step task: "הבנת הסיטואציה" -- the new leading step ---
+
+test("step 0 (situation) asks the exact two required questions, gates advancing on canAdvanceFromArcDecisionSituation, and marks the outcome field optional", () => {
+  const stepIndex = flow.indexOf('session.currentStep === "situation"');
+  const stepBody = flow.slice(stepIndex, stepIndex + 1500);
+  assert.ok(stepBody.includes("מה הסיטואציה כרגע?"));
+  assert.ok(stepBody.includes("תאר מה מתרחש כרגע במציאות שלך."));
+  assert.ok(stepBody.includes("איזו תוצאה היית רוצה להשיג? (לא חובה)"));
+  assert.ok(stepBody.includes("אם יש תוצאה מסוימת שאתה רוצה להגיע אליה, תאר אותה. אפשר גם לדלג."));
+  assert.ok(stepBody.includes("canAdvanceFromArcDecisionSituation(session)"));
+  assert.ok(stepBody.includes("disabled={!canAdvance}"));
+  assert.ok(stepBody.includes("value={session.situationDescription}"));
+  assert.ok(stepBody.includes("onChangeText={(text) => onChange(setArcDecisionSituation(session, text))}"));
+  assert.ok(stepBody.includes("value={session.desiredOutcome}"));
+  assert.ok(stepBody.includes("onChangeText={(text) => onChange(setArcDecisionDesiredOutcome(session, text))}"));
+  assert.ok(stepBody.includes("onPress={() => onChange(advanceArcDecisionToOptions(session))}"));
+});
+
+test("the situation field is multiline (a free-text description, not a single line) and never required to be non-empty on its sibling outcome field", () => {
+  const stepIndex = flow.indexOf('session.currentStep === "situation"');
+  const stepBody = flow.slice(stepIndex, stepIndex + 900);
+  assert.ok(stepBody.includes("multiline"));
+  assert.ok(stepBody.includes("styles.multilineInput"));
+});
+
 test("step 1 (options) asks the exact required question, gates advancing on canAdvanceFromArcDecisionOptions, and offers add/edit/delete", () => {
   assert.ok(flow.includes("בין אילו אפשרויות אתה מתלבט?"));
   assert.ok(flow.includes("canAdvanceFromArcDecisionOptions(session)"));
@@ -61,8 +86,8 @@ test("step 4 (choose) shows exactly the original-order options, confirms 'בחר
   assert.ok(chooseBody.includes("{finishLabel}"));
 });
 
-test("back navigation is offered on every step except the first, and cancel is always offered, without ever skipping steps itself", () => {
-  assert.ok(flow.includes('session.currentStep !== "options"'));
+test("back navigation is offered on every step except the first (now 'situation'), and cancel is always offered, without ever skipping steps itself", () => {
+  assert.ok(flow.includes('session.currentStep !== "situation"'));
   assert.ok(flow.includes("goToPreviousArcDecisionStep(session)"));
   assert.ok(flow.includes("onPress={onCancel}"));
 });

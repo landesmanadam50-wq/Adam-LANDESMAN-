@@ -6,13 +6,18 @@ import {
   advanceArcDecisionToChoose,
   advanceArcDecisionToFocusPoint,
   advanceArcDecisionToImagineAll,
+  advanceArcDecisionToOptions,
   canAdvanceFromArcDecisionOptions,
+  canAdvanceFromArcDecisionSituation,
   chooseArcDecisionOption,
   completeArcDecisionSession,
   createArcDecisionSession,
   goToPreviousArcDecisionStep,
   removeArcDecisionOption,
+  resolveArcDecisionDesiredOutcome,
   resolveChosenArcDecisionOption,
+  setArcDecisionDesiredOutcome,
+  setArcDecisionSituation,
   updateArcDecisionOption,
 } from "./arcDecision.ts";
 
@@ -20,18 +25,81 @@ const NOW = "2026-01-05T12:00:00.000Z";
 
 function sessionWithTwoOptions() {
   let session = createArcDecisionSession("arc_gym", null, null, NOW);
+  session = setArcDecisionSituation(session, "אני נמצא באוטובוס, יש פקקים בדרך.");
+  session = advanceArcDecisionToOptions(session);
   session = addArcDecisionOption(session, "לצאת לרוץ");
   session = addArcDecisionOption(session, "לקרוא ספר");
   return session;
 }
 
-test("createArcDecisionSession starts at 'options' with no options, no choice, not completed", () => {
+test("createArcDecisionSession starts at 'situation' with empty situation/outcome, no options, no choice, not completed", () => {
   const session = createArcDecisionSession("arc_gym", null, null, NOW);
-  assert.equal(session.currentStep, "options");
+  assert.equal(session.currentStep, "situation");
+  assert.equal(session.situationDescription, "");
+  assert.equal(session.desiredOutcome, "");
   assert.deepEqual(session.options, []);
   assert.equal(session.chosenOptionId, null);
   assert.equal(session.completedAt, null);
   assert.equal(session.createdTaskId, null);
+});
+
+// --- First-step task: "הבנת הסיטואציה" -- situation description (required) + desired outcome (optional) ---
+
+test("canAdvanceFromArcDecisionSituation requires a non-blank situation description; a whitespace-only value does not count", () => {
+  let session = createArcDecisionSession("arc_gym", null, null, NOW);
+  assert.equal(canAdvanceFromArcDecisionSituation(session), false);
+  session = setArcDecisionSituation(session, "   ");
+  assert.equal(canAdvanceFromArcDecisionSituation(session), false);
+  session = setArcDecisionSituation(session, "אני נמצא באוטובוס");
+  assert.equal(canAdvanceFromArcDecisionSituation(session), true);
+});
+
+test("advanceArcDecisionToOptions refuses to advance without a situation description, and never alters the empty description itself", () => {
+  let session = createArcDecisionSession("arc_gym", null, null, NOW);
+  session = advanceArcDecisionToOptions(session);
+  assert.equal(session.currentStep, "situation");
+  assert.equal(session.situationDescription, "");
+});
+
+test("advancing is allowed with a situation description and NO desired outcome at all -- the outcome is never required", () => {
+  let session = createArcDecisionSession("arc_gym", null, null, NOW);
+  session = setArcDecisionSituation(session, "אני נמצא באוטובוס");
+  session = advanceArcDecisionToOptions(session);
+  assert.equal(session.currentStep, "options");
+  assert.equal(session.desiredOutcome, "");
+});
+
+test("setArcDecisionSituation/setArcDecisionDesiredOutcome store the raw text verbatim (never trimmed), so a controlled TextInput can bind to them directly", () => {
+  let session = createArcDecisionSession("arc_gym", null, null, NOW);
+  session = setArcDecisionSituation(session, "  יש פקקים  ");
+  assert.equal(session.situationDescription, "  יש פקקים  ");
+  session = setArcDecisionDesiredOutcome(session, "  להגיע הביתה  ");
+  assert.equal(session.desiredOutcome, "  להגיע הביתה  ");
+});
+
+test("resolveArcDecisionDesiredOutcome never invents an outcome left blank -- empty or whitespace-only resolves to null, a real one resolves trimmed", () => {
+  let session = createArcDecisionSession("arc_gym", null, null, NOW);
+  assert.equal(resolveArcDecisionDesiredOutcome(session), null);
+  session = setArcDecisionDesiredOutcome(session, "   ");
+  assert.equal(resolveArcDecisionDesiredOutcome(session), null);
+  session = setArcDecisionDesiredOutcome(session, "  להגיע הביתה  ");
+  assert.equal(resolveArcDecisionDesiredOutcome(session), "להגיע הביתה");
+});
+
+test("goToPreviousArcDecisionStep never goes below 'situation' -- the new real floor", () => {
+  const session = createArcDecisionSession("arc_gym", null, null, NOW);
+  assert.equal(goToPreviousArcDecisionStep(session).currentStep, "situation");
+});
+
+test("going back one step from 'options' returns to 'situation', preserving whatever was already typed there -- information is never lost moving between steps", () => {
+  let session = createArcDecisionSession("arc_gym", null, null, NOW);
+  session = setArcDecisionSituation(session, "אני נמצא באוטובוס");
+  session = setArcDecisionDesiredOutcome(session, "להגיע הביתה");
+  session = advanceArcDecisionToOptions(session);
+  session = goToPreviousArcDecisionStep(session);
+  assert.equal(session.currentStep, "situation");
+  assert.equal(session.situationDescription, "אני נמצא באוטובוס");
+  assert.equal(session.desiredOutcome, "להגיע הביתה");
 });
 
 test("source/arcSessionId/activeTaskId are preserved exactly as given, for both entry points", () => {
@@ -90,6 +158,8 @@ test("canAdvanceFromArcDecisionOptions requires at least two options", () => {
 
 test("advanceArcDecisionToImagineAll refuses to advance with fewer than two options", () => {
   let session = createArcDecisionSession("arc_gym", null, null, NOW);
+  session = setArcDecisionSituation(session, "אני נמצא באוטובוס");
+  session = advanceArcDecisionToOptions(session);
   session = addArcDecisionOption(session, "אחת");
   session = advanceArcDecisionToImagineAll(session);
   assert.equal(session.currentStep, "options");
@@ -105,9 +175,9 @@ test("the full four-step order advances exactly as specified: options -> imagine
   assert.equal(session.currentStep, "choose");
 });
 
-test("goToPreviousArcDecisionStep never goes below 'options'", () => {
+test("goToPreviousArcDecisionStep from 'options' goes to 'situation' -- the new real floor, never 'options' itself", () => {
   const session = sessionWithTwoOptions();
-  assert.equal(goToPreviousArcDecisionStep(session).currentStep, "options");
+  assert.equal(goToPreviousArcDecisionStep(session).currentStep, "situation");
 });
 
 test("goToPreviousArcDecisionStep walks back one step at a time", () => {
