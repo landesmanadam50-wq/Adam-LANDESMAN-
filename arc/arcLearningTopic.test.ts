@@ -8,11 +8,13 @@ import {
   linkGoalToArcLearningTopic,
   normalizeArcLearningTopic,
   resolveArcLearningTopicsForGoal,
+  resolveInsightsForArcLearningTopic,
   unlinkGoalFromArcLearningTopic,
   updateArcLearningTopic,
   upsertArcLearningTopicInList,
 } from "./arcLearningTopic.ts";
 import type { ArcLearningTopic } from "./arcLearningTopic.ts";
+import { createStandaloneInsight, linkArcLearningTopicToInsight } from "./arcInsightBelief.ts";
 
 const NOW = "2026-01-10T09:00:00.000Z";
 const LATER = "2026-01-10T10:00:00.000Z";
@@ -76,4 +78,41 @@ test("normalizeArcLearningTopic backfills a legacy record missing linkedGoalIds,
   assert.deepEqual(normalized.linkedGoalIds, []);
   assert.equal(normalized.id, "t1");
   assert.equal(normalized.title, "א");
+});
+
+// --- ARCHI -- Insight Collection x ARC Learning linking task ---
+
+test("3. resolveInsightsForArcLearningTopic shows an insight under every topic it's linked to", () => {
+  let insight = createStandaloneInsight("i1", "תובנה", NOW);
+  insight = linkArcLearningTopicToInsight(insight, "t1");
+  insight = linkArcLearningTopicToInsight(insight, "t2");
+  assert.deepEqual(resolveInsightsForArcLearningTopic([insight], "t1"), [insight]);
+  assert.deepEqual(resolveInsightsForArcLearningTopic([insight], "t2"), [insight]);
+  assert.deepEqual(resolveInsightsForArcLearningTopic([insight], "t3"), []);
+});
+
+test("resolveInsightsForArcLearningTopic returns every matching insight, in the order given, never invented or duplicated", () => {
+  let insightA = createStandaloneInsight("iA", "א", NOW);
+  let insightB = createStandaloneInsight("iB", "ב", NOW);
+  const insightC = createStandaloneInsight("iC", "ג", NOW); // never linked to t1
+  insightA = linkArcLearningTopicToInsight(insightA, "t1");
+  insightB = linkArcLearningTopicToInsight(insightB, "t1");
+  assert.deepEqual(resolveInsightsForArcLearningTopic([insightA, insightB, insightC], "t1"), [insightA, insightB]);
+});
+
+test("8. renaming a topic (updateArcLearningTopic) never breaks resolveInsightsForArcLearningTopic -- the link is by stable id, never by title", () => {
+  let insight = createStandaloneInsight("i1", "תובנה", NOW);
+  insight = linkArcLearningTopicToInsight(insight, "t1");
+  const topic = updateArcLearningTopic(createArcLearningTopic("t1", "כלכלה", NOW), { title: "פסיכולוגיה" }, LATER);
+  assert.equal(topic.id, "t1");
+  assert.deepEqual(resolveInsightsForArcLearningTopic([insight], topic.id), [insight]);
+});
+
+test("9. a dangling topic id (the topic itself was deleted) simply never matches -- never a crash, never a broken-reference row", () => {
+  let insight = createStandaloneInsight("i1", "תובנה", NOW);
+  insight = linkArcLearningTopicToInsight(insight, "deleted-topic");
+  const remainingTopics = deleteArcLearningTopicFromList([createArcLearningTopic("deleted-topic", "נושא שנמחק", NOW)], "deleted-topic");
+  assert.equal(remainingTopics.length, 0);
+  // The insight's own arcLearningTopicIds still names the deleted topic (no cascade -- same policy as linkedGoalIds), but resolving against the now-empty topic list simply finds nothing to show, never throwing.
+  assert.deepEqual(remainingTopics.filter((topic) => insight.arcLearningTopicIds.includes(topic.id)), []);
 });

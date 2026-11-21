@@ -277,6 +277,7 @@ export default function RootLayout() {
         <Stack.Screen name="insights/new" options={{ title: "הוסף תובנה" }} />
         <Stack.Screen name="insights/index" options={{ title: "אוסף תובנות" }} />
         <Stack.Screen name="insights/[id]" options={{ title: "תובנה" }} />
+        <Stack.Screen name="insights/[id]/link-topics" options={{ title: "קישור ל-ARC Learning" }} />
         <Stack.Screen name="positive-memories/index" options={{ title: "אירועים חיוביים" }} />
         <Stack.Screen name="positive-memories/new" options={{ title: "הוסף אירוע חיובי" }} />
         <Stack.Screen name="positive-memories/[id]" options={{ title: "אירוע חיובי" }} />

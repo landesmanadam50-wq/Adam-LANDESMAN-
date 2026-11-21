@@ -3014,7 +3014,10 @@ export async function loadArcInsights(): Promise<ArcInsight[]> {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as ArcInsight[];
-    return Array.isArray(parsed) ? parsed : [];
+    // Insight Collection x ARC Learning linking task: backfills an insight
+    // saved before arcLearningTopicIds existed -- never a crash, never an
+    // invented link.
+    return Array.isArray(parsed) ? parsed.map((insight) => ({ ...insight, arcLearningTopicIds: Array.isArray(insight.arcLearningTopicIds) ? insight.arcLearningTopicIds : [] })) : [];
   } catch (error) {
     console.warn("[storage] Stored ARC insights are not valid JSON -- returning an empty list rather than crashing.", error);
     return [];

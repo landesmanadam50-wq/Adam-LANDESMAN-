@@ -14,6 +14,14 @@
  * arc/arcGymGoal.ts), never a second join-table entity. Removing a
  * topic-goal association only ever edits this array -- it can never
  * delete the topic, its insights, or any recall history.
+ *
+ * ARCHI -- Insight Collection x ARC Learning linking task: a topic may
+ * ALSO be referenced by any number of ArcInsight records from the
+ * unrelated Insight Collection (arc/arcInsightBelief.ts) -- that link is
+ * owned on the INSIGHT side (ArcInsight.arcLearningTopicIds), the same
+ * "specific item points at the broader grouping" convention as the goal
+ * links above, so resolveInsightsForArcLearningTopic below is this
+ * module's own reverse view, computed fresh every call, never cached.
  */
 
 export interface ArcLearningTopic {
@@ -74,6 +82,17 @@ export function unlinkGoalFromArcLearningTopic(topic: ArcLearningTopic, goalId: 
 /** Section 10: "users can see associated learning topics from ARC Goal" -- the reverse view, computed fresh every call, never cached/duplicated on the goal. */
 export function resolveArcLearningTopicsForGoal(topics: ArcLearningTopic[], goalId: string): ArcLearningTopic[] {
   return topics.filter((topic) => topic.linkedGoalIds.includes(goalId));
+}
+
+/**
+ * Insight Collection x ARC Learning linking task, requirement 3: "when
+ * the user enters a given topic... they can see every insight linked to
+ * that topic" -- every ArcInsight whose own arcLearningTopicIds names
+ * this topic. A dangling id (the topic itself was since deleted) simply
+ * never matches here -- never a crash, never a broken-reference row.
+ */
+export function resolveInsightsForArcLearningTopic<T extends { arcLearningTopicIds: string[] }>(insights: T[], topicId: string): T[] {
+  return insights.filter((insight) => insight.arcLearningTopicIds.includes(topicId));
 }
 
 /** Backfills linkedGoalIds for a topic saved before that field existed -- called once per record by data/storage.ts's own loadArcLearningTopics. */

@@ -69,6 +69,22 @@ export interface ArcInsight {
   text: string;
   occurredAt: string;
   createdAt: string;
+  /**
+   * ARCHI -- Insight Collection x ARC Learning linking task: ArcLearningTopic.id
+   * values this insight is associated with -- the exact same plain
+   * id-array, idempotent-link/unlink, many-to-many convention already
+   * used throughout this codebase (ArcGymExercise.linkedGoalIds,
+   * ArcLearningTopic.linkedGoalIds). One insight may belong to several
+   * topics at once (spec section 2's own multi-topic example); a topic
+   * may hold any number of insights. Stable ids only, never topic
+   * titles -- renaming a topic can never break this link. Deleting this
+   * insight simply discards the whole record (array included); deleting
+   * a topic does NOT cascade here (same "caller's job if it cares"
+   * policy as ArcLearningTopic's own deleteArcLearningTopicFromList) --
+   * a now-dangling id is filtered out wherever topics are resolved by
+   * id, never shown as a broken reference.
+   */
+  arcLearningTopicIds: string[];
 }
 
 export interface ArcBelief {
@@ -93,7 +109,7 @@ export function generateArcBeliefId(): string {
 }
 
 export function createArcInsight(fields: Pick<ArcInsight, "id" | "sourceExerciseId" | "taskId" | "beliefKind" | "text" | "occurredAt" | "createdAt">): ArcInsight {
-  return { ...fields, text: fields.text.trim() };
+  return { ...fields, text: fields.text.trim(), arcLearningTopicIds: [] };
 }
 
 /**
@@ -160,4 +176,22 @@ export function beliefsOfKind(beliefs: ArcBelief[], beliefKind: BeliefKind): Arc
 export function resolveOriginatingInsight(belief: ArcBelief, insights: ArcInsight[]): ArcInsight | null {
   if (!belief.insightId) return null;
   return insights.find((insight) => insight.id === belief.insightId) ?? null;
+}
+
+/**
+ * Idempotent -- same shape as every other link<Type>To<Owner> in this
+ * codebase (e.g. arc/arcGym.ts's linkGoalTo<Exercise>). No `now`
+ * parameter -- ArcInsight has no updatedAt field at all (it's "frozen"
+ * history, never edited after capture per this module's own doc), so
+ * there's nothing here to stamp.
+ */
+export function linkArcLearningTopicToInsight(insight: ArcInsight, topicId: string): ArcInsight {
+  if (insight.arcLearningTopicIds.includes(topicId)) return insight;
+  return { ...insight, arcLearningTopicIds: [...insight.arcLearningTopicIds, topicId] };
+}
+
+/** Removing a topic link never deletes the insight itself -- only this one array entry. */
+export function unlinkArcLearningTopicFromInsight(insight: ArcInsight, topicId: string): ArcInsight {
+  if (!insight.arcLearningTopicIds.includes(topicId)) return insight;
+  return { ...insight, arcLearningTopicIds: insight.arcLearningTopicIds.filter((id) => id !== topicId) };
 }

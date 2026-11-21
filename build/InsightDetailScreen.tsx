@@ -4,12 +4,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
 import type { ArcInsight } from "../arc/arcInsightBelief.ts";
+import type { ArcLearningTopic } from "../arc/arcLearningTopic.ts";
 import { createEmptyTask, generateTaskId } from "../arc/tasks.ts";
 import type { Task } from "../arc/tasks.ts";
 import { listTasksScheduledThisWeek } from "../arc/todaySchedule.ts";
 import type { WeeklyScheduledTaskEntry } from "../arc/todaySchedule.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
-import { deleteArcInsight, loadArcInsights, loadTaskOccurrenceCompletions, loadTasks, upsertArcInsight, upsertTask } from "../data/storage.ts";
+import { deleteArcInsight, loadArcInsights, loadArcLearningTopics, loadTaskOccurrenceCompletions, loadTasks, upsertArcInsight, upsertTask } from "../data/storage.ts";
 import MonthlyCalendar from "../live/components/MonthlyCalendar.tsx";
 
 const DURATION_OPTIONS_MINUTES = [15, 30, 45, 60];
@@ -40,14 +41,20 @@ export default function InsightDetailScreen({ id }: { id: string }) {
   const [showCalendar, setShowCalendar] = useState(false);
   const [showLinkPicker, setShowLinkPicker] = useState(false);
   const [weeklyTasks, setWeeklyTasks] = useState<WeeklyScheduledTaskEntry[]>([]);
+  const [linkedTopics, setLinkedTopics] = useState<ArcLearningTopic[]>([]);
 
   const reload = useCallback(() => {
     (async () => {
-      const [insights, tasks] = await Promise.all([loadArcInsights(), loadTasks()]);
+      const [insights, tasks, topics] = await Promise.all([loadArcInsights(), loadTasks(), loadArcLearningTopics()]);
       const found = insights.find((candidate) => candidate.id === id) ?? null;
       setInsight(found);
       setDraftText(found?.text ?? "");
       setLinkedTask(found?.taskId ? tasks.find((task) => task.id === found.taskId) ?? null : null);
+      // Insight Collection x ARC Learning linking task: resolved fresh from
+      // the current topic list every reload -- a dangling arcLearningTopicIds
+      // entry (the topic was since deleted) simply filters out here, never
+      // shown as a broken reference.
+      setLinkedTopics(found ? topics.filter((topic) => found.arcLearningTopicIds.includes(topic.id)) : []);
     })();
   }, [id]);
 
@@ -191,6 +198,19 @@ export default function InsightDetailScreen({ id }: { id: string }) {
           </Pressable>
         )}
 
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>נושאי למידה מקושרים</Text>
+          {linkedTopics.length === 0 && <Text style={styles.hint}>אין עדיין נושאי למידה מקושרים.</Text>}
+          {linkedTopics.map((topic) => (
+            <Pressable key={topic.id} style={styles.topicRow} onPress={() => router.push({ pathname: "/arc-learning/topics/[id]", params: { id: topic.id } })}>
+              <Text style={styles.topicRowText}>{topic.title}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push({ pathname: "/insights/[id]/link-topics", params: { id } })}>
+          <Text style={styles.secondaryButtonText}>קישור ל-ARC Learning</Text>
+        </Pressable>
+
         <Pressable style={styles.deleteButton} onPress={handleDelete}>
           <Text style={styles.deleteButtonText}>מחיקת תובנה</Text>
         </Pressable>
@@ -245,6 +265,8 @@ const styles = StyleSheet.create({
   linkedTaskInfo: { flex: 1 },
   linkedTaskTitle: { fontSize: 15, color: "#222", textAlign: "right" },
   unlinkText: { color: "#c0392b", fontSize: 13 },
+  topicRow: { paddingVertical: 6 },
+  topicRowText: { fontSize: 14, color: "#0a7ea4", textAlign: "right", fontWeight: "600" },
   chipRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginTop: 10 },
   chip: { backgroundColor: "#E6F4FE", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
   chipSelected: { backgroundColor: "#0a7ea4" },

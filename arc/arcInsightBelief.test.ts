@@ -8,7 +8,9 @@ import {
   createNewPlannedBelief,
   createStandaloneInsight,
   createUpdatedBelief,
+  linkArcLearningTopicToInsight,
   resolveOriginatingInsight,
+  unlinkArcLearningTopicFromInsight,
   upsertBeliefInList,
 } from "./arcInsightBelief.ts";
 import type { ArcBelief } from "./arcInsightBelief.ts";
@@ -100,4 +102,62 @@ test("an insight's beliefKind can be 'general' (ArcInsightKind) without affectin
   // A real ArcBelief, by contrast, only ever accepts "emotional"/"identity" -- this is a compile-time guarantee (createLearnedBelief's own kind param type), exercised here only to document the deliberate asymmetry.
   const belief = createLearnedBelief("b1", "identity", "אמונה", "i1", "ex1", NOW);
   assert.equal(belief.beliefKind, "identity");
+});
+
+// --- ARCHI -- Insight Collection x ARC Learning linking task ---
+
+test("a freshly created insight (either entry point) starts with an empty arcLearningTopicIds array -- no topic linked by default", () => {
+  const captured = createArcInsight({ id: "i1", sourceExerciseId: "ex1", taskId: null, beliefKind: "identity", text: "תובנה", occurredAt: NOW, createdAt: NOW });
+  assert.deepEqual(captured.arcLearningTopicIds, []);
+  const standalone = createStandaloneInsight("i2", "תובנה חופשית", NOW);
+  assert.deepEqual(standalone.arcLearningTopicIds, []);
+});
+
+test("1. linkArcLearningTopicToInsight links an insight to one topic", () => {
+  const insight = createStandaloneInsight("i1", "תובנה", NOW);
+  const linked = linkArcLearningTopicToInsight(insight, "topic-economy");
+  assert.deepEqual(linked.arcLearningTopicIds, ["topic-economy"]);
+});
+
+test("2. linkArcLearningTopicToInsight links the same insight to several topics at once -- the exact spec example (economy/history/public policy)", () => {
+  let insight = createStandaloneInsight("i1", "כאשר המדינה מעודדת השקעה בטכנולוגיה, יותר אנשים וחברות עשויים להיות מוכנים להשקיע בה.", NOW);
+  insight = linkArcLearningTopicToInsight(insight, "topic-economy");
+  insight = linkArcLearningTopicToInsight(insight, "topic-history");
+  insight = linkArcLearningTopicToInsight(insight, "topic-public-policy");
+  assert.deepEqual(insight.arcLearningTopicIds, ["topic-economy", "topic-history", "topic-public-policy"]);
+});
+
+test("linkArcLearningTopicToInsight is idempotent -- linking the same topic twice never duplicates it", () => {
+  let insight = createStandaloneInsight("i1", "תובנה", NOW);
+  insight = linkArcLearningTopicToInsight(insight, "topic-1");
+  insight = linkArcLearningTopicToInsight(insight, "topic-1");
+  assert.deepEqual(insight.arcLearningTopicIds, ["topic-1"]);
+});
+
+test("5. unlinkArcLearningTopicFromInsight removes only the one topic link -- the insight record itself, and its other links, are left untouched", () => {
+  let insight = createStandaloneInsight("i1", "תובנה", NOW);
+  insight = linkArcLearningTopicToInsight(insight, "topic-economy");
+  insight = linkArcLearningTopicToInsight(insight, "topic-history");
+  const unlinked = unlinkArcLearningTopicFromInsight(insight, "topic-economy");
+  assert.deepEqual(unlinked.arcLearningTopicIds, ["topic-history"]);
+  assert.equal(unlinked.id, "i1");
+  assert.equal(unlinked.text, "תובנה");
+});
+
+test("unlinkArcLearningTopicFromInsight is a no-op when the topic was never linked", () => {
+  const insight = createStandaloneInsight("i1", "תובנה", NOW);
+  const unchanged = unlinkArcLearningTopicFromInsight(insight, "never-linked");
+  assert.deepEqual(unchanged.arcLearningTopicIds, []);
+});
+
+test("8. linking the same topic from two different insights never collides -- each insight's own array is fully independent", () => {
+  let insightA = createStandaloneInsight("iA", "תובנה א", NOW);
+  let insightB = createStandaloneInsight("iB", "תובנה ב", NOW);
+  insightA = linkArcLearningTopicToInsight(insightA, "topic-1");
+  insightB = linkArcLearningTopicToInsight(insightB, "topic-1");
+  assert.deepEqual(insightA.arcLearningTopicIds, ["topic-1"]);
+  assert.deepEqual(insightB.arcLearningTopicIds, ["topic-1"]);
+  const unlinkedA = unlinkArcLearningTopicFromInsight(insightA, "topic-1");
+  assert.deepEqual(unlinkedA.arcLearningTopicIds, []);
+  assert.deepEqual(insightB.arcLearningTopicIds, ["topic-1"], "unlinking from A must never affect B's own, separate array");
 });
