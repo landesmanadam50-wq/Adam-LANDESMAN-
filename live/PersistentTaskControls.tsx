@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 
 import { resolveNextTaskEntry } from "../arc/todaySchedule.ts";
+import { getTaskTimerStatus, type TaskTimerRun } from "../arc/taskTimer.ts";
 import { loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, loadTaskTimerRun } from "../data/storage.ts";
 
 /**
@@ -37,9 +38,24 @@ import { loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, 
  */
 export default function PersistentTaskControls() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  // Current-task logic fix: kept alongside activeTaskId (never re-loaded a
+  // second time in handleStartTaskPress) so the "what's next" fallback
+  // below can also exclude/account for this exact run -- a single load
+  // per focus, same convention as every other field here.
+  const [currentRun, setCurrentRun] = useState<TaskTimerRun | null>(null);
 
   const reload = useCallback(() => {
-    loadTaskTimerRun().then((run) => setActiveTaskId(run && run.kind !== "rest" ? run.taskId : null));
+    loadTaskTimerRun().then((run) => {
+      setCurrentRun(run);
+      // Current-task logic fix: a persisted run only means "resume this
+      // task" when it is a real task timer (never "rest"), was never
+      // explicitly completed/finished-early, and its own real elapsed-time
+      // window (getTaskTimerStatus, midnight-safe by construction) hasn't
+      // actually elapsed yet -- a "not yet marked complete" run from last
+      // night is NOT still active just because nobody closed it out.
+      const isGenuinelyActive = run !== null && run.kind !== "rest" && run.completedAt === null && !getTaskTimerStatus(run, Date.now()).complete;
+      setActiveTaskId(isGenuinelyActive ? run!.taskId : null);
+    });
   }, []);
 
   useFocusEffect(reload);
@@ -50,7 +66,7 @@ export default function PersistentTaskControls() {
       return;
     }
     const [tasks, completions, overrides] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()]);
-    const next = resolveNextTaskEntry(tasks, completions, "", new Date(), overrides);
+    const next = resolveNextTaskEntry(tasks, completions, "", new Date(), overrides, currentRun);
     if (next) {
       router.push({ pathname: "/tasks/[id]", params: { id: next.task.id, autoStart: "1" } });
       return;

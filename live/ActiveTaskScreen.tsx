@@ -991,7 +991,7 @@ export default function ActiveTaskScreen({
    */
   async function navigateToNextOrTasksList(excludeTaskId: string) {
     const [allTasks, completions, overrides] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()]);
-    const next = resolveNextTaskEntry(allTasks, completions, excludeTaskId, new Date(), overrides);
+    const next = resolveNextTaskEntry(allTasks, completions, excludeTaskId, new Date(), overrides, timerRun);
     if (!next) {
       router.push({ pathname: "/tasks", params: { noMoreTasks: "1" } });
       return;

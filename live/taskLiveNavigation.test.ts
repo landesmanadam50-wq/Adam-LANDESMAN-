@@ -47,8 +47,8 @@ test("handleSkipTask records a plain 'task_skipped' journal entry and never touc
 test("navigateToNextOrTasksList uses resolveNextTaskEntry (never buildTodaySections directly, which would wrongly re-include the current task) and falls back to the tasks list with a flag when nothing is left", () => {
   const fnIndex = screen.indexOf("async function navigateToNextOrTasksList");
   assert.ok(fnIndex !== -1);
-  const fnBody = screen.slice(fnIndex, fnIndex + 500);
-  assert.ok(fnBody.includes("resolveNextTaskEntry(allTasks, completions, excludeTaskId, new Date(), overrides)"));
+  const fnBody = screen.slice(fnIndex, fnIndex + 550);
+  assert.ok(fnBody.includes("resolveNextTaskEntry(allTasks, completions, excludeTaskId, new Date(), overrides, timerRun)"));
   assert.ok(fnBody.includes('pathname: "/tasks", params: { noMoreTasks: "1" }'));
   assert.ok(fnBody.includes('pathname: "/tasks/[id]", params: { id: next.task.id }'));
 });
@@ -73,7 +73,7 @@ test("all three actions -- Complete, Next, Skip -- are offered as separate, clea
 test("resolveNextTaskEntry is exported from arc/todaySchedule.ts, reusing buildTodaySections rather than a second sort mechanism", () => {
   assert.match(todaySchedule, /export function resolveNextTaskEntry/);
   const fnIndex = todaySchedule.indexOf("export function resolveNextTaskEntry");
-  const fnBody = todaySchedule.slice(fnIndex, fnIndex + 300);
+  const fnBody = todaySchedule.slice(fnIndex, fnIndex + 400);
   assert.ok(fnBody.includes("buildTodaySections("));
 });
 

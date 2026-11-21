@@ -19,6 +19,7 @@ import type { Task } from "./tasks.ts";
 import { isRecurringTaskScheduledOnDate, isTaskOccurrenceCompleted, type TaskOccurrenceCompletion } from "./taskOccurrence.ts";
 import { resolveEffectiveOccurrence, type TaskOccurrenceOverride } from "./taskOccurrenceOverride.ts";
 import { addCalendarDays, todayLocalDateString } from "../program/dateUtils.ts";
+import { getTaskTimerStatus, type TaskTimerRun } from "./taskTimer.ts";
 
 export type TodaySection = "overdue" | "current" | "nextTask" | "laterToday" | "unscheduled" | "completedToday";
 
@@ -124,6 +125,54 @@ function resolveClockBucket(task: Task, todayDateLocal: string, now: Date): "ove
 }
 
 /**
+ * Current-task logic fix (bug report: a "go to sleep" task from the
+ * previous night still shown as "current" the next morning): a task
+ * with `status === "active"` is only GENUINELY current right now when
+ * its real execution window hasn't elapsed yet -- being "not yet
+ * completed" is not the same as being "actually relevant to this
+ * moment." Never mutates Task.status -- this is a pure
+ * display/selection decision, so the user's own "don't auto-complete an
+ * active task" guarantee is satisfied by construction (nothing here
+ * ever calls completeTask/archiveTask).
+ *
+ * The real, authoritative elapsed-time signal only ever lives on the
+ * single persisted TaskTimerRun (Task itself carries no "actually
+ * started at" timestamp of its own) -- so when a live, matching run for
+ * this exact task is available, its real elapsed-time math
+ * (getTaskTimerStatus, already midnight-safe since it works from real
+ * millisecond timestamps) is authoritative: this is what correctly
+ * keeps an overnight sleep task "current" at 2am while genuinely still
+ * mid-window, and correctly drops it once its duration has elapsed,
+ * however many midnights that crossed -- with no new, parallel
+ * day-of-week-aware scheduling logic needed. A "rest" run is a
+ * different state (the task's own timer already ended) and is never
+ * treated as "this task is still running" here, matching
+ * PersistentTaskControls's existing `kind !== "rest"` convention. A run
+ * explicitly completed/finished-early (completedAt set) is likewise
+ * never still current, matching isTaskTimerRunStale's own first check.
+ *
+ * With no matching live run at all, there is deliberately no attempt to
+ * second-guess `status === "active"` from the schedule alone: Task's
+ * own scheduledTime says only when the task is DUE, never when IT
+ * (or some earlier occurrence of it) was actually started, so a
+ * schedule-only heuristic cannot reliably distinguish "started early,
+ * ahead of today's own future slot" from "a stale carryover of an
+ * overnight slot that already closed" -- inventing one risks exactly
+ * the kind of guess this fix is meant to replace. In real app usage
+ * every actual "start task" action also persists a matching
+ * TaskTimerRun (live/ActiveTaskScreen.tsx's own performStart), so this
+ * fallback is reached only for a task whose run was never persisted or
+ * was already cleared -- staying current here preserves this module's
+ * own pre-existing, already-tested "an active task is always current"
+ * behavior for exactly that case.
+ */
+export function isActiveTaskStillCurrent(task: Task, now: Date, activeRun: TaskTimerRun | null): boolean {
+  if (!activeRun || activeRun.taskId !== task.id || activeRun.kind === "rest") return true;
+  if (activeRun.completedAt !== null) return false;
+  return !getTaskTimerStatus(activeRun, now.getTime()).complete;
+}
+
+/**
  * Flexible Daily / Fixed Weekly sync fix: an explicit manual reorder
  * (an EFFECTIVE `order`, merged onto the task below from that date's
  * own TaskOccurrenceOverride for a weekly-origin task, or a one-time
@@ -193,9 +242,10 @@ export function resolveNextTaskEntry(
   completions: TaskOccurrenceCompletion[],
   excludeTaskId: string,
   now: Date = new Date(),
-  overrides: TaskOccurrenceOverride[] = []
+  overrides: TaskOccurrenceOverride[] = [],
+  activeRun: TaskTimerRun | null = null
 ): TodayTaskEntry | null {
-  return resolveMostUrgentEntry(buildTodaySections(tasks.filter((task) => task.id !== excludeTaskId), completions, now, overrides));
+  return resolveMostUrgentEntry(buildTodaySections(tasks.filter((task) => task.id !== excludeTaskId), completions, now, overrides, activeRun));
 }
 
 /**
@@ -220,7 +270,8 @@ export function buildTodaySections(
   tasks: Task[],
   completions: TaskOccurrenceCompletion[],
   now: Date = new Date(),
-  overrides: TaskOccurrenceOverride[] = []
+  overrides: TaskOccurrenceOverride[] = [],
+  activeRun: TaskTimerRun | null = null
 ): TodaySections {
   const todayDateLocal = todayLocalDateString(now);
 
@@ -256,7 +307,16 @@ export function buildTodaySections(
   // "current" -- never also duplicated under "overdue"/"laterToday".
   // There is only ever one active task at a time (the app's
   // single-active-timer model), so a plain find is enough.
-  const current = overdueRaw.find((entry) => entry.task.status === "active") ?? laterTodayRaw.find((entry) => entry.task.status === "active") ?? null;
+  //
+  // Current-task logic fix: "not yet completed" (status === "active")
+  // is NOT by itself enough to be "current" -- isActiveTaskStillCurrent
+  // additionally requires the task's real execution window to not have
+  // elapsed yet. An active task that fails this check is left exactly
+  // where it naturally landed (overdue/laterToday) -- never removed,
+  // never auto-completed -- it simply stops being singled out as
+  // "current" until the trainee explicitly acts on it.
+  const activeEntry = overdueRaw.find((entry) => entry.task.status === "active") ?? laterTodayRaw.find((entry) => entry.task.status === "active") ?? null;
+  const current = activeEntry && isActiveTaskStillCurrent(activeEntry.task, now, activeRun) ? activeEntry : null;
   const overdue = current ? overdueRaw.filter((entry) => entry.task.id !== current.task.id) : overdueRaw;
   const laterTodayWithoutActive = current ? laterTodayRaw.filter((entry) => entry.task.id !== current.task.id) : laterTodayRaw;
 

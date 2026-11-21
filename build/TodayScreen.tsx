@@ -9,7 +9,8 @@ import { createTaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
 import type { TaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
 import { buildTodaySections, resolveArcWindowClockTime } from "../arc/todaySchedule.ts";
 import type { TodayTaskEntry } from "../arc/todaySchedule.ts";
-import { appendTaskOccurrenceCompletion, loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, upsertTask } from "../data/storage.ts";
+import type { TaskTimerRun } from "../arc/taskTimer.ts";
+import { appendTaskOccurrenceCompletion, loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTaskTimerRun, upsertTask } from "../data/storage.ts";
 import type { TaskOccurrenceOverride } from "../arc/taskOccurrenceOverride.ts";
 import { resolveContinuousRoutineOutcome } from "../data/dailyRoutine.ts";
 import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
@@ -52,6 +53,10 @@ export default function TodayScreen() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [completions, setCompletions] = useState<TaskOccurrenceCompletion[]>([]);
   const [overrides, setOverrides] = useState<TaskOccurrenceOverride[]>([]);
+  // Current-task logic fix: the real persisted TaskTimerRun, threaded into
+  // buildTodaySections below so an "active" task that is actually a stale
+  // overnight run is never promoted to "המשימה עכשיו" here either.
+  const [activeRun, setActiveRun] = useState<TaskTimerRun | null>(null);
 
   const reload = useCallback(() => {
     // Productivity upgrade task, requirement 2: the same "lazily
@@ -65,11 +70,12 @@ export default function TodayScreen() {
     // alongside it so a "before_task" ARC alarm also stays in sync with
     // its own linked task's time/recurrence/deletion/archival, without
     // waiting for that specific exercise's own editor to be reopened.
-    Promise.all([reconcileTaskAlarms(), reconcilePlannedArcAlarms(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()]).then(
-      ([reconciledTasks, , loadedCompletions, loadedOverrides]) => {
+    Promise.all([reconcileTaskAlarms(), reconcilePlannedArcAlarms(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides(), loadTaskTimerRun()]).then(
+      ([reconciledTasks, , loadedCompletions, loadedOverrides, loadedRun]) => {
         setTasks(reconciledTasks);
         setCompletions(loadedCompletions);
         setOverrides(loadedOverrides);
+        setActiveRun(loadedRun);
       }
     );
   }, []);
@@ -113,7 +119,7 @@ export default function TodayScreen() {
     );
   }
 
-  const sections = buildTodaySections(tasks, completions, new Date(), overrides);
+  const sections = buildTodaySections(tasks, completions, new Date(), overrides, activeRun);
   const isEmpty =
     sections.overdue.length === 0 &&
     sections.current === null &&
@@ -130,10 +136,28 @@ export default function TodayScreen() {
         {isEmpty && <Text style={styles.hint}>אין משימות עדיין. אפשר להתחיל ב&quot;כל המשימות&quot; למטה.</Text>}
 
         {/* Task-categorization fix, requirement 1: ONLY an actually-started task -- never a stale overdue/upcoming one falling back into this slot. */}
-        {sections.current && (
+        {sections.current ? (
           <View style={styles.sectionBlock}>
             <Text style={styles.sectionTitle}>המשימה עכשיו</Text>
             <TaskCard entry={sections.current} emphasized onComplete={handleComplete} />
+          </View>
+        ) : (
+          // Current-task logic fix, requirement 4: an explicit "nothing is
+          // currently planned" state -- never left blank, and never
+          // auto-selecting an old/expired task just to avoid an empty
+          // screen. The next task's own title/start time are already
+          // shown in the "המשימה הבאה" block below; this button is the
+          // one addition -- optionally starting it early.
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>אין כרגע משימה מתוכננת</Text>
+            {sections.nextTask && (
+              <Pressable
+                style={styles.taskCard}
+                onPress={() => router.push({ pathname: "/tasks/[id]", params: { id: sections.nextTask!.task.id, autoStart: "1" } })}
+              >
+                <Text style={styles.taskTitle}>התחל את המשימה הבאה מוקדם</Text>
+              </Pressable>
+            )}
           </View>
         )}
 

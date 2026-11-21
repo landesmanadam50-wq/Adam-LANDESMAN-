@@ -7,9 +7,10 @@ import { completeTask, ROUTINE_PERIOD_IDS, type RoutinePeriodId, type Task } fro
 import { createTaskOccurrenceCompletion, isRecurringTaskScheduledOnDate } from "../arc/taskOccurrence.ts";
 import type { TaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
 import { buildTodaySections } from "../arc/todaySchedule.ts";
+import type { TaskTimerRun } from "../arc/taskTimer.ts";
 import { ROUTINE_BREAK_KIND_LABELS, ROUTINE_PERIOD_LABELS, generateDailyRoutineSchedule, type DailyRoutineTemplate } from "../arc/dailyRoutine.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
-import { appendTaskOccurrenceCompletion, loadPlannedArcs, loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, upsertTask } from "../data/storage.ts";
+import { appendTaskOccurrenceCompletion, loadPlannedArcs, loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, loadTaskTimerRun, upsertTask } from "../data/storage.ts";
 import type { TaskOccurrenceOverride } from "../arc/taskOccurrenceOverride.ts";
 import { loadDailyRoutineTemplate, resolveContinuousRoutineOutcome } from "../data/dailyRoutine.ts";
 import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
@@ -37,6 +38,10 @@ export default function DailyScheduleScreen() {
   const [completions, setCompletions] = useState<TaskOccurrenceCompletion[]>([]);
   const [overrides, setOverrides] = useState<TaskOccurrenceOverride[]>([]);
   const [plannedArcKindById, setPlannedArcKindById] = useState<Record<string, "full" | "mini">>({});
+  // Current-task logic fix: threaded into buildTodaySections below so a
+  // stale overnight "active" task is never promoted to "המשימה עכשיו" on
+  // this legacy screen either.
+  const [activeRun, setActiveRun] = useState<TaskTimerRun | null>(null);
 
   const reload = useCallback(() => {
     Promise.all([
@@ -47,12 +52,14 @@ export default function DailyScheduleScreen() {
       loadTaskOccurrenceOverrides(),
       loadPlannedArcs(),
       reconcileDailyVisualizationAlarm(),
-    ]).then(([loadedTemplate, reconciledTasks, , loadedCompletions, loadedOverrides, plannedArcs]) => {
+      loadTaskTimerRun(),
+    ]).then(([loadedTemplate, reconciledTasks, , loadedCompletions, loadedOverrides, plannedArcs, , loadedRun]) => {
       setTemplate(loadedTemplate);
       setTasks(reconciledTasks);
       setCompletions(loadedCompletions);
       setOverrides(loadedOverrides);
       setPlannedArcKindById(Object.fromEntries(plannedArcs.map((item) => [item.id, item.kind])));
+      setActiveRun(loadedRun);
     });
   }, []);
 
@@ -128,7 +135,7 @@ export default function DailyScheduleScreen() {
   const now = new Date();
   const todayDateLocal = todayLocalDateString(now);
   const generated = generateDailyRoutineSchedule(template);
-  const sections = buildTodaySections(tasks, completions, now, overrides);
+  const sections = buildTodaySections(tasks, completions, now, overrides, activeRun);
 
   const routineTasksToday = tasks.filter((task) => {
     if (task.routinePeriodId === null || task.status === "archived") return false;
@@ -142,10 +149,25 @@ export default function DailyScheduleScreen() {
         <Text style={styles.title}>התכנית היומית שלי</Text>
         <PersistentTaskControls />
 
-        {sections.current && (
+        {sections.current ? (
           <View style={styles.sectionBlock}>
             <Text style={styles.sectionTitle}>המשימה עכשיו</Text>
             <TaskRow task={sections.current.task} emphasized onComplete={handleComplete} onLaunchBreakArc={handleLaunchBreakArc} />
+          </View>
+        ) : (
+          // Current-task logic fix, requirement 4: explicit "nothing
+          // currently planned" state -- never left blank, never an old
+          // task auto-selected to avoid an empty screen.
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>אין כרגע משימה מתוכננת</Text>
+            {sections.nextTask && (
+              <Pressable
+                style={styles.addTaskButton}
+                onPress={() => router.push({ pathname: "/tasks/[id]", params: { id: sections.nextTask!.task.id, autoStart: "1" } })}
+              >
+                <Text style={styles.addTaskButtonText}>התחל את המשימה הבאה מוקדם</Text>
+              </Pressable>
+            )}
           </View>
         )}
         {sections.nextTask && sections.nextTask.task.id !== sections.current?.task.id && (

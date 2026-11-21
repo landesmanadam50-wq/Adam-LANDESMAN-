@@ -23,6 +23,7 @@ import {
   loadTaskOccurrenceCompletions,
   loadTaskOccurrenceOverrides,
   loadTasks,
+  loadTaskTimerRun,
   savePositiveImageryProgress,
   savePostTaskRewardsState,
 } from "../data/storage.ts";
@@ -158,8 +159,8 @@ export default function PostTaskRewardScreen({
       router.replace({ pathname: "/tasks/[id]/postpone-return", params: { id: task.parentTaskId } });
       return;
     }
-    const [allTasks, completions, overrides] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()]);
-    const next = resolveNextTaskEntry(allTasks, completions, taskId, new Date(), overrides);
+    const [allTasks, completions, overrides, activeRun] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides(), loadTaskTimerRun()]);
+    const next = resolveNextTaskEntry(allTasks, completions, taskId, new Date(), overrides, activeRun);
     if (!next) {
       router.back();
       return;

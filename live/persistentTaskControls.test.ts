@@ -27,10 +27,11 @@ test("mounted near the top of both main hub screens -- Daily Schedule and Tasks 
   assert.match(tasksListScreen, /<Text style=\{styles\.title\}>המשימות שלי<\/Text>\s*<PersistentTaskControls \/>/);
 });
 
-test("activeTaskId is resolved from the single persisted TaskTimerRun, excluding a REST run -- a rest period is never treated as 'a task is active' for these buttons", () => {
+test("activeTaskId is resolved from the single persisted TaskTimerRun, excluding a REST run, an explicitly completed/finished-early run, and a run whose real elapsed-time window has already elapsed -- current-task logic fix: 'not yet marked complete' is never enough on its own, a stale overnight run must not be treated as still active", () => {
   const fnIndex = controls.indexOf("const reload = useCallback");
-  const fnBody = controls.slice(fnIndex, fnIndex + 300);
-  assert.ok(fnBody.includes('setActiveTaskId(run && run.kind !== "rest" ? run.taskId : null)'));
+  const fnBody = controls.slice(fnIndex, fnIndex + 900);
+  assert.ok(fnBody.includes('run !== null && run.kind !== "rest" && run.completedAt === null && !getTaskTimerStatus(run, Date.now()).complete'));
+  assert.ok(fnBody.includes("setActiveTaskId(isGenuinelyActive ? run!.taskId : null)"));
 });
 
 // --- ARCHI -- Consolidated Implementation Request, Part 10.1: the
@@ -59,6 +60,12 @@ test("Start Task with no active task resolves the next relevant scheduled task v
   assert.ok(fnBody.includes("resolveNextTaskEntry(tasks, completions, "));
   assert.match(fnBody, /pathname: "\/tasks\/\[id\]", params: \{ id: next\.task\.id, autoStart: "1" \}/);
   assert.ok(fnBody.includes('router.push("/tasks");'), "falls back to the tasks list when nothing is left to start");
+});
+
+test("resolveNextTaskEntry is called with the already-loaded currentRun -- never a second TaskTimerRun load, so another, separately-stale active task elsewhere in the list is also correctly excluded from 'what's next'", () => {
+  const fnIndex = controls.indexOf("async function handleStartTaskPress()");
+  const fnBody = controls.slice(fnIndex, fnIndex + 700);
+  assert.ok(fnBody.includes('resolveNextTaskEntry(tasks, completions, "", new Date(), overrides, currentRun)'));
 });
 
 test("the Start Task button is a plain, always-visible Pressable, centered horizontally (Part 10.2) -- never conditionally hidden by timer state", () => {

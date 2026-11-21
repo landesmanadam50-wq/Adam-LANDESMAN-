@@ -52,7 +52,7 @@ test("Home no longer gates on a DailyRoutineTemplate -- that branching moved ent
 
 test("DailyScheduleScreen reuses arc/todaySchedule.ts's existing buildTodaySections for current/next highlighting -- no second, parallel current/next calculation", () => {
   assert.match(scheduleScreen, /import \{ buildTodaySections \} from "\.\.\/arc\/todaySchedule\.ts";/);
-  assert.ok(scheduleScreen.includes("buildTodaySections(tasks, completions, now, overrides)"));
+  assert.ok(scheduleScreen.includes("buildTodaySections(tasks, completions, now, overrides, activeRun)"));
 });
 
 test("DailyScheduleScreen's complete action branches on recurrence exactly like build/TodayScreen.tsx's own handleComplete -- recurring via TaskOccurrenceCompletion, one-time via completeTask", () => {

@@ -2,12 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { archiveTask, createEmptyTask, startTask, postponeTask, completeTask, type Task } from "./tasks.ts";
-import { buildTodaySections, listTasksScheduledThisWeek, resolveArcWindowClockTime, resolveMostUrgentEntry, resolveNextTaskEntry } from "./todaySchedule.ts";
+import { buildTodaySections, isActiveTaskStillCurrent, listTasksScheduledThisWeek, resolveArcWindowClockTime, resolveMostUrgentEntry, resolveNextTaskEntry } from "./todaySchedule.ts";
 import type { TaskOccurrenceCompletion } from "./taskOccurrence.ts";
 import { buildTaskOccurrenceOverride, markTaskOccurrenceRemoved } from "./taskOccurrenceOverride.ts";
 import type { TaskOccurrenceOverride } from "./taskOccurrenceOverride.ts";
 import { resolveDailyPlan } from "./dailyPlan.ts";
 import { resetWeekOccurrenceOverrides } from "./weeklyRoutine.ts";
+import { createTaskTimerRun, finishTaskTimerRunEarly, type TaskTimerRun } from "./taskTimer.ts";
 
 // Fixed reference "now": Monday 2026-01-05, 12:00 local.
 const NOW = new Date(2026, 0, 5, 12, 0, 0);
@@ -441,4 +442,168 @@ test("buildTodaySections/resolveNextTaskEntry/listTasksScheduledThisWeek all def
   const sections = buildTodaySections([removedTask], [], NOW); // no overrides argument at all
   assert.equal(sections.overdue[0]?.task.id, "removed");
   assert.equal(resolveNextTaskEntry([removedTask], [], "x", NOW)?.task.id, "removed");
+});
+
+// =============================================================================
+// Current-task logic fix: "ARCHI -- תיקון לוגיקת המשימה הנוכחית, משימות שפג
+// זמנן והמעבר בין משימות". Bug report: at 9:52 the app showed last night's
+// "go to sleep" task as the current one, with the real next task (study
+// history at 13:20) demoted to merely "next". Root cause: "not yet
+// completed" (status === "active") was treated as sufficient to be
+// "current," with no check on whether the task's real execution window had
+// already elapsed. isActiveTaskStillCurrent is the new, pure gate added to
+// buildTodaySections's own "current" derivation; a live TaskTimerRun's real
+// elapsed-time math (getTaskTimerStatus, already midnight-safe) is
+// authoritative whenever one matches, otherwise (no run at all) the task's
+// own `status === "active"` is trusted exactly as before this fix. Nothing
+// here ever mutates Task.status -- the "don't auto-complete an active task"
+// guarantee is satisfied by construction.
+// =============================================================================
+
+function runFor(t: Task, durationMinutes: number, startedAt: Date, kind: "task" | "rest" = "task"): TaskTimerRun {
+  return createTaskTimerRun(t.id, `run-${t.id}`, durationMinutes, startedAt.toISOString(), kind);
+}
+
+// All Date objects below are constructed in LOCAL wall-clock time (matching
+// this file's own NOW/TODAY/YESTERDAY convention) and converted to ISO via
+// .toISOString() wherever a stored timestamp is needed -- never a
+// hand-written "...Z" literal, so the real elapsed-millisecond math stays
+// correct regardless of which timezone the test runner itself is in.
+
+// --- 1. A sleep task that crosses midnight ---
+
+test("1a. midnight-crossing sleep task: a live run started last night at 23:00 for an 8-hour (480 min) window is NOT current at 09:52 the next morning -- the exact reported bug, now fixed via the real elapsed-time check", () => {
+  const startedAt = new Date(2026, 0, 4, 23, 0, 0);
+  const sleep = startTask(task({ id: "sleep", title: "ללכת לישון", scheduledDate: YESTERDAY, scheduledTime: "23:00" }), startedAt.toISOString());
+  const run = runFor(sleep, 480, startedAt);
+  const checkedAt952 = new Date(2026, 0, 5, 9, 52, 0); // 09:52, well past 23:00 + 8h = 07:00
+  assert.equal(isActiveTaskStillCurrent(sleep, checkedAt952, run), false, "elapsed (10h52m) exceeds the 8-hour window -- no longer current");
+  const studyHistory = task({ id: "study", title: "ללמוד היסטוריה", scheduledDate: TODAY, scheduledTime: "13:20" });
+  const sections = buildTodaySections([sleep, studyHistory], [], checkedAt952, [], run);
+  assert.equal(sections.current, null, "the stale overnight task must never be shown as 'המשימה הנוכחית'");
+  assert.equal(sections.nextTask?.task.id, "study", "the real next task (study history, 13:20) is correctly shown as next, not demoted by a stale current");
+});
+
+test("1b. the SAME overnight sleep task, checked at 02:00 while genuinely still mid-window, IS still current -- proves the fix does not regress the legitimate case", () => {
+  const startedAt = new Date(2026, 0, 4, 23, 0, 0);
+  const sleep = startTask(task({ id: "sleep", scheduledDate: YESTERDAY, scheduledTime: "23:00" }), startedAt.toISOString());
+  const run = runFor(sleep, 480, startedAt);
+  const checkedAt2am = new Date(2026, 0, 5, 2, 0, 0); // only 3 hours elapsed of an 8-hour window
+  assert.equal(isActiveTaskStillCurrent(sleep, checkedAt2am, run), true);
+  const sections = buildTodaySections([sleep], [], checkedAt2am, [], run);
+  assert.equal(sections.current?.task.id, "sleep", "genuinely still within its overnight window -- correctly still current");
+});
+
+// --- 2. An expired task that was never started ---
+
+test("2. an expired, never-started task (past scheduled time, status still 'planned') is overdue, never current, exactly as before this fix -- no TaskTimerRun ever existed for it", () => {
+  const neverStarted = task({ id: "never-started", scheduledDate: TODAY, scheduledTime: "06:30" });
+  const sections = buildTodaySections([neverStarted], [], NOW, [], null);
+  assert.equal(sections.current, null);
+  assert.equal(sections.overdue[0]?.task.id, "never-started");
+});
+
+// --- 3. A task that was actually started and continues past its scheduled time ---
+
+test("3. a task started a little late relative to its own scheduled time, still within its real elapsed duration, stays current past its NAIVE scheduled end -- the real run's elapsed time wins, never auto-ended 'regardless of the task's state'", () => {
+  // Scheduled for 08:00/25min (naive end 08:25), but actually started at 08:20 -- the real run says only 20 of 25 minutes have elapsed by 08:40, well past the naive 08:25 end.
+  const startedAt820 = new Date(2026, 0, 5, 8, 20, 0);
+  const late = startTask(task({ id: "late-start", scheduledDate: TODAY, scheduledTime: "08:00", expectedDurationMinutes: 25 }), startedAt820.toISOString());
+  const run = runFor(late, 25, startedAt820);
+  const checkedAt840 = new Date(2026, 0, 5, 8, 40, 0);
+  assert.equal(isActiveTaskStillCurrent(late, checkedAt840, run), true, "only 20 of 25 real minutes have elapsed -- still current despite being past the naively-scheduled 08:25 end");
+  const sections = buildTodaySections([late], [], checkedAt840, [], run);
+  assert.equal(sections.current?.task.id, "late-start");
+});
+
+// --- 4. Several hours with no scheduled task ---
+
+test("4. with nothing active and the only task hours away (09:52, next task at 13:20), current is null and nextTask correctly shows the far-off task -- never an old task auto-selected to fill the gap", () => {
+  const studyHistory = task({ id: "study", scheduledDate: TODAY, scheduledTime: "13:20" });
+  const checkedAt952 = new Date(2026, 0, 5, 9, 52, 0);
+  const sections = buildTodaySections([studyHistory], [], checkedAt952, [], null);
+  assert.equal(sections.current, null, "'אין כרגע משימה מתוכננת' -- nothing is active and nothing is due yet");
+  assert.equal(sections.nextTask?.task.id, "study");
+});
+
+// --- 5. A task that was removed from the Flexible Day ---
+
+test("5. an ACTIVE task removed-for-today via an override is excluded from every section entirely -- 'removed' wins even over an in-progress active run, never resurrected as current just because a live run still names it", () => {
+  const removedWhileActive = startTask(task({ id: "removed-active", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "08:00" }), NOW.toISOString());
+  const run = runFor(removedWhileActive, 25, NOW);
+  const overrides: TaskOccurrenceOverride[] = [markTaskOccurrenceRemoved(removedWhileActive, TODAY, [], "2026-01-01T00:00:00.000Z")];
+  const sections = buildTodaySections([removedWhileActive], [], NOW, overrides, run);
+  assert.equal(sections.current, null);
+  assert.deepEqual(sections.overdue, []);
+  assert.deepEqual(sections.laterToday, []);
+});
+
+// --- 6. Automatic transition to the next task ---
+
+test("6. resolveNextTaskEntry, given the just-expired active task's own run, moves straight on to the real next task -- the automatic-transition path never gets stuck re-selecting the task it just excluded", () => {
+  const startedAt = new Date(2026, 0, 4, 23, 0, 0);
+  const expiredSleep = startTask(task({ id: "sleep", scheduledDate: YESTERDAY, scheduledTime: "23:00" }), startedAt.toISOString());
+  const run = runFor(expiredSleep, 480, startedAt);
+  const gym = task({ id: "gym", scheduledDate: TODAY, scheduledTime: "07:30" });
+  const checkedAt952 = new Date(2026, 0, 5, 9, 52, 0);
+  const next = resolveNextTaskEntry([expiredSleep, gym], [], "sleep", checkedAt952, [], run);
+  assert.equal(next?.task.id, "gym", "excluding the just-finished task and consulting the same run still correctly reaches the next real task");
+});
+
+// --- 7. A task's time changed during the day ---
+
+test("7. retiming an ACTIVE task for today via an override changes its bucket classification immediately, while isActiveTaskStillCurrent's own real-run check is independent of that scheduled-time change entirely", () => {
+  const retimedActive = startTask(task({ id: "retimed", recurrence: { kind: "recurring", daysOfWeek: [1] }, scheduledTime: "08:00" }), NOW.toISOString());
+  const run = runFor(retimedActive, 480, NOW); // still well within its real window
+  const overrides: TaskOccurrenceOverride[] = [buildTaskOccurrenceOverride(retimedActive, TODAY, null, { scheduledTime: "18:00" }, "2026-01-01T00:00:00.000Z")];
+  const sections = buildTodaySections([retimedActive], [], NOW, overrides, run);
+  assert.equal(sections.current?.task.id, "retimed", "the real run's own elapsed time -- not the (retimed) scheduledTime -- is what decides currentness");
+});
+
+// --- 8. Closing and reopening the app ---
+
+test("8. two independent 'cold reads' of the exact same persisted run/overrides (simulating app close/reopen) agree on the same current/next result every time", () => {
+  const startedAt = new Date(2026, 0, 4, 23, 0, 0);
+  const sleep = startTask(task({ id: "sleep", scheduledDate: YESTERDAY, scheduledTime: "23:00" }), startedAt.toISOString());
+  const run = runFor(sleep, 480, startedAt);
+  const checkedAt952 = new Date(2026, 0, 5, 9, 52, 0);
+  const firstRead = buildTodaySections([sleep], [], checkedAt952, [], run);
+  const secondRead = buildTodaySections([sleep], [], checkedAt952, [], run);
+  assert.equal(firstRead.current, null);
+  assert.equal(secondRead.current, null, "re-reading the identical persisted state must never flip the result");
+});
+
+// --- 9. Entering ARC or Rest and returning to the active task ---
+
+test("9. while a 'rest' run occupies the single-slot (the main task run is cleared while resting), the original task's own status === 'active' is trusted exactly as before this fix -- returning from Rest still finds it current", () => {
+  const active = startTask(task({ id: "active", scheduledDate: TODAY, scheduledTime: "08:00" }), NOW.toISOString());
+  const restRun = runFor(active, 5, NOW, "rest");
+  assert.equal(isActiveTaskStillCurrent(active, NOW, restRun), true, "a rest run is never mistaken for 'this task's own run has elapsed' -- falls back to trusting status");
+  const sections = buildTodaySections([active], [], NOW, [], restRun);
+  assert.equal(sections.current?.task.id, "active");
+});
+
+test("9b. a run explicitly completed/finished-early for this exact task is never still current, even though Task.status itself was never touched by this check", () => {
+  const active = startTask(task({ id: "active", scheduledDate: TODAY, scheduledTime: "08:00" }), NOW.toISOString());
+  const finishedRun = finishTaskTimerRunEarly(runFor(active, 25, NOW), NOW.toISOString());
+  assert.equal(isActiveTaskStillCurrent(active, NOW, finishedRun), false);
+});
+
+// --- 10. Moving between days/weeks without incorrectly resurrecting old tasks ---
+
+test("10. a run from two days ago (abandoned, never cleared) never makes its task 'current' days later, however far now has moved on -- no day/week-navigation special-casing needed, the same elapsed-time math just keeps working", () => {
+  const startedAt = new Date(2026, 0, 3, 9, 0, 0);
+  const stale = startTask(task({ id: "stale", scheduledDate: "2026-01-03", scheduledTime: "09:00" }), startedAt.toISOString());
+  const run = runFor(stale, 25, startedAt);
+  const twoDaysLater = new Date(2026, 0, 5, 10, 0, 0);
+  assert.equal(isActiveTaskStillCurrent(stale, twoDaysLater, run), false);
+  const sections = buildTodaySections([stale], [], twoDaysLater, [], run);
+  assert.equal(sections.current, null, "an abandoned run from days ago must never resurrect its task as current while navigating later days");
+});
+
+test("isActiveTaskStillCurrent: no matching run at all (never persisted, or belongs to a different task) always trusts status === 'active' -- preserves this module's own pre-existing behavior for the case with no real elapsed-time signal available", () => {
+  const active = startTask(task({ id: "active", scheduledDate: TODAY, scheduledTime: "20:00" }), NOW.toISOString());
+  assert.equal(isActiveTaskStillCurrent(active, NOW, null), true, "no run at all");
+  const otherTasksRun = runFor(task({ id: "someone-else" }), 25, NOW);
+  assert.equal(isActiveTaskStillCurrent(active, NOW, otherTasksRun), true, "a run for a completely different task is irrelevant to this task's own currentness");
 });
