@@ -89,6 +89,10 @@ export default function PurposeManifestEditorScreen({ id }: { id: string }) {
           <TextInput style={styles.textInput} value={draft.personalValue} onChangeText={(value) => setDraft({ ...draft, personalValue: value })} textAlign="right" multiline />
         </Field>
 
+        <Field label="איזה אדם אתה רוצה להיות באמצעות המטרה הזאת? (רשות)">
+          <TextInput style={styles.textInput} value={draft.personalIdentity} onChangeText={(value) => setDraft({ ...draft, personalIdentity: value })} textAlign="right" multiline />
+        </Field>
+
         <Text style={styles.sectionTitle}>שלוש התנהגויות של האדם שאתה רוצה להיות בעתיד</Text>
         {draft.behaviors.map((behavior, index) => (
           <View key={behavior.id} style={styles.behaviorBlock}>

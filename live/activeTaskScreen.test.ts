@@ -38,7 +38,7 @@ test("the timer status is computed via the shared pure arc/taskTimer.ts function
 
 test("on focus, the screen checks for an already-persisted TaskTimerRun for THIS task before anything else -- resume, never duplicate", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 3700);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 4000);
   assert.ok(reloadBody.includes("loadTaskTimerRun()"));
   assert.ok(reloadBody.includes("loadedRun.taskId === taskId"));
 });
@@ -141,7 +141,7 @@ test("the rest sub-timer is persisted through the SAME timestamp-based TaskTimer
 
 test("on reload, a persisted run tagged kind 'rest' restores into restRun, never timerRun -- resuming mid-rest after an app restart must not look like the main timer restarting", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 4200);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 4500);
   assert.ok(reloadBody.includes('matchingRun.kind === "rest"'));
   assert.ok(reloadBody.includes("setRestRun(restMatch)"));
 });

@@ -38,6 +38,8 @@ export interface TaskDraft {
   recurrenceDays: number[];
   linkedArcGoalId: string | null;
   linkedArcBuildId: string | null;
+  /** Task LIVE Purpose Card task: mirrors value/identity below exactly -- see Task.reason's own doc. */
+  reason: string;
   value: string;
   identity: string;
   defaultSupportiveStateId: string;
@@ -88,6 +90,7 @@ export function createEmptyTaskDraft(): TaskDraft {
     recurrenceDays: [],
     linkedArcGoalId: null,
     linkedArcBuildId: null,
+    reason: "",
     value: "",
     identity: "",
     defaultSupportiveStateId: "",
@@ -127,6 +130,7 @@ export function taskDraftFromTask(task: Task): TaskDraft {
     recurrenceDays: task.recurrence.kind === "recurring" ? task.recurrence.daysOfWeek : [],
     linkedArcGoalId: task.linkedArcGoalId,
     linkedArcBuildId: task.linkedArcBuildId,
+    reason: task.reason ?? "",
     value: task.value ?? "",
     identity: task.identity ?? "",
     defaultSupportiveStateId: task.defaultSupportiveStateId ?? "",
@@ -351,6 +355,7 @@ export function buildTaskFromDraft(draft: TaskDraft, base: Task, now: string): T
     recurrence: draft.recurrenceKind === "recurring" ? { kind: "recurring", daysOfWeek: draft.recurrenceDays } : { kind: "once" },
     linkedArcGoalId: draft.linkedArcGoalId,
     linkedArcBuildId: draft.linkedArcBuildId,
+    reason: draft.reason.trim() ? draft.reason.trim() : null,
     value: draft.value.trim() ? draft.value.trim() : null,
     identity: draft.identity.trim() ? draft.identity.trim() : null,
     defaultSupportiveStateId: draft.defaultSupportiveStateId.trim() ? draft.defaultSupportiveStateId.trim() : null,

@@ -113,9 +113,18 @@ export interface Task {
   linkedArcGoalId: string | null;
   /** Hebrew BUILD/LIVE rework spec, page 4: a reference to the ArcBuild (ARC practice) this task's "ARC" end-of-timer choice opens directly -- distinct from linkedArcGoalId above (a goal, not a practice). null means the trainee picks a practice at the moment they choose "ARC" instead (see arc/taskTimerEndChoice.ts's resolveArcChoiceDestination). */
   linkedArcBuildId: string | null;
-  /** Free-text value this task serves -- optional, user-written, never inferred. */
+  /**
+   * Task LIVE Purpose Card task: free-text, task-level reason THIS task
+   * matters -- optional, user-written, never inferred. Mirrors value/
+   * identity below exactly: when set, it takes priority over whatever
+   * reason the task's linked goal (PurposeManifest/ArcGymGoal/ArcGoal)
+   * provides for display on Task LIVE -- see arc/taskPurposeContext.ts's
+   * resolveTaskPurposeContext, the one place that priority is applied.
+   */
+  reason: string | null;
+  /** Free-text value this task serves -- optional, user-written, never inferred. Same task-level-overrides-goal-level priority as reason above. */
   value: string | null;
-  /** Free-text identity this task reinforces -- optional, user-written, never inferred. */
+  /** Free-text identity this task reinforces -- optional, user-written, never inferred. Same task-level-overrides-goal-level priority as reason above. */
   identity: string | null;
   /** References a saved personal supportive state, or one of the fixed preset keys (focus/confidence/calm/energy/patience/curiosity/determination/creativity) a later stage defines -- optional, and always changeable/skippable at runtime regardless of this default (product spec: "the user can change or skip it at runtime"). */
   defaultSupportiveStateId: string | null;
@@ -275,6 +284,7 @@ export function createEmptyTask(id: string, title: string, firstAction: string, 
     recurrence: { kind: "once" },
     linkedArcGoalId: null,
     linkedArcBuildId: null,
+    reason: null,
     value: null,
     identity: null,
     defaultSupportiveStateId: null,
@@ -329,6 +339,7 @@ export function normalizeTask(task: Task): Task {
     recurrence: task.recurrence ?? { kind: "once" },
     linkedArcGoalId: task.linkedArcGoalId ?? null,
     linkedArcBuildId: task.linkedArcBuildId ?? null,
+    reason: task.reason ?? null,
     value: task.value ?? null,
     identity: task.identity ?? null,
     defaultSupportiveStateId: task.defaultSupportiveStateId ?? null,

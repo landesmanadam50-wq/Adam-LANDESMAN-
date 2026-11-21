@@ -40,7 +40,7 @@ test("requirement 2: refreshNextScheduledTask resolves via resolveNextScheduledT
 
 test("requirement 2: reload() refreshes the next-scheduled-task on every focus, never only once at mount", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 5600);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 5900);
   assert.ok(reloadBody.includes("refreshNextScheduledTask();"));
 });
 

@@ -95,7 +95,7 @@ test("starting a rest period updates the overlay to the new rest run, and finish
 
 test("requirement 7: reload() (every focus, including after ARCHI itself was reopened) re-shows the overlay for whichever run (task or rest) is actually persisted -- never a fresh independent count, always the one loaded TaskTimerRun", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 5500);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 5800);
   assert.ok(reloadBody.includes("showFloatingTimerOverlay(restMatch ?? taskMatch!, effectiveTask, relevantStageProgress, nextScheduledTaskForOverlayRef.current);"));
   assert.ok(reloadBody.includes("if (effectiveTask && (taskMatch || restMatch)) {"));
 });

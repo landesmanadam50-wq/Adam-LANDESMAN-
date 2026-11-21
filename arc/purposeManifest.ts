@@ -44,6 +44,19 @@ export interface PurposeManifest {
   personalReason: string;
   /** "איזה ערך חשוב בחיים שלך המטרה הזאת מבטאת?" */
   personalValue: string;
+  /**
+   * Task LIVE Purpose Card task: "איזה אדם אתה רוצה להיות באמצעות המטרה
+   * הזאת?" -- a single, free-text identity statement for this manifest,
+   * optional like futureMantra/focusPointColor/futureBodyMovement below
+   * (never required by isPurposeManifestComplete, same "skip this step
+   * gracefully" treatment). Deliberately NOT the per-behavior "person you
+   * want to be" description already on each FutureBehavior above -- this
+   * is the manifest's own single overall identity line, shown as the
+   * goal-level default identity on Task LIVE's purpose card (see
+   * arc/taskPurposeContext.ts) for any task linked to this manifest that
+   * hasn't set its own task-level Task.identity override.
+   */
+  personalIdentity: string;
   /** Always exactly three -- never fewer, never more; the spec's own fixed structure. */
   behaviors: [FutureBehavior, FutureBehavior, FutureBehavior];
   /**
@@ -97,6 +110,7 @@ export function createEmptyPurposeManifest(id: string, now: string): PurposeMani
     longTermGoal: "",
     personalReason: "",
     personalValue: "",
+    personalIdentity: "",
     behaviors: [
       createEmptyFutureBehavior(generateFutureBehaviorId()),
       createEmptyFutureBehavior(generateFutureBehaviorId()),
@@ -124,6 +138,7 @@ export function createEmptyPurposeManifest(id: string, now: string): PurposeMani
 export function normalizePurposeManifest(raw: PurposeManifest): PurposeManifest {
   return {
     ...raw,
+    personalIdentity: typeof raw.personalIdentity === "string" ? raw.personalIdentity : "",
     futureMantra: typeof raw.futureMantra === "string" ? raw.futureMantra : "",
     focusPointColor: typeof raw.focusPointColor === "string" ? raw.focusPointColor : "",
     futureBodyMovement: typeof raw.futureBodyMovement === "string" ? raw.futureBodyMovement : "",

@@ -25,7 +25,7 @@ const screen = readSource("live/ActiveTaskScreen.tsx");
 
 test("requirement 3: reload() merges today's effective occurrence (resolveEffectiveOccurrence) onto the loaded task, and `task` state is set from that merged result -- never the raw loaded task directly", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 3700);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 4000);
   assert.ok(reloadBody.includes("loadTaskOccurrenceOverrides()"));
   assert.ok(reloadBody.includes("resolveEffectiveOccurrence(loadedTask, todayLocal, overrides)"));
   assert.ok(reloadBody.includes("setTask(effectiveTask);"));
@@ -34,7 +34,7 @@ test("requirement 3: reload() merges today's effective occurrence (resolveEffect
 
 test("requirement 2/3: the merged effectiveTask carries the OVERRIDE's scheduledTime/expectedDurationMinutes/order (never the raw task's own), so performStart's duration calculation (task.expectedDurationMinutes) and every other reader of `task` already gets today's effective values for free", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 3700);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 4000);
   assert.ok(
     reloadBody.includes(
       "{ ...loadedTask!, scheduledTime: effective.scheduledTime, expectedDurationMinutes: effective.expectedDurationMinutes, order: effective.order }"
@@ -47,7 +47,7 @@ test("requirement 2/3: the merged effectiveTask carries the OVERRIDE's scheduled
 
 test("requirement 4: the merged effectiveTask (not the raw loaded task) is what showFloatingTimerOverlay restores with on every focus -- the floating overlay's own duration/title must agree with today's effective occurrence", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 5500);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 5800);
   assert.ok(reloadBody.includes("showFloatingTimerOverlay(restMatch ?? taskMatch!, effectiveTask, relevantStageProgress, nextScheduledTaskForOverlayRef.current);"));
 });
 
@@ -73,7 +73,7 @@ test("requirements 6/7/8 (no template corruption, no duplicates): persistTask re
 
 test("rawTaskRef is populated from the RAW loadedTask (never the merged effectiveTask) on every reload, so persistTask always has the true template values to restore", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 3700);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 4000);
   assert.ok(reloadBody.includes("rawTaskRef.current = loadedTask;"));
 });
 

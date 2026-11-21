@@ -565,6 +565,10 @@ export default function TaskEditorScreen({
           </View>
         </Field>
 
+        <Field label="סיבה לפעולה (רשות)">
+          <TextInput style={styles.textInput} value={draft.reason} onChangeText={(reason) => setDraft({ ...draft, reason })} textAlign="right" />
+        </Field>
+
         <Field label="ערך (רשות)">
           <TextInput style={styles.textInput} value={draft.value} onChangeText={(value) => setDraft({ ...draft, value })} textAlign="right" />
         </Field>

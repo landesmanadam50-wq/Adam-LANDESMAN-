@@ -139,7 +139,7 @@ test("entering ARC from ANY stage (handleNeedArc) only ever pauses the current t
 
 test("reload() loads the persisted TaskStageProgress alongside the TaskTimerRun, scoped to this exact task, and restores it into the overlay payload -- a process restart mid-stage resumes at the correct active stage in BOTH places", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 4500);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 4900);
   assert.ok(reloadBody.includes("loadTaskStageProgress()"));
   assert.ok(reloadBody.includes('setStageProgress(taskMatch && loadedStageProgress && loadedStageProgress.taskId === taskId ? loadedStageProgress : null);'));
 });

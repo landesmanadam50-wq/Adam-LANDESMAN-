@@ -70,6 +70,12 @@ import { hasConfiguredActionStages, resolveFirstActionStage, resolveNextActionSt
 import { advanceStageProgress, createTaskStageProgress, isStageCompleted, markStageCompleted, resolveCompletedDurationMinutes } from "../arc/taskStageProgress.ts";
 import type { TaskStageProgress } from "../arc/taskStageProgress.ts";
 import { openFullArc, openShortenedArc } from "../data/emotionalCheckInRouting.ts";
+import { loadArcGoals, loadArcGymGoals, loadPurposeManifests } from "../data/storage.ts";
+import type { ArcGoal } from "../arc/types.ts";
+import type { PurposeManifest } from "../arc/purposeManifest.ts";
+import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
+import { resolveTaskPurposeContext } from "../arc/taskPurposeContext.ts";
+import TaskPurposeCard from "./components/TaskPurposeCard.tsx";
 
 /**
  * Smart Postponement Flow, requirement 6: the ONE place "did the
@@ -235,6 +241,18 @@ export default function ActiveTaskScreen({
    */
   const [linkedInsights, setLinkedInsights] = useState<ArcInsight[]>([]);
   const [expandedInsightIds, setExpandedInsightIds] = useState<Set<string>>(new Set());
+  /**
+   * Task LIVE Purpose Card task: the three collections
+   * resolveTaskPurposeContext (arc/taskPurposeContext.ts) reads from --
+   * reloaded on every focus alongside everything else in reload() below,
+   * so editing a goal's manifest (or this task's own reason/value/
+   * identity) elsewhere and returning to Task LIVE always shows the
+   * current data, never a stale snapshot from when this screen first
+   * mounted.
+   */
+  const [purposeManifests, setPurposeManifests] = useState<PurposeManifest[]>([]);
+  const [purposeArcGymGoals, setPurposeArcGymGoals] = useState<ArcGymGoal[]>([]);
+  const [purposeArcGoals, setPurposeArcGoals] = useState<ArcGoal[]>([]);
 
   const refreshNextScheduledTask = useCallback(async () => {
     const next = await resolveNextScheduledTaskDisplay(taskId, new Date());
@@ -261,8 +279,14 @@ export default function ActiveTaskScreen({
       loadTaskOccurrenceOverrides(),
       loadPendingIdentityInsightTaskId(),
       loadArcInsights(),
-    ]).then(([loadedTask, loadedRun, explanationSeen, loadedStageProgress, overrides, pendingInsightTaskId, allInsights]) => {
+      loadPurposeManifests(),
+      loadArcGymGoals(),
+      loadArcGoals(),
+    ]).then(([loadedTask, loadedRun, explanationSeen, loadedStageProgress, overrides, pendingInsightTaskId, allInsights, manifests, arcGymGoals, arcGoals]) => {
       setLinkedInsights(allInsights.filter((insight) => insight.taskId === taskId));
+      setPurposeManifests(manifests);
+      setPurposeArcGymGoals(arcGymGoals);
+      setPurposeArcGoals(arcGoals);
       // Reflection-before-completion fix: `showIdentityInsightPrompt` is
       // re-derived HERE, from the persisted pending marker, every time
       // this screen loads or regains focus -- never left as a bare
@@ -1264,6 +1288,13 @@ export default function ActiveTaskScreen({
             <Text style={styles.hint}>{`התקדמות במשימה: ${completedStageMinutes} מתוך ${totalStageMinutes} דקות`}</Text>
           </>
         )}
+
+        {/* Task LIVE Purpose Card task: "goal -> reason -> value ->
+            identity" above the timer, below the current action -- see
+            arc/taskPurposeContext.ts/live/components/TaskPurposeCard.tsx.
+            Renders nothing at all when this task has no linked goal and
+            no task-level reason/value/identity of its own. */}
+        <TaskPurposeCard context={resolveTaskPurposeContext(task, purposeManifests, purposeArcGymGoals, purposeArcGoals)} />
 
         {showNotificationExplanation && (
           <View style={styles.notificationExplanationBlock}>
