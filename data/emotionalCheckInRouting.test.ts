@@ -146,3 +146,24 @@ test("openFullArc threads arcGymSituationId/morningFlowCheckIn through to Full A
   assert.ok(fnBody.includes("if (options.arcGymSituationId) params.arcGymSituationId = options.arcGymSituationId;"));
   assert.ok(fnBody.includes('if (options.morningFlowCheckIn) params.morningFlowCheckIn = "1";'));
 });
+
+// --- ARC Perspective task ---
+
+test("openFullArc/openShortenedArc both thread arcPerspectiveId through to their own params, same convention as arcFocusPracticeId -- and never force the id to the standalone sentinel on their own (unlike arcGymSituationId/arcGymMemoryExerciseId)", () => {
+  for (const fnName of ["export async function openFullArc(", "export async function openShortenedArc("]) {
+    const fnIndex = module_.indexOf(fnName);
+    const fnBody = module_.slice(fnIndex, module_.indexOf("\n}", fnIndex));
+    assert.ok(fnBody.includes("if (options.arcPerspectiveId) params.arcPerspectiveId = options.arcPerspectiveId;"));
+    assert.ok(
+      fnBody.includes("const id = options.arcGymSituationId || options.arcGymMemoryExerciseId ? STANDALONE_ARC_TASK_ID : taskId ?? (await resolveHomeCheckInTaskId());"),
+      "arcPerspectiveId must never be added to the standalone-forcing condition"
+    );
+  }
+});
+
+test("5/22. handleArcPerspectiveCheckInChoice forwards the caller's own ALREADY-RESOLVED taskId verbatim to openFullArc/openShortenedArc -- it never re-resolves or overrides it (a real-time practice must keep linking to whichever task was already active; a planned/ARC Gym practice has already been given the standalone sentinel)", () => {
+  const fnIndex = module_.indexOf("export async function handleArcPerspectiveCheckInChoice(");
+  const fnBody = module_.slice(fnIndex, module_.indexOf("\n}", fnIndex));
+  assert.ok(fnBody.includes('if (choice === "full_arc") return openFullArc(options.taskId, { arcPerspectiveId: options.arcPerspectiveId });'));
+  assert.ok(fnBody.includes("return openShortenedArc(options.taskId, { arcPerspectiveId: options.arcPerspectiveId });"));
+});

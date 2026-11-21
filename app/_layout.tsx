@@ -139,6 +139,9 @@ export default function RootLayout() {
         <Stack.Screen name="arc-gym/focus-exercise/index" options={{ title: "תרגילי Focus שמורים" }} />
         <Stack.Screen name="arc-gym/focus-exercise/[id]" options={{ title: "תרגיל Focus" }} />
         <Stack.Screen name="arc-gym/focus-exercise/[id]/edit" options={{ title: "עריכת תרגיל Focus" }} />
+        <Stack.Screen name="arc-gym/perspective/index" options={{ title: "ARC Perspective" }} />
+        <Stack.Screen name="arc-gym/perspective/[id]" options={{ title: "אירוע" }} />
+        <Stack.Screen name="arc-perspective/[id]" options={{ title: "ARC Perspective" }} />
         {/* ARC Learning + ARC Creativity + Integrated Spaced Repetition
             task: ARC Learning is a fully independent system from ARC
             Gym/ARC Goal, reached only from its own home card (never

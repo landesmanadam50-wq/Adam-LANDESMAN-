@@ -81,6 +81,16 @@ export default function ArcGymScreen() {
         </Pressable>
 
         {/*
+         * ARC Perspective task: a sixth, independent ARC GYM exercise
+         * type -- separating an event from its interpretation, reached
+         * only from here (and from the real-time button on Home), same
+         * precedent as Decision/Focus above.
+         */}
+        <Pressable style={styles.perspectiveLinkCard} onPress={() => router.push("/arc-gym/perspective")}>
+          <Text style={styles.perspectiveLinkText}>🔄 ARC Perspective — שינוי פרשנות</Text>
+        </Pressable>
+
+        {/*
          * ARC Gym + ARC Goal Integration task: the optional goal layer
          * living INSIDE ARC Gym -- never gating any exercise above,
          * reached only from here. The saved ARC Focus configurations
@@ -137,6 +147,8 @@ const styles = StyleSheet.create({
   arcFocusLinkText: { color: "#1565C0", fontSize: 15, fontWeight: "600", textAlign: "right" },
   decisionLinkCard: { borderWidth: 1, borderColor: "#2E7D32", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 12 },
   decisionLinkText: { color: "#2E7D32", fontSize: 15, fontWeight: "600", textAlign: "right" },
+  perspectiveLinkCard: { borderWidth: 1, borderColor: "#6A1B9A", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 12 },
+  perspectiveLinkText: { color: "#6A1B9A", fontSize: 15, fontWeight: "600", textAlign: "right" },
   goalLinkCard: { borderWidth: 1, borderColor: "#C2410C", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 12 },
   goalLinkText: { color: "#C2410C", fontSize: 15, fontWeight: "600", textAlign: "right" },
   focusExerciseLinkCard: { borderWidth: 1, borderColor: "#1565C0", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 20 },

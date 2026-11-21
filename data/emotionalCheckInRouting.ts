@@ -116,6 +116,21 @@ interface NavigateOptions {
    * own reload()/returnToTask()).
    */
   arcGymMemoryExerciseId?: string;
+  /**
+   * ARC Perspective task: references the arc/arcPerspective.ts
+   * ArcPerspectiveSession this ARC run is the preliminary (😟/🙂) mood
+   * check-in step for. A sibling param threaded straight through to
+   * /tasks/[id]/arc, persisted on the ARC session itself (its own
+   * arcPerspectiveId field) so live/NewArcLiveScreen.tsx's own
+   * returnToTask() can find and resume the SAME in-progress
+   * ArcPerspectiveSession once this ARC finishes. UNLIKE
+   * arcGymSituationId/arcGymMemoryExerciseId above, this never forces
+   * `id` to the standalone sentinel -- the caller
+   * (handleArcPerspectiveCheckInChoice below) has already resolved the
+   * correct real-or-standalone taskId itself, since a real-time
+   * practice must keep linking to whichever task was already active.
+   */
+  arcPerspectiveId?: string;
 }
 
 function navigateTo(target: Parameters<typeof router.push>[0], options: NavigateOptions): void {
@@ -148,6 +163,7 @@ export async function openFullArc(taskId: string | null, options: NavigateOption
   if (options.arcGymSituationId) params.arcGymSituationId = options.arcGymSituationId;
   if (options.arcGymMemoryExerciseId) params.arcGymMemoryExerciseId = options.arcGymMemoryExerciseId;
   if (options.arcFocusPracticeId) params.arcFocusPracticeId = options.arcFocusPracticeId;
+  if (options.arcPerspectiveId) params.arcPerspectiveId = options.arcPerspectiveId;
   if (options.morningFlowCheckIn) params.morningFlowCheckIn = "1";
   navigateTo({ pathname: "/tasks/[id]/arc", params }, options);
 }
@@ -159,6 +175,7 @@ export async function openShortenedArc(taskId: string | null, options: NavigateO
   if (options.arcGymSituationId) params.arcGymSituationId = options.arcGymSituationId;
   if (options.arcGymMemoryExerciseId) params.arcGymMemoryExerciseId = options.arcGymMemoryExerciseId;
   if (options.arcFocusPracticeId) params.arcFocusPracticeId = options.arcFocusPracticeId;
+  if (options.arcPerspectiveId) params.arcPerspectiveId = options.arcPerspectiveId;
   if (options.morningFlowCheckIn) params.morningFlowCheckIn = "1";
   navigateTo({ pathname: "/tasks/[id]/arc", params }, options);
 }
@@ -325,4 +342,24 @@ export async function handleArcFocusCheckInChoice(choice: ArcFocusMoodChoice, op
   if (choice === "full_arc") return openFullArc(taskId, { arcFocusPracticeId: options.arcFocusPracticeId });
   if (choice === "shortened_arc") return openShortenedArc(taskId, { arcFocusPracticeId: options.arcFocusPracticeId });
   router.replace({ pathname: "/tasks/[id]/arc-focus", params: { id: taskId, arcFocusPracticeId: options.arcFocusPracticeId } });
+}
+
+/**
+ * ARC Perspective task: the check-in step inserted between ARC
+ * Perspective's own "event" step and its "perspective_shift" step --
+ * only ever called for 😟/🙂 (😄 "מעולה" never leaves the flow screen at
+ * all, same precedent as ARC Memory's own check-in). `options.taskId`
+ * is ALWAYS already resolved by the caller (build/ArcPerspectiveFlowScreen.tsx)
+ * to either the standalone sentinel (planned/ARC Gym mode) or the
+ * session's own captured activeTaskId-or-sentinel (real_time mode, so
+ * the active task's own timer/context is preserved) -- this function
+ * never re-resolves or overrides it, unlike openFullArc/openShortenedArc's
+ * own default `taskId ?? resolveHomeCheckInTaskId()` fallback, which
+ * would be wrong here (a null here must never silently resolve to
+ * "whichever task happens to be active right now" -- that resolution,
+ * when wanted, already happened one level up).
+ */
+export async function handleArcPerspectiveCheckInChoice(choice: "full_arc" | "shortened_arc", options: { arcPerspectiveId: string; taskId: string }): Promise<void> {
+  if (choice === "full_arc") return openFullArc(options.taskId, { arcPerspectiveId: options.arcPerspectiveId });
+  return openShortenedArc(options.taskId, { arcPerspectiveId: options.arcPerspectiveId });
 }

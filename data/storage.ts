@@ -121,6 +121,8 @@ import type { ArcFocusExercise } from "../arc/arcFocusExercise.ts";
 import { upsertArcFocusExerciseInList } from "../arc/arcFocusExercise.ts";
 import type { ArcGymMemoryCheckInProgress } from "../arc/arcGymMemoryCheckInProgress.ts";
 import type { ArcDecisionSession } from "../arc/arcDecision.ts";
+import type { ArcPerspectiveEvent, ArcPerspectiveSession } from "../arc/arcPerspective.ts";
+import { upsertArcPerspectiveEventInList, upsertArcPerspectiveSessionInList } from "../arc/arcPerspective.ts";
 import type { ArcLearningTopic } from "../arc/arcLearningTopic.ts";
 import { normalizeArcLearningTopic, upsertArcLearningTopicInList } from "../arc/arcLearningTopic.ts";
 import type { ArcLearningInsight } from "../arc/arcLearningInsight.ts";
@@ -2372,6 +2374,10 @@ export async function loadNewArcLiveSession(): Promise<NewArcLiveSessionState | 
     // check-in" default for a session saved before this field existed --
     // same ?? convention as arcFocusPracticeId above.
     arcGymMemoryExerciseId: parsed.arcGymMemoryExerciseId ?? null,
+    // ARC Perspective task: the true "not an ARC Perspective preliminary"
+    // default for a session saved before this field existed -- same ??
+    // convention as arcFocusPracticeId/arcGymMemoryExerciseId above.
+    arcPerspectiveId: parsed.arcPerspectiveId ?? null,
     // "התבוננות וחיבור לעצמי" task: the true "branch screen not yet
     // answered" default for a session saved before this field existed.
     selfObservationChoice: parsed.selfObservationChoice ?? null,
@@ -3606,6 +3612,75 @@ export async function loadArcDecisionHistory(): Promise<ArcDecisionSession[]> {
 export async function recordArcDecisionHistory(session: ArcDecisionSession): Promise<void> {
   const history = await loadArcDecisionHistory();
   await AsyncStorage.setItem(ARC_DECISION_HISTORY_KEY, JSON.stringify([...history, session]));
+}
+
+// --- ARC Perspective task ---------------------------------------------
+
+const ARC_PERSPECTIVE_EVENTS_KEY = "archi.arcPerspectiveEvents.v1";
+
+/** The reusable, editable "saved event" list -- same load/save/upsert shape as loadArcGymSituations/upsertArcGymSituationEntry. */
+export async function loadArcPerspectiveEvents(): Promise<ArcPerspectiveEvent[]> {
+  const raw = await AsyncStorage.getItem(ARC_PERSPECTIVE_EVENTS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcPerspectiveEvent[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcPerspectiveEvents are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcPerspectiveEventEntry(event: ArcPerspectiveEvent): Promise<void> {
+  const events = await loadArcPerspectiveEvents();
+  await AsyncStorage.setItem(ARC_PERSPECTIVE_EVENTS_KEY, JSON.stringify(upsertArcPerspectiveEventInList(events, event)));
+}
+
+export async function deleteArcPerspectiveEventEntry(id: string): Promise<void> {
+  const events = await loadArcPerspectiveEvents();
+  await AsyncStorage.setItem(ARC_PERSPECTIVE_EVENTS_KEY, JSON.stringify(events.filter((event) => event.id !== id)));
+}
+
+const ARC_PERSPECTIVE_SESSIONS_KEY = "archi.arcPerspectiveSessions.v1";
+
+/** Full practice history across every event -- upsert-by-id (see arc/arcPerspective.ts's own upsertArcPerspectiveSessionInList doc for why this is never append-only). */
+export async function loadArcPerspectiveSessions(): Promise<ArcPerspectiveSession[]> {
+  const raw = await AsyncStorage.getItem(ARC_PERSPECTIVE_SESSIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcPerspectiveSession[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcPerspectiveSessions are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcPerspectiveSessionEntry(session: ArcPerspectiveSession): Promise<void> {
+  const sessions = await loadArcPerspectiveSessions();
+  await AsyncStorage.setItem(ARC_PERSPECTIVE_SESSIONS_KEY, JSON.stringify(upsertArcPerspectiveSessionInList(sessions, session)));
+}
+
+const ARC_PERSPECTIVE_IN_PROGRESS_KEY = "archi.arcPerspectiveInProgress.v1";
+
+/** Single resumable slot, mirroring loadArcDecisionInProgress's own shape exactly -- survives the ARC mood-check-in detour and an app close/reopen in between. */
+export async function loadArcPerspectiveInProgress(): Promise<ArcPerspectiveSession | null> {
+  const raw = await AsyncStorage.getItem(ARC_PERSPECTIVE_IN_PROGRESS_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ArcPerspectiveSession;
+  } catch {
+    console.warn("[storage] Stored ArcPerspectiveSession in progress is not valid JSON -- treating as no session in progress rather than crashing.");
+    return null;
+  }
+}
+
+export async function saveArcPerspectiveInProgress(session: ArcPerspectiveSession): Promise<void> {
+  await AsyncStorage.setItem(ARC_PERSPECTIVE_IN_PROGRESS_KEY, JSON.stringify(session));
+}
+
+export async function clearArcPerspectiveInProgress(): Promise<void> {
+  await AsyncStorage.removeItem(ARC_PERSPECTIVE_IN_PROGRESS_KEY);
 }
 
 // ============================================================

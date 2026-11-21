@@ -75,8 +75,9 @@ test("returnToTask sends a standalone session back to Home, never to a non-exist
   // function grew. ARC Focus task: widened again (4700 -> 5300) to fit
   // the new arcFocusPracticeId branch. ARC Gym + ARC Goal Integration
   // task: widened again (5300 -> 6000) to fit the new
-  // arcGymMemoryExerciseId branch.
-  const fnBody = liveScreen.slice(fnIndex, fnIndex + 7700);
+  // arcGymMemoryExerciseId branch. ARC Perspective task: widened again
+  // (6000 -> 7900) to fit the new arcPerspectiveId branch.
+  const fnBody = liveScreen.slice(fnIndex, fnIndex + 8700);
   assert.ok(fnBody.includes("if (taskId === STANDALONE_ARC_TASK_ID) {"));
   assert.ok(fnBody.includes('router.replace("/");'));
 });

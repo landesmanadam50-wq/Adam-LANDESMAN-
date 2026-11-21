@@ -25,7 +25,7 @@ function resolveStartMode(mini?: string, spontaneous?: string, shortened?: strin
 }
 
 export default function TaskArc() {
-  const { id, mini, spontaneous, shortened, skipEmotionSelection, plannedArcId, autoStartAfter, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, morningFlowCheckIn } = useLocalSearchParams<{
+  const { id, mini, spontaneous, shortened, skipEmotionSelection, plannedArcId, autoStartAfter, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId, morningFlowCheckIn } = useLocalSearchParams<{
     id: string;
     mini?: string;
     spontaneous?: string;
@@ -43,6 +43,7 @@ export default function TaskArc() {
     arcGymSituationId?: string;
     arcFocusPracticeId?: string;
     arcGymMemoryExerciseId?: string;
+    arcPerspectiveId?: string;
     morningFlowCheckIn?: string;
   }>();
   return (
@@ -55,6 +56,7 @@ export default function TaskArc() {
       arcGymSituationId={arcGymSituationId ?? null}
       arcFocusPracticeId={arcFocusPracticeId ?? null}
       arcGymMemoryExerciseId={arcGymMemoryExerciseId ?? null}
+      arcPerspectiveId={arcPerspectiveId ?? null}
       morningFlowCheckIn={morningFlowCheckIn === "1"}
     />
   );

@@ -20,11 +20,14 @@ import {
   findOpenArcGymTrainingRecord,
   isArcGymReminderNotificationInSync,
   isArcGymReminderRecurring,
+  linkArcPerspectiveToArcGymSituation,
   listArcGymRemindersForExercise,
   listArcGymSituationsForBehavior,
   listArcGymTrainingRecordsForMemoryExercise,
   listArcGymTrainingRecordsForSituation,
+  normalizeArcGymSituation,
   recordArcGymMemoryFromSession,
+  unlinkArcPerspectiveFromArcGymSituation,
   resolveArcGymActionVisualization,
   resolveArcGymBehaviorOptions,
   resolveArcGymMemoryMantraSteps,
@@ -429,4 +432,43 @@ test("describeArcGymReminderSchedule formats a one-time reminder with its date a
   assert.equal(describeArcGymReminderSchedule(oneTime), "2026-01-10 בשעה 09:05");
   const recurring = createArcGymReminder("r2", "behaviour", "s1", 18, 0, [0, 1], null, NOW);
   assert.equal(describeArcGymReminderSchedule(recurring), "יום א׳, יום ב׳ בשעה 18:00");
+});
+
+// --- ARC Perspective task: section 7's own cross-link ---
+
+test("createArcGymSituation/normalizeArcGymSituation default the two new ARC Perspective fields to their true 'none' state", () => {
+  const created = createArcGymSituation("s1", "m1", "b1", "התנהגות", "סיטואציה", "טריגר", "פעולה", NOW);
+  assert.equal(created.linkedArcPerspectiveSessionId, null);
+  assert.equal(created.arcPerspectiveNewInterpretation, null);
+  const legacy = { ...created, linkedArcPerspectiveSessionId: undefined, arcPerspectiveNewInterpretation: undefined } as unknown as Parameters<typeof normalizeArcGymSituation>[0];
+  const normalized = normalizeArcGymSituation(legacy);
+  assert.equal(normalized.linkedArcPerspectiveSessionId, null);
+  assert.equal(normalized.arcPerspectiveNewInterpretation, null);
+});
+
+test("14/16. linkArcPerspectiveToArcGymSituation snapshots the new interpretation text (never a live reference) and sets the link id; unlinkArcPerspectiveFromArcGymSituation clears both without deleting the situation", () => {
+  const situation = createArcGymSituation("s1", "m1", "b1", "התנהגות", "סיטואציה", "טריגר", "פעולה", NOW);
+  const linked = linkArcPerspectiveToArcGymSituation(situation, "perspective-1", "יכול להיות שהוא מנסה לעזור לי.", LATER);
+  assert.equal(linked.linkedArcPerspectiveSessionId, "perspective-1");
+  assert.equal(linked.arcPerspectiveNewInterpretation, "יכול להיות שהוא מנסה לעזור לי.");
+  assert.equal(linked.updatedAt, LATER);
+  assert.equal(linked.id, "s1");
+  const unlinked = unlinkArcPerspectiveFromArcGymSituation(linked, NOW);
+  assert.equal(unlinked.linkedArcPerspectiveSessionId, null);
+  assert.equal(unlinked.arcPerspectiveNewInterpretation, null);
+  assert.equal(unlinked.id, "s1", "unlinking must never delete the situation itself");
+});
+
+test("unlinkArcPerspectiveFromArcGymSituation is a no-op when nothing is linked", () => {
+  const situation = createArcGymSituation("s1", "m1", "b1", "התנהגות", "סיטואציה", "טריגר", "פעולה", NOW);
+  const unchanged = unlinkArcPerspectiveFromArcGymSituation(situation, LATER);
+  assert.equal(unchanged, situation, "a no-op unlink must return the same object, never bump updatedAt or touch other fields");
+});
+
+test("re-linking a situation to a DIFFERENT ArcPerspectiveSession overwrites the previous snapshot -- the 'ask before overwriting' confirmation is the caller's own UI responsibility, this pure setter is unconditional", () => {
+  let situation = createArcGymSituation("s1", "m1", "b1", "התנהגות", "סיטואציה", "טריגר", "פעולה", NOW);
+  situation = linkArcPerspectiveToArcGymSituation(situation, "perspective-1", "פרשנות ראשונה", NOW);
+  situation = linkArcPerspectiveToArcGymSituation(situation, "perspective-2", "פרשנות שנייה", LATER);
+  assert.equal(situation.linkedArcPerspectiveSessionId, "perspective-2");
+  assert.equal(situation.arcPerspectiveNewInterpretation, "פרשנות שנייה");
 });

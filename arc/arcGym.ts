@@ -165,6 +165,28 @@ export interface ArcGymSituation {
   visualizationDetails: string | null;
   /** ARC Gym + ARC Goal Integration task: ArcGymGoal.id values -- same many-to-many linking convention as ArcResultExercise.linkedTaskIds. */
   linkedGoalIds: string[];
+  /**
+   * ARC Perspective task: non-null only when an arc/arcPerspective.ts
+   * ArcPerspectiveSession's own new interpretation is linked to this
+   * Behaviour exercise (section 7) -- at most one at a time, set/cleared
+   * together with arcPerspectiveNewInterpretation below via this
+   * module's own linkArcPerspectiveToArcGymSituation/
+   * unlinkArcPerspectiveFromArcGymSituation. Never cascades: deleting
+   * the ArcPerspectiveSession this points at leaves a dangling id here,
+   * exactly like linkedGoalIds' own documented no-cascade policy --
+   * callers that care should null it out first.
+   */
+  linkedArcPerspectiveSessionId: string | null;
+  /**
+   * A SNAPSHOT of the linked session's own newInterpretation text at
+   * link time -- never a live reference, same "preserve the original
+   * wording" principle as behaviorText above. Re-linking (or the
+   * trainee practicing the same event again and choosing to update)
+   * refreshes this snapshot explicitly; it is never silently rewritten
+   * by a later, unrelated edit to the session or its event. Null
+   * whenever linkedArcPerspectiveSessionId is null.
+   */
+  arcPerspectiveNewInterpretation: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -193,14 +215,41 @@ export function createArcGymSituation(
     desiredAction: desiredAction.trim(),
     visualizationDetails: null,
     linkedGoalIds: [],
+    linkedArcPerspectiveSessionId: null,
+    arcPerspectiveNewInterpretation: null,
     createdAt: now,
     updatedAt: now,
   };
 }
 
-/** ARC Gym + ARC Goal Integration task: backfills linkedGoalIds for a situation saved before that field existed -- an empty array is exactly its true pre-existing state, never invented. Called once per record by data/storage.ts's own loadArcGymSituations, same convention as normalizePurposeManifest. */
+/** ARC Gym + ARC Goal Integration task / ARC Perspective task: backfills linkedGoalIds/linkedArcPerspectiveSessionId/arcPerspectiveNewInterpretation for a situation saved before those fields existed -- their true pre-existing "none" state, never invented. Called once per record by data/storage.ts's own loadArcGymSituations, same convention as normalizePurposeManifest. */
 export function normalizeArcGymSituation(situation: ArcGymSituation): ArcGymSituation {
-  return { ...situation, linkedGoalIds: Array.isArray(situation.linkedGoalIds) ? situation.linkedGoalIds : [] };
+  return {
+    ...situation,
+    linkedGoalIds: Array.isArray(situation.linkedGoalIds) ? situation.linkedGoalIds : [],
+    linkedArcPerspectiveSessionId: typeof situation.linkedArcPerspectiveSessionId === "string" ? situation.linkedArcPerspectiveSessionId : null,
+    arcPerspectiveNewInterpretation: typeof situation.arcPerspectiveNewInterpretation === "string" ? situation.arcPerspectiveNewInterpretation : null,
+  };
+}
+
+/**
+ * ARC Perspective task, section 7: links a completed
+ * ArcPerspectiveSession's own new interpretation to this Behaviour
+ * exercise, snapshotting the text -- an unconditional setter (same
+ * shape as pairArcResultWithBehaviour), never itself asking "are you
+ * sure you want to overwrite the previous link" -- that confirmation,
+ * when a DIFFERENT session is already linked, is the caller's own UI
+ * responsibility (an Alert), matching this codebase's established
+ * split between pure setters and UI-level confirmation.
+ */
+export function linkArcPerspectiveToArcGymSituation(situation: ArcGymSituation, sessionId: string, newInterpretationSnapshot: string, now: string): ArcGymSituation {
+  return { ...situation, linkedArcPerspectiveSessionId: sessionId, arcPerspectiveNewInterpretation: newInterpretationSnapshot, updatedAt: now };
+}
+
+/** Never deletes the situation itself -- mirrors unpairArcResultFromBehaviour's non-destructive shape. */
+export function unlinkArcPerspectiveFromArcGymSituation(situation: ArcGymSituation, now: string): ArcGymSituation {
+  if (!situation.linkedArcPerspectiveSessionId) return situation;
+  return { ...situation, linkedArcPerspectiveSessionId: null, arcPerspectiveNewInterpretation: null, updatedAt: now };
 }
 
 export function linkGoalToArcGymSituation(situation: ArcGymSituation, goalId: string, now: string): ArcGymSituation {

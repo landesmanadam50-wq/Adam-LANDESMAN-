@@ -62,8 +62,10 @@ function returnToTaskBody(): string {
   // grew, without bleeding into the next function below it. ARC Focus
   // task: widened again (4600 -> 5200) to fit the new arcFocusPracticeId
   // branch. ARC Gym + ARC Goal Integration task: widened again
-  // (5200 -> 6500) to fit the new arcGymMemoryExerciseId branch.
-  return screen.slice(fnIndex, fnIndex + 7700);
+  // (5200 -> 6500) to fit the new arcGymMemoryExerciseId branch. ARC
+  // Perspective task: widened again (6500 -> 8400) to fit the new
+  // arcPerspectiveId branch.
+  return screen.slice(fnIndex, fnIndex + 8700);
 }
 
 // ARCHI -- ARC Result task, section 3: the generic (non-overridden)

@@ -50,6 +50,19 @@ export default function ArcGymTrainingScreen({ id }: { id: string }) {
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>דימיון הסיטואציה</Text>
+          {/*
+           * ARC Perspective task, section 7.3: a non-blocking reminder
+           * of the linked ArcPerspectiveSession's own new interpretation
+           * (a snapshot) -- never alters resolveArcGymSituationVisualizationPrompts
+           * or resolveArcGymActionVisualization, and never replaces any
+           * existing step.
+           */}
+          {!!situation.arcPerspectiveNewInterpretation && (
+            <View style={styles.perspectiveReminder}>
+              <Text style={styles.perspectiveReminderLabel}>פרשנות חדשה שבחרת</Text>
+              <Text style={styles.perspectiveReminderText}>{situation.arcPerspectiveNewInterpretation}</Text>
+            </View>
+          )}
           <Text style={styles.prompt}>{prompts[step]}</Text>
           <View style={styles.row}>
             {step > 0 && (
@@ -95,4 +108,7 @@ const styles = StyleSheet.create({
   secondaryButton: { borderWidth: 1, borderColor: "#999", paddingVertical: 14, paddingHorizontal: 24, borderRadius: 10, alignItems: "center" },
   secondaryButtonText: { color: "#666", fontWeight: "600" },
   linkText: { color: "#666", fontSize: 13, textAlign: "center", marginTop: 16 },
+  perspectiveReminder: { backgroundColor: "#F3E9FA", borderRadius: 10, padding: 12, marginBottom: 14 },
+  perspectiveReminderLabel: { fontSize: 12, fontWeight: "700", color: "#6A1B9A", textAlign: "right", marginBottom: 2 },
+  perspectiveReminderText: { fontSize: 14, color: "#333", textAlign: "right" },
 });

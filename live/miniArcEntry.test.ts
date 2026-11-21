@@ -22,7 +22,7 @@ const route = readSource("app/tasks/[id]/arc.tsx");
 const screen = readSource("live/NewArcLiveScreen.tsx");
 
 test("the route reads 'mini'/'spontaneous'/'shortened' params and resolves them to exactly one startMode, never guessing from anything else", () => {
-  assert.match(route, /const \{ id, mini, spontaneous, shortened, skipEmotionSelection, plannedArcId, autoStartAfter, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, morningFlowCheckIn \} = useLocalSearchParams/);
+  assert.match(route, /const \{ id, mini, spontaneous, shortened, skipEmotionSelection, plannedArcId, autoStartAfter, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId, morningFlowCheckIn \} = useLocalSearchParams/);
   assert.ok(route.includes("startMode={resolveStartMode(mini, spontaneous, shortened)}"));
   assert.match(route, /if \(mini === "1"\) return "plannedMini";/);
   assert.match(route, /if \(spontaneous === "1"\) return "spontaneous";/);

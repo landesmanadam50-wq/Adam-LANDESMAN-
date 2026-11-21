@@ -89,7 +89,7 @@ test("section 1: openFullArc/openShortenedArc thread morningFlowCheckIn into the
 });
 
 test("section 1: the /tasks/[id]/arc route parses morningFlowCheckIn and threads it straight through to NewArcLiveScreen, alongside (never replacing) the existing params", () => {
-  assert.match(arcRoute, /arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, morningFlowCheckIn \} = useLocalSearchParams/);
+  assert.match(arcRoute, /arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId, morningFlowCheckIn \} = useLocalSearchParams/);
   assert.ok(arcRoute.includes('morningFlowCheckIn={morningFlowCheckIn === "1"}'));
 });
 
@@ -101,8 +101,9 @@ test("section 1: returnToTask's own morningFlowCheckIn branch always goes back t
   // the new arcFocusPracticeId branch. ARC Gym + ARC Goal Integration
   // task: widened again (5300 -> 6000) to fit the new
   // arcGymMemoryExerciseId branch, then again (6000 -> 7700) to fit the
-  // combined Behaviour+Success scheduled-practice branching.
-  const fnBody = liveScreen.slice(fnIndex, fnIndex + 7700);
+  // combined Behaviour+Success scheduled-practice branching, then
+  // again (7700 -> 8400) to fit the new arcPerspectiveId branch.
+  const fnBody = liveScreen.slice(fnIndex, fnIndex + 8700);
   const morningFlowIndex = fnBody.indexOf("if (morningFlowCheckIn) {");
   const standaloneIndex = fnBody.indexOf("if (taskId === STANDALONE_ARC_TASK_ID) {");
   assert.ok(morningFlowIndex !== -1 && standaloneIndex !== -1 && morningFlowIndex < standaloneIndex, "the morningFlowCheckIn branch must be checked BEFORE the standalone-destination branch, so it overrides it");

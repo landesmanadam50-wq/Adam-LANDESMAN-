@@ -983,6 +983,22 @@ export interface NewArcLiveSessionState {
    * ARC Memory's check-in.
    */
   arcGymMemoryExerciseId: string | null;
+  /**
+   * ARC Perspective task: references the arc/arcPerspective.ts
+   * ArcPerspectiveSession this ARC run is the preliminary (😟/🙂)
+   * mood check-in step for -- null for every session that isn't one.
+   * Same parallel-field convention as arcFocusPracticeId above: UNLIKE
+   * arcGymSituationId/arcGymMemoryExerciseId, this never forces taskId
+   * to the standalone sentinel -- the caller (the ARC Perspective flow
+   * screen) has already resolved the real-or-standalone taskId itself
+   * (real_time mode preserves whatever task was already active;
+   * planned/ARC Gym mode passes the standalone sentinel explicitly).
+   * live/NewArcLiveScreen.tsx's own returnToTask() checks this before
+   * any ordinary task-routing branch, so completing this ARC always
+   * resumes the SAME in-progress ArcPerspectiveSession -- no re-pick,
+   * no duplicate session.
+   */
+  arcPerspectiveId: string | null;
 
   currentStep: NewArcLiveStepId;
   subIndex: number;
@@ -1090,6 +1106,7 @@ export function createNewArcLiveSessionState(
     arcGymVisualizationText: null,
     arcFocusPracticeId: null,
     arcGymMemoryExerciseId: null,
+    arcPerspectiveId: null,
     currentStep: "goal_select",
     subIndex: 0,
     currentStepEnteredAt: now,
@@ -1145,6 +1162,8 @@ export interface ArcSessionRequest {
   arcFocusPracticeId: string | null;
   /** Same rationale as arcGymSituationId above, applied to ARC Memory's own new check-in flow -- without this, two different Memory exercises requested one after another would otherwise compare equal and silently resume the wrong one. null for every non-ARC-Memory request. */
   arcGymMemoryExerciseId: string | null;
+  /** ARC Perspective task: same rationale as arcGymSituationId above, applied to ARC Perspective's own preliminary check-in ARC -- without this, two different ArcPerspectiveSessions requested one after another would otherwise compare equal and silently resume the wrong one. null for every non-ARC-Perspective request. */
+  arcPerspectiveId: string | null;
 }
 
 /**
@@ -1165,12 +1184,14 @@ export function sessionMatchesRequest(session: NewArcLiveSessionState, request: 
     session.sourcePlannedArcId === request.sourcePlannedArcId &&
     session.arcGymSituationId === request.arcGymSituationId &&
     session.arcFocusPracticeId === request.arcFocusPracticeId &&
-    session.arcGymMemoryExerciseId === request.arcGymMemoryExerciseId
+    session.arcGymMemoryExerciseId === request.arcGymMemoryExerciseId &&
+    session.arcPerspectiveId === request.arcPerspectiveId
   );
 }
 
 /** A short, human Hebrew label for one ARC "type and configuration" -- used only by the resume/start/cancel conflict prompt, never by the ordinary step content (arc/newArcLiveCopy.ts stays the only owner of in-session copy). */
 export function describeArcSessionConfig(request: ArcSessionRequest, plannedArcName: string | null): string {
+  if (request.arcPerspectiveId) return request.arcInvocationMode === "shortened" ? "ARC מקוצר לפני שינוי פרספקטיבה" : "ARC מלא לפני שינוי פרספקטיבה";
   if (request.arcFocusPracticeId) return request.arcInvocationMode === "shortened" ? "ARC מקוצר לפני ARC Focus" : "ARC מלא לפני ARC Focus";
   if (request.arcGymMemoryExerciseId) return request.arcInvocationMode === "shortened" ? "ARC מקוצר לפני תרגיל זיכרון" : "ARC מלא לפני תרגיל זיכרון";
   if (request.arcGymSituationId) return request.arcInvocationMode === "shortened" ? "אימון ARC GYM (ARC מקוצר)" : "אימון ARC GYM (ARC מלא)";

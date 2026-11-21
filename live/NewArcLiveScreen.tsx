@@ -328,10 +328,13 @@ import {
   saveArcDecisionInProgress,
   clearArcDecisionInProgress,
   recordArcDecisionHistory,
+  loadArcPerspectiveInProgress,
+  saveArcPerspectiveInProgress,
 } from "../data/storage.ts";
 import ArcDecisionFlow from "./components/ArcDecisionFlow.tsx";
 import { createArcDecisionSession, completeArcDecisionSession } from "../arc/arcDecision.ts";
 import type { ArcDecisionOption, ArcDecisionSession } from "../arc/arcDecision.ts";
+import { advanceArcPerspectiveFromMoodCheckIn } from "../arc/arcPerspective.ts";
 // ARCHI -- ARC Result: Automatic, Optional Suggestion Without Extra
 // Shortcuts task, section 3: the one shared check every post-ARC
 // completion path uses before resolving its own destination -- never
@@ -436,6 +439,7 @@ export default function NewArcLiveScreen({
   arcGymSituationId = null,
   arcFocusPracticeId = null,
   arcGymMemoryExerciseId = null,
+  arcPerspectiveId = null,
   morningFlowCheckIn = false,
 }: {
   taskId: string;
@@ -450,6 +454,8 @@ export default function NewArcLiveScreen({
   arcFocusPracticeId?: string | null;
   /** ARC Gym + ARC Goal Integration task: non-null only when this session is the preliminary ARC (😟/🙂 check-in choice) inserted into ARC Memory's own flow -- see arc/newArcLiveTypes.ts's own doc on NewArcLiveSessionState.arcGymMemoryExerciseId. Like arcGymSituationId (and unlike arcFocusPracticeId), the caller (data/emotionalCheckInRouting.ts's handleArcGymMemoryCheckInChoice) already forced taskId to the standalone sentinel before this screen ever mounts. */
   arcGymMemoryExerciseId?: string | null;
+  /** ARC Perspective task: non-null only when this session is the preliminary ARC (😟/🙂 check-in choice) inserted between ARC Perspective's own "event" and "perspective_shift" steps -- see arc/newArcLiveTypes.ts's own doc on NewArcLiveSessionState.arcPerspectiveId. Same shape as arcFocusPracticeId: never forces taskId to the standalone sentinel -- the caller (build/ArcPerspectiveFlowScreen.tsx) has already resolved the real-or-standalone taskId itself, since a real-time practice must keep linking to whichever task was already active. */
+  arcPerspectiveId?: string | null;
   /** Morning Flow Simplification task: true only when this session was started from live/DailyStartupSequenceOverlay.tsx's own "checkin" step -- a pure navigation hint (never persisted on the session itself, unlike arcGymSituationId above) read only by returnToTask() below. */
   morningFlowCheckIn?: boolean;
 }) {
@@ -750,8 +756,15 @@ export default function NewArcLiveScreen({
       // vanished draft.
       const requestedItem = plannedArcId ? plannedArcsById.get(plannedArcId) ?? null : null;
       const request: ArcSessionRequest = requestedItem
-        ? { arcInvocationMode: requestedItem.kind === "mini" ? "plannedMini" : "plannedFull", sourcePlannedArcId: requestedItem.id, arcGymSituationId: null, arcFocusPracticeId: null, arcGymMemoryExerciseId: null }
-        : { arcInvocationMode: startMode, sourcePlannedArcId: null, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId };
+        ? {
+            arcInvocationMode: requestedItem.kind === "mini" ? "plannedMini" : "plannedFull",
+            sourcePlannedArcId: requestedItem.id,
+            arcGymSituationId: null,
+            arcFocusPracticeId: null,
+            arcGymMemoryExerciseId: null,
+            arcPerspectiveId: null,
+          }
+        : { arcInvocationMode: startMode, sourcePlannedArcId: null, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId };
       const buildFresh = (buildNow: string): NewArcLiveSessionState => {
         const base = requestedItem
           ? createSessionFromPlannedArcFields(
@@ -802,7 +815,13 @@ export default function NewArcLiveScreen({
         // returnToTask() below find its way back to the exact right
         // ARC Memory exercise once this preliminary ARC finishes.
         const withArcGymMemory = arcGymMemoryExerciseId ? { ...withArcFocus, arcGymMemoryExerciseId } : withArcFocus;
-        return { ...withArcGymMemory, isActiveTaskLiveOrigin };
+        // ARC Perspective task: stamped onto the session unconditionally,
+        // same as arcFocusPracticeId/arcGymMemoryExerciseId above -- its
+        // only job is letting returnToTask() below find its way back to
+        // the exact right in-progress ArcPerspectiveSession once this
+        // preliminary ARC finishes.
+        const withArcPerspective = arcPerspectiveId ? { ...withArcGymMemory, arcPerspectiveId } : withArcGymMemory;
+        return { ...withArcPerspective, isActiveTaskLiveOrigin };
       };
       const requestedLabel = describeArcSessionConfig(request, requestedItem?.name ?? null);
 
@@ -853,6 +872,7 @@ export default function NewArcLiveScreen({
             arcGymSituationId: existingUnfinished.arcGymSituationId,
             arcFocusPracticeId: existingUnfinished.arcFocusPracticeId,
             arcGymMemoryExerciseId: existingUnfinished.arcGymMemoryExerciseId,
+            arcPerspectiveId: existingUnfinished.arcPerspectiveId,
           },
           existingPlannedArcName
         ),
@@ -860,7 +880,7 @@ export default function NewArcLiveScreen({
         buildRequested: () => buildFresh(new Date().toISOString()),
       });
     });
-  }, [taskId, startMode, skipEmotionSelection, plannedArcId, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId]);
+  }, [taskId, startMode, skipEmotionSelection, plannedArcId, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId]);
 
   function resumeExistingSession() {
     if (!conflict) return;
@@ -1285,6 +1305,22 @@ export default function NewArcLiveScreen({
     // re-pick, no second session.
     if (session?.arcFocusPracticeId) {
       router.replace({ pathname: "/tasks/[id]/arc-focus", params: { id: taskId, arcFocusPracticeId: session.arcFocusPracticeId } });
+      return;
+    }
+    // ARC Perspective task: this ARC run was the preliminary 😟/🙂
+    // check-in step for an in-progress arc/arcPerspective.ts
+    // ArcPerspectiveSession -- never resolved as a normal task
+    // completion. The in-progress record (saved by
+    // build/ArcPerspectiveFlowScreen.tsx right before it navigated into
+    // this ARC) is advanced from "mood_check_in" to "perspective_shift"
+    // here, so the flow screen resumes exactly where it left off on its
+    // next focus, never re-walking the event/mood-check-in steps.
+    if (session?.arcPerspectiveId) {
+      const progress = await loadArcPerspectiveInProgress();
+      if (progress && progress.id === session.arcPerspectiveId && !progress.completedAt) {
+        await saveArcPerspectiveInProgress(advanceArcPerspectiveFromMoodCheckIn(progress));
+      }
+      router.replace({ pathname: "/arc-perspective/[id]", params: { id: session.arcPerspectiveId } });
       return;
     }
     // Morning Flow Simplification task, section 1: "after completing

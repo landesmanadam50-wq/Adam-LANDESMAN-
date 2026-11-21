@@ -32,6 +32,8 @@ function situation(overrides: Partial<ArcGymSituation> = {}): ArcGymSituation {
     desiredAction: "",
     visualizationDetails: null,
     linkedGoalIds: [],
+    linkedArcPerspectiveSessionId: null,
+    arcPerspectiveNewInterpretation: null,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,

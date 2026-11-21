@@ -285,8 +285,9 @@ test("return-to-task: reaching 'complete' automatically completes the session, c
   // the new arcFocusPracticeId branch. ARC Gym + ARC Goal Integration
   // task: widened again (5300 -> 6500) to fit the new
   // arcGymMemoryExerciseId branch, then again (6500 -> 7700) to fit
-  // the combined Behaviour+Success scheduled-practice branching.
-  const returnToTaskBody = screen.slice(returnToTaskIndex, returnToTaskIndex + 7700);
+  // the combined Behaviour+Success scheduled-practice branching, then
+  // again (7700 -> 8400) to fit the new arcPerspectiveId branch.
+  const returnToTaskBody = screen.slice(returnToTaskIndex, returnToTaskIndex + 8700);
   assert.ok(returnToTaskBody.includes("clearNewArcLiveSession()"));
   // ARCHI -- ARC Result task, section 3: the final fallback destination
   // now goes through routeToTaskOrArcResultSuggestion (which itself
@@ -369,7 +370,7 @@ test("the dwell timer only ever delays enabling Continue -- it never auto-advanc
 test("the screen accepts an optional plannedArcId prop, defaulting to null for every ad-hoc entry point (mid-task buttons, end-of-timer choice)", () => {
   assert.match(
     screen,
-    /plannedArcId = null,\s*autoStartAfter = false,\s*arcGymSituationId = null,\s*arcFocusPracticeId = null,\s*arcGymMemoryExerciseId = null,\s*morningFlowCheckIn = false,?\s*\}:\s*\{\s*taskId: string;\s*startMode\?: ArcInvocationMode;[\s\S]*?skipEmotionSelection\?: boolean;\s*plannedArcId\?: string \| null;\s*autoStartAfter\?: boolean;/
+    /plannedArcId = null,\s*autoStartAfter = false,\s*arcGymSituationId = null,\s*arcFocusPracticeId = null,\s*arcGymMemoryExerciseId = null,\s*arcPerspectiveId = null,\s*morningFlowCheckIn = false,?\s*\}:\s*\{\s*taskId: string;\s*startMode\?: ArcInvocationMode;[\s\S]*?skipEmotionSelection\?: boolean;\s*plannedArcId\?: string \| null;\s*autoStartAfter\?: boolean;/
   );
 });
 
@@ -400,7 +401,7 @@ test("reload() resolves what's requested from plannedArcId (looking the draft up
 
 test("reload(): no existing unfinished session -- starts and persists a fresh one immediately, exactly as before this fix", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 9000);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 9400);
   const branchIndex = reloadBody.indexOf("if (!existingUnfinished) {");
   const branchBody = reloadBody.slice(branchIndex, branchIndex + 200);
   assert.ok(branchBody.includes("setSession(fresh)"));
@@ -409,7 +410,7 @@ test("reload(): no existing unfinished session -- starts and persists a fresh on
 
 test("reload(): an existing unfinished session of the SAME type and configuration (sessionMatchesRequest) is resumed silently -- never overwritten, never surfaced as a conflict", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 9500);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 9900);
   const branchIndex = reloadBody.indexOf("if (sessionMatchesRequest(existingUnfinished, request)) {");
   const branchBody = reloadBody.slice(branchIndex, branchIndex + 250);
   assert.ok(branchBody.includes("setSession(existingUnfinished)"));
@@ -418,10 +419,10 @@ test("reload(): an existing unfinished session of the SAME type and configuratio
 
 test("reload(): an existing unfinished session of a DIFFERENT type/configuration sets conflict state instead of silently resuming or discarding it (requirements 3/4)", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 10400);
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 11200);
   assert.ok(reloadBody.includes("setConflict({"));
   const conflictBlockIndex = reloadBody.indexOf("setConflict({");
-  const conflictBlockBody = reloadBody.slice(conflictBlockIndex, conflictBlockIndex + 650);
+  const conflictBlockBody = reloadBody.slice(conflictBlockIndex, conflictBlockIndex + 750);
   assert.ok(conflictBlockBody.includes("existing: existingUnfinished"));
   assert.ok(conflictBlockBody.includes("existingLabel:"));
   assert.ok(conflictBlockBody.includes("requestedLabel"));

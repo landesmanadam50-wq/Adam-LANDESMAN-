@@ -40,6 +40,7 @@ import { isValidCalendarDateString, parseCalendarDate, todayLocalDateString } fr
 import PersistentTaskControls from "../live/PersistentTaskControls.tsx";
 import { hasFloatingOverlayPermissionAsync, requestFloatingOverlayPermissionAsync, showFloatingTimerOverlay, showIdleFloatingOverlayPanel } from "../data/floatingTimerOverlay.ts";
 import { resolveNextScheduledTaskDisplay } from "../data/dailyPlan.ts";
+import { generateArcPerspectiveSessionId } from "../arc/arcPerspective.ts";
 
 /**
  * build/FlexibleDailyScreen.tsx (route /routine-day?date=YYYY-MM-DD)
@@ -653,6 +654,29 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
               <Pressable style={styles.checkInButton} onPress={() => handleCheckIn("urge")}>
                 <Text style={styles.checkInEmoji}>🧠</Text>
                 <Text style={styles.checkInLabel}>מחשבה / דחף</Text>
+              </Pressable>
+            </View>
+            {/*
+             * ARC Perspective task, section 10: the real-time entry
+             * point -- a new session id generated locally (no async
+             * write needed before navigating; build/ArcPerspectiveFlowScreen.tsx
+             * creates+saves the fresh session itself on first focus,
+             * same precedent as the ARC Decision Gym screen above).
+             * Sits in the exact same unconditional check-in block as
+             * "מחשבה / דחף" above, so it is available regardless of
+             * whether a task is active, paused, or not started, and
+             * never disturbs that task's own timer -- the mood
+             * check-in it leads to links to whichever task is already
+             * active (session.activeTaskId, captured once), exactly
+             * like every other check-in entry on this screen.
+             */}
+            <View style={styles.urgeRow}>
+              <Pressable
+                style={styles.checkInButton}
+                onPress={() => router.push({ pathname: "/arc-perspective/[id]", params: { id: generateArcPerspectiveSessionId(), mode: "real_time" } })}
+              >
+                <Text style={styles.checkInEmoji}>🔄</Text>
+                <Text style={styles.checkInLabel}>שינוי פרספקטיבה</Text>
               </Pressable>
             </View>
           </View>

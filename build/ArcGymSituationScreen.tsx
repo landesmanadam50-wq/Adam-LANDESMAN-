@@ -6,12 +6,15 @@ import { router, useFocusEffect } from "expo-router";
 import {
   clearArcGymBodySensationMemory,
   describeArcGymReminderSchedule,
+  linkArcPerspectiveToArcGymSituation,
   linkGoalToArcGymSituation,
   listArcGymRemindersForExercise,
   listArcGymTrainingRecordsForSituation,
+  unlinkArcPerspectiveFromArcGymSituation,
   unlinkGoalFromArcGymSituation,
 } from "../arc/arcGym.ts";
 import type { ArcGymCheckInChoice, ArcGymMemory, ArcGymReminder, ArcGymSituation, ArcGymTrainingRecord } from "../arc/arcGym.ts";
+import type { ArcPerspectiveSession } from "../arc/arcPerspective.ts";
 import { BODY_SCAN_REGION_LABELS } from "../arc/bodyScanRegions.ts";
 import { BODY_REGION_LABELS } from "../arc/bodyRegionRoles.ts";
 import { findPairedArcResultForSituation, pairArcResultWithBehaviour, unpairArcResultFromBehaviour } from "../arc/arcResult.ts";
@@ -25,6 +28,7 @@ import {
   loadArcGymReminders,
   loadArcGymSituations,
   loadArcGymTrainingRecords,
+  loadArcPerspectiveSessions,
   loadArcResultExercises,
   loadTasks,
   upsertArcGymMemoryEntry,
@@ -66,20 +70,30 @@ export default function ArcGymSituationScreen({ id }: { id: string }) {
   const [showResultPicker, setShowResultPicker] = useState(false);
   const [goals, setGoals] = useState<ArcGymGoal[]>([]);
   const [showGoalLinking, setShowGoalLinking] = useState(false);
+  const [perspectiveSessions, setPerspectiveSessions] = useState<ArcPerspectiveSession[]>([]);
+  const [showPerspectivePicker, setShowPerspectivePicker] = useState(false);
 
   const reload = useCallback(() => {
-    Promise.all([loadArcGymSituations(), loadArcGymMemories(), loadArcGymTrainingRecords(), loadArcGymReminders(), loadArcResultExercises(), loadTasks(), loadArcGymGoals()]).then(
-      ([situations, memories, trainingRecords, allReminders, allResults, allTasks, allGoals]) => {
-        const found = situations.find((candidate) => candidate.id === id) ?? null;
-        setSituation(found);
-        setMemory(memories.find((candidate) => candidate.situationId === id) ?? null);
-        setRecords(listArcGymTrainingRecordsForSituation(trainingRecords, id));
-        setReminders(listArcGymRemindersForExercise(allReminders, "behaviour", id));
-        setResultExercises(allResults);
-        setScheduledTask(allTasks.find((task) => task.linkedArcGymSituationId === id) ?? null);
-        setGoals(allGoals);
-      }
-    );
+    Promise.all([
+      loadArcGymSituations(),
+      loadArcGymMemories(),
+      loadArcGymTrainingRecords(),
+      loadArcGymReminders(),
+      loadArcResultExercises(),
+      loadTasks(),
+      loadArcGymGoals(),
+      loadArcPerspectiveSessions(),
+    ]).then(([situations, memories, trainingRecords, allReminders, allResults, allTasks, allGoals, allPerspectiveSessions]) => {
+      const found = situations.find((candidate) => candidate.id === id) ?? null;
+      setSituation(found);
+      setMemory(memories.find((candidate) => candidate.situationId === id) ?? null);
+      setRecords(listArcGymTrainingRecordsForSituation(trainingRecords, id));
+      setReminders(listArcGymRemindersForExercise(allReminders, "behaviour", id));
+      setResultExercises(allResults);
+      setScheduledTask(allTasks.find((task) => task.linkedArcGymSituationId === id) ?? null);
+      setGoals(allGoals);
+      setPerspectiveSessions(allPerspectiveSessions.filter((session) => session.completedAt !== null));
+    });
   }, [id]);
 
   useFocusEffect(reload);
@@ -91,6 +105,29 @@ export default function ArcGymSituationScreen({ id }: { id: string }) {
     const updated = linked ? unlinkGoalFromArcGymSituation(situation, goalId, now) : linkGoalToArcGymSituation(situation, goalId, now);
     await upsertArcGymSituationEntry(updated);
     setSituation(updated);
+  }
+
+  /**
+   * ARC Perspective task, section 7: links FROM the Behaviour side --
+   * picking an already-completed ArcPerspectiveSession and snapshotting
+   * its own newInterpretation text, same shape as linking a goal above.
+   * Never overwrites a DIFFERENT, already-linked session without the
+   * trainee explicitly choosing "הסר קישור" first (this app's own
+   * confirmation-at-the-UI-layer convention -- the pure setter itself
+   * is unconditional).
+   */
+  async function linkPerspectiveSession(session: ArcPerspectiveSession) {
+    if (!situation) return;
+    const updated = linkArcPerspectiveToArcGymSituation(situation, session.id, session.newInterpretation, new Date().toISOString());
+    await upsertArcGymSituationEntry(updated);
+    setShowPerspectivePicker(false);
+    reload();
+  }
+
+  async function unlinkPerspectiveSession() {
+    if (!situation) return;
+    await upsertArcGymSituationEntry(unlinkArcPerspectiveFromArcGymSituation(situation, new Date().toISOString()));
+    reload();
   }
 
   async function resetBodyMemory() {
@@ -309,6 +346,50 @@ export default function ArcGymSituationScreen({ id }: { id: string }) {
                 );
               }}
             />
+          )}
+        </View>
+
+        {/*
+         * ARC Perspective task, section 7.5: bidirectional link with
+         * ARC Perspective -- shows the linked session's own new
+         * interpretation (a snapshot, never a live reference) with a
+         * way to open the original session or remove the link, or
+         * (when unlinked) a picker over every completed
+         * ArcPerspectiveSession, same checkbox/tap-to-link pattern as
+         * "שיוך למטרות" above.
+         */}
+        <View style={styles.remindersBlock}>
+          <Text style={styles.sectionTitle}>ARC Perspective מקושר</Text>
+          {situation.linkedArcPerspectiveSessionId ? (
+            <View>
+              {!!situation.arcPerspectiveNewInterpretation && <Text style={styles.reminderText}>{situation.arcPerspectiveNewInterpretation}</Text>}
+              <Pressable onPress={() => router.push({ pathname: "/arc-perspective/[id]", params: { id: situation.linkedArcPerspectiveSessionId! } })}>
+                <Text style={styles.linkText}>פתח ARC Perspective</Text>
+              </Pressable>
+              <Pressable onPress={unlinkPerspectiveSession}>
+                <Text style={styles.linkText}>הסר קישור</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View>
+              <Text style={styles.hint}>אין עדיין ARC Perspective מקושר.</Text>
+              <Pressable onPress={() => setShowPerspectivePicker((prev) => !prev)}>
+                <Text style={styles.linkText}>{showPerspectivePicker ? "סגור" : "קשר ל-ARC Perspective"}</Text>
+              </Pressable>
+              {showPerspectivePicker && (
+                <FlatList
+                  data={perspectiveSessions}
+                  keyExtractor={(item) => item.id}
+                  style={styles.taskPickerList}
+                  ListEmptyComponent={<Text style={styles.hint}>אין עדיין תרגולי ARC Perspective שהושלמו.</Text>}
+                  renderItem={({ item }) => (
+                    <Pressable style={styles.taskPickerRow} onPress={() => linkPerspectiveSession(item)}>
+                      <Text style={styles.taskPickerText}>{item.newInterpretation}</Text>
+                    </Pressable>
+                  )}
+                />
+              )}
+            </View>
           )}
         </View>
 

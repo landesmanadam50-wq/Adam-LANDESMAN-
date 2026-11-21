@@ -265,7 +265,7 @@ test("required test 24: all 6 ARC GYM routes are registered in app/_layout.tsx w
 });
 
 test("required test 24 continued: the /tasks/[id]/arc route accepts arcGymSituationId as an independent, optional param and threads it straight through to NewArcLiveScreen, without disturbing the existing mini/spontaneous/shortened/plannedArcId/autoStartAfter params", () => {
-  assert.match(arcRoute, /const \{ id, mini, spontaneous, shortened, skipEmotionSelection, plannedArcId, autoStartAfter, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, morningFlowCheckIn \} = useLocalSearchParams/);
+  assert.match(arcRoute, /const \{ id, mini, spontaneous, shortened, skipEmotionSelection, plannedArcId, autoStartAfter, arcGymSituationId, arcFocusPracticeId, arcGymMemoryExerciseId, arcPerspectiveId, morningFlowCheckIn \} = useLocalSearchParams/);
   assert.ok(arcRoute.includes("arcGymSituationId={arcGymSituationId ?? null}"));
 });
 
