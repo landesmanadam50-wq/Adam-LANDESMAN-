@@ -71,6 +71,7 @@ import { advanceStageProgress, createTaskStageProgress, isStageCompleted, markSt
 import type { TaskStageProgress } from "../arc/taskStageProgress.ts";
 import { openFullArc, openShortenedArc } from "../data/emotionalCheckInRouting.ts";
 import { loadArcGoals, loadArcGymGoals, loadPurposeManifests } from "../data/storage.ts";
+import { loadArcBookChapters } from "../data/storage.ts";
 import type { ArcGoal } from "../arc/types.ts";
 import type { PurposeManifest } from "../arc/purposeManifest.ts";
 import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
@@ -707,6 +708,31 @@ export default function ActiveTaskScreen({
     await appendTaskJournalEntry(
       createTaskJournalEntry({ id: generateTaskJournalEntryId(), taskId: task.id, kind: "attempt_started", occurredAt: now, createdAt: now, attemptId: run.runId })
     );
+    // ARC Writing & ARC Book task: unlike every OTHER special taskKind
+    // above, "arcWriting" never early-returns -- it falls all the way
+    // through the normal path above, creating the REAL TaskTimerRun
+    // exactly like a standard task. Only once that's done do we also
+    // open the target text/chapter, via a plain router.push (never
+    // replace) so the floating timer overlay keeps running underneath
+    // and back-navigation returns here, where the secondary "פתח את
+    // הכתיבה" button (below) can reopen it without restarting the task.
+    if (task.taskKind === "arcWriting") {
+      await openArcWritingTarget(task);
+    }
+  }
+
+  async function openArcWritingTarget(targetTask: Task) {
+    if (targetTask.arcWritingChapterId) {
+      const chapters = await loadArcBookChapters();
+      const chapter = chapters.find((candidate) => candidate.id === targetTask.arcWritingChapterId);
+      if (chapter) {
+        router.push({ pathname: "/arc-gym/book/[id]/chapter/[chapterId]", params: { id: chapter.bookId, chapterId: chapter.id } });
+        return;
+      }
+    }
+    if (targetTask.arcWritingTextId) {
+      router.push({ pathname: "/arc-gym/writing/[id]", params: { id: targetTask.arcWritingTextId } });
+    }
   }
 
   async function handlePause() {
@@ -1640,7 +1666,9 @@ export default function ActiveTaskScreen({
                       ? "התחלת שליפה"
                       : task.taskKind === "arcCreativityReview"
                         ? "התחלת שליפת קשרים"
-                        : "התחלה"}
+                        : task.taskKind === "arcWriting"
+                          ? "התחלת כתיבה"
+                          : "התחלה"}
               </Text>
             </Pressable>
             {/* ARC Focus task: duration/tap-rhythm/attention-check settings
@@ -1653,6 +1681,18 @@ export default function ActiveTaskScreen({
             {task.taskKind === "arcFocus" && (
               <Pressable style={styles.secondaryButton} onPress={() => router.push({ pathname: "/arc-gym/arc-focus", params: { taskId: task.id } })}>
                 <Text style={styles.secondaryButtonText}>הגדרות ARC Focus</Text>
+              </Pressable>
+            )}
+            {/* ARC Writing & ARC Book task: unlike the arcFocus settings
+                link above, this task DOES use the real work timer -- this
+                button never gates or replaces "התחלה," it just reopens
+                the same text/chapter performStart() already navigated to
+                once the timer was created, so the trainee can get back to
+                writing after following an ARC-mid-task detour or simply
+                switching screens. */}
+            {task.taskKind === "arcWriting" && (
+              <Pressable style={styles.secondaryButton} onPress={() => openArcWritingTarget(task)}>
+                <Text style={styles.secondaryButtonText}>פתח את הכתיבה</Text>
               </Pressable>
             )}
             {/* ARC-system upgrade task, Part 2: an OPTIONAL window, never a

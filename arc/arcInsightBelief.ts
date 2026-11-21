@@ -48,6 +48,16 @@ export type BeliefOrigin = "learned" | "new" | "updated";
 export type ArcInsightKind = BeliefKind | "general";
 
 /**
+ * ARC Writing & ARC Book task, spec section 5 ("אימות/סיווג תובנות"):
+ * a manual, trainee-chosen classification helping distinguish personal
+ * experience from a general claim -- never auto-verified, never
+ * computed. Optional on every insight (null = never classified), set or
+ * changed via the same plain-field-update convention as every other
+ * post-capture edit on ArcInsight (see classifyArcInsight below).
+ */
+export type ArcInsightClassification = "personal_experience" | "hypothesis" | "conclusion" | "evidence_based_claim";
+
+/**
  * One captured answer to "מה התובנה שלמדת על עצמך?" -- normally always
  * tied to the real exercise/action it followed. `taskId` is null for
  * an emotional-track exercise with no linked task, OR for a standalone
@@ -85,6 +95,10 @@ export interface ArcInsight {
    * id, never shown as a broken reference.
    */
   arcLearningTopicIds: string[];
+  /** Manual classification (spec section 5) -- null until the trainee explicitly sets one. */
+  classification: ArcInsightClassification | null;
+  /** Explanation or supporting evidence for the classification above -- optional, independent of `text`. */
+  classificationNote: string | null;
 }
 
 export interface ArcBelief {
@@ -109,7 +123,7 @@ export function generateArcBeliefId(): string {
 }
 
 export function createArcInsight(fields: Pick<ArcInsight, "id" | "sourceExerciseId" | "taskId" | "beliefKind" | "text" | "occurredAt" | "createdAt">): ArcInsight {
-  return { ...fields, text: fields.text.trim(), arcLearningTopicIds: [] };
+  return { ...fields, text: fields.text.trim(), arcLearningTopicIds: [], classification: null, classificationNote: null };
 }
 
 /**
@@ -194,4 +208,9 @@ export function linkArcLearningTopicToInsight(insight: ArcInsight, topicId: stri
 export function unlinkArcLearningTopicFromInsight(insight: ArcInsight, topicId: string): ArcInsight {
   if (!insight.arcLearningTopicIds.includes(topicId)) return insight;
   return { ...insight, arcLearningTopicIds: insight.arcLearningTopicIds.filter((id) => id !== topicId) };
+}
+
+/** Sets or changes the manual classification (spec section 5) -- a plain field update, same as every other post-capture edit on ArcInsight (see this module's own doc comment). Passing `null` clears it back to unclassified. */
+export function classifyArcInsight(insight: ArcInsight, classification: ArcInsightClassification | null, classificationNote: string | null): ArcInsight {
+  return { ...insight, classification, classificationNote: classificationNote?.trim() || null };
 }

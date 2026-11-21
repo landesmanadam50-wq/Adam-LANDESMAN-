@@ -70,7 +70,7 @@ export type TaskStatus = "planned" | "active" | "paused" | "postponed" | "comple
  * fields on Task itself.
  */
 /** ARC Learning + ARC Creativity + Integrated Spaced Repetition task: "arcLearningReview"/"arcCreativityReview" mark a task whose own performStart() branch opens the shared recall screen (build/ArcLearningRecallScreen.tsx / build/ArcCreativityRecallScreen.tsx) instead of a normal work timer -- same precedent as "arcFocus". Neither carries a fixed list of insight/connection ids: due items are always resolved fresh at start time via resolveDueArcLearningInsightIds/resolveDueArcCreativityConnectionIds, so a recurring weekly block collects whatever is due THEN rather than ever needing a duplicate task per occurrence. */
-export type TaskKind = "standard" | "manifest" | "arcFocus" | "arcLearningReview" | "arcCreativityReview";
+export type TaskKind = "standard" | "manifest" | "arcFocus" | "arcLearningReview" | "arcCreativityReview" | "arcWriting";
 
 /** The Step-A setup a Manifest task's own guided sequence reads from every time it runs -- defined once (or re-edited later) in build/TaskEditorScreen.tsx, never re-asked per session. All four fields are free text, user-authored, never inferred. */
 export interface ManifestProfile {
@@ -247,6 +247,18 @@ export interface Task {
   linkedArcGymSituationId: string | null;
   /** ARC Learning + ARC Creativity + Integrated Spaced Repetition task, section 7: an optional topic filter for a taskKind "arcLearningReview" task ("Sunday 10:00 -- ARC Learning: review due insights from economics"). null means every topic. Meaningless (and always null) for every other taskKind, including "arcCreativityReview" -- Mode D has no topic concept. */
   arcLearningReviewTopicId: string | null;
+  /**
+   * ARC Writing & ARC Book task: only meaningful when taskKind ===
+   * "arcWriting" -- exactly one of this and arcWritingChapterId is set,
+   * never both, pointing at the standalone ArcWritingText (arc/arcWriting.ts)
+   * this writing task targets. Unlike every other special taskKind
+   * (manifest/arcFocus/arcLearningReview/arcCreativityReview), an
+   * arcWriting task still uses the REAL work timer -- performStart()
+   * never early-returns for it; see live/ActiveTaskScreen.tsx.
+   */
+  arcWritingTextId: string | null;
+  /** Same as arcWritingTextId above, but pointing at an ArcBookChapter instead of a standalone text. */
+  arcWritingChapterId: string | null;
   createdAt: string;
   updatedAt: string;
   schemaVersion: number;
@@ -310,6 +322,8 @@ export function createEmptyTask(id: string, title: string, firstAction: string, 
     arcGymGoalId: null,
     linkedArcGymSituationId: null,
     arcLearningReviewTopicId: null,
+    arcWritingTextId: null,
+    arcWritingChapterId: null,
     createdAt: now,
     updatedAt: now,
     schemaVersion: CURRENT_TASK_SCHEMA_VERSION,
@@ -365,6 +379,8 @@ export function normalizeTask(task: Task): Task {
     arcGymGoalId: task.arcGymGoalId ?? null,
     linkedArcGymSituationId: task.linkedArcGymSituationId ?? null,
     arcLearningReviewTopicId: task.arcLearningReviewTopicId ?? null,
+    arcWritingTextId: task.arcWritingTextId ?? null,
+    arcWritingChapterId: task.arcWritingChapterId ?? null,
     schemaVersion: task.schemaVersion ?? CURRENT_TASK_SCHEMA_VERSION,
   };
 }

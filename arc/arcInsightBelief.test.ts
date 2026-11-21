@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   beliefsOfKind,
+  classifyArcInsight,
   createArcInsight,
   createLearnedBelief,
   createNewPlannedBelief,
@@ -160,4 +161,31 @@ test("8. linking the same topic from two different insights never collides -- ea
   const unlinkedA = unlinkArcLearningTopicFromInsight(insightA, "topic-1");
   assert.deepEqual(unlinkedA.arcLearningTopicIds, []);
   assert.deepEqual(insightB.arcLearningTopicIds, ["topic-1"], "unlinking from A must never affect B's own, separate array");
+});
+
+// --- ARC Writing & ARC Book task, spec section 5: manual classification ---
+
+test("createStandaloneInsight/createArcInsight both start with classification and classificationNote unset", () => {
+  const insight = createStandaloneInsight("i1", "תובנה", NOW);
+  assert.equal(insight.classification, null);
+  assert.equal(insight.classificationNote, null);
+});
+
+test("classifyArcInsight sets both fields and trims/nulls a blank note, without touching text or any other field", () => {
+  const insight = createStandaloneInsight("i1", "תובנה", NOW);
+  const classified = classifyArcInsight(insight, "personal_experience", "  ");
+  assert.equal(classified.classification, "personal_experience");
+  assert.equal(classified.classificationNote, null);
+  assert.equal(classified.text, "תובנה");
+
+  const withNote = classifyArcInsight(classified, "evidence_based_claim", "  מחקר שפורסם  ");
+  assert.equal(withNote.classification, "evidence_based_claim");
+  assert.equal(withNote.classificationNote, "מחקר שפורסם");
+});
+
+test("classifyArcInsight(insight, null, null) clears a previously set classification back to unclassified", () => {
+  const classified = classifyArcInsight(createStandaloneInsight("i1", "תובנה", NOW), "hypothesis", "note");
+  const cleared = classifyArcInsight(classified, null, null);
+  assert.equal(cleared.classification, null);
+  assert.equal(cleared.classificationNote, null);
 });

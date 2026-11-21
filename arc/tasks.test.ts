@@ -76,6 +76,8 @@ test("normalizeTask backfills every field on a record missing everything added a
   assert.equal(normalized.order, null, "Fixed Weekly Routine / Flexible Daily Routine task: backfilled to null, same as every other optional field added after ship");
   assert.equal(normalized.calendarEntryKind, null);
   assert.equal(normalized.arcLearningReviewTopicId, null, "ARC Learning + ARC Creativity + Integrated Spaced Repetition task: backfilled to null, same as every other optional field added after ship");
+  assert.equal(normalized.arcWritingTextId, null, "ARC Writing & ARC Book task: backfilled to null, same as every other optional field added after ship");
+  assert.equal(normalized.arcWritingChapterId, null, "ARC Writing & ARC Book task: backfilled to null, same as every other optional field added after ship");
   assert.equal(normalized.schemaVersion, 1);
 });
 
@@ -99,6 +101,21 @@ test("normalizeTask never overwrites an already-set arcLearningReviewTopicId", (
   const task = { ...makeTask(), arcLearningReviewTopicId: "topic-1" };
   const normalized = normalizeTask(task);
   assert.equal(normalized.arcLearningReviewTopicId, "topic-1");
+});
+
+test("createEmptyTask defaults arcWritingTextId/arcWritingChapterId to null -- meaningless for every taskKind except arcWriting, where exactly one of the two is set", () => {
+  const task = createEmptyTask("task-1", "Write the report", "Open the document", NOW);
+  assert.equal(task.arcWritingTextId, null);
+  assert.equal(task.arcWritingChapterId, null);
+  assert.equal(task.taskKind, "standard");
+});
+
+test("normalizeTask never overwrites an already-set arcWritingTextId/arcWritingChapterId, and taskKind accepts 'arcWriting'", () => {
+  const task = { ...makeTask(), taskKind: "arcWriting" as const, arcWritingTextId: "text-1", arcWritingChapterId: null };
+  const normalized = normalizeTask(task);
+  assert.equal(normalized.taskKind, "arcWriting");
+  assert.equal(normalized.arcWritingTextId, "text-1");
+  assert.equal(normalized.arcWritingChapterId, null);
 });
 
 test("normalizeTask never overwrites fields that are already present", () => {

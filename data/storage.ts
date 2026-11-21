@@ -125,6 +125,13 @@ import type { ArcPerspectiveEvent, ArcPerspectiveSession } from "../arc/arcPersp
 import { upsertArcPerspectiveEventInList, upsertArcPerspectiveSessionInList } from "../arc/arcPerspective.ts";
 import type { ArcSavedExercise, ArcSavedBodyOption, ArcTrigger, ArcSavingPendingReview } from "../arc/arcSaving.ts";
 import { upsertArcSavedExerciseInList, upsertArcSavedBodyOptionInList, upsertArcTriggerInList } from "../arc/arcSaving.ts";
+import type { ArcInsightRelationship, ArcWritingText, ArcBook, ArcBookChapter } from "../arc/arcWriting.ts";
+import {
+  upsertArcInsightRelationshipInList,
+  upsertArcWritingTextInList,
+  upsertArcBookInList,
+  upsertArcBookChapterInList,
+} from "../arc/arcWriting.ts";
 import type { ArcLearningTopic } from "../arc/arcLearningTopic.ts";
 import { normalizeArcLearningTopic, upsertArcLearningTopicInList } from "../arc/arcLearningTopic.ts";
 import type { ArcLearningInsight } from "../arc/arcLearningInsight.ts";
@@ -3030,8 +3037,16 @@ export async function loadArcInsights(): Promise<ArcInsight[]> {
     const parsed = JSON.parse(raw) as ArcInsight[];
     // Insight Collection x ARC Learning linking task: backfills an insight
     // saved before arcLearningTopicIds existed -- never a crash, never an
-    // invented link.
-    return Array.isArray(parsed) ? parsed.map((insight) => ({ ...insight, arcLearningTopicIds: Array.isArray(insight.arcLearningTopicIds) ? insight.arcLearningTopicIds : [] })) : [];
+    // invented link. ARC Writing & ARC Book task: backfills classification/
+    // classificationNote the same way for an insight saved before they existed.
+    return Array.isArray(parsed)
+      ? parsed.map((insight) => ({
+          ...insight,
+          arcLearningTopicIds: Array.isArray(insight.arcLearningTopicIds) ? insight.arcLearningTopicIds : [],
+          classification: insight.classification ?? null,
+          classificationNote: insight.classificationNote ?? null,
+        }))
+      : [];
   } catch (error) {
     console.warn("[storage] Stored ARC insights are not valid JSON -- returning an empty list rather than crashing.", error);
     return [];
@@ -4201,4 +4216,108 @@ export async function loadLastEncodingFeelingForTask(taskId: string): Promise<st
   const records = await loadLastEncodingFeelings();
   const match = records.find((record) => record.taskId === taskId);
   return match ? match.feeling : null;
+}
+
+// ---------------------------------------------------------------------------
+// ARC Writing & ARC Book task: four strictly separate entities (arc/arcWriting.ts's
+// own doc), each with its own storage key -- never a combined blob, so
+// deleting/editing one never risks corrupting another. Same load/upsert/
+// delete shape as every other section in this file.
+// ---------------------------------------------------------------------------
+
+const ARC_INSIGHT_RELATIONSHIPS_KEY = "archi.arcInsightRelationships.v1";
+
+/** The shared, reusable relationship repository -- never duplicated per text/chapter/book. */
+export async function loadArcInsightRelationships(): Promise<ArcInsightRelationship[]> {
+  const raw = await AsyncStorage.getItem(ARC_INSIGHT_RELATIONSHIPS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcInsightRelationship[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcInsightRelationships are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcInsightRelationshipEntry(relationship: ArcInsightRelationship): Promise<void> {
+  const relationships = await loadArcInsightRelationships();
+  await AsyncStorage.setItem(ARC_INSIGHT_RELATIONSHIPS_KEY, JSON.stringify(upsertArcInsightRelationshipInList(relationships, relationship)));
+}
+
+export async function deleteArcInsightRelationshipEntry(id: string): Promise<void> {
+  const relationships = await loadArcInsightRelationships();
+  await AsyncStorage.setItem(ARC_INSIGHT_RELATIONSHIPS_KEY, JSON.stringify(relationships.filter((relationship) => relationship.id !== id)));
+}
+
+const ARC_WRITING_TEXTS_KEY = "archi.arcWritingTexts.v1";
+
+export async function loadArcWritingTexts(): Promise<ArcWritingText[]> {
+  const raw = await AsyncStorage.getItem(ARC_WRITING_TEXTS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcWritingText[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcWritingTexts are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcWritingTextEntry(text: ArcWritingText): Promise<void> {
+  const texts = await loadArcWritingTexts();
+  await AsyncStorage.setItem(ARC_WRITING_TEXTS_KEY, JSON.stringify(upsertArcWritingTextInList(texts, text)));
+}
+
+export async function deleteArcWritingTextEntry(id: string): Promise<void> {
+  const texts = await loadArcWritingTexts();
+  await AsyncStorage.setItem(ARC_WRITING_TEXTS_KEY, JSON.stringify(texts.filter((text) => text.id !== id)));
+}
+
+const ARC_BOOKS_KEY = "archi.arcBooks.v1";
+
+export async function loadArcBooks(): Promise<ArcBook[]> {
+  const raw = await AsyncStorage.getItem(ARC_BOOKS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcBook[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcBooks are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcBookEntry(book: ArcBook): Promise<void> {
+  const books = await loadArcBooks();
+  await AsyncStorage.setItem(ARC_BOOKS_KEY, JSON.stringify(upsertArcBookInList(books, book)));
+}
+
+export async function deleteArcBookEntry(id: string): Promise<void> {
+  const books = await loadArcBooks();
+  await AsyncStorage.setItem(ARC_BOOKS_KEY, JSON.stringify(books.filter((book) => book.id !== id)));
+}
+
+const ARC_BOOK_CHAPTERS_KEY = "archi.arcBookChapters.v1";
+
+export async function loadArcBookChapters(): Promise<ArcBookChapter[]> {
+  const raw = await AsyncStorage.getItem(ARC_BOOK_CHAPTERS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcBookChapter[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcBookChapters are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcBookChapterEntry(chapter: ArcBookChapter): Promise<void> {
+  const chapters = await loadArcBookChapters();
+  await AsyncStorage.setItem(ARC_BOOK_CHAPTERS_KEY, JSON.stringify(upsertArcBookChapterInList(chapters, chapter)));
+}
+
+export async function deleteArcBookChapterEntry(id: string): Promise<void> {
+  const chapters = await loadArcBookChapters();
+  await AsyncStorage.setItem(ARC_BOOK_CHAPTERS_KEY, JSON.stringify(chapters.filter((chapter) => chapter.id !== id)));
 }

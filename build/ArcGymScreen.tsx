@@ -105,6 +105,18 @@ export default function ArcGymScreen() {
           <Text style={styles.focusExerciseLinkText}>📋 תרגילי Focus שמורים</Text>
         </Pressable>
 
+        {/*
+         * ARC Writing & ARC Book task: a new, independent exercise type
+         * living INSIDE ARC Gym (never a separate top-level entry like
+         * ARC Saving/Learning/Creativity) -- turns insights accumulated
+         * from ARC and from life into texts and books, reusing the
+         * SAME shared insight repository every other exercise type
+         * already writes to.
+         */}
+        <Pressable style={styles.writingLinkCard} onPress={() => router.push("/arc-gym/writing")}>
+          <Text style={styles.writingLinkText}>✍️ ARC Writing — כתיבה וספרים</Text>
+        </Pressable>
+
         {behaviors === null && <Text style={styles.hint}>טוען...</Text>}
 
         {behaviors !== null && behaviors.length === 0 && (
@@ -151,8 +163,10 @@ const styles = StyleSheet.create({
   perspectiveLinkText: { color: "#6A1B9A", fontSize: 15, fontWeight: "600", textAlign: "right" },
   goalLinkCard: { borderWidth: 1, borderColor: "#C2410C", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 12 },
   goalLinkText: { color: "#C2410C", fontSize: 15, fontWeight: "600", textAlign: "right" },
-  focusExerciseLinkCard: { borderWidth: 1, borderColor: "#1565C0", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 20 },
+  focusExerciseLinkCard: { borderWidth: 1, borderColor: "#1565C0", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 12 },
+  writingLinkCard: { borderWidth: 1, borderColor: "#00695C", borderRadius: 12, padding: 14, alignItems: "flex-end", marginBottom: 20 },
   focusExerciseLinkText: { color: "#1565C0", fontSize: 15, fontWeight: "600", textAlign: "right" },
+  writingLinkText: { color: "#00695C", fontSize: 15, fontWeight: "600", textAlign: "right" },
   question: { fontSize: 16, fontWeight: "700", textAlign: "right", marginBottom: 12 },
   chipColumn: { gap: 10 },
   optionCard: { borderWidth: 1, borderColor: "#0a7ea4", borderRadius: 12, padding: 16, alignItems: "flex-end" },

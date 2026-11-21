@@ -63,7 +63,7 @@ test("required test 3: the three route wrappers forward their params straight th
 });
 
 test("required test 4: TaskKind is extended with 'arcFocus', additive to 'standard'/'manifest'", () => {
-  assert.match(tasksModule, /export type TaskKind = "standard" \| "manifest" \| "arcFocus" \| "arcLearningReview" \| "arcCreativityReview";/);
+  assert.match(tasksModule, /export type TaskKind = "standard" \| "manifest" \| "arcFocus" \| "arcLearningReview" \| "arcCreativityReview" \| "arcWriting";/);
 });
 
 test("required test 5: NewArcLiveSessionState/ArcSessionRequest/sessionMatchesRequest/createNewArcLiveSessionState all carry arcFocusPracticeId alongside arcGymSituationId", () => {
