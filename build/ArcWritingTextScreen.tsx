@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
 import type { ArcInsight } from "../arc/arcInsightBelief.ts";
-import type { ArcBook, ArcBookChapter, ArcInsightRelationship, ArcWritingText } from "../arc/arcWriting.ts";
+import type { ArcBook, ArcBookChapter, ArcInsightRelationship, ArcVideoRecording, ArcWritingText } from "../arc/arcWriting.ts";
 import {
   associateWritingTextWithChapter,
   clearWritingTextChapterAssociation,
@@ -12,12 +12,21 @@ import {
   generateArcWritingTextId,
   linkInsightToWritingText,
   linkRelationshipToWritingText,
+  resolveVideoRecordingsForScript,
   toggleInsightIncorporatedInWritingText,
   unlinkInsightFromWritingText,
   unlinkRelationshipFromWritingText,
   updateArcWritingText,
 } from "../arc/arcWriting.ts";
-import { loadArcBookChapters, loadArcBooks, loadArcInsightRelationships, loadArcInsights, loadArcWritingTexts, upsertArcWritingTextEntry } from "../data/storage.ts";
+import {
+  loadArcBookChapters,
+  loadArcBooks,
+  loadArcInsightRelationships,
+  loadArcInsights,
+  loadArcVideoRecordings,
+  loadArcWritingTexts,
+  upsertArcWritingTextEntry,
+} from "../data/storage.ts";
 import ArcInsightPicker from "../live/components/ArcInsightPicker.tsx";
 import ArcRelationshipPicker from "../live/components/ArcRelationshipPicker.tsx";
 import ArcWritingTaskComposer from "../live/components/ArcWritingTaskComposer.tsx";
@@ -37,14 +46,24 @@ const AUTO_SAVE_DEBOUNCE_MS = 600;
  * build/ArcTriggerEditorScreen.tsx's "create exactly once, on first
  * save" convention -- so leaving immediately after opening "new" never
  * creates an orphan empty record.
+ *
+ * ARC Video task: the "write a video script" choice (spec section 1) is
+ * the SAME screen, never a second editor -- build/ArcWritingHomeScreen.tsx's
+ * own "🎥 כתיבת תסריט לסרטון" card passes initialKind="video_script" only
+ * for a brand-new text, the exact same one-time-at-creation convention
+ * build/TaskEditorScreen.tsx's own initialTitle/initialArcGymGoalId already
+ * use. Every existing "standard" text behavior below (autosave, insight/
+ * relationship linking, chapter association, draft toggle) is untouched
+ * and still applies to a video script, since it is a plain ArcWritingText.
  */
-export default function ArcWritingTextScreen({ id }: { id: string }) {
+export default function ArcWritingTextScreen({ id, initialKind = null }: { id: string; initialKind?: "video_script" | null }) {
   const isNew = id === "new";
   const [text, setText] = useState<ArcWritingText | null>(null);
   const [insights, setInsights] = useState<ArcInsight[]>([]);
   const [relationships, setRelationships] = useState<ArcInsightRelationship[]>([]);
   const [books, setBooks] = useState<ArcBook[]>([]);
   const [chapters, setChapters] = useState<ArcBookChapter[]>([]);
+  const [videoRecordings, setVideoRecordings] = useState<ArcVideoRecording[]>([]);
   const [showLinking, setShowLinking] = useState(false);
   const [showChapterPicker, setShowChapterPicker] = useState(false);
 
@@ -54,17 +73,19 @@ export default function ArcWritingTextScreen({ id }: { id: string }) {
 
   useFocusEffect(
     useCallback(() => {
-      Promise.all([loadArcInsights(), loadArcInsightRelationships(), loadArcBooks(), loadArcBookChapters()]).then(
-        ([loadedInsights, loadedRelationships, loadedBooks, loadedChapters]) => {
+      Promise.all([loadArcInsights(), loadArcInsightRelationships(), loadArcBooks(), loadArcBookChapters(), loadArcVideoRecordings()]).then(
+        ([loadedInsights, loadedRelationships, loadedBooks, loadedChapters, loadedVideoRecordings]) => {
           setInsights(loadedInsights);
           setRelationships(loadedRelationships);
           setBooks(loadedBooks);
           setChapters(loadedChapters);
+          setVideoRecordings(loadedVideoRecordings);
         }
       );
       if (isNew) {
         if (!textRef.current) {
-          const created = createArcWritingText(generateArcWritingTextId(), new Date().toISOString());
+          const now = new Date().toISOString();
+          const created = initialKind === "video_script" ? updateArcWritingText(createArcWritingText(generateArcWritingTextId(), now), { kind: "video_script" }, now) : createArcWritingText(generateArcWritingTextId(), now);
           textRef.current = created;
           setText(created);
           persistedRef.current = false;
@@ -110,6 +131,16 @@ export default function ArcWritingTextScreen({ id }: { id: string }) {
     persist({ ...text, body: value, updatedAt: new Date().toISOString() }, true);
   }
 
+  function handleVideoTopicChange(value: string) {
+    if (!text) return;
+    persist(updateArcWritingText(text, { videoTopic: value }, new Date().toISOString()), true);
+  }
+
+  function handleVideoPurposeChange(value: string) {
+    if (!text) return;
+    persist(updateArcWritingText(text, { videoPurpose: value }, new Date().toISOString()), true);
+  }
+
   function handleToggleDraft() {
     if (!text) return;
     persist(updateArcWritingText(text, { isDraft: !text.isDraft }, new Date().toISOString()), false);
@@ -151,11 +182,33 @@ export default function ArcWritingTextScreen({ id }: { id: string }) {
   const linkedInsights = insights.filter((insight) => text.insightIds.includes(insight.id));
   const associatedBook = books.find((book) => book.id === text.associatedBookId) ?? null;
   const associatedChapter = chapters.find((chapter) => chapter.id === text.associatedChapterId) ?? null;
+  const isVideoScript = text.kind === "video_script";
+  const scriptRecordings = isVideoScript ? resolveVideoRecordingsForScript(videoRecordings, text.id) : [];
+
+  function handleRecordVideo() {
+    if (!text) return;
+    if (!persistedRef.current) persist(text, false);
+    router.push({ pathname: "/arc-gym/video/record/[scriptId]", params: { scriptId: text.id } });
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <TextInput style={styles.titleInput} placeholder="כותרת" value={text.title} onChangeText={handleTitleChange} textAlign="right" />
+
+        {isVideoScript && (
+          <View style={styles.videoScriptSection}>
+            <Text style={styles.sectionTitle}>🎥 תסריט לסרטון</Text>
+            <TextInput style={styles.videoFieldInput} placeholder="על מה הסרטון (נושא)" value={text.videoTopic ?? ""} onChangeText={handleVideoTopicChange} textAlign="right" />
+            <TextInput
+              style={styles.videoFieldInput}
+              placeholder="מה המטרה שרוצים להשיג דרך הסרטון הזה"
+              value={text.videoPurpose ?? ""}
+              onChangeText={handleVideoPurposeChange}
+              textAlign="right"
+            />
+          </View>
+        )}
 
         <View style={styles.linkedInsightsRow}>
           {linkedInsights.map((insight) => (
@@ -177,6 +230,30 @@ export default function ArcWritingTextScreen({ id }: { id: string }) {
           textAlign="right"
           textAlignVertical="top"
         />
+
+        {isVideoScript && (
+          <View style={styles.videoScriptSection}>
+            <Pressable style={styles.recordButton} onPress={handleRecordVideo}>
+              <Text style={styles.recordButtonText}>🎥 צלם סרטון</Text>
+            </Pressable>
+            {scriptRecordings.length > 0 && (
+              <View>
+                <Text style={styles.sectionTitle}>הקלטות של התסריט הזה</Text>
+                {scriptRecordings.map((recording) => (
+                  <Pressable
+                    key={recording.id}
+                    style={styles.chapterRow}
+                    onPress={() => router.push({ pathname: "/arc-gym/video/[id]", params: { id: recording.id } })}
+                  >
+                    <Text style={styles.hint}>
+                      {recording.title || "(ללא כותרת)"} · {recording.visibility === "published" ? "פורסם" : "פרטי"} · {recording.isDraft ? "טיוטה" : "סופי"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
 
         <Pressable style={styles.linkToggle} onPress={() => setShowLinking((prev) => !prev)}>
           <Text style={styles.linkToggleText}>{showLinking ? "סגור תובנות וקשרים" : "תובנות וקשרים"}</Text>
@@ -261,4 +338,8 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, color: "#777", textAlign: "right", marginVertical: 4 },
   chapterRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#f3f3f3" },
   draftRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginTop: 16 },
+  videoScriptSection: { marginBottom: 14 },
+  videoFieldInput: { fontSize: 14, textAlign: "right", borderBottomWidth: 1, borderBottomColor: "#eee", paddingVertical: 6, marginBottom: 8, color: "#333" },
+  recordButton: { borderWidth: 1, borderColor: "#C62828", borderRadius: 10, paddingVertical: 12, alignItems: "center", marginBottom: 10 },
+  recordButtonText: { color: "#C62828", fontSize: 15, fontWeight: "700" },
 });

@@ -54,7 +54,11 @@ test("every new ARC Writing/Book route is registered in app/_layout.tsx", () => 
 
 test("the four route wrappers forward their params straight through, same 2-line pattern as every other route wrapper in this app", () => {
   assert.ok(writingIndexRoute.includes("<ArcWritingHomeScreen />"));
-  assert.ok(writingDetailRoute.includes("<ArcWritingTextScreen id={id} />"));
+  // ARC Video task: the writing detail route additionally forwards an optional
+  // "kind" param as initialKind, so a new text can be created as a video script
+  // (build/ArcWritingHomeScreen.tsx's own "🎥 כתיבת תסריט לסרטון" card) -- still a
+  // plain, direct param forward, never extra logic in the route wrapper itself.
+  assert.ok(writingDetailRoute.includes('<ArcWritingTextScreen id={id} initialKind={kind === "video_script" ? "video_script" : null} />'));
   assert.ok(bookDetailRoute.includes("<ArcBookDetailScreen id={id} />"));
   assert.ok(bookChapterRoute.includes("<ArcBookChapterScreen id={id} chapterId={chapterId} />"));
 });

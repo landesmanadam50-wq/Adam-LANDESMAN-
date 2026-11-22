@@ -29,8 +29,13 @@ export default function ArcWritingHomeScreen() {
     }, [])
   );
 
-  const items: { id: string; kind: "text" | "book"; title: string; subtitle: string }[] = [
-    ...texts.map((text) => ({ id: text.id, kind: "text" as const, title: text.title || "(ללא כותרת)", subtitle: text.isDraft ? "טיוטה" : "הושלם" })),
+  const items: { id: string; kind: "text" | "video_script" | "book"; title: string; subtitle: string }[] = [
+    ...texts.map((text) => ({
+      id: text.id,
+      kind: text.kind === "video_script" ? ("video_script" as const) : ("text" as const),
+      title: text.title || "(ללא כותרת)",
+      subtitle: text.isDraft ? "טיוטה" : "הושלם",
+    })),
     ...books.map((book) => ({ id: book.id, kind: "book" as const, title: book.name || "(ללא שם)", subtitle: book.topic })),
   ].sort((a, b) => a.title.localeCompare(b.title));
 
@@ -48,6 +53,9 @@ export default function ArcWritingHomeScreen() {
             <Pressable style={styles.primaryCard} onPress={() => router.push({ pathname: "/arc-gym/writing/[id]", params: { id: "new" } })}>
               <Text style={styles.primaryCardText}>📝 כתיבת טקסט</Text>
             </Pressable>
+            <Pressable style={styles.primaryCard} onPress={() => router.push({ pathname: "/arc-gym/writing/[id]", params: { id: "new", kind: "video_script" } })}>
+              <Text style={styles.primaryCardText}>🎥 כתיבת תסריט לסרטון</Text>
+            </Pressable>
             <Pressable style={styles.primaryCard} onPress={() => router.push({ pathname: "/arc-gym/book/[id]", params: { id: "new" } })}>
               <Text style={styles.primaryCardText}>📖 כתיבת ספר</Text>
             </Pressable>
@@ -60,12 +68,12 @@ export default function ArcWritingHomeScreen() {
           <Pressable
             style={styles.row}
             onPress={() =>
-              item.kind === "text"
-                ? router.push({ pathname: "/arc-gym/writing/[id]", params: { id: item.id } })
-                : router.push({ pathname: "/arc-gym/book/[id]", params: { id: item.id } })
+              item.kind === "book"
+                ? router.push({ pathname: "/arc-gym/book/[id]", params: { id: item.id } })
+                : router.push({ pathname: "/arc-gym/writing/[id]", params: { id: item.id } })
             }
           >
-            <Text style={styles.rowTitle}>{item.kind === "book" ? "📖 " : "📝 "}{item.title}</Text>
+            <Text style={styles.rowTitle}>{item.kind === "book" ? "📖 " : item.kind === "video_script" ? "🎥 " : "📝 "}{item.title}</Text>
             <Text style={styles.rowSubtitle}>{item.subtitle}</Text>
           </Pressable>
         )}
