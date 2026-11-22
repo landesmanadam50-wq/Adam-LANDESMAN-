@@ -172,11 +172,11 @@ test("NewArcLiveScreen.tsx never renders ArcBodyMantraCircle (tap-to-advance) an
   for (const label of mantraStageCases) {
     const block = sliceCase(label);
     assert.ok(block.includes("<ArcBodyMantraCircle"), `${label} must render ArcBodyMantraCircle`);
-    assert.ok(!block.includes("<BodySilhouetteMap"), `${label} must never ALSO render BodySilhouetteMap`);
+    assert.ok(!block.includes("<BodyMapMagnifier"), `${label} must never ALSO render the body-selection map (BodyMapMagnifier, which wraps BodySilhouetteMap)`);
   }
   for (const label of selectionStageCases) {
     const block = sliceCase(label);
-    assert.ok(block.includes("<BodySilhouetteMap"), `${label} must render BodySilhouetteMap`);
+    assert.ok(block.includes("<BodyMapMagnifier"), `${label} must render the body-selection map (BodyMapMagnifier, which wraps BodySilhouetteMap)`);
     assert.ok(!block.includes("<ArcBodyMantraCircle"), `${label} must never ALSO render ArcBodyMantraCircle`);
   }
 });
@@ -379,7 +379,10 @@ test("ArcBodyMantraCircle computes encodingSpreadActive from the stage and the t
 });
 
 test("encodingSpreadActive is threaded into BOTH resolveBodyMantraShapeAppearance call sites -- the animated path (inside shapes.map) and the StaticBodyShapes AnimationErrorBoundary fallback -- so the whole-body spread renders identically on either path, never only on one", () => {
-  assert.match(circleSource, /resolveBodyMantraShapeAppearance\(shape\.region, shape\.side, \{\s*\n\s*contractionRegions,\s*\n\s*closureRegions,\s*\n\s*openingRegions,\s*\n\s*encodingSpreadActive,\s*\n\s*\}\);/);
+  assert.match(
+    circleSource,
+    /resolveBodyMantraShapeAppearance\(shape\.region, shape\.side, \{\s*\n\s*contractionRegions,\s*\n\s*closureRegions,\s*\n\s*openingRegions,\s*\n\s*encodingSpreadActive,\s*\n\s*allowGreenOpening,\s*\n\s*\}\);/
+  );
   assert.match(circleSource, /encodingSpreadActive=\{encodingSpreadActive\}/, "the fallback StaticBodyShapes element must receive the same computed flag as a prop");
 });
 
@@ -387,8 +390,8 @@ test("StaticBodyShapes declares encodingSpreadActive as a required boolean prop 
   const fnIndex = circleSource.indexOf("function StaticBodyShapes(");
   const fnEnd = circleSource.indexOf("\n}", circleSource.indexOf("</Svg>", fnIndex));
   const fnBody = circleSource.slice(fnIndex, fnEnd);
-  assert.match(fnBody, /encodingSpreadActive,\s*\n\}: \{[\s\S]*?encodingSpreadActive: boolean;/);
-  assert.match(fnBody, /resolveBodyMantraShapeAppearance\(shape\.region, shape\.side, \{ contractionRegions, closureRegions, openingRegions, encodingSpreadActive \}\);/);
+  assert.match(fnBody, /encodingSpreadActive,\s*\n\s*allowGreenOpening,\s*\n\}: \{[\s\S]*?encodingSpreadActive: boolean;/);
+  assert.match(fnBody, /resolveBodyMantraShapeAppearance\(shape\.region, shape\.side, \{ contractionRegions, closureRegions, openingRegions, encodingSpreadActive, allowGreenOpening \}\);/);
 });
 
 test("the encodingSpreadActive computation never mutates contractionRegions/openingRegions themselves -- Part 8.3's 'important data distinction' (the spread is a render-time visualization only, it never permanently changes stored region roles) holds structurally, since encodingSpreadActive is a plain derived boolean, never assigned back into either array", () => {

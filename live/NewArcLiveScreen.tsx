@@ -23,7 +23,8 @@ import {
 } from "../arc/bodyRegionMovements.ts";
 import { OPENING_REGULATION_COLOR } from "../arc/arcBodyMantraCircleLogic.ts";
 import { ARC_FREE_BREATHING_BACKGROUND_COLOR, resolveArcBackgroundColor } from "../arc/freeBreathingIntro.ts";
-import BodySilhouetteMap, { toSilhouetteRegionKeys } from "./components/BodySilhouetteMap.tsx";
+import BodyMapMagnifier from "./components/BodyMapMagnifier.tsx";
+import { toSilhouetteRegionKeys } from "./components/BodySilhouetteMap.tsx";
 import ArcBodyMantraCircle from "./components/ArcBodyMantraCircle.tsx";
 import type { ArcBodyMantraStage } from "./components/ArcBodyMantraCircle.tsx";
 import FreeBreathingIntro from "./components/FreeBreathingIntro.tsx";
@@ -2472,7 +2473,7 @@ export default function NewArcLiveScreen({
       case "short_body_marking":
         return (
           <View>
-            <BodySilhouetteMap
+            <BodyMapMagnifier
               selectedColor={CONTRACTION_SELECTED_COLOR}
               resolveSelectedColorForRegion={(region, side) =>
                 resolveShortBodyMarkingPhase(session!, region, side) === "blue" ? OPENING_SUPPORT_SELECTED_COLOR : null
@@ -2621,7 +2622,7 @@ export default function NewArcLiveScreen({
             <Pressable style={styles.infoButton} onPress={() => setInfoModal(BODY_SCAN_CONTRACTION_INFO)}>
               <Text style={styles.infoButtonText}>ⓘ מהו כיווץ?</Text>
             </Pressable>
-            <BodySilhouetteMap
+            <BodyMapMagnifier
               selectedColor={CONTRACTION_SELECTED_COLOR}
               resolveSelectedColorForRegion={(region, side) => resolveContractionOrGreenColor(session!, region, side)}
               isSelected={(region, side) => resolveBodyScanContractionState(session!.bodyScanContractionRegions, region, side) === "contraction"}
@@ -2654,7 +2655,7 @@ export default function NewArcLiveScreen({
             <Pressable style={styles.infoButton} onPress={() => setInfoModal(BODY_SCAN_HEAVINESS_INFO)}>
               <Text style={styles.infoButtonText}>ⓘ מהי כבדות?</Text>
             </Pressable>
-            <BodySilhouetteMap
+            <BodyMapMagnifier
               selectedColor={HEAVINESS_CLOSEDNESS_SELECTED_COLOR}
               isSelected={(region, side) => {
                 const current = resolveBodyScanHeavinessState(session!.bodyScanHeavinessRegions, region, side);
@@ -2686,7 +2687,7 @@ export default function NewArcLiveScreen({
             <Pressable style={styles.infoButton} onPress={() => setInfoModal(BODY_SCAN_CLOSEDNESS_INFO)}>
               <Text style={styles.infoButtonText}>ⓘ מהי סגירות?</Text>
             </Pressable>
-            <BodySilhouetteMap
+            <BodyMapMagnifier
               selectedColor={HEAVINESS_CLOSEDNESS_SELECTED_COLOR}
               selectableRegions={MOVEMENT_ELIGIBLE_SILHOUETTE_REGIONS}
               isSelected={(region, side) => {
@@ -2729,7 +2730,7 @@ export default function NewArcLiveScreen({
             <Pressable style={styles.infoButton} onPress={() => setInfoModal(BODY_SCAN_OPENNESS_INFO)}>
               <Text style={styles.infoButtonText}>ⓘ מהי תמיכה?</Text>
             </Pressable>
-            <BodySilhouetteMap
+            <BodyMapMagnifier
               selectedColor={OPENING_BLUE_SELECTED_COLOR}
               selectableRegions={resolveSupportiveEligibleSilhouetteRegions(session!)}
               isSelected={(region, side) => resolveBodyScanOpeningRole(session!.openingBodyScanRegions, region, side) === "opening_and_supportive"}
@@ -2939,7 +2940,7 @@ export default function NewArcLiveScreen({
           const hasConfirmedAction = session!.selectedActionSource !== null && !showActionSelectorOnRegulation;
           return (
             <View>
-              <BodySilhouetteMap
+              <BodyMapMagnifier
                 selectedColor={OPENING_GREEN_SELECTED_COLOR}
                 resolveSelectedColorForRegion={(region, side) => resolveOpeningRegionSelectedColor(session!, region, side)}
                 selectableRegions={MOVEMENT_ELIGIBLE_SILHOUETTE_REGIONS}
@@ -3695,7 +3696,7 @@ export default function NewArcLiveScreen({
                 separately. Do not classify contraction itself as
                 supportive" -- the data stays separate; only the
                 display priority changes here). */}
-            <BodySilhouetteMap
+            <BodyMapMagnifier
               selectedColor={CONTRACTION_SELECTED_COLOR}
               resolveSelectedColorForRegion={(region, side) => {
                 const openingColor = resolveOpeningRegionSelectedColor(session!, region, side);

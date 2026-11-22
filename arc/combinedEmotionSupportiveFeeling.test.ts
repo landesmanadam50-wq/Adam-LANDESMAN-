@@ -163,7 +163,7 @@ test("scenario 10 (superseded): the shared supportive-feeling picker renders unc
   const branchIndex = liveScreen.indexOf('if (session!.arcInvocationMode === "shortened") {', liveScreen.indexOf('case "supportive_area_select":'));
   const branchEnd = liveScreen.indexOf("\n        }\n", branchIndex);
   const branchBody = liveScreen.slice(branchIndex, branchEnd);
-  const bodyIndex = branchBody.indexOf("<BodySilhouetteMap");
+  const bodyIndex = branchBody.indexOf("<BodyMapMagnifier");
   const pickerIndex = branchBody.indexOf("renderSupportiveFeelingPicker(");
   assert.ok(bodyIndex !== -1 && pickerIndex !== -1);
   assert.ok(bodyIndex < pickerIndex, "the interactive body must render before the supportive-feeling picker");

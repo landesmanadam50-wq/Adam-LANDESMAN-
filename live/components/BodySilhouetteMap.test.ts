@@ -39,12 +39,26 @@ test("a shape outside the optional selectableRegions allow-list is drawn but nev
   const fnIndex = component.indexOf("const isSelectable = (region: BodyScanRegion, side: BodyScanSide): boolean => {");
   const fnBody = component.slice(fnIndex, component.indexOf("};", fnIndex));
   assert.ok(fnBody.includes("if (!selectableRegions) return true;"), "omitting the allow-list must make every drawn region selectable, the ordinary case");
-  assert.match(component, /onPress=\{selectable \? \(\) => onToggle\(shape\.region, shape\.side\) : undefined\}/);
+  const pressIndex = component.indexOf("onPress={\n                  selectable\n");
+  assert.ok(pressIndex !== -1, "a non-selectable region's visible shape must still render onPress as undefined");
+  assert.ok(component.slice(pressIndex, pressIndex + 280).includes(": undefined"));
 });
 
-test("a selected shape is filled with the caller's own selectedColor; an unselected-but-selectable shape uses the neutral palette; a disabled (not-selectable) shape uses a visibly dimmer, inert palette", () => {
-  assert.match(component, /const fill = selected \? selectedColor : selectable \? NEUTRAL_FILL : DISABLED_FILL;/);
-  assert.match(component, /const stroke = selected \? selectedColor : selectable \? NEUTRAL_STROKE : DISABLED_STROKE;/);
+test("a selected shape is filled with the caller's own selectedColor (or the per-region override); an unselected-but-selectable shape uses the neutral palette; a disabled (not-selectable) shape uses a visibly dimmer, inert palette", () => {
+  assert.match(component, /const ownColor = selected \? resolveSelectedColorForRegion\?\.\(shape\.region, shape\.side\) \?\? selectedColor : null;/);
+  assert.match(component, /const fill = selected \? ownColor! : selectable \? NEUTRAL_FILL : DISABLED_FILL;/);
+  assert.match(component, /const stroke = selected \? ownColor! : selectable \? NEUTRAL_STROKE : DISABLED_STROKE;/);
+});
+
+test("Interactive Body Map Magnifier task: every onPress that calls onToggle ALSO fires the optional onRegionPress with the exact same (region, side) plus the shape's own (cx, cy) -- purely additive, never replacing onToggle, and never required (optional chaining, so every pre-existing call site that omits it is completely unaffected)", () => {
+  assert.match(component, /onRegionPress\?\.\(shape\.region, shape\.side, shape\.cx, shape\.cy\);/);
+  const occurrences = component.split("onRegionPress?.(shape.region, shape.side, shape.cx, shape.cy);").length - 1;
+  assert.equal(occurrences, 2, "both the visible-shape onPress and the enlarged hit-target onPress must fire it");
+});
+
+test("Interactive Body Map Magnifier task: an optional viewBoxOverride/svgHeight pair lets a caller render a CROPPED viewBox at a taller height, with every pre-existing call site (which omits both) rendering the exact original full-canvas viewBox at height 320, byte-for-byte unchanged", () => {
+  assert.match(component, /viewBoxOverride \?\? `0 0 \$\{BODY_SILHOUETTE_VIEWBOX_WIDTH\} \$\{BODY_SILHOUETTE_VIEWBOX_HEIGHT\}`/);
+  assert.match(component, /height=\{svgHeight \?\? 320\}/);
 });
 
 test("exports toSilhouetteRegionKeys, a plain pass-through helper for callers building a selectableRegions allow-list from their own existing (region, side) list -- never requiring them to know this component's internal shape representation", () => {

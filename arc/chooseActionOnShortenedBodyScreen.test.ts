@@ -46,7 +46,7 @@ function readShortenedBranch(): string {
 
 test("1. The action-selection prompt, with the exact spec wording, renders INSIDE the shortened supportive_area_select branch -- on the same screen as the body/supportive-feeling picker, never a separate step reached afterward", () => {
   const branch = readShortenedBranch();
-  assert.ok(branch.includes("<BodySilhouetteMap"), "the body-parts-to-open picker renders in this same branch");
+  assert.ok(branch.includes("<BodyMapMagnifier"), "the body-parts-to-open picker renders in this same branch");
   assert.ok(branch.includes("renderSupportiveFeelingPicker("), "the תחושה תומכת picker renders in this same branch too");
   assert.ok(branch.includes("איזו פעולה תרצה לעשות עכשיו?"), "the action-selection prompt renders inline, in this same branch, after the body/feeling pickers");
   assert.ok(branch.includes("renderActionSelector()"), "falls through to the one shared action-selector implementation");

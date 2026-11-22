@@ -101,6 +101,37 @@ export interface BodySilhouetteMapProps {
    */
   selectableRegions?: readonly BodySilhouetteRegionKey[];
   initialView?: BodySilhouetteView;
+  /**
+   * Interactive Body Map Magnifier task: an OPTIONAL, purely
+   * informational callback fired alongside `onToggle` on every
+   * selectable-region tap, carrying the tapped shape's own (region,
+   * side, cx, cy) -- the SAME coordinates this component already draws
+   * from arc/bodySilhouetteLayout.ts, never re-derived from the raw
+   * touch event. This lets live/components/BodyMapMagnifier.tsx learn
+   * "where, in this component's own fixed viewBox coordinate space,
+   * did the trainee just tap" (to center its lens there) without this
+   * component ever needing to know about magnification, viewBoxes, or
+   * zoom -- it keeps doing exactly what it always did (toggle the
+   * region via `onToggle`); this callback is additive and changes
+   * nothing about the existing selection behavior for any of the 7
+   * existing call sites, none of which pass it.
+   */
+  onRegionPress?: (region: BodyScanRegion, side: BodyScanSide, cx: number, cy: number) => void;
+  /**
+   * Interactive Body Map Magnifier task: an OPTIONAL replacement for
+   * the default, full-canvas `viewBox` string -- the exact mechanism
+   * live/components/BodyMapMagnifier.tsx uses to render a "magnified"
+   * crop of the SAME shapes, with NO change to any Ellipse's own
+   * coordinates, onPress, or selection state. react-native-svg resolves
+   * a tap inside a cropped viewBox to the correct underlying shape
+   * automatically, so this is the one, safe way to zoom without
+   * duplicating this component's rendering or re-implementing hit-
+   * testing. Omitted (the default) renders the exact existing full
+   * `0 0 WIDTH HEIGHT` viewBox, unchanged.
+   */
+  viewBoxOverride?: string;
+  /** Paired with `viewBoxOverride` -- the magnified render benefits from more on-screen pixels than the plain `height={320}` default. Omitted keeps the exact existing 320. */
+  svgHeight?: number;
 }
 
 function resolveRegionLabel(region: BodyScanRegion, side: BodyScanSide): string {
@@ -134,6 +165,9 @@ export default function BodySilhouetteMap({
   resolveSelectedColorForRegion,
   selectableRegions,
   initialView = "front",
+  onRegionPress,
+  viewBoxOverride,
+  svgHeight,
 }: BodySilhouetteMapProps) {
   const [view, setView] = useState<BodySilhouetteView>(initialView);
 
@@ -165,8 +199,8 @@ export default function BodySilhouetteMap({
       <View style={styles.svgWrapper}>
         <Svg
           width="100%"
-          height={320}
-          viewBox={`0 0 ${BODY_SILHOUETTE_VIEWBOX_WIDTH} ${BODY_SILHOUETTE_VIEWBOX_HEIGHT}`}
+          height={svgHeight ?? 320}
+          viewBox={viewBoxOverride ?? `0 0 ${BODY_SILHOUETTE_VIEWBOX_WIDTH} ${BODY_SILHOUETTE_VIEWBOX_HEIGHT}`}
           accessibilityLabel={view === "front" ? "מפת גוף, מבט קדמי" : "מפת גוף, מבט אחורי"}
         >
           <BodyOutlineBackdrop instanceKey={view} />
@@ -191,7 +225,14 @@ export default function BodySilhouetteMap({
                 stroke={stroke}
                 strokeOpacity={strokeOpacity}
                 strokeWidth={selected ? 2 : 1}
-                onPress={selectable ? () => onToggle(shape.region, shape.side) : undefined}
+                onPress={
+                  selectable
+                    ? () => {
+                        onToggle(shape.region, shape.side);
+                        onRegionPress?.(shape.region, shape.side, shape.cx, shape.cy);
+                      }
+                    : undefined
+                }
                 accessible
                 accessibilityLabel={resolveRegionLabel(shape.region, shape.side)}
               />
@@ -211,7 +252,10 @@ export default function BodySilhouetteMap({
                 rx={hitRx}
                 ry={hitRy}
                 fill="transparent"
-                onPress={() => onToggle(shape.region, shape.side)}
+                onPress={() => {
+                  onToggle(shape.region, shape.side);
+                  onRegionPress?.(shape.region, shape.side, shape.cx, shape.cy);
+                }}
                 accessible={false}
               />
             );

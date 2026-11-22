@@ -190,7 +190,7 @@ function sliceCaseBlock(caseLabel: string): string {
 // single-color toggleBodyScanContractionRegion setter.
 test("body_scan_contraction (Screen One) renders BodySilhouetteMap, cycling Red/Green via cycleBodyScanContractionAndGreen and resolving each region's own Red/Green color via resolveContractionOrGreenColor", () => {
   const contractionBlock = sliceCaseBlock('case "body_scan_contraction":');
-  assert.ok(contractionBlock.includes("<BodySilhouetteMap"), "body_scan_contraction must render the real body silhouette, never the old chip grid");
+  assert.ok(contractionBlock.includes("<BodyMapMagnifier"), "body_scan_contraction must render the real body silhouette, never the old chip grid");
   assert.ok(contractionBlock.includes("resolveContractionOrGreenColor(session!, region, side)"), "each region's own Red vs Green color must come from the shared resolver");
   assert.ok(contractionBlock.includes("commit(cycleBodyScanContractionAndGreen(session!, region, side))"), "the combined Red/Green tap cycle must run through the one shared engine setter");
 });
@@ -201,7 +201,7 @@ test("body_scan_contraction (Screen One) renders BodySilhouetteMap, cycling Red/
 // exact same bodyScanHeavinessRegions array, never a combined picker.
 test("body_scan_heaviness renders BodySilhouetteMap over its own heaviness bit, via toggleBodyScanHeavinessRegion -- 'Dark Blue: existing heaviness or closedness information'", () => {
   const heavinessBlock = sliceCaseBlock('case "body_scan_heaviness":');
-  assert.ok(heavinessBlock.includes("<BodySilhouetteMap"));
+  assert.ok(heavinessBlock.includes("<BodyMapMagnifier"));
   assert.ok(heavinessBlock.includes('current === "heaviness" || current === "heaviness_and_closedness"'));
   assert.ok(heavinessBlock.includes("commit(toggleBodyScanHeavinessRegion(session!, region, side))"));
   assert.ok(heavinessBlock.includes("selectedColor={HEAVINESS_CLOSEDNESS_SELECTED_COLOR}"));
@@ -216,7 +216,7 @@ test("body_scan_heaviness renders BodySilhouetteMap over its own heaviness bit, 
 // arc/bodyRegionMovements.ts's movement-eligible table.
 test("body_scan_closedness renders BodySilhouetteMap over its own closedness bit, via toggleBodyScanClosednessRegion, independent of body_scan_heaviness, restricted to movement-eligible regions", () => {
   const closednessBlock = sliceCaseBlock('case "body_scan_closedness":');
-  assert.ok(closednessBlock.includes("<BodySilhouetteMap"));
+  assert.ok(closednessBlock.includes("<BodyMapMagnifier"));
   assert.ok(closednessBlock.includes('current === "closedness" || current === "heaviness_and_closedness"'));
   assert.ok(closednessBlock.includes("commit(toggleBodyScanClosednessRegion(session!, region, side))"));
   assert.ok(closednessBlock.includes("selectedColor={HEAVINESS_CLOSEDNESS_SELECTED_COLOR}"));
@@ -243,7 +243,7 @@ test("MOVEMENT_ELIGIBLE_SILHOUETTE_REGIONS is computed once from arc/bodyRegionM
 // this screen at all any more -- only Blue.
 test("body_scan_opening_region (Screen Two) restricts selectableRegions to resolveSupportiveEligibleSilhouetteRegions (every Red/Green region from Screen One excluded), is Blue-only, and uses its own explicit continue button", () => {
   const openingBlock = sliceCaseBlock('case "body_scan_opening_region":');
-  assert.ok(openingBlock.includes("<BodySilhouetteMap"));
+  assert.ok(openingBlock.includes("<BodyMapMagnifier"));
   assert.ok(openingBlock.includes("selectableRegions={resolveSupportiveEligibleSilhouetteRegions(session!)}"), "Screen Two's own selectable pool must come from the shared Red/Green-excluding resolver, never an unrestricted list");
   assert.ok(openingBlock.includes('resolveBodyScanOpeningRole(session!.openingBodyScanRegions, region, side) === "opening_and_supportive"'), "isSelected must read the Blue (opening_and_supportive) role specifically -- Green never renders as selected here");
   // Engine-level enforcement: onToggle runs through the dedicated
