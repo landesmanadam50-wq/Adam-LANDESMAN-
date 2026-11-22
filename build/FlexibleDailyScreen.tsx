@@ -7,6 +7,8 @@ import { createEmptyTask, ensureTimePlanningTaskInList, generateTaskId, TIME_PLA
 import type { Task } from "../arc/tasks.ts";
 import { applyScheduleMode, reorderDailyPlanEntry, resolveAutoScheduleWriteBacks, resolveDailyPlan } from "../arc/dailyPlan.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
+import { resolveTodoList } from "../arc/todoList.ts";
+import type { TodoPlanEntry } from "../arc/todoList.ts";
 import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride, markTaskOccurrenceRemoved } from "../arc/taskOccurrenceOverride.ts";
 import { resolveEffectiveScheduleMode, WEEKLY_SPACED_GAP_PRESETS } from "../arc/weeklyScheduleMode.ts";
 import type { WeeklyScheduleMode } from "../arc/weeklyScheduleMode.ts";
@@ -44,6 +46,7 @@ import PersistentTaskControls from "../live/PersistentTaskControls.tsx";
 import { hasFloatingOverlayPermissionAsync, requestFloatingOverlayPermissionAsync, showFloatingTimerOverlay, showIdleFloatingOverlayPanel } from "../data/floatingTimerOverlay.ts";
 import { resolveNextScheduledTaskDisplay } from "../data/dailyPlan.ts";
 import { generateArcPerspectiveSessionId } from "../arc/arcPerspective.ts";
+import TimePlanningModal from "./TimePlanningModal.tsx";
 
 /**
  * build/FlexibleDailyScreen.tsx (route /routine-day?date=YYYY-MM-DD)
@@ -110,6 +113,15 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
   const [timePlanningDurationDraft, setTimePlanningDurationDraft] = useState("");
   const [startingTimePlanning, setStartingTimePlanning] = useState(false);
   const timePlanningDraftInitialized = useRef(false);
+  /**
+   * Smart To-Do List task, section 4: today's own To-Do items, held as
+   * this screen's own derived state (same "one source, passed down as a
+   * prop" convention `scheduled` already uses) -- the תכנון זמן popup
+   * (TimePlanningModal) never recomputes this itself, only reads it and
+   * calls onChanged (== reload) after every edit so this flows fresh.
+   */
+  const [todoEntries, setTodoEntries] = useState<TodoPlanEntry[]>([]);
+  const [timePlanningModalVisible, setTimePlanningModalVisible] = useState(false);
 
   // Unified ARC & Productivity Update task, requirement 9: "select
   // multiple consecutive scheduled tasks and group them as שגרה
@@ -170,6 +182,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
     }
     const effectiveMode = resolveEffectiveScheduleMode(weekday, dateLocal, weekdaySettings, dateModeOverrides);
     setMode(effectiveMode);
+    setTodoEntries(resolveTodoList(tasks, dateLocal));
 
     const plan = resolveDailyPlan(tasks, overrides, completions, dateLocal, dateObj);
     const computed = applyScheduleMode(plan, effectiveMode);
@@ -868,9 +881,19 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
                 placeholder={String(timePlanningTask?.expectedDurationMinutes ?? 15)}
               />
             </View>
-            <Pressable style={[styles.actionButton, startingTimePlanning && styles.buttonDisabled]} disabled={startingTimePlanning} onPress={handleStartTimePlanning}>
-              <Text style={styles.actionButtonText}>{startingTimePlanning ? "פותח..." : "התחל תכנון"}</Text>
-            </Pressable>
+            <View style={styles.timePlanningButtonRow}>
+              <Pressable style={[styles.actionButton, startingTimePlanning && styles.buttonDisabled]} disabled={startingTimePlanning} onPress={handleStartTimePlanning}>
+                <Text style={styles.actionButtonText}>{startingTimePlanning ? "פותח..." : "התחל תכנון"}</Text>
+              </Pressable>
+              {/* Smart To-Do List task, section 4: the one popup for editing
+                  the To-Do list and today's scheduled tasks -- "no new
+                  planning screen," so this opens from the SAME existing
+                  time-planning card, right beside its own pre-existing
+                  timer button, which stays exactly as it was. */}
+              <Pressable style={styles.actionButton} onPress={() => setTimePlanningModalVisible(true)}>
+                <Text style={styles.actionButtonText}>To-Do ותכנון היום</Text>
+              </Pressable>
+            </View>
           </View>
         )}
 
@@ -997,6 +1020,18 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
           <Text style={styles.secondaryButtonText}>לשבוע הקבוע</Text>
         </Pressable>
       </ScrollView>
+
+      <TimePlanningModal
+        visible={timePlanningModalVisible}
+        dateLocal={dateLocal}
+        scheduled={scheduled}
+        todoEntries={todoEntries}
+        onClose={() => {
+          setTimePlanningModalVisible(false);
+          reload();
+        }}
+        onChanged={reload}
+      />
     </SafeAreaView>
   );
 }
@@ -1033,6 +1068,7 @@ const styles = StyleSheet.create({
   timePlanningSubtitle: { color: "#555", fontSize: 13, textAlign: "right", marginTop: 4 },
   timePlanningRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginTop: 10 },
   timePlanningLabel: { fontSize: 13, color: "#444" },
+  timePlanningButtonRow: { flexDirection: "row-reverse", gap: 8, marginTop: 10 },
   timePlanningInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, fontSize: 13, width: 60, textAlign: "center" },
   buttonDisabled: { opacity: 0.6 },
   morningAlarmLink: { alignItems: "flex-end", marginBottom: 14 },

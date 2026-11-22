@@ -123,7 +123,11 @@ test("requirement 10 (extended), 'selected scheduled/due task -> that exact task
   const scheduledActionIndex = body.indexOf('if (session?.selectedActionSource === "scheduledTask"');
   const temporaryActionIndex = body.indexOf('if (session?.selectedActionSource === "temporaryAction"');
   const branchBody = body.slice(scheduledActionIndex, temporaryActionIndex);
-  assert.ok(branchBody.includes("await routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false);"));
+  // Smart To-Do List task, section 9: the third argument
+  // (session.selectedActionDurationMinutes) is non-null ONLY for a
+  // To-Do split suggestion -- every ordinary selection still leaves it
+  // null, so this call's own behavior for them is unchanged.
+  assert.ok(branchBody.includes("await routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false, session.selectedActionDurationMinutes);"));
   assert.ok(!branchBody.includes("autoStart"), "never auto-started -- the trainee taps Start themselves on the task's own screen");
 });
 

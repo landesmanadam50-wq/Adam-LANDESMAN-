@@ -259,6 +259,39 @@ export interface Task {
   arcWritingTextId: string | null;
   /** Same as arcWritingTextId above, but pointing at an ArcBookChapter instead of a standalone text. */
   arcWritingChapterId: string | null;
+  /**
+   * Smart To-Do List task: true marks this one-off Task as a To-Do item
+   * -- no fixed start time, lives only in the Flexible Daily Schedule's
+   * own "To-Do List" tab rather than the chronological scheduled-task
+   * timeline. The task editor enforces that a To-Do item never also
+   * carries a scheduledTime. false (every pre-existing task, and the
+   * default for every new one) is an ordinary scheduled/unscheduled
+   * task exactly as before. arc/dailyPlan.ts's resolveDailyPlan skips
+   * every isTodoItem task entirely, so it is NEVER auto-placed onto the
+   * day's chronological timeline by applyScheduleMode -- a recommended
+   * To-Do item never silently becomes a scheduled task.
+   */
+  isTodoItem: boolean;
+  /** 1 (lowest) - 10 (highest); only meaningful when isTodoItem. Defaults to 5. The To-Do sort (arc/todoList.ts's compareTodoPriority) always sorts by this FIRST, never combined into one score with todoImportance. */
+  todoUrgency: number;
+  /** 1-10, same convention as todoUrgency -- the tiebreaker used only WITHIN equal urgency, never combined with it. Defaults to 5. */
+  todoImportance: number;
+  /**
+   * Manual position within the To-Do tab's OWN priority list -- a
+   * completely separate ordering axis from `order` above (which governs
+   * the chronological Flexible Daily timeline). null (every pre-existing
+   * item, and any item never manually reordered) means "no manual
+   * override -- sort by todoUrgency desc, then todoImportance desc, then
+   * insertion order" (arc/todoList.ts's resolveEffectiveTodoOrder).
+   * Editing todoUrgency/todoImportance never resets an already-set
+   * todoOrder; only an explicit "re-sort by rating" action clears it
+   * back to null.
+   */
+  todoOrder: number | null;
+  /** Smart To-Do List task, optional splitting: false only when the trainee has explicitly marked this item "not splittable." true (default, every pre-existing task) means the recommendation engine MAY offer a split suggestion when this item doesn't fit the currently free time. */
+  todoIsSplittable: boolean;
+  /** Minutes of this item's own expectedDurationMinutes already completed across prior partial (split) sessions. 0 for every pre-existing/never-split task. Once todoCompletedMinutes >= expectedDurationMinutes the item is complete via the normal completeTask path -- this field is the ONLY place partial progress lives; there is never a second/duplicate Task record for "the rest of the split." See recordTodoSplitProgress below. */
+  todoCompletedMinutes: number;
   createdAt: string;
   updatedAt: string;
   schemaVersion: number;
@@ -324,6 +357,12 @@ export function createEmptyTask(id: string, title: string, firstAction: string, 
     arcLearningReviewTopicId: null,
     arcWritingTextId: null,
     arcWritingChapterId: null,
+    isTodoItem: false,
+    todoUrgency: 5,
+    todoImportance: 5,
+    todoOrder: null,
+    todoIsSplittable: true,
+    todoCompletedMinutes: 0,
     createdAt: now,
     updatedAt: now,
     schemaVersion: CURRENT_TASK_SCHEMA_VERSION,
@@ -381,6 +420,12 @@ export function normalizeTask(task: Task): Task {
     arcLearningReviewTopicId: task.arcLearningReviewTopicId ?? null,
     arcWritingTextId: task.arcWritingTextId ?? null,
     arcWritingChapterId: task.arcWritingChapterId ?? null,
+    isTodoItem: task.isTodoItem ?? false,
+    todoUrgency: task.todoUrgency ?? 5,
+    todoImportance: task.todoImportance ?? 5,
+    todoOrder: task.todoOrder ?? null,
+    todoIsSplittable: task.todoIsSplittable ?? true,
+    todoCompletedMinutes: task.todoCompletedMinutes ?? 0,
     schemaVersion: task.schemaVersion ?? CURRENT_TASK_SCHEMA_VERSION,
   };
 }
@@ -526,4 +571,22 @@ export function toggleTaskSubtaskCompletion(task: Task, subtaskId: string, now: 
 /** Updates only currentAction -- the practical-task-difficulty route's own terminal write (a later stage), narrowing the task to its smallest next action without losing firstAction's original text. */
 export function setTaskCurrentAction(task: Task, currentAction: string, now: string): Task {
   return { ...task, currentAction, updatedAt: now };
+}
+
+/**
+ * Smart To-Do List task, split-task confirmation: records `elapsedMinutes`
+ * of real work against this To-Do item's own cumulative progress,
+ * WITHOUT touching status/completedAt unless the item's full
+ * expectedDurationMinutes is now reached -- in which case it delegates
+ * to the EXISTING completeTask (reflection/reward included, unchanged),
+ * so a split item's FINAL chunk is indistinguishable from an ordinary
+ * completion. There is never a second/duplicate Task record for "the
+ * rest of the split" -- todoCompletedMinutes on this same Task is the
+ * only place partial progress lives.
+ */
+export function recordTodoSplitProgress(task: Task, elapsedMinutes: number, now: string): Task {
+  const completedMinutes = task.todoCompletedMinutes + Math.max(0, elapsedMinutes);
+  const totalMinutes = task.expectedDurationMinutes ?? completedMinutes;
+  if (completedMinutes >= totalMinutes) return completeTask({ ...task, todoCompletedMinutes: totalMinutes }, now);
+  return { ...task, todoCompletedMinutes: completedMinutes, updatedAt: now };
 }

@@ -1951,12 +1951,16 @@ export function setPositiveMovement(state: NewArcLiveSessionState, movement: str
  * action -- called once, with exactly one of the two option shapes
  * below, then advancing straight into Encoding.
  *
- * - `{ source: "scheduledTask", taskId, title, firstAction }` for an
- *   explicitly-selected scheduled task, whether it is due now or being
- *   started early (both are "an existing scheduled task," resolved
+ * - `{ source: "scheduledTask", taskId, title, firstAction, splitDurationMinutes? }`
+ *   for an explicitly-selected scheduled task, whether it is due now or
+ *   being started early (both are "an existing scheduled task," resolved
  *   identically by taskId -- the spec's own priorities (2) and (4));
  *   `firstAction` is that task's own saved first action, or null when
- *   it has none.
+ *   it has none. Smart To-Do List task, section 9: `splitDurationMinutes`
+ *   is set (and stored into selectedActionDurationMinutes below) only
+ *   when the selected task is a To-Do item accepted as a split
+ *   suggestion -- every ordinary call omits it, and it is undefined/null
+ *   there, exactly as before this field existed.
  * - `{ source: "temporaryAction", title, durationMinutes }` for a
  *   brand-new temporary action entered now (priority (3)); durationMinutes
  *   is the trainee's own requested length, already clamped by the
@@ -1973,7 +1977,9 @@ export function setPositiveMovement(state: NewArcLiveSessionState, movement: str
  */
 export function setSelectedAction(
   state: NewArcLiveSessionState,
-  selection: { source: "scheduledTask"; taskId: string; title: string; firstAction: string | null } | { source: "temporaryAction"; title: string; durationMinutes: number },
+  selection:
+    | { source: "scheduledTask"; taskId: string; title: string; firstAction: string | null; splitDurationMinutes?: number | null }
+    | { source: "temporaryAction"; title: string; durationMinutes: number },
   now: string
 ): NewArcLiveSessionState {
   if (selection.source === "scheduledTask") {
@@ -1984,7 +1990,7 @@ export function setSelectedAction(
         selectedActionTaskId: selection.taskId,
         selectedActionTitle: selection.title,
         selectedActionFirstAction: selection.firstAction,
-        selectedActionDurationMinutes: null,
+        selectedActionDurationMinutes: selection.splitDurationMinutes ?? null,
       },
       now
     );

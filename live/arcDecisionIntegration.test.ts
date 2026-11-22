@@ -40,7 +40,7 @@ test("NewArcLiveScreen imports the shared ArcDecisionFlow component and arc/arcD
 test("renderActionSelector() renders ArcDecisionFlow INSTEAD of the normal picker whenever an ARC Decision overlay is active, and offers the 'אני לא יודע' button alongside the existing options otherwise", () => {
   const fnIndex = liveScreen.indexOf("function renderActionSelector() {");
   assert.ok(fnIndex !== -1);
-  const fnBody = liveScreen.slice(fnIndex, fnIndex + 9000);
+  const fnBody = liveScreen.slice(fnIndex, fnIndex + 12000);
   const overlayIndex = fnBody.indexOf("if (arcDecisionSession) {");
   assert.ok(overlayIndex !== -1);
   const buttonIndex = fnBody.indexOf("אני לא יודע");

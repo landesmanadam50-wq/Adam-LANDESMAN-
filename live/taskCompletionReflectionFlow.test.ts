@@ -61,7 +61,7 @@ function sliceFn(source: string, fnStart: string, windowSize: number): string {
 // --- 1. Immediate reflection navigation after task completion ---------
 
 test("scenario 1: handleComplete's REAL idempotency guard is the taskCompletingRef mutable ref (not the taskCompleting useState), checked and set as the very first statements, before any await -- a useState setter's new value would not even be visible to a second synchronous call before the next render, so only a ref is actually synchronous here", () => {
-  const fnBody = sliceFn(screen, "async function handleComplete()", 1300);
+  const fnBody = sliceFn(screen, "async function handleComplete()", 1700);
   const guardIndex = fnBody.indexOf("if (!task || taskCompletingRef.current) return;");
   const refSetIndex = fnBody.indexOf("taskCompletingRef.current = true;");
   const stateSetIndex = fnBody.indexOf("setTaskCompleting(true);");
@@ -77,7 +77,7 @@ test("scenario 1: taskCompletingRef is declared with useRef (not useState) -- it
 });
 
 test("scenario 1: handleComplete eventually reaches the reflection route for the one-time (non-continuous, non-pending-identity-insight) path", () => {
-  const fnBody = sliceFn(screen, "async function handleComplete()", 8000);
+  const fnBody = sliceFn(screen, "async function handleComplete()", 12000);
   assert.ok(fnBody.includes('router.replace({ pathname: "/tasks/[id]/reflect", params: { id: task.id } });'));
 });
 
@@ -107,7 +107,7 @@ test("scenario 2: the complete/next/skip button row and the 'המשימה הוש
 // --- 3. Correct reflection and reward sequence --------------------------
 
 test("scenario 3: handleComplete (one-time path) and finishIdentityInsight (both skip and continue) land on the SAME existing reflection route, never a second/duplicated reflection screen", () => {
-  const completeBody = sliceFn(screen, "async function handleComplete()", 7100);
+  const completeBody = sliceFn(screen, "async function handleComplete()", 9500);
   const finishBody = sliceFn(screen, "async function finishIdentityInsight", 1250);
   const occurrences = [completeBody, finishBody].filter((body) =>
     body.includes('pathname: "/tasks/[id]/reflect"')
@@ -153,7 +153,7 @@ test("scenario 3: the smiles/positive-reinforcement reward is recorded exactly o
 // --- 4. Prevention of duplicate completion ------------------------------
 
 test("scenario 4: a second call to handleComplete while taskCompletingRef is already true (a rapid double-tap -- i.e. BEFORE any render could have made the taskCompleting state visible) returns immediately, before marking the occurrence complete a second time or opening reflection twice", () => {
-  const fnBody = sliceFn(screen, "async function handleComplete()", 1300);
+  const fnBody = sliceFn(screen, "async function handleComplete()", 1700);
   assert.ok(fnBody.includes("if (!task || taskCompletingRef.current) return;"));
 });
 
@@ -168,8 +168,11 @@ test("scenario 4: the smiles reward itself is independently idempotent at the da
 // --- 5. Correct recurring-task occurrence completion --------------------
 
 test("scenario 5: completing a RECURRING task records only today's own TaskOccurrenceCompletion and returns Task.status to 'planned' (never 'completed'), so future occurrences' own alarms are never permanently disarmed -- taskCompleting (not task.status) is what hides this screen's own controls for that same completion, and taskCompletingRef is what guarantees appendTaskOccurrenceCompletion below runs at most once per completion", () => {
-  const fnBody = sliceFn(screen, "async function handleComplete()", 3700);
-  assert.ok(fnBody.includes('if (task.recurrence.kind === "recurring") {'));
+  const fnBody = sliceFn(screen, "async function handleComplete()", 5500);
+  // Smart To-Do List task, section 6: this is now an `else if` (a new
+  // To-Do split-progress branch comes first), but every recurring
+  // (non-split) task's own behavior is unchanged.
+  assert.ok(fnBody.includes('} else if (task.recurrence.kind === "recurring") {'));
   assert.ok(fnBody.includes("appendTaskOccurrenceCompletion(createTaskOccurrenceCompletion(task.id, new Date(now)));"));
   assert.ok(
     fnBody.includes('completedTask = { ...task, status: "planned", postponementReason: null, returnAt: null, notificationId: null, notificationScheduledFor: null, updatedAt: now };')
@@ -177,7 +180,7 @@ test("scenario 5: completing a RECURRING task records only today's own TaskOccur
 });
 
 test("scenario 5: a one-time task's own single completion is unaffected -- it still goes through the pre-existing completeTask helper and ends up 'completed'", () => {
-  const fnBody = sliceFn(screen, "async function handleComplete()", 3700);
+  const fnBody = sliceFn(screen, "async function handleComplete()", 5500);
   assert.ok(fnBody.includes("completedTask = { ...completeTask(task, now), notificationId: null, notificationScheduledFor: null };"));
 });
 
@@ -210,7 +213,7 @@ test("scenario 7: every reflect-navigation call site in ActiveTaskScreen.tsx use
 // --- 8. Floating-overlay cleanup after completion ------------------------
 
 test("scenario 8: handleComplete delegates to the shared clearEndedTimer() (reused from the rest timer's own 'סיום המנוחה' button), which cancels the end-of-timer alarm, clears the persisted TaskTimerRun, and switches the floating overlay to its IDLE state -- never a separate/duplicated cleanup sequence", () => {
-  const fnBody = sliceFn(screen, "async function handleComplete()", 2300);
+  const fnBody = sliceFn(screen, "async function handleComplete()", 3000);
   assert.ok(fnBody.includes("await clearEndedTimer();"));
   const clearFnBody = sliceFn(screen, "async function clearEndedTimer()", 1200);
   assert.ok(clearFnBody.includes("await clearTaskTimerRun();"));
@@ -222,7 +225,7 @@ test("scenario 8: handleComplete delegates to the shared clearEndedTimer() (reus
 });
 
 test("scenario 8: handleComplete no longer calls the floating-overlay bridge a second time on its own -- clearEndedTimer is the single, shared place that does it", () => {
-  const fnBody = sliceFn(screen, "async function handleComplete()", 2300);
+  const fnBody = sliceFn(screen, "async function handleComplete()", 3000);
   const occurrences = fnBody.split("hideFloatingTimerOverlay()").length - 1 + (fnBody.split("showIdleFloatingOverlayPanel(").length - 1);
   assert.equal(occurrences, 0, "handleComplete must rely entirely on clearEndedTimer's own call, never a duplicated direct call");
 });

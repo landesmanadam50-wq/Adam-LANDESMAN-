@@ -41,8 +41,12 @@ test("requirement 2/3: the merged effectiveTask carries the OVERRIDE's scheduled
     )
   );
   const performStartIndex = screen.indexOf("async function performStart()");
-  const performStartBody = screen.slice(performStartIndex, performStartIndex + 6500);
-  assert.ok(performStartBody.includes("const durationMinutes = firstStage ? firstStage.durationMinutes : task.expectedDurationMinutes ?? 25;"));
+  const performStartBody = screen.slice(performStartIndex, performStartIndex + 7200);
+  // Smart To-Do List task, section 6: the duration calculation also
+  // checks isTodoSplit now, but still falls back to
+  // task.expectedDurationMinutes ?? 25 for every ordinary (non-split)
+  // task exactly as before.
+  assert.ok(performStartBody.includes("const durationMinutes = firstStage ? firstStage.durationMinutes : isTodoSplit ? splitMinutes : task.expectedDurationMinutes ?? 25;"));
 });
 
 test("requirement 4: the merged effectiveTask (not the raw loaded task) is what showFloatingTimerOverlay restores with on every focus -- the floating overlay's own duration/title must agree with today's effective occurrence", () => {
@@ -84,8 +88,11 @@ test("every persistTask call site derives `next` from the (merged) `task` state 
 
 test("requirement 5, completion fix: a recurring task's completion records only TODAY's occurrence (append-only, never the shared status) and returns the shared Task to 'planned' -- never 'completed', which would permanently disarm every FUTURE occurrence's own alarm; a one-time task's own single completion is unaffected", () => {
   const fnIndex = screen.indexOf("async function handleComplete()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 3700);
-  assert.ok(fnBody.includes('if (task.recurrence.kind === "recurring") {'));
+  const fnBody = screen.slice(fnIndex, fnIndex + 5500);
+  // Smart To-Do List task, section 6: this branch is now an `else if`
+  // (a new To-Do split-progress branch comes first), but every
+  // recurring (non-split) task's own behavior is unchanged.
+  assert.ok(fnBody.includes('} else if (task.recurrence.kind === "recurring") {'));
   assert.ok(fnBody.includes("appendTaskOccurrenceCompletion(createTaskOccurrenceCompletion(task.id, new Date(now)));"));
   assert.ok(fnBody.includes('completedTask = { ...task, status: "planned", postponementReason: null, returnAt: null, notificationId: null, notificationScheduledFor: null, updatedAt: now };'));
   assert.ok(fnBody.includes("completedTask = { ...completeTask(task, now), notificationId: null, notificationScheduledFor: null };"));
@@ -93,7 +100,7 @@ test("requirement 5, completion fix: a recurring task's completion records only 
 
 test("requirement 1/6, completion fix: after completing a recurring task's occurrence, the alarm is immediately re-synced for the NEXT occurrence via scheduleTaskAlarm, reading the RAW (un-overridden) task from rawTaskRef -- never today's now-stale overridden time", () => {
   const fnIndex = screen.indexOf("async function handleComplete()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 4400);
+  const fnBody = screen.slice(fnIndex, fnIndex + 6500);
   assert.ok(fnBody.includes('if (task.recurrence.kind === "recurring" && rawTaskRef.current) {'));
   assert.ok(fnBody.includes("scheduleTaskAlarm(rawTaskRef.current, new Date())"));
 });

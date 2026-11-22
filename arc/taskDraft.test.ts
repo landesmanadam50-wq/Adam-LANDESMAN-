@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createEmptyTask } from "./tasks.ts";
+import { todayLocalDateString } from "../program/dateUtils.ts";
 import {
   addSubtaskToDraft,
   buildTaskFromDraft,
@@ -342,4 +343,77 @@ test("taskDraftFromTask round-trips a fully-staged task's every field, including
   assert.equal(roundTripped.smallDescription, "פסקה אחת");
   assert.equal(roundTripped.mainDescription, "ממשיך לקרוא");
   assert.equal(roundTripped.mainDurationMinutes, "25");
+});
+
+// --- Smart To-Do List task ------------------------------------------------
+
+test("createEmptyTaskDraft defaults isTodoItem to false, urgency/importance to '5', and splittable to true", () => {
+  const draft = createEmptyTaskDraft();
+  assert.equal(draft.isTodoItem, false);
+  assert.equal(draft.todoUrgency, "5");
+  assert.equal(draft.todoImportance, "5");
+  assert.equal(draft.todoIsSplittable, true);
+});
+
+test("validateTaskDraft rejects a To-Do item that also carries a scheduledTime -- mutually exclusive by definition", () => {
+  const draft = { ...createEmptyTaskDraft(), title: "t", isTodoItem: true, scheduledTime: "09:00" };
+  assert.ok(validateTaskDraft(draft).some((e) => e.includes("שעת התחלה")));
+});
+
+test("validateTaskDraft rejects a non-1-10 or non-integer urgency/importance, but only once isTodoItem is selected", () => {
+  const base = { ...createEmptyTaskDraft(), title: "t" };
+  assert.deepEqual(validateTaskDraft({ ...base, isTodoItem: false, todoUrgency: "99" }), [], "urgency/importance are irrelevant for an ordinary scheduled task");
+
+  assert.ok(validateTaskDraft({ ...base, isTodoItem: true, todoUrgency: "0" }).length > 0);
+  assert.ok(validateTaskDraft({ ...base, isTodoItem: true, todoUrgency: "11" }).length > 0);
+  assert.ok(validateTaskDraft({ ...base, isTodoItem: true, todoUrgency: "5.5" }).length > 0);
+  assert.ok(validateTaskDraft({ ...base, isTodoItem: true, todoUrgency: "" }).length > 0);
+  assert.ok(validateTaskDraft({ ...base, isTodoItem: true, todoImportance: "0" }).length > 0);
+  assert.deepEqual(validateTaskDraft({ ...base, isTodoItem: true, todoUrgency: "1", todoImportance: "10" }), []);
+});
+
+test("buildTaskFromDraft: a To-Do item is always built as a one-off task with no scheduledTime, defaulting scheduledDate to today when none was typed", () => {
+  const draft = { ...createEmptyTaskDraft(), title: "לקרוא", isTodoItem: true, todoUrgency: "8", todoImportance: "3", todoIsSplittable: false, recurrenceKind: "recurring" as const, recurrenceDays: [1, 2] };
+  const task = buildTaskFromDraft(draft, emptyTaskBase("t1", NOW), NOW);
+  assert.equal(task.isTodoItem, true);
+  assert.equal(task.scheduledTime, null);
+  assert.equal(task.scheduledDate, todayLocalDateString(new Date(NOW)));
+  assert.deepEqual(task.recurrence, { kind: "once" }, "a To-Do item is ALWAYS one-off, regardless of whatever the recurrence controls show");
+  assert.equal(task.todoUrgency, 8);
+  assert.equal(task.todoImportance, 3);
+  assert.equal(task.todoIsSplittable, false);
+});
+
+test("buildTaskFromDraft preserves an explicit scheduledDate on a To-Do item rather than overriding it with today", () => {
+  const draft = { ...createEmptyTaskDraft(), title: "לקרוא", isTodoItem: true, scheduledDate: "2026-02-01" };
+  const task = buildTaskFromDraft(draft, emptyTaskBase("t1", NOW), NOW);
+  assert.equal(task.scheduledDate, "2026-02-01");
+});
+
+test("buildTaskFromDraft never lets the editor touch todoOrder/todoCompletedMinutes -- they always carry through from `base` untouched, exactly like status/postponement fields", () => {
+  const existingTodo = { ...emptyTaskBase("t1", NOW), isTodoItem: true, todoOrder: 2, todoCompletedMinutes: 15, expectedDurationMinutes: 60 };
+  const draft = { ...taskDraftFromTask(existingTodo), todoUrgency: "9" };
+  const rebuilt = buildTaskFromDraft(draft, existingTodo, NOW);
+  assert.equal(rebuilt.todoOrder, 2, "untouched by this screen");
+  assert.equal(rebuilt.todoCompletedMinutes, 15, "untouched by this screen");
+  assert.equal(rebuilt.todoUrgency, 9, "this field IS editable here");
+});
+
+test("buildTaskFromDraft on an ORDINARY (non-To-Do) task preserves base's own todoUrgency/todoImportance/todoIsSplittable rather than resetting them to the draft's defaults", () => {
+  const existing = { ...emptyTaskBase("t1", NOW), isTodoItem: false, todoUrgency: 7, todoImportance: 9, todoIsSplittable: false };
+  const draft = { ...taskDraftFromTask(existing), title: "כותרת חדשה" };
+  const rebuilt = buildTaskFromDraft(draft, existing, NOW);
+  assert.equal(rebuilt.isTodoItem, false);
+  assert.equal(rebuilt.todoUrgency, 7);
+  assert.equal(rebuilt.todoImportance, 9);
+  assert.equal(rebuilt.todoIsSplittable, false);
+});
+
+test("taskDraftFromTask round-trips every Smart To-Do List field", () => {
+  const task = { ...emptyTaskBase("t1", NOW), isTodoItem: true, todoUrgency: 6, todoImportance: 2, todoIsSplittable: false };
+  const draft = taskDraftFromTask(task);
+  assert.equal(draft.isTodoItem, true);
+  assert.equal(draft.todoUrgency, "6");
+  assert.equal(draft.todoImportance, "2");
+  assert.equal(draft.todoIsSplittable, false);
 });

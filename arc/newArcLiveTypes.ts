@@ -546,6 +546,16 @@ export interface NewArcLiveSessionState {
    * task at the moment the temporary task is actually created (just
    * before offering to start it), never capped at the original
    * Action-Selection-time estimate -- see returnToTask.
+   *
+   * Smart To-Do List task, section 9: ALSO set (non-null) when
+   * selectedActionSource === "scheduledTask" and the selected task is a
+   * To-Do item accepted as a SPLIT suggestion (arc/todoList.ts's own
+   * TodoSuggestion, reason "split_suggested") -- the chosen split's own
+   * minute count, never the task's full remaining duration. Every
+   * ordinary (non-split) "scheduledTask" selection still leaves this
+   * null exactly as before. returnToTask (live/NewArcLiveScreen.tsx)
+   * reads it to start the timer for only the split's own duration,
+   * never the whole task.
    */
   selectedActionDurationMinutes: number | null;
 

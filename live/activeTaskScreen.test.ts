@@ -52,7 +52,7 @@ test("'הטיימר הסתיים' and 'המשימה הושלמה' are kept separ
   assert.ok(!endPromptBlock.includes("completeTask"), "the end-of-timer prompt must never mark the task complete on its own");
   assert.ok(screen.includes("onPress={handleComplete}"), "marking complete must remain its own, separate, always-available action");
   const handleCompleteIndex = screen.indexOf("async function handleComplete()");
-  assert.ok(screen.slice(handleCompleteIndex, handleCompleteIndex + 3700).includes("completedTask = { ...completeTask(task, now)"));
+  assert.ok(screen.slice(handleCompleteIndex, handleCompleteIndex + 5500).includes("completedTask = { ...completeTask(task, now)"));
 });
 
 test("the three end-of-timer choices are rendered from the shared TASK_TIMER_END_CHOICE_LABELS -- never a duplicated/local label set", () => {

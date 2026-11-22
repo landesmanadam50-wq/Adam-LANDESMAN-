@@ -84,8 +84,16 @@ test("app/_layout.tsx registers every new ARC Result route (ARC GYM management +
 // that could silently drift apart. ---------------------------------
 
 test("required tests 4-7 (suggested after Full ARC, Mini ARC, Shortened ARC, and the combined 'מחשבה / דחף' pathway): returnToTask's own two real-task destinations both route through the shared routeToTaskOrArcResultSuggestion helper -- never a direct, unconditional '/tasks/[id]' navigation that would skip the check", () => {
-  assert.ok(newArcLiveScreen.includes("async function routeToTaskOrArcResultSuggestion(targetTaskId: string, autoStart: boolean)"));
-  assert.ok(newArcLiveScreen.includes("await routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false);"), "the explicitly-selected scheduled/due task branch");
+  // Smart To-Do List task, section 9: this helper gained an optional
+  // third splitMinutes param (default null) -- every pre-existing call
+  // site is unaffected, so this is still the one shared helper.
+  assert.ok(
+    newArcLiveScreen.includes("async function routeToTaskOrArcResultSuggestion(targetTaskId: string, autoStart: boolean, splitMinutes: number | null = null)")
+  );
+  assert.ok(
+    newArcLiveScreen.includes("await routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false, session.selectedActionDurationMinutes);"),
+    "the explicitly-selected scheduled/due task branch"
+  );
   assert.ok(newArcLiveScreen.includes("await routeToTaskOrArcResultSuggestion(taskId, autoStart);"), "the final fallback branch -- the session's own linked task, reached by every ARC mode (full/mini/shortened/combined) that doesn't hit a more specific branch above it");
 });
 

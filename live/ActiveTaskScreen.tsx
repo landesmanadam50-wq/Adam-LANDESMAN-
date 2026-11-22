@@ -3,8 +3,22 @@ import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
-import { completeTask, generateTaskJournalEntryId, pauseTask as pauseTaskRecord, setTaskCurrentAction, startTask, toggleTaskSubtaskCompletion } from "../arc/tasks.ts";
+import {
+  completeTask,
+  generateTaskJournalEntryId,
+  pauseTask as pauseTaskRecord,
+  recordTodoSplitProgress,
+  setTaskCurrentAction,
+  startTask,
+  toggleTaskSubtaskCompletion,
+} from "../arc/tasks.ts";
 import type { Task } from "../arc/tasks.ts";
+// Smart To-Do List task, section 3: the exact same single-slot
+// precedent TaskStageProgress already uses -- created alongside the
+// TaskTimerRun in performStart below, read (and cleared, via the SAME
+// clearTaskTimerRun() every other completion/early-finish/postponement
+// call site already calls) in handleComplete.
+import { createTodoSplitSession } from "../arc/todoSplitSession.ts";
 import { createTaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
 import { createTaskJournalEntry } from "../data/taskJournal.ts";
 import { bypassDailyVisualizationForToday, isDailyVisualizationNeededNow } from "../data/dailyVisualization.ts";
@@ -39,10 +53,12 @@ import {
   loadTasks,
   loadTaskStageProgress,
   loadTaskTimerRun,
+  loadTodoSplitSession,
   markNotificationExplanationSeen,
   saveTaskOccurrenceOverrides,
   saveTaskStageProgress,
   saveTaskTimerRun,
+  saveTodoSplitSession,
   upsertArcBelief,
   upsertTask,
 } from "../data/storage.ts";
@@ -147,6 +163,7 @@ export default function ActiveTaskScreen({
   nextTask = false,
   addInsight = false,
   addPositiveEvent = false,
+  splitMinutes = null,
 }: {
   taskId: string;
   autoStart?: boolean;
@@ -159,6 +176,16 @@ export default function ActiveTaskScreen({
   addInsight?: boolean;
   /** Positive Memory, Success Recall & Quick Capture task, section 3A: the floating cube's/Android widget's own "✨ הוסף אירוע חיובי" button, while a task session is active/paused, deep-links here with addPositiveEvent=1 -- opens the positive-event documentation entry screen with this task as its return context, never finishing/canceling/resetting the active task or timer. */
   addPositiveEvent?: boolean;
+  /**
+   * Smart To-Do List task, section 6: set ONLY when ARC LIVE's
+   * returnToTask (or the Time Planning popup) sent the trainee here
+   * after they explicitly accepted a To-Do split suggestion -- the
+   * chosen split's own minute count. null for every ordinary open,
+   * including every pre-existing call site. performStart below reads
+   * it ONLY for an isTodoItem task (never overriding an ordinary
+   * scheduled task's own duration).
+   */
+  splitMinutes?: number | null;
 }) {
   const [task, setTask] = useState<Task | null>(null);
   /**
@@ -690,12 +717,24 @@ export default function ActiveTaskScreen({
     // stageProgress below resolve exactly as they always have.
     const staged = hasConfiguredActionStages(task.actionStages);
     const firstStage = staged ? resolveFirstActionStage(task.actionStages!) : null;
-    const durationMinutes = firstStage ? firstStage.durationMinutes : task.expectedDurationMinutes ?? 25;
+    // Smart To-Do List task, section 6 (optional task splitting): a
+    // split's own chosen duration overrides the task's full remaining
+    // duration -- ONLY for a To-Do item, ONLY when splitMinutes was
+    // actually passed (an ordinary scheduled task's own start is
+    // completely unaffected, since neither condition holds for it).
+    const isTodoSplit = task.isTodoItem && splitMinutes !== null;
+    const durationMinutes = firstStage ? firstStage.durationMinutes : isTodoSplit ? splitMinutes : task.expectedDurationMinutes ?? 25;
     const run = createTaskTimerRun(task.id, generateTaskTimerRunId(), durationMinutes, new Date().toISOString());
     const notificationId = await scheduleTaskTimerNotification(run, task);
     const runWithNotification = { ...run, notificationId };
     await saveTaskTimerRun(runWithNotification);
     setTimerRun(runWithNotification);
+    // The single-slot TodoSplitSession record -- read back in
+    // handleComplete below to know this chunk's own progress should be
+    // recorded against the task rather than marking it fully done, and
+    // cleared by the SAME clearTaskTimerRun() every completion/early-
+    // finish/postponement call site already calls.
+    if (isTodoSplit) await saveTodoSplitSession(createTodoSplitSession(task.id, splitMinutes));
     const freshStageProgress = firstStage ? createTaskStageProgress(task.id, firstStage.id) : null;
     if (freshStageProgress) await saveTaskStageProgress(freshStageProgress);
     setStageProgress(freshStageProgress);
@@ -870,6 +909,11 @@ export default function ActiveTaskScreen({
     if (!task || taskCompletingRef.current) return;
     taskCompletingRef.current = true;
     setTaskCompleting(true);
+    // Smart To-Do List task, section 6 (optional task splitting): read
+    // BEFORE clearEndedTimer() below, since its own clearTaskTimerRun()
+    // (data/storage.ts) clears this exact single slot alongside the
+    // timer run -- reading it after would always see "none."
+    const todoSplitSession = await loadTodoSplitSession();
     if (task.notificationId) await cancelScheduledNotification(task.notificationId);
     // Alarm-automation task, requirement 4 ("השלמת משימה לפני זמנה --
     // ביטול השעון"): cancelScheduledNotification above only knows about
@@ -887,21 +931,46 @@ export default function ActiveTaskScreen({
     // forever -- the actual root cause of the overlapping controls bug.
     await clearEndedTimer();
     const now = new Date().toISOString();
-    // Flexible Daily Routine task, integration fix (requirement 5):
-    // a RECURRING task's completion must record only TODAY's own
-    // occurrence (the separate, append-only TaskOccurrenceCompletion
-    // collection build/TodayScreen.tsx's own handleComplete already
-    // uses for exactly this reason) and return the shared Task record
-    // to "planned" -- never "completed". Before this fix, completing a
-    // recurring task through this full Task LIVE screen (reached, e.g.,
-    // via the Flexible Daily Routine's own "Start" action) set
-    // Task.status to "completed" unconditionally, which
-    // resolveNextTaskStartOccurrence/reconcileTaskAlarms both treat as
-    // terminal -- permanently disarming every FUTURE occurrence's own
-    // alarm, not just today's. A one-time task's own single completion
-    // is unaffected, exactly as before.
+    // Smart To-Do List task, section 6: a split-started To-Do item's
+    // own completion records progress against its REAL elapsed time
+    // (status, read from this same render's closure -- clearEndedTimer
+    // above only clears the PERSISTED run/state, never this local
+    // const) instead of marking the whole task done outright. Never a
+    // duplicate task, never resetting what's already been done.
+    // recordTodoSplitProgress itself decides whether this chunk still
+    // leaves the task incomplete -- persisted here, with NO reflection/
+    // reward for a partial split, this function returning immediately
+    // and the task staying in the To-Do list exactly as section 6
+    // requires -- or whether it finally finishes the task, in which
+    // case completedTask below is already that finished task and
+    // everything after falls through to the EXACT same completion flow
+    // (journal entry, identity-insight check, continuous-routine check,
+    // reflect navigation) every other task already uses, unchanged.
     let completedTask: Task;
-    if (task.recurrence.kind === "recurring") {
+    if (todoSplitSession && todoSplitSession.taskId === task.id) {
+      const elapsedMinutes = status ? status.elapsedSeconds / 60 : 0;
+      const progressed = recordTodoSplitProgress(task, elapsedMinutes, now);
+      if (progressed.status !== "completed") {
+        await persistTask(progressed);
+        router.replace("/tasks");
+        return;
+      }
+      completedTask = { ...progressed, notificationId: null, notificationScheduledFor: null };
+    } else if (task.recurrence.kind === "recurring") {
+      // Flexible Daily Routine task, integration fix (requirement 5):
+      // a RECURRING task's completion must record only TODAY's own
+      // occurrence (the separate, append-only TaskOccurrenceCompletion
+      // collection build/TodayScreen.tsx's own handleComplete already
+      // uses for exactly this reason) and return the shared Task
+      // record to "planned" -- never "completed". Before this fix,
+      // completing a recurring task through this full Task LIVE
+      // screen (reached, e.g., via the Flexible Daily Routine's own
+      // "Start" action) set Task.status to "completed"
+      // unconditionally, which resolveNextTaskStartOccurrence/
+      // reconcileTaskAlarms both treat as terminal -- permanently
+      // disarming every FUTURE occurrence's own alarm, not just
+      // today's. A one-time task's own single completion is
+      // unaffected, exactly as before.
       await appendTaskOccurrenceCompletion(createTaskOccurrenceCompletion(task.id, new Date(now)));
       completedTask = { ...task, status: "planned", postponementReason: null, returnAt: null, notificationId: null, notificationScheduledFor: null, updatedAt: now };
     } else {

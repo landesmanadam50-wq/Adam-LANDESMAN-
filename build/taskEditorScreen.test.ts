@@ -132,3 +132,49 @@ test("reopening an existing recurring task's editor shows its already-saved week
   const reloadBody = editorScreen.slice(reloadIndex, reloadIndex + 700);
   assert.ok(reloadBody.includes("setDraft(taskDraftFromTask(task))"));
 });
+
+// --- Smart To-Do List task: TaskEditorScreen's task-type toggle + urgency/importance/splittable UI ---
+
+test("a 'סוג המשימה' chip pair lets the trainee choose scheduled task vs. To-Do item, and choosing To-Do clears any scheduledTime already on the draft", () => {
+  const fieldIndex = editorScreen.indexOf('<Field label="סוג המשימה">');
+  assert.ok(fieldIndex >= 0);
+  const fieldBody = editorScreen.slice(fieldIndex, editorScreen.indexOf("</Field>", fieldIndex));
+  assert.ok(fieldBody.includes("setDraft({ ...draft, isTodoItem: false })"));
+  assert.ok(fieldBody.includes('setDraft({ ...draft, isTodoItem: true, scheduledTime: "" })'));
+});
+
+test("the urgency and importance chip rows (1-10, shared TODO_RATING_VALUES scale) only render while draft.isTodoItem is on", () => {
+  const todoBlockIndex = editorScreen.indexOf("{draft.isTodoItem && (");
+  assert.ok(todoBlockIndex >= 0);
+  const todoBlockBody = editorScreen.slice(todoBlockIndex, editorScreen.indexOf("ניתן לפצל את המשימה", todoBlockIndex));
+  assert.match(editorScreen, /const TODO_RATING_VALUES = \[1, 2, 3, 4, 5, 6, 7, 8, 9, 10\];/);
+  assert.ok(todoBlockBody.includes('<Field label="דחיפות (1 נמוך -- 10 גבוה)">'));
+  assert.ok(todoBlockBody.includes('<Field label="חשיבות (1 נמוך -- 10 גבוה)">'));
+  assert.ok(todoBlockBody.includes("TODO_RATING_VALUES.map((value)"));
+  assert.ok(todoBlockBody.includes('setDraft({ ...draft, todoUrgency: String(value) })'));
+  assert.ok(todoBlockBody.includes('setDraft({ ...draft, todoImportance: String(value) })'));
+});
+
+test("a splittable/not-splittable chip pair for a To-Do item toggles draft.todoIsSplittable, also gated on draft.isTodoItem", () => {
+  const fieldIndex = editorScreen.indexOf('<Field label="ניתן לפצל את המשימה למספר חלקים?">');
+  assert.ok(fieldIndex >= 0);
+  const fieldBody = editorScreen.slice(fieldIndex, editorScreen.indexOf("</Field>", fieldIndex));
+  assert.ok(fieldBody.includes("setDraft({ ...draft, todoIsSplittable: true })"));
+  assert.ok(fieldBody.includes("setDraft({ ...draft, todoIsSplittable: false })"));
+  const gateIndex = editorScreen.lastIndexOf("{draft.isTodoItem && (", fieldIndex);
+  assert.ok(gateIndex >= 0 && gateIndex < fieldIndex, "the splittable field must sit inside the same {draft.isTodoItem && (...)} block as the rating fields, not a separate ungated one");
+});
+
+test("the scheduled-time field is hidden for a To-Do item -- a To-Do item never carries a fixed start time in the editor UI", () => {
+  const fieldIndex = editorScreen.indexOf('<Field label="שעה מתוכננת (HH:MM, רשות)">');
+  assert.ok(fieldIndex >= 0);
+  const gateIndex = editorScreen.lastIndexOf("{!draft.isTodoItem && (", fieldIndex);
+  assert.ok(gateIndex >= 0 && gateIndex < fieldIndex && fieldIndex - gateIndex < 80, "the scheduled-time field must be the first thing inside its own {!draft.isTodoItem && (...)} wrapper");
+});
+
+test("the recurrence ('חזרתיות') field is hidden for a To-Do item -- a To-Do item is always one-off, per arc/taskDraft.ts's buildTaskFromDraft", () => {
+  const fieldIndex = editorScreen.indexOf('<Field label="חזרתיות">');
+  assert.ok(fieldIndex >= 0);
+  const gateIndex = editorScreen.lastIndexOf("{!draft.isTodoItem && (", fieldIndex);
+  assert.ok(gateIndex >= 0 && gateIndex < fieldIndex && fieldIndex - gateIndex < 80, "the recurrence field must be the first thing inside its own {!draft.isTodoItem && (...)} wrapper");
+});

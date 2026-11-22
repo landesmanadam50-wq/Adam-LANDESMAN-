@@ -35,7 +35,7 @@ for (const [name, source, fnStart, windowSize] of [
   // Unified ARC & Productivity Update task, requirement 9: widened for
   // the ad-hoc-group + combined-smiles accumulation code this branch
   // now carries.
-  ["live/ActiveTaskScreen.tsx's handleComplete", activeTaskScreen, "async function handleComplete()", 7200],
+  ["live/ActiveTaskScreen.tsx's handleComplete", activeTaskScreen, "async function handleComplete()", 9500],
   ["build/DailyScheduleScreen.tsx's handleComplete", dailyScheduleScreen, "async function handleComplete(task: Task)", 2000],
   ["build/TodayScreen.tsx's handleComplete", todayScreen, "async function handleComplete(task: Task)", 2000],
 ] as const) {
@@ -68,7 +68,7 @@ for (const [name, source, fnStart, windowSize] of [
 
 test("ActiveTaskScreen's continuous branch navigates DIRECTLY to the next task in the period (router.replace), skipping reflect entirely, when one remains", () => {
   const fnIndex = activeTaskScreen.indexOf("async function handleComplete()");
-  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 7200);
+  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 9500);
   assert.ok(fnBody.includes('router.replace({ pathname: "/tasks/[id]", params: { id: continuousOutcome.nextTaskInPeriod.id } });'));
 });
 

@@ -64,7 +64,7 @@ test("ActiveTaskScreen's performStart (reached via handleStart's required-before
 // rings later, for a task that's already done.
 test("ActiveTaskScreen's handleComplete also silences any notifee-based task alarm, in addition to the pre-existing expo-notifications cancellation", () => {
   const fnIndex = activeTaskScreen.indexOf("async function handleComplete()");
-  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 1700);
+  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 2200);
   assert.ok(fnBody.includes("await cancelScheduledNotification(task.notificationId);"));
   assert.ok(fnBody.includes("await cancelAnyAlarmFor(task.id);"));
 });

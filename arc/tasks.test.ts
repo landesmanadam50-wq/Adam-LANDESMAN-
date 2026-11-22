@@ -13,6 +13,7 @@ import {
   normalizeTask,
   pauseTask,
   postponeTask,
+  recordTodoSplitProgress,
   setTaskCurrentAction,
   startTask,
   TIME_PLANNING_DEFAULT_DURATION_MINUTES,
@@ -78,7 +79,34 @@ test("normalizeTask backfills every field on a record missing everything added a
   assert.equal(normalized.arcLearningReviewTopicId, null, "ARC Learning + ARC Creativity + Integrated Spaced Repetition task: backfilled to null, same as every other optional field added after ship");
   assert.equal(normalized.arcWritingTextId, null, "ARC Writing & ARC Book task: backfilled to null, same as every other optional field added after ship");
   assert.equal(normalized.arcWritingChapterId, null, "ARC Writing & ARC Book task: backfilled to null, same as every other optional field added after ship");
+  assert.equal(normalized.isTodoItem, false, "Smart To-Do List task: backfilled to false, same as every other optional field added after ship");
+  assert.equal(normalized.todoUrgency, 5);
+  assert.equal(normalized.todoImportance, 5);
+  assert.equal(normalized.todoOrder, null);
+  assert.equal(normalized.todoIsSplittable, true);
+  assert.equal(normalized.todoCompletedMinutes, 0);
   assert.equal(normalized.schemaVersion, 1);
+});
+
+test("createEmptyTask defaults every Smart To-Do List field to an ordinary scheduled task's values -- isTodoItem false, urgency/importance 5, no manual order, splittable, zero progress", () => {
+  const task = createEmptyTask("task-1", "Write the report", "Open the document", NOW);
+  assert.equal(task.isTodoItem, false);
+  assert.equal(task.todoUrgency, 5);
+  assert.equal(task.todoImportance, 5);
+  assert.equal(task.todoOrder, null);
+  assert.equal(task.todoIsSplittable, true);
+  assert.equal(task.todoCompletedMinutes, 0);
+});
+
+test("normalizeTask never overwrites already-set Smart To-Do List fields", () => {
+  const task = { ...makeTask(), isTodoItem: true, todoUrgency: 9, todoImportance: 2, todoOrder: 3, todoIsSplittable: false, todoCompletedMinutes: 15 };
+  const normalized = normalizeTask(task);
+  assert.equal(normalized.isTodoItem, true);
+  assert.equal(normalized.todoUrgency, 9);
+  assert.equal(normalized.todoImportance, 2);
+  assert.equal(normalized.todoOrder, 3);
+  assert.equal(normalized.todoIsSplittable, false);
+  assert.equal(normalized.todoCompletedMinutes, 15);
 });
 
 test("normalizeTask falls back currentAction to firstAction when only currentAction is missing", () => {
@@ -170,6 +198,49 @@ test("completeTask sets completedAt and clears any leftover postponement fields"
   assert.equal(completed.completedAt, LATER);
   assert.equal(completed.postponementReason, null);
   assert.equal(completed.returnAt, null);
+});
+
+// --- required test 9: split confirmation persists completed/remaining minutes, no duplicate task record ---
+
+test("required test 9: recordTodoSplitProgress accumulates todoCompletedMinutes and keeps the task NOT completed while minutes remain -- never creating a second task record", () => {
+  const task = { ...makeTask(), isTodoItem: true, expectedDurationMinutes: 60, todoCompletedMinutes: 0 };
+  const afterFirstSplit = recordTodoSplitProgress(task, 20, LATER);
+  assert.equal(afterFirstSplit.id, task.id, "the SAME task record, never a duplicate");
+  assert.equal(afterFirstSplit.todoCompletedMinutes, 20);
+  assert.equal(afterFirstSplit.status, "planned", "still not complete -- 40 minutes remain");
+  assert.equal(afterFirstSplit.completedAt, null);
+});
+
+test("required test 9 continued: recordTodoSplitProgress resurfaces the remainder across multiple partial sessions, then delegates to completeTask (reflection/reward included) once the full duration is reached", () => {
+  const task = { ...makeTask(), isTodoItem: true, expectedDurationMinutes: 60, todoCompletedMinutes: 20 };
+  const afterSecondSplit = recordTodoSplitProgress(task, 25, LATER);
+  assert.equal(afterSecondSplit.todoCompletedMinutes, 45);
+  assert.equal(afterSecondSplit.status, "planned", "still 15 minutes remain -- the remainder resurfaces for a later session");
+
+  const finalSplit = recordTodoSplitProgress(afterSecondSplit, 15, LATER);
+  assert.equal(finalSplit.todoCompletedMinutes, 60);
+  assert.equal(finalSplit.status, "completed", "the final chunk reaching the full duration completes the task exactly like completeTask would");
+  assert.equal(finalSplit.completedAt, LATER);
+});
+
+test("recordTodoSplitProgress treats an overshoot (elapsed minutes beyond what remains) as completion too, clamping todoCompletedMinutes to the task's own total rather than storing an over-counted value", () => {
+  const task = { ...makeTask(), isTodoItem: true, expectedDurationMinutes: 30, todoCompletedMinutes: 20 };
+  const completed = recordTodoSplitProgress(task, 50, LATER);
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.todoCompletedMinutes, 30, "clamped to the task's own total, never stored as 70");
+});
+
+test("recordTodoSplitProgress never accepts a negative elapsed-minutes value as a regression", () => {
+  const task = { ...makeTask(), isTodoItem: true, expectedDurationMinutes: 60, todoCompletedMinutes: 20 };
+  const unchanged = recordTodoSplitProgress(task, -10, LATER);
+  assert.equal(unchanged.todoCompletedMinutes, 20, "Math.max(0, ...) floors a negative elapsed value at zero");
+});
+
+test("recordTodoSplitProgress completes a task that has no expectedDurationMinutes estimate on its very first recorded session (nothing left to remain)", () => {
+  const task = { ...makeTask(), isTodoItem: true, expectedDurationMinutes: null, todoCompletedMinutes: 0 };
+  const completed = recordTodoSplitProgress(task, 10, LATER);
+  assert.equal(completed.status, "completed");
+  assert.equal(completed.todoCompletedMinutes, 10);
 });
 
 test("archiveTask hides the task (status archived) and clears any leftover postponement fields, without deleting it", () => {

@@ -57,6 +57,7 @@ const homeScreen = readSource("build/FlexibleDailyScreen.tsx");
 const overlayKt = readSource("modules/floating-timer-overlay/android/src/main/java/expo/modules/floatingtimeroverlay/OverlayService.kt");
 const liveScreen = readSource("live/NewArcLiveScreen.tsx");
 const emotionalCheckInRouting = readSource("data/emotionalCheckInRouting.ts");
+const dailyPlanModule = readSource("arc/dailyPlan.ts");
 
 // ============================================================
 // Combined shortcut (1-7)
@@ -227,9 +228,17 @@ test("18. Scheduling conflicts are shown, not silently resolved -- the real Task
 // ============================================================
 
 test("19-20-21. The temporary-action timer respects the next scheduled task: a longer request is capped to the time remaining, a shorter one is respected unchanged", () => {
-  const fnIndex = liveScreen.indexOf("function resolveMinutesUntilNextTask(");
-  const fnBody = liveScreen.slice(fnIndex, liveScreen.indexOf("\n}", fnIndex));
-  assert.ok(fnBody.includes("Math.max(0, startMinutes - nowMinutes)"), "available minutes is derived from the next task's own effective start time");
+  // Smart To-Do List task: resolveMinutesUntilNextTask is now a one-line
+  // delegating wrapper around arc/dailyPlan.ts's own exported
+  // resolveFreeMinutesUntilNextTask (promoted there so arc/todoList.ts's
+  // smart-fit engine shares the exact same computation) -- the actual
+  // Math.max(0, ...) logic now lives there, not here.
+  const liveFnIndex = liveScreen.indexOf("function resolveMinutesUntilNextTask(");
+  const liveFnBody = liveScreen.slice(liveFnIndex, liveScreen.indexOf("\n}", liveFnIndex));
+  assert.ok(liveFnBody.includes("resolveFreeMinutesUntilNextTask(scheduled, now, excludeTaskId)"));
+  const planFnIndex = dailyPlanModule.indexOf("export function resolveFreeMinutesUntilNextTask(");
+  const planFnBody = dailyPlanModule.slice(planFnIndex, dailyPlanModule.indexOf("\n}", planFnIndex));
+  assert.ok(planFnBody.includes("Math.max(0, startMinutes - nowMinutes)"), "available minutes is derived from the next task's own effective start time");
   const clampIndex = liveScreen.indexOf("const clampedTempDuration = availableMinutes !== null ? Math.max(1, Math.min(requestedTempDuration, availableMinutes)) : requestedTempDuration;");
   assert.ok(clampIndex !== -1, "a longer request is clamped DOWN to availableMinutes (e.g. 15 requested, 10 available -> 10); a shorter request (e.g. 5 requested, 10 available) passes through Math.min unchanged, since 5 < 10");
 });
@@ -243,16 +252,16 @@ test("22. The maximum duration is RECALCULATED at the moment the timer actually 
   assert.ok(fnBody.includes("Math.max(1, Math.min(requested, availableMinutes))"), "the trainee's own requested minutes, clamped against the FRESH availableMinutes -- never the session's own already-stale selectedActionDurationMinutes used directly");
 });
 
-test("23. No overlapping temporary timer is created when the next scheduled task is already due -- resolveMinutesUntilNextTask clamps to zero (never negative) once the next entry's own start has passed", () => {
-  const fnIndex = liveScreen.indexOf("function resolveMinutesUntilNextTask(");
-  const fnBody = liveScreen.slice(fnIndex, liveScreen.indexOf("\n}", fnIndex));
-  assert.ok(fnBody.includes("Math.max(0,"), "never negative -- a passed start time clamps to exactly zero available minutes, so a 1-minute floor (never a full-length overlapping timer) is all createTemporaryActionTask can create");
+test("23. No overlapping temporary timer is created when the next scheduled task is already due -- resolveFreeMinutesUntilNextTask clamps to zero (never negative) once the next entry's own start has passed", () => {
+  const planFnIndex = dailyPlanModule.indexOf("export function resolveFreeMinutesUntilNextTask(");
+  const planFnBody = dailyPlanModule.slice(planFnIndex, dailyPlanModule.indexOf("\n}", planFnIndex));
+  assert.ok(planFnBody.includes("Math.max(0,"), "never negative -- a passed start time clamps to exactly zero available minutes, so a 1-minute floor (never a full-length overlapping timer) is all createTemporaryActionTask can create");
 });
 
 test("24. No upcoming task permits choosing a duration without any schedule-based limit", () => {
-  const fnIndex = liveScreen.indexOf("function resolveMinutesUntilNextTask(");
-  const fnBody = liveScreen.slice(fnIndex, liveScreen.indexOf("\n}", fnIndex));
-  assert.ok(fnBody.includes("if (!next || next.effectiveStartTime === null) return null;"), "null when nothing is scheduled next");
+  const planFnIndex = dailyPlanModule.indexOf("export function resolveFreeMinutesUntilNextTask(");
+  const planFnBody = dailyPlanModule.slice(planFnIndex, dailyPlanModule.indexOf("\n}", planFnIndex));
+  assert.ok(planFnBody.includes("if (!next || next.effectiveStartTime === null) return null;"), "null when nothing is scheduled next");
   const clampIndex = liveScreen.indexOf("const durationMinutes = availableMinutes !== null ? Math.max(1, Math.min(requested, availableMinutes)) : requested;");
   assert.ok(clampIndex !== -1, "a null availableMinutes leaves the trainee's own requested duration completely unclamped");
 });
@@ -305,7 +314,13 @@ test("29. ARC completion offers the EXACT previously selected action -- returnTo
   // ARCHI -- ARC Result task, section 3: this branch now routes through
   // routeToTaskOrArcResultSuggestion (session.selectedActionTaskId still
   // passed verbatim, never re-derived) instead of a bare router.replace.
-  assert.ok(liveScreen.slice(scheduledIndex, temporaryIndex).includes("routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false)"));
+  // Smart To-Do List task, section 9: it now also threads
+  // session.selectedActionDurationMinutes through as that call's own
+  // optional splitMinutes argument -- null for every ordinary (non-split)
+  // selection, so this is purely additive.
+  assert.ok(
+    liveScreen.slice(scheduledIndex, temporaryIndex).includes("routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false, session.selectedActionDurationMinutes)")
+  );
 });
 
 test("30. The active task's own timer is preserved/restored -- returnToTask never writes to the Task Timer Run storage at all, for any destination", () => {

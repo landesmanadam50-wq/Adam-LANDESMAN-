@@ -349,9 +349,16 @@ import { findPairedArcResultForSituation, hasLinkedArcResult } from "../arc/arcR
 // Screen/next-task display already use -- never a second "what's
 // scheduled today" engine.
 import { resolveTodaysScheduledPlan } from "../data/dailyPlan.ts";
-import { resolveCurrentTaskState } from "../arc/dailyPlan.ts";
+import { resolveFreeMinutesUntilNextTask } from "../arc/dailyPlan.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
-import { parseClockTimeToMinutes } from "../arc/dailyRoutine.ts";
+// Smart To-Do List task, section 9: the SAME "today's To-Do items" IO
+// wrapper build/FlexibleDailyScreen.tsx's own reload() uses (data/todoList.ts),
+// and the ONE wrapper that layers a To-Do suggestion on top of
+// resolveCurrentTaskState without changing it (arc/todoList.ts) -- never a
+// second, competing "what's next" mechanism.
+import { resolveTodaysTodoList } from "../data/todoList.ts";
+import { resolveCurrentTaskStateWithTodoSuggestion } from "../arc/todoList.ts";
+import type { TodoPlanEntry, TodoSuggestionReason } from "../arc/todoList.ts";
 import { createEmptyTask, generateTaskId } from "../arc/tasks.ts";
 import { reconcileTaskAlarms } from "../data/taskAlarm.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
@@ -397,14 +404,16 @@ const ACTION_ENDING_SUGGESTIONS = ["התחלתי את הצעד הראשון", "�
  * central resolveCurrentTaskState instead of the superseded
  * resolveNextScheduledTaskAfter, so this never clamps against a task
  * whose own scheduled window has already passed.
+ *
+ * Smart To-Do List task: this is now a one-line delegating wrapper
+ * around arc/dailyPlan.ts's own exported resolveFreeMinutesUntilNextTask
+ * (promoted there so arc/todoList.ts's smart-fit engine can share the
+ * exact same computation) -- kept here, under this exact name and
+ * signature, only because several existing tests pin this literal
+ * function declaration.
  */
 function resolveMinutesUntilNextTask(scheduled: ScheduledPlanEntry[], excludeTaskId: string, now: Date): number | null {
-  const { next } = resolveCurrentTaskState(scheduled, now, null, excludeTaskId);
-  if (!next || next.effectiveStartTime === null) return null;
-  const startMinutes = parseClockTimeToMinutes(next.effectiveStartTime);
-  if (startMinutes === null) return null;
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  return Math.max(0, startMinutes - nowMinutes);
+  return resolveFreeMinutesUntilNextTask(scheduled, now, excludeTaskId);
 }
 
 /**
@@ -701,6 +710,15 @@ export default function NewArcLiveScreen({
    * Promise.all.
    */
   const [dailyPlanEntries, setDailyPlanEntries] = useState<ScheduledPlanEntry[]>([]);
+  /**
+   * Smart To-Do List task, section 9: today's own To-Do items, loaded
+   * alongside dailyPlanEntries in reload() -- renderActionSelector()
+   * reads both together, through resolveCurrentTaskStateWithTodoSuggestion
+   * (arc/todoList.ts), never resolveCurrentTaskState directly, so a due
+   * scheduled task still always wins and a To-Do suggestion only ever
+   * appears when there truly is no current scheduled task.
+   */
+  const [todoEntries, setTodoEntries] = useState<TodoPlanEntry[]>([]);
   const [tempActionTitleDraft, setTempActionTitleDraft] = useState("");
   const [tempActionDurationDraft, setTempActionDurationDraft] = useState("10");
   const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -740,12 +758,14 @@ export default function NewArcLiveScreen({
       loadInternalActionTimerRun(),
       loadTaskTimerRun(),
       resolveTodaysScheduledPlan(nowDate),
+      resolveTodaysTodoList(nowDate),
       loadArcSavedBodyOptions(),
       loadArcSavedExercises(),
-    ]).then(([task, existing, items, beliefs, arcGymSituations, internalActionRun, taskTimerRun, scheduledPlan, arcSavedBodyOptions, arcSavedExercises]) => {
+    ]).then(([task, existing, items, beliefs, arcGymSituations, internalActionRun, taskTimerRun, scheduledPlan, todoList, arcSavedBodyOptions, arcSavedExercises]) => {
       if (!task) return;
       setInternalActionRun(internalActionRun);
       setDailyPlanEntries(scheduledPlan);
+      setTodoEntries(todoList);
       const now = nowDate.toISOString();
       const plannedArcsById = new Map<string, PlannedArc>(items.map((item) => [item.id, item]));
       const beliefsById = new Map<string, ArcBelief>(beliefs.map((belief) => [belief.id, belief]));
@@ -1294,16 +1314,24 @@ export default function NewArcLiveScreen({
    * auto-starts -- "never automatically start a task timer merely
    * because the user opened or skipped an ARC Result suggestion."
    */
-  async function routeToTaskOrArcResultSuggestion(targetTaskId: string, autoStart: boolean) {
+  /**
+   * Smart To-Do List task, section 9: `splitMinutes` (optional, default
+   * null) threads a To-Do split's own chosen duration through to
+   * whichever navigation actually happens below -- every pre-existing
+   * call site either omits it or passes null explicitly, so its own
+   * behavior is completely unchanged.
+   */
+  async function routeToTaskOrArcResultSuggestion(targetTaskId: string, autoStart: boolean, splitMinutes: number | null = null) {
     const exercises = await loadArcResultExercises();
+    const splitParam = splitMinutes !== null ? { splitMinutes: String(splitMinutes) } : {};
     if (hasLinkedArcResult(exercises, targetTaskId)) {
       router.replace({
         pathname: "/arc-result-suggestion",
-        params: autoStart ? { taskId: targetTaskId, autoStart: "1" } : { taskId: targetTaskId },
+        params: { taskId: targetTaskId, ...(autoStart ? { autoStart: "1" } : {}), ...splitParam },
       });
       return;
     }
-    router.replace(autoStart ? { pathname: "/tasks/[id]", params: { id: targetTaskId, autoStart: "1" } } : { pathname: "/tasks/[id]", params: { id: targetTaskId } });
+    router.replace({ pathname: "/tasks/[id]", params: { id: targetTaskId, ...(autoStart ? { autoStart: "1" } : {}), ...splitParam } });
   }
 
   async function returnToTask(autoStart: boolean) {
@@ -1450,7 +1478,12 @@ export default function NewArcLiveScreen({
     // the trainee still taps Start themselves ("never start a task
     // automatically without explicit user action").
     if (session?.selectedActionSource === "scheduledTask" && session.selectedActionTaskId) {
-      await routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false);
+      // Smart To-Do List task, section 9: selectedActionDurationMinutes
+      // is non-null here ONLY for a To-Do item accepted as a split
+      // suggestion (setSelectedAction's own doc) -- every ordinary
+      // scheduled/due-task selection leaves it null, so this call's
+      // behavior for them is exactly as before this field existed.
+      await routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false, session.selectedActionDurationMinutes);
       return;
     }
     // A temporary action is created now, at this exact moment -- never
@@ -1799,7 +1832,15 @@ export default function NewArcLiveScreen({
     // entry) at 6:40am, since the old resolveNextScheduledTaskAfter/
     // isScheduledPlanEntryOverdue pair never checked whether the entry's
     // own scheduled window had already passed.
-    const { current: currentEntry, next: nextEntry } = resolveCurrentTaskState(dailyPlanEntries, nowDate, null, taskId);
+    // Smart To-Do List task, section 9: the wrapper that layers a To-Do
+    // suggestion on top of resolveCurrentTaskState WITHOUT changing it --
+    // a due scheduled task still always wins (todoSuggestion is null
+    // whenever currentEntry is non-null).
+    const {
+      current: currentEntry,
+      next: nextEntry,
+      todoSuggestion,
+    } = resolveCurrentTaskStateWithTodoSuggestion(dailyPlanEntries, todoEntries, nowDate, null, taskId);
     const candidates = dailyPlanEntries.filter((entry) => entry.task.id !== taskId && !entry.isCompletedToday && entry.task.status !== "archived");
     const shownEntryId = currentEntry?.task.id ?? nextEntry?.task.id ?? null;
     const laterCandidates = shownEntryId ? candidates.filter((entry) => entry.task.id !== shownEntryId) : candidates;
@@ -1829,6 +1870,36 @@ export default function NewArcLiveScreen({
       if (!title) return;
       commit(setSelectedAction(session!, { source: "temporaryAction", title, durationMinutes: clampedTempDuration }, now));
     }
+    // Smart To-Do List task, section 9: accepting the suggested To-Do
+    // item (ordinary fit or a split) is just another "scheduledTask"
+    // selection -- same shape every other option here already uses, so
+    // taskId identity and returnToTask routing stay exactly the same.
+    // splitDurationMinutes is only ever set when the suggestion is
+    // itself a split (isSplit), so the resulting timer runs for just
+    // that chosen split's duration, never the task's full remaining one.
+    function chooseTodoSuggestion() {
+      if (!todoSuggestion?.entry) return;
+      commit(
+        setSelectedAction(
+          session!,
+          {
+            source: "scheduledTask",
+            taskId: todoSuggestion.entry.task.id,
+            title: todoSuggestion.entry.task.title,
+            firstAction: todoSuggestion.entry.task.firstAction?.trim() || null,
+            splitDurationMinutes: todoSuggestion.isSplit ? todoSuggestion.suggestedDurationMinutes : null,
+          },
+          now
+        )
+      );
+    }
+    const todoSuggestionReasonText: Record<TodoSuggestionReason, string> = {
+      fits: "יש זמן פנוי מתאים עד המשימה המתוזמנת הבאה.",
+      split_suggested: "המשימה הזו ארוכה מהזמן הפנוי שנותר -- מוצע לבצע רק חלק ממנה כעת ולהשלים את השאר בהמשך.",
+      top_priority_does_not_fit: "אין מספיק זמן פנוי למשימת ה-To-Do בעלת העדיפות הגבוהה ביותר כעת, ואין משימת To-Do אחרת שמתאימה.",
+      none_available: "אין משימת To-Do שמתאימה כרגע.",
+      no_todo_items: "אין פריטי To-Do להיום.",
+    };
 
     return (
       <View>
@@ -1850,6 +1921,28 @@ export default function NewArcLiveScreen({
                 <Text style={styles.optionText}>{currentEntry.effectiveStartTime ? `${currentEntry.task.title} -- ${currentEntry.effectiveStartTime}` : currentEntry.task.title}</Text>
               </Pressable>
             </View>
+          </View>
+        )}
+        {/*
+         * Smart To-Do List task, section 9: shown only while there is
+         * truly no currently-due scheduled task (a due scheduled task
+         * always wins -- see resolveCurrentTaskStateWithTodoSuggestion's
+         * own doc) AND the engine actually found a To-Do item to
+         * suggest. Displays the required 4 pieces of information
+         * together: the suggested task's title, its first action, the
+         * recommended duration, and the reason for the suggestion.
+         */}
+        {!currentEntry && todoSuggestion?.entry && (
+          <View style={styles.supportiveFeelingSection}>
+            <Text style={styles.supportiveFeelingLabel}>מוצע כעת (To-Do)</Text>
+            <View style={styles.chipColumn}>
+              <Pressable style={styles.optionRow} onPress={chooseTodoSuggestion}>
+                <Text style={styles.optionText}>{todoSuggestion.entry.task.title}</Text>
+              </Pressable>
+            </View>
+            {todoSuggestion.entry.task.firstAction && <Text style={styles.hint}>{`פעולה ראשונה: ${todoSuggestion.entry.task.firstAction}`}</Text>}
+            {todoSuggestion.suggestedDurationMinutes !== null && <Text style={styles.hint}>{`משך מוצע: ${todoSuggestion.suggestedDurationMinutes} דק'`}</Text>}
+            <Text style={styles.hint}>{todoSuggestionReasonText[todoSuggestion.reason]}</Text>
           </View>
         )}
         {!currentEntry && nextEntry && (

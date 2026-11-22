@@ -91,6 +91,8 @@ import { normalizeTaskReflection } from "../arc/taskReflection.ts";
 import type { TaskReflection } from "../arc/taskReflection.ts";
 import { normalizeTaskStageProgress } from "../arc/taskStageProgress.ts";
 import type { TaskStageProgress } from "../arc/taskStageProgress.ts";
+import { normalizeTodoSplitSession } from "../arc/todoSplitSession.ts";
+import type { TodoSplitSession } from "../arc/todoSplitSession.ts";
 import type { TaskTimerRun } from "../arc/taskTimer.ts";
 import type { TaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
 import type { TaskOccurrenceOverride } from "../arc/taskOccurrenceOverride.ts";
@@ -2327,10 +2329,16 @@ export async function saveTaskTimerRun(run: TaskTimerRun): Promise<void> {
  * completion, early finish, postponement) automatically stays correct
  * with no change of its own, rather than needing a second clear call
  * added at each one individually.
+ *
+ * Smart To-Do List task: the same reasoning applies to TodoSplitSession
+ * (arc/todoSplitSession.ts) -- a split session is only ever meaningful
+ * for the one TaskTimerRun it was started alongside, so it is cleared
+ * here too, with zero changes needed at any existing call site.
  */
 export async function clearTaskTimerRun(): Promise<void> {
   await AsyncStorage.removeItem(TASK_TIMER_RUN_KEY);
   await AsyncStorage.removeItem(TASK_STAGE_PROGRESS_KEY);
+  await AsyncStorage.removeItem(TODO_SPLIT_SESSION_KEY);
 }
 
 /**
@@ -2356,6 +2364,31 @@ export async function loadTaskStageProgress(): Promise<TaskStageProgress | null>
 
 export async function saveTaskStageProgress(progress: TaskStageProgress): Promise<void> {
   await AsyncStorage.setItem(TASK_STAGE_PROGRESS_KEY, JSON.stringify(progress));
+}
+
+/**
+ * Smart To-Do List task, optional splitting: single-slot store for the
+ * ONE in-flight TodoSplitSession (arc/todoSplitSession.ts), exact mirror
+ * of TASK_STAGE_PROGRESS_KEY's own convention above -- see
+ * clearTaskTimerRun's own doc for why the two are always cleared
+ * together. Absent/null means the current TaskTimerRun (if any) is an
+ * ordinary, non-split session.
+ */
+const TODO_SPLIT_SESSION_KEY = "archi.todoSplitSession.v1";
+
+export async function loadTodoSplitSession(): Promise<TodoSplitSession | null> {
+  const raw = await AsyncStorage.getItem(TODO_SPLIT_SESSION_KEY);
+  if (!raw) return null;
+  try {
+    return normalizeTodoSplitSession(JSON.parse(raw) as TodoSplitSession);
+  } catch (error) {
+    console.warn("[storage] Stored TodoSplitSession is not valid JSON -- treating as none rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveTodoSplitSession(session: TodoSplitSession): Promise<void> {
+  await AsyncStorage.setItem(TODO_SPLIT_SESSION_KEY, JSON.stringify(session));
 }
 
 /** Single-slot read, exact mirror of loadTaskTimerRun's own shape -- null when no ARC LIVE session is currently in progress. The session must survive backgrounding and app restart (the task's own explicit requirement); this is the only mechanism that provides that, written on every step transition by live/NewArcLiveScreen.tsx. */

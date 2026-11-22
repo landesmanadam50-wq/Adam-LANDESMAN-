@@ -74,6 +74,21 @@ export interface TaskDraft {
   mainId: string;
   mainDescription: string;
   mainDurationMinutes: string;
+  /**
+   * Smart To-Do List task: true marks this task as a To-Do item (no
+   * fixed start time, shown only in the Flexible Daily Schedule's own
+   * "To-Do List" tab) -- see Task.isTodoItem's own doc. Mutually
+   * exclusive with scheduledTime, enforced by validateTaskDraft below.
+   * todoOrder/todoCompletedMinutes are deliberately NOT editor-facing
+   * fields -- they are only ever changed by the Time Planning popup's
+   * own reorder/re-sort/split actions, never by this screen, so
+   * buildTaskFromDraft always carries them through from `base` untouched.
+   */
+  isTodoItem: boolean;
+  /** Text, not a number, same "never throws on a partial value" convention as expectedDurationMinutes -- parsed/validated only at build time. 1-10. */
+  todoUrgency: string;
+  todoImportance: string;
+  todoIsSplittable: boolean;
 }
 
 export function createEmptyTaskDraft(): TaskDraft {
@@ -113,6 +128,10 @@ export function createEmptyTaskDraft(): TaskDraft {
     mainId: "",
     mainDescription: "",
     mainDurationMinutes: "",
+    isTodoItem: false,
+    todoUrgency: "5",
+    todoImportance: "5",
+    todoIsSplittable: true,
   };
 }
 
@@ -141,6 +160,10 @@ export function taskDraftFromTask(task: Task): TaskDraft {
     manifestBodyLanguageDescription: task.manifestProfile?.bodyLanguageDescription ?? "",
     arcWindowMinutesBefore: task.arcWindowMinutesBefore !== null ? String(task.arcWindowMinutesBefore) : "",
     ...taskActionStagesToDraftFields(task.actionStages),
+    isTodoItem: task.isTodoItem,
+    todoUrgency: String(task.todoUrgency),
+    todoImportance: String(task.todoImportance),
+    todoIsSplittable: task.todoIsSplittable,
   };
 }
 
@@ -249,6 +272,18 @@ export function validateTaskDraft(draft: TaskDraft): string[] {
     if (!Number.isFinite(minutes) || minutes <= 0) errors.push("חלון ה-ARC לפני המשימה חייב להיות מספר דקות חיובי.");
   }
 
+  // Smart To-Do List task: a To-Do item (no fixed start time) and a
+  // scheduled time are mutually exclusive by definition -- see
+  // Task.isTodoItem's own doc. Urgency/importance are only meaningful
+  // (and only validated) once isTodoItem is actually selected.
+  if (draft.isTodoItem && draft.scheduledTime.trim()) {
+    errors.push("משימת To-Do לא יכולה לקבל שעת התחלה קבועה.");
+  }
+  if (draft.isTodoItem) {
+    if (!isIntegerInRange(draft.todoUrgency, 1, 10)) errors.push("דירוג הדחיפות חייב להיות מספר שלם בין 1 ל-10.");
+    if (!isIntegerInRange(draft.todoImportance, 1, 10)) errors.push("דירוג החשיבות חייב להיות מספר שלם בין 1 ל-10.");
+  }
+
   // Unified Task Stages task, requirement 1: "every task must have a
   // main action" once stages are enabled at all; the two OPTIONAL
   // stages (trigger/small) are validated only when the trainee actually
@@ -272,6 +307,13 @@ export function validateTaskDraft(draft: TaskDraft): string[] {
 function isPositiveMinutes(value: string): boolean {
   const minutes = Number(value.trim());
   return value.trim() !== "" && Number.isFinite(minutes) && minutes > 0;
+}
+
+function isIntegerInRange(value: string, min: number, max: number): boolean {
+  const trimmed = value.trim();
+  if (trimmed === "") return false;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed >= min && parsed <= max;
 }
 
 /**
@@ -332,12 +374,19 @@ export function buildTaskFromDraft(draft: TaskDraft, base: Task, now: string): T
     // an unreasonable thing for a trainee to do; defaulting to today
     // here closes that gap at the exact point a draft becomes a real
     // Task, for every "once" task that has a time but no date.
+    // Smart To-Do List task: a To-Do item has no scheduledTime, but it
+    // still needs a scheduledDate to appear in any day's To-Do tab at
+    // all (resolveTodoList filters by exact date match) -- defaulting
+    // to today here, same rationale as the existing "a time but no
+    // date defaults to today" fix just below, for the exact same reason
+    // (a task record with neither would otherwise be silently invisible
+    // to every consumer).
     scheduledDate: draft.scheduledDate.trim()
       ? draft.scheduledDate.trim()
-      : draft.recurrenceKind === "once" && draft.scheduledTime.trim()
+      : draft.isTodoItem || (draft.recurrenceKind === "once" && draft.scheduledTime.trim())
         ? todayLocalDateString(new Date(now))
         : null,
-    scheduledTime: draft.scheduledTime.trim() ? draft.scheduledTime.trim() : null,
+    scheduledTime: draft.isTodoItem ? null : draft.scheduledTime.trim() ? draft.scheduledTime.trim() : null,
     // Unified Task Stages task: once stages are enabled, their own sum
     // IS the task's total planned duration (requirement 3's own worked
     // example, 2+3+25=30) -- every pre-existing reader of
@@ -352,7 +401,12 @@ export function buildTaskFromDraft(draft: TaskDraft, base: Task, now: string): T
     // base.currentAction is only ever truly unset for a brand-new base (createEmptyTask with an empty firstAction, see emptyTaskBase) -- an EXISTING task's own narrowed currentAction (arc/tasks.ts's setTaskCurrentAction) must never be silently reset back to firstAction just because this screen re-saved the record.
     currentAction: base.currentAction && base.currentAction.trim().length > 0 ? base.currentAction : draft.firstAction.trim(),
     subtasks: draft.subtasks,
-    recurrence: draft.recurrenceKind === "recurring" ? { kind: "recurring", daysOfWeek: draft.recurrenceDays } : { kind: "once" },
+    // Smart To-Do List task: a To-Do item is ALWAYS one-off (see
+    // arc/tasks.ts's own doc on why -- every edit then stays scoped to
+    // one date by construction) -- this overrides recurrenceKind
+    // regardless of whatever the recurrence controls happen to show,
+    // since the editor UI hides/ignores them while isTodoItem is on.
+    recurrence: draft.isTodoItem ? { kind: "once" } : draft.recurrenceKind === "recurring" ? { kind: "recurring", daysOfWeek: draft.recurrenceDays } : { kind: "once" },
     linkedArcGoalId: draft.linkedArcGoalId,
     linkedArcBuildId: draft.linkedArcBuildId,
     reason: draft.reason.trim() ? draft.reason.trim() : null,
@@ -362,6 +416,16 @@ export function buildTaskFromDraft(draft: TaskDraft, base: Task, now: string): T
     taskKind: draft.taskKind,
     manifestProfile: draft.taskKind === "manifest" ? buildManifestProfileFromDraft(draft) : null,
     arcWindowMinutesBefore: draft.arcWindowMinutesBefore.trim() ? Number(draft.arcWindowMinutesBefore) : null,
+    isTodoItem: draft.isTodoItem,
+    todoUrgency: draft.isTodoItem ? Number(draft.todoUrgency) : base.todoUrgency,
+    todoImportance: draft.isTodoItem ? Number(draft.todoImportance) : base.todoImportance,
+    // todoOrder/todoCompletedMinutes are never edited from this screen --
+    // see TaskDraft.isTodoItem's own doc -- so they always carry through
+    // from `base` untouched, exactly like status/postponement/notification
+    // fields this draft never touches.
+    todoOrder: base.todoOrder,
+    todoIsSplittable: draft.isTodoItem ? draft.todoIsSplittable : base.todoIsSplittable,
+    todoCompletedMinutes: base.todoCompletedMinutes,
     updatedAt: now,
   };
 }

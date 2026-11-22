@@ -90,6 +90,12 @@ export function resolveDailyPlan(
 
   for (const task of tasks) {
     if (task.status === "archived") continue;
+    // Smart To-Do List task: a To-Do item (no fixed start time) never
+    // enters the chronological Flexible Daily plan at all -- it is
+    // resolved only by arc/todoList.ts's own resolveTodoList, never by
+    // applyScheduleMode's auto-chaining, which would otherwise place it
+    // onto the timeline the moment an earlier entry anchors the cursor.
+    if (task.isTodoItem) continue;
 
     if (task.recurrence.kind === "recurring") {
       if (!isRecurringOccurrenceVisibleOnDate(task, date, dateLocal, overrides)) continue;
@@ -423,4 +429,33 @@ export function resolveAutoScheduleWriteBacks(scheduled: ScheduledPlanEntry[]): 
     writeBacks.push({ taskId: entry.task.id, occurrenceDateLocal: entry.occurrenceDateLocal, scheduledTime: entry.effectiveStartTime });
   }
   return writeBacks;
+}
+
+/**
+ * ARCHI -- Unified Final Specification task, section 4 ("TEMPORARY
+ * ACTIONS BEFORE THE NEXT SCHEDULED TASK") / Smart To-Do List task:
+ * the time remaining until the next real, not-yet-completed scheduled
+ * entry today -- null when none exists at all ("if no upcoming task
+ * exists, allow choosing duration without a schedule-based limit"),
+ * otherwise clamped to zero (never negative) when that entry's own
+ * effective start has already passed. A pure function over an
+ * already-resolved plan, exactly like every other arc/dailyPlan.ts
+ * reader -- never re-derives "today" or "effective" itself.
+ * `excludeTaskId` drops the caller's own (possibly non-existent/
+ * standalone) taskId, same null-safe exclusion resolveCurrentTaskState
+ * already takes.
+ *
+ * Promoted here (from a module-local function of the same name/
+ * signature that used to live only in live/NewArcLiveScreen.tsx) so
+ * arc/todoList.ts's own smart-fit recommendation engine can share the
+ * EXACT same "how much free time is there" computation -- never a
+ * second, competing one.
+ */
+export function resolveFreeMinutesUntilNextTask(scheduled: ScheduledPlanEntry[], now: Date, excludeTaskId: string | null): number | null {
+  const { next } = resolveCurrentTaskState(scheduled, now, null, excludeTaskId);
+  if (!next || next.effectiveStartTime === null) return null;
+  const startMinutes = parseClockTimeToMinutes(next.effectiveStartTime);
+  if (startMinutes === null) return null;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  return Math.max(0, startMinutes - nowMinutes);
 }

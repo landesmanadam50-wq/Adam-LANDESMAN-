@@ -1607,3 +1607,26 @@ test("arcSavingBodyOptionId/arcSavingExerciseId default to null for every pre-ex
   assert.equal(state.arcSavingExerciseId, null);
   assert.equal(state.arcSavingTriggerIdForNewOption, null);
 });
+
+// --- Smart To-Do List task, section 9: setSelectedAction's new optional splitDurationMinutes ---
+
+test("setSelectedAction stores splitDurationMinutes into selectedActionDurationMinutes for a scheduledTask selection that is a To-Do split suggestion", () => {
+  const state = setSelectedAction(
+    fresh(),
+    { source: "scheduledTask", taskId: "todo-1", title: "ללמוד כלכלה", firstAction: "לפתוח את הספר", splitDurationMinutes: 30 },
+    NOW
+  );
+  assert.equal(state.selectedActionSource, "scheduledTask");
+  assert.equal(state.selectedActionTaskId, "todo-1");
+  assert.equal(state.selectedActionDurationMinutes, 30, "the chosen split's own minute count, never the task's full remaining duration");
+});
+
+test("every ordinary (non-split) scheduledTask selection still leaves selectedActionDurationMinutes null -- omitting splitDurationMinutes changes nothing from before this field existed", () => {
+  const state = setSelectedAction(fresh(), { source: "scheduledTask", taskId: "task-1", title: "לקנות חלב", firstAction: "לצאת מהבית" }, NOW);
+  assert.equal(state.selectedActionDurationMinutes, null);
+});
+
+test("an explicit splitDurationMinutes of null behaves exactly like omitting it", () => {
+  const state = setSelectedAction(fresh(), { source: "scheduledTask", taskId: "task-1", title: "לקנות חלב", firstAction: null, splitDurationMinutes: null }, NOW);
+  assert.equal(state.selectedActionDurationMinutes, null);
+});

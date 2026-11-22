@@ -28,6 +28,9 @@ import MonthlyCalendar from "../live/components/MonthlyCalendar.tsx";
 
 const RECURRENCE_DAY_LABELS = ["יום א׳", "יום ב׳", "יום ג׳", "יום ד׳", "יום ה׳", "יום ו׳", "שבת"];
 
+/** Smart To-Do List task: the fixed 1-10 chip scale shared by the urgency and importance pickers below. */
+const TODO_RATING_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
 /** A live, display-only total while the trainee is still typing -- an invalid/partial duration field contributes 0 rather than NaN, never blocking the running total from showing something sensible; the actual saved total is always recomputed properly (arc/taskDraft.ts's buildTaskFromDraft) after validateTaskDraft passes. */
 function resolveDraftStageTotalMinutes(draft: TaskDraft): number {
   const triggerMinutes = draft.triggerEnabled ? Number(draft.triggerDurationMinutes) || 0 : 0;
@@ -320,6 +323,68 @@ export default function TaskEditorScreen({
           />
         </Field>
 
+        {/*
+          Smart To-Do List task: a To-Do item has no fixed start time at
+          all -- it lives only in the Flexible Daily Schedule's own
+          "To-Do List" tab, where urgency/importance decide its priority
+          order instead. Selecting it hides the scheduled-time field
+          below and the recurrence block further down (a To-Do item is
+          always one-off -- see arc/taskDraft.ts's buildTaskFromDraft).
+        */}
+        <Field label="סוג המשימה">
+          <View style={styles.chipRow}>
+            <Pressable style={[styles.chip, !draft.isTodoItem && styles.chipSelected]} onPress={() => setDraft({ ...draft, isTodoItem: false })}>
+              <Text style={styles.chipText}>משימה מתוזמנת</Text>
+            </Pressable>
+            <Pressable style={[styles.chip, draft.isTodoItem && styles.chipSelected]} onPress={() => setDraft({ ...draft, isTodoItem: true, scheduledTime: "" })}>
+              <Text style={styles.chipText}>משימת To-Do (בלי שעה קבועה)</Text>
+            </Pressable>
+          </View>
+        </Field>
+
+        {draft.isTodoItem && (
+          <>
+            <Field label="דחיפות (1 נמוך -- 10 גבוה)">
+              <View style={styles.chipRow}>
+                {TODO_RATING_VALUES.map((value) => (
+                  <Pressable
+                    key={value}
+                    style={[styles.chip, draft.todoUrgency === String(value) && styles.chipSelected]}
+                    onPress={() => setDraft({ ...draft, todoUrgency: String(value) })}
+                  >
+                    <Text style={styles.chipText}>{value}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Field>
+
+            <Field label="חשיבות (1 נמוך -- 10 גבוה)">
+              <View style={styles.chipRow}>
+                {TODO_RATING_VALUES.map((value) => (
+                  <Pressable
+                    key={value}
+                    style={[styles.chip, draft.todoImportance === String(value) && styles.chipSelected]}
+                    onPress={() => setDraft({ ...draft, todoImportance: String(value) })}
+                  >
+                    <Text style={styles.chipText}>{value}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Field>
+
+            <Field label="ניתן לפצל את המשימה למספר חלקים?">
+              <View style={styles.chipRow}>
+                <Pressable style={[styles.chip, draft.todoIsSplittable && styles.chipSelected]} onPress={() => setDraft({ ...draft, todoIsSplittable: true })}>
+                  <Text style={styles.chipText}>ניתן לפצל</Text>
+                </Pressable>
+                <Pressable style={[styles.chip, !draft.todoIsSplittable && styles.chipSelected]} onPress={() => setDraft({ ...draft, todoIsSplittable: false })}>
+                  <Text style={styles.chipText}>לא ניתן לפצל</Text>
+                </Pressable>
+              </View>
+            </Field>
+          </>
+        )}
+
         <Field label="תאריך מתוכנן (YYYY-MM-DD, רשות)">
           <TextInput
             style={styles.textInput}
@@ -333,15 +398,17 @@ export default function TaskEditorScreen({
           </Pressable>
         </Field>
 
-        <Field label="שעה מתוכננת (HH:MM, רשות)">
-          <TextInput
-            style={styles.textInput}
-            value={draft.scheduledTime}
-            onChangeText={(scheduledTime) => setDraft({ ...draft, scheduledTime })}
-            textAlign="right"
-            placeholder="09:30"
-          />
-        </Field>
+        {!draft.isTodoItem && (
+          <Field label="שעה מתוכננת (HH:MM, רשות)">
+            <TextInput
+              style={styles.textInput}
+              value={draft.scheduledTime}
+              onChangeText={(scheduledTime) => setDraft({ ...draft, scheduledTime })}
+              textAlign="right"
+              placeholder="09:30"
+            />
+          </Field>
+        )}
 
         {!draft.stagesEnabled && (
           <Field label="משך מתוכנן בדקות (רשות)">
@@ -506,41 +573,44 @@ export default function TaskEditorScreen({
           </View>
         </Field>
 
-        <Field label="חזרתיות">
-          <View style={styles.chipRow}>
-            <Pressable
-              style={[styles.chip, draft.recurrenceKind === "once" && styles.chipSelected]}
-              onPress={() => setDraft({ ...draft, recurrenceKind: "once" })}
-            >
-              <Text style={styles.chipText}>חד-פעמית</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.chip, draft.recurrenceKind === "recurring" && styles.chipSelected]}
-              onPress={() => setDraft({ ...draft, recurrenceKind: "recurring" })}
-            >
-              <Text style={styles.chipText}>חזרתית</Text>
-            </Pressable>
-          </View>
-          {draft.recurrenceKind === "recurring" && (
+        {/* Smart To-Do List task: a To-Do item is ALWAYS one-off -- see arc/taskDraft.ts's own buildTaskFromDraft -- so this whole block is irrelevant while draft.isTodoItem is on. */}
+        {!draft.isTodoItem && (
+          <Field label="חזרתיות">
             <View style={styles.chipRow}>
-              {RECURRENCE_DAY_LABELS.map((label, dayOfWeek) => (
-                <Pressable
-                  key={dayOfWeek}
-                  style={[styles.chip, draft.recurrenceDays.includes(dayOfWeek) && styles.chipSelected]}
-                  onPress={() => setDraft(toggleRecurrenceDayInDraft(draft, dayOfWeek))}
-                >
-                  <Text style={styles.chipText}>{label}</Text>
-                </Pressable>
-              ))}
               <Pressable
-                style={[styles.chip, draft.recurrenceDays.length === 7 && styles.chipSelected]}
-                onPress={() => setDraft(selectAllRecurrenceDaysInDraft(draft))}
+                style={[styles.chip, draft.recurrenceKind === "once" && styles.chipSelected]}
+                onPress={() => setDraft({ ...draft, recurrenceKind: "once" })}
               >
-                <Text style={styles.chipText}>כל הימים</Text>
+                <Text style={styles.chipText}>חד-פעמית</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.chip, draft.recurrenceKind === "recurring" && styles.chipSelected]}
+                onPress={() => setDraft({ ...draft, recurrenceKind: "recurring" })}
+              >
+                <Text style={styles.chipText}>חזרתית</Text>
               </Pressable>
             </View>
-          )}
-        </Field>
+            {draft.recurrenceKind === "recurring" && (
+              <View style={styles.chipRow}>
+                {RECURRENCE_DAY_LABELS.map((label, dayOfWeek) => (
+                  <Pressable
+                    key={dayOfWeek}
+                    style={[styles.chip, draft.recurrenceDays.includes(dayOfWeek) && styles.chipSelected]}
+                    onPress={() => setDraft(toggleRecurrenceDayInDraft(draft, dayOfWeek))}
+                  >
+                    <Text style={styles.chipText}>{label}</Text>
+                  </Pressable>
+                ))}
+                <Pressable
+                  style={[styles.chip, draft.recurrenceDays.length === 7 && styles.chipSelected]}
+                  onPress={() => setDraft(selectAllRecurrenceDaysInDraft(draft))}
+                >
+                  <Text style={styles.chipText}>כל הימים</Text>
+                </Pressable>
+              </View>
+            )}
+          </Field>
+        )}
 
         <Field label="תתי-משימות (רשות)">
           {draft.subtasks.map((subtask) => (

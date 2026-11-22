@@ -46,6 +46,18 @@ test("resolveDailyPlan excludes a recurring task on a weekday it doesn't recur o
   assert.equal(plan.length, 0);
 });
 
+test("required test 14 (Smart To-Do List): resolveDailyPlan excludes an isTodoItem task entirely, even when it has a scheduledDate matching today and would otherwise look like an ordinary one-off entry -- a To-Do item can never silently become a scheduled task via auto-chaining", () => {
+  const todoTask = oneOffTask("t1", "לסדר מיילים", { isTodoItem: true });
+  const plan = resolveDailyPlan([todoTask], [], [], MONDAY_LOCAL, MONDAY);
+  assert.equal(plan.length, 0);
+});
+
+test("required test 14 continued: an ordinary one-off task with the SAME shape (same date, no scheduledTime) but isTodoItem=false is still included and eligible for applyScheduleMode's own auto-chaining -- only the isTodoItem flag itself opts a task out", () => {
+  const ordinaryTask = oneOffTask("t1", "לסדר מיילים", { isTodoItem: false });
+  const plan = resolveDailyPlan([ordinaryTask], [], [], MONDAY_LOCAL, MONDAY);
+  assert.equal(plan.length, 1);
+});
+
 test("resolveDailyPlan excludes a recurring task removed for this specific date, without needing to touch the task itself", () => {
   const task = recurringTask("t1", "ריצה");
   const removal = markTaskOccurrenceRemoved(task, MONDAY_LOCAL, [], NOW);

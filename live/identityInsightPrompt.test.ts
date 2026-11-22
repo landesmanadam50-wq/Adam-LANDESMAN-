@@ -47,7 +47,7 @@ test("the Combined and Task tracks both mark the pending marker when reaching 'c
 
 test("handleComplete checks the pending marker for THIS exact task id before deciding whether to show the prompt -- never for a different task's marker", () => {
   const fnIndex = activeTaskScreen.indexOf("async function handleComplete()");
-  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 5200);
+  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 7200);
   assert.ok(fnBody.includes("const pendingTaskId = await loadPendingIdentityInsightTaskId();"));
   assert.ok(fnBody.includes("if (pendingTaskId === task.id) {"));
 });

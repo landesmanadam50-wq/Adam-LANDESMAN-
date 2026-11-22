@@ -31,7 +31,7 @@ test("imports the floating-overlay bridge from data/floatingTimerOverlay.ts, nev
 
 test("requirements 1+6: performStart (reached via handleStart's required-before-tasks gate from both a plain tap and the task-alarm's own autoStart) shows the overlay the instant a timer actually starts", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 7400);
+  const fnBody = screen.slice(fnIndex, fnIndex + 8500);
   assert.ok(fnBody.includes("await showFloatingTimerOverlay(runWithNotification, task, freshStageProgress, nextScheduledTaskForOverlay);"));
 });
 
@@ -61,7 +61,7 @@ test("test 12: completing the task hides the overlay (and with it, the ongoing n
   // asserted by the "clearEndedTimer ... hides the overlay" test below),
   // so the overlay is still cleared, just via one shared cleanup path.
   const fnIndex = screen.indexOf("async function handleComplete()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 2300);
+  const fnBody = screen.slice(fnIndex, fnIndex + 3000);
   assert.ok(fnBody.includes("await clearEndedTimer();"));
 });
 

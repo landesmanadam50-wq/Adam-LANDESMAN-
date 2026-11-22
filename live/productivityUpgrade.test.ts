@@ -58,7 +58,7 @@ test("requirement 5/6: PostTaskRewardScreen looks up the next task via the SAME 
 
 test("requirement 5/6: handleComplete navigates to the reflection screen after marking the task complete, UNLESS Part I's identity-insight prompt is pending for this exact task -- then the reflection screen waits for that prompt to finish, never skipped outright", () => {
   const fnIndex = screen.indexOf("async function handleComplete()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 8000);
+  const fnBody = screen.slice(fnIndex, fnIndex + 12000);
   assert.ok(fnBody.includes("completeTask(task, now)"));
   // Task Completion Navigation fix: `replace`, not `push` -- once
   // completed, Back must never return to the now-stale Task LIVE screen.

@@ -2,7 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import ActiveTaskScreen from "../../live/ActiveTaskScreen.tsx";
 
 export default function TaskDetail() {
-  const { id, autoStart, openPostpone, needArc, completeStage, nextTask, addInsight, addPositiveEvent } = useLocalSearchParams<{
+  const { id, autoStart, openPostpone, needArc, completeStage, nextTask, addInsight, addPositiveEvent, splitMinutes } = useLocalSearchParams<{
     id: string;
     autoStart?: string;
     openPostpone?: string;
@@ -11,6 +11,12 @@ export default function TaskDetail() {
     nextTask?: string;
     addInsight?: string;
     addPositiveEvent?: string;
+    // Smart To-Do List task, section 6: set ONLY when ARC LIVE's
+    // returnToTask (or the Time Planning popup) navigates here after
+    // the trainee explicitly accepted a To-Do split suggestion -- the
+    // chosen split's own minute count, never the task's full remaining
+    // duration. Absent for every ordinary task/scheduled-task open.
+    splitMinutes?: string;
   }>();
   return (
     <ActiveTaskScreen
@@ -22,6 +28,7 @@ export default function TaskDetail() {
       nextTask={nextTask === "1"}
       addInsight={addInsight === "1"}
       addPositiveEvent={addPositiveEvent === "1"}
+      splitMinutes={splitMinutes ? Number(splitMinutes) : null}
     />
   );
 }
