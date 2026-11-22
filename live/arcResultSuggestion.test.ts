@@ -101,7 +101,7 @@ test("required tests 4-7 continued: Full ARC, Shortened ARC and the combined 'מ
 test("required test 8: resolveAndOpenNextTask (the 😄 shortcut's own shared handler) routes BOTH its real-task destinations -- an already-active task and the next actionable task -- through the SAME navigateToTaskOrArcResultSuggestion check, never a direct, unconditional '/tasks/[id]' navigation", () => {
   assert.ok(emotionalCheckInRouting.includes("async function navigateToTaskOrArcResultSuggestion(taskId: string, options: NavigateOptions)"));
   assert.ok(emotionalCheckInRouting.includes("await navigateToTaskOrArcResultSuggestion(active.id, options);"));
-  assert.ok(emotionalCheckInRouting.includes("await navigateToTaskOrArcResultSuggestion(next.task.id, options);"));
+  assert.ok(emotionalCheckInRouting.includes("await navigateToTaskOrArcResultSuggestion(target.task.id, options);"));
 });
 
 test("required test 8 continued: 😄 is still available only while no task session is active -- this task never touched that pre-existing visibility rule, only what happens once it IS pressed", () => {

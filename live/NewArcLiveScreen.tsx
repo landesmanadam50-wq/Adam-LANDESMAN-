@@ -349,7 +349,7 @@ import { findPairedArcResultForSituation, hasLinkedArcResult } from "../arc/arcR
 // Screen/next-task display already use -- never a second "what's
 // scheduled today" engine.
 import { resolveTodaysScheduledPlan } from "../data/dailyPlan.ts";
-import { isScheduledPlanEntryOverdue, resolveNextScheduledTaskAfter } from "../arc/dailyPlan.ts";
+import { resolveCurrentTaskState } from "../arc/dailyPlan.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
 import { parseClockTimeToMinutes } from "../arc/dailyRoutine.ts";
 import { createEmptyTask, generateTaskId } from "../arc/tasks.ts";
@@ -391,10 +391,15 @@ const ACTION_ENDING_SUGGESTIONS = ["התחלתי את הצעד הראשון", "�
  * every other arc/dailyPlan.ts reader -- never re-derives "today" or
  * "effective" itself. `excludeTaskId` drops the ARC session's own
  * (possibly non-existent/standalone) taskId, same null-safe exclusion
- * resolveNextScheduledTaskAfter's own activeTaskId param already uses.
+ * arc/dailyPlan.ts's own resolveCurrentTaskState already takes.
+ *
+ * Weekly/Flexible-Daily/ARC-LIVE task-sync fix: reads through that one
+ * central resolveCurrentTaskState instead of the superseded
+ * resolveNextScheduledTaskAfter, so this never clamps against a task
+ * whose own scheduled window has already passed.
  */
 function resolveMinutesUntilNextTask(scheduled: ScheduledPlanEntry[], excludeTaskId: string, now: Date): number | null {
-  const next = resolveNextScheduledTaskAfter(scheduled, excludeTaskId);
+  const { next } = resolveCurrentTaskState(scheduled, now, null, excludeTaskId);
   if (!next || next.effectiveStartTime === null) return null;
   const startMinutes = parseClockTimeToMinutes(next.effectiveStartTime);
   if (startMinutes === null) return null;
@@ -1787,10 +1792,17 @@ export default function NewArcLiveScreen({
       );
     }
     const nowDate = new Date();
+    // Weekly/Flexible-Daily/ARC-LIVE task-sync fix: the ONE central
+    // current/next decision (arc/dailyPlan.ts's resolveCurrentTaskState),
+    // never a second, competing lookup -- this is exactly what used to
+    // propose an already-elapsed task (e.g. an overnight "go to sleep"
+    // entry) at 6:40am, since the old resolveNextScheduledTaskAfter/
+    // isScheduledPlanEntryOverdue pair never checked whether the entry's
+    // own scheduled window had already passed.
+    const { current: currentEntry, next: nextEntry } = resolveCurrentTaskState(dailyPlanEntries, nowDate, null, taskId);
     const candidates = dailyPlanEntries.filter((entry) => entry.task.id !== taskId && !entry.isCompletedToday && entry.task.status !== "archived");
-    const dueEntry = resolveNextScheduledTaskAfter(dailyPlanEntries, taskId);
-    const isDueNow = dueEntry ? isScheduledPlanEntryOverdue(dueEntry, nowDate) : false;
-    const laterCandidates = isDueNow ? candidates.filter((entry) => entry.task.id !== dueEntry!.task.id) : candidates;
+    const shownEntryId = currentEntry?.task.id ?? nextEntry?.task.id ?? null;
+    const laterCandidates = shownEntryId ? candidates.filter((entry) => entry.task.id !== shownEntryId) : candidates;
     const availableMinutes = resolveMinutesUntilNextTask(dailyPlanEntries, taskId, nowDate);
     const parsedTempDuration = Number(tempActionDurationDraft);
     const requestedTempDuration = Number.isFinite(parsedTempDuration) && parsedTempDuration > 0 ? parsedTempDuration : 10;
@@ -1830,14 +1842,29 @@ export default function NewArcLiveScreen({
             </View>
           </View>
         )}
-        {isDueNow && dueEntry && (
+        {currentEntry && (
           <View style={styles.supportiveFeelingSection}>
-            <Text style={styles.supportiveFeelingLabel}>המשימה המתוזמנת כעת</Text>
+            <Text style={styles.supportiveFeelingLabel}>המשימה כרגע</Text>
             <View style={styles.chipColumn}>
-              <Pressable style={styles.optionRow} onPress={() => chooseScheduledTask(dueEntry)}>
-                <Text style={styles.optionText}>{dueEntry.effectiveStartTime ? `${dueEntry.task.title} -- ${dueEntry.effectiveStartTime}` : dueEntry.task.title}</Text>
+              <Pressable style={styles.optionRow} onPress={() => chooseScheduledTask(currentEntry)}>
+                <Text style={styles.optionText}>{currentEntry.effectiveStartTime ? `${currentEntry.task.title} -- ${currentEntry.effectiveStartTime}` : currentEntry.task.title}</Text>
               </Pressable>
             </View>
+          </View>
+        )}
+        {!currentEntry && nextEntry && (
+          <View style={styles.supportiveFeelingSection}>
+            <Text style={styles.supportiveFeelingLabel}>המשימה הקרובה</Text>
+            <View style={styles.chipColumn}>
+              <Pressable style={styles.optionRow} onPress={() => chooseScheduledTask(nextEntry)}>
+                <Text style={styles.optionText}>{nextEntry.effectiveStartTime ? `${nextEntry.task.title} -- ${nextEntry.effectiveStartTime}` : nextEntry.task.title}</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+        {!currentEntry && !nextEntry && (
+          <View style={styles.supportiveFeelingSection}>
+            <Text style={styles.hint}>אין משימות נוספות מתוכננות להיום.</Text>
           </View>
         )}
         <View style={styles.supportiveFeelingSection}>

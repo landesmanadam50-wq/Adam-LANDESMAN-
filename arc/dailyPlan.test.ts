@@ -12,11 +12,12 @@ import {
   MIN_SUITABLE_DAILY_TASK_COUNT,
   reorderDailyPlanEntry,
   resolveAutoScheduleWriteBacks,
+  resolveCurrentTaskState,
   resolveDailyPlan,
   resolveNextActionableTask,
   resolveNextScheduledTaskAfter,
 } from "./dailyPlan.ts";
-import type { DailyPlanEntry } from "./dailyPlan.ts";
+import type { DailyPlanEntry, ScheduledPlanEntry } from "./dailyPlan.ts";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 const MONDAY_LOCAL = "2026-01-05";
@@ -311,4 +312,128 @@ test("isDailyScheduleSuitable requires at least MIN_SUITABLE_DAILY_TASK_COUNT (3
 
 test("isDailyScheduleSuitable is false for an empty plan", () => {
   assert.equal(isDailyScheduleSuitable([]), false);
+});
+
+// --- Weekly/Flexible-Daily/ARC-LIVE task-sync fix: resolveCurrentTaskState ---
+// The one central "what's current/next right now" decision -- see arc/dailyPlan.ts's own doc.
+
+function activeOverride(entry: ScheduledPlanEntry): ScheduledPlanEntry {
+  return { ...entry, task: { ...entry.task, status: "active" } };
+}
+
+test("resolveCurrentTaskState: a genuinely active task is always `current`, even when a different entry's window also contains `now`", () => {
+  const scheduled = applyScheduleMode([fixedEntry("t1", "06:00", 60), fixedEntry("t2", "06:30", 30)], { mode: "continuous" });
+  const active = [activeOverride(scheduled[1]), scheduled[0]]; // t2 (06:30) is the active one, even though t1's window (06:00-07:00) also contains 06:40
+  const now = new Date("2026-01-05T06:40:00");
+  const state = resolveCurrentTaskState(active, now, null);
+  assert.equal(state.current?.task.id, "t2");
+});
+
+test("resolveCurrentTaskState: with nothing active, the entry whose window contains `now` becomes `current`", () => {
+  const scheduled = applyScheduleMode([fixedEntry("t1", "06:00", 60)], { mode: "continuous" });
+  const now = new Date("2026-01-05T06:30:00"); // within 06:00-07:00
+  const state = resolveCurrentTaskState(scheduled, now, null);
+  assert.equal(state.current?.task.id, "t1");
+  assert.deepEqual(state.overdue, []);
+});
+
+test("resolveCurrentTaskState: the exact 06:40 'go to sleep' repro -- a zero-duration entry has a zero-width window, so it's never promoted to current/next, only ever overdue", () => {
+  const goToSleep = fixedEntry("sleep", "00:30", null); // no duration -- a point-in-time entry, window = [00:30, 00:30)
+  const breakfast = fixedEntry("breakfast", "07:00", 20);
+  const scheduled = applyScheduleMode([goToSleep, breakfast], { mode: "continuous" });
+
+  const atItsOwnMinute = resolveCurrentTaskState(scheduled, new Date("2026-01-05T00:30:00"), null);
+  assert.equal(atItsOwnMinute.current, null, "a zero-width window is never 'current' -- not even at its own start minute");
+  assert.ok(atItsOwnMinute.overdue.some((entry) => entry.task.id === "sleep"), "it is already overdue the instant its minute arrives");
+
+  const at0640 = resolveCurrentTaskState(scheduled, new Date("2026-01-05T06:40:00"), null);
+  assert.equal(at0640.current, null, "nothing is due right now at 06:40 -- 'go to sleep' must NOT be proposed as current");
+  assert.equal(at0640.next?.task.id, "breakfast", "the nearest not-yet-started task (07:00 breakfast) is proposed as next");
+  assert.ok(at0640.overdue.some((entry) => entry.task.id === "sleep"), "'go to sleep' is visible in the overdue list, never auto-promoted");
+});
+
+test("resolveCurrentTaskState: `next` is never drawn from `overdue` -- a genuinely future task is preferred over an overdue one", () => {
+  const overdueTask = fixedEntry("overdue", "05:00", 30);
+  const futureTask = fixedEntry("future", "12:00", 30);
+  const scheduled = applyScheduleMode([overdueTask, futureTask], { mode: "continuous" });
+  const state = resolveCurrentTaskState(scheduled, new Date("2026-01-05T06:40:00"), null);
+  assert.equal(state.current, null);
+  assert.equal(state.next?.task.id, "future");
+  assert.ok(state.overdue.some((entry) => entry.task.id === "overdue"));
+});
+
+test("resolveCurrentTaskState: deleting a task (removed override, absent from resolveDailyPlan's output) removes it from every bucket", () => {
+  const task = recurringTask("t1", "ריצה", { scheduledTime: "06:00" });
+  const removal = markTaskOccurrenceRemoved(task, MONDAY_LOCAL, [], NOW);
+  const plan = resolveDailyPlan([task], [removal], [], MONDAY_LOCAL, MONDAY);
+  const scheduled = applyScheduleMode(plan, { mode: "continuous" });
+  const state = resolveCurrentTaskState(scheduled, new Date("2026-01-05T06:40:00"), null);
+  assert.equal(state.current, null);
+  assert.equal(state.next, null);
+  assert.deepEqual(state.overdue, []);
+});
+
+test("resolveCurrentTaskState: retiming an entry changes which entry is `next`", () => {
+  const early = recurringTask("early", "מוקדם", { scheduledTime: "08:00" });
+  const late = recurringTask("late", "מאוחר", { scheduledTime: "10:00" });
+  const now = new Date("2026-01-05T06:40:00");
+
+  const planBefore = resolveDailyPlan([early, late], [], [], MONDAY_LOCAL, MONDAY);
+  const stateBefore = resolveCurrentTaskState(applyScheduleMode(planBefore, { mode: "continuous" }), now, null);
+  assert.equal(stateBefore.next?.task.id, "early", "before retiming, the 08:00 task is nearest");
+
+  // Push the previously-nearest task past the other one -- `next` must track the change.
+  const retime = buildTaskOccurrenceOverride(early, MONDAY_LOCAL, null, { scheduledTime: "11:00" }, NOW);
+  const planAfter = resolveDailyPlan([early, late], [retime], [], MONDAY_LOCAL, MONDAY);
+  const stateAfter = resolveCurrentTaskState(applyScheduleMode(planAfter, { mode: "continuous" }), now, null);
+  assert.equal(stateAfter.next?.task.id, "late", "'early' was pushed to 11:00 -- 'late' (10:00) is now the nearer task");
+});
+
+test("resolveCurrentTaskState: adding an earlier task surfaces it as `next` at the right time", () => {
+  const late = recurringTask("late", "מאוחר", { scheduledTime: "20:00" });
+  const stateBefore = resolveCurrentTaskState(applyScheduleMode(resolveDailyPlan([late], [], [], MONDAY_LOCAL, MONDAY), { mode: "continuous" }), new Date("2026-01-05T06:40:00"), null);
+  assert.equal(stateBefore.next?.task.id, "late");
+
+  const early = recurringTask("early", "מוקדם", { scheduledTime: "07:00" });
+  const stateAfter = resolveCurrentTaskState(
+    applyScheduleMode(resolveDailyPlan([late, early], [], [], MONDAY_LOCAL, MONDAY), { mode: "continuous" }),
+    new Date("2026-01-05T06:40:00"),
+    null
+  );
+  assert.equal(stateAfter.next?.task.id, "early", "the newly-added earlier task is now proposed as next, not the later one");
+});
+
+test("resolveCurrentTaskState: a completed-today entry is never returned in any bucket", () => {
+  const task = recurringTask("t1", "ריצה", { scheduledTime: "06:00" });
+  const completion = createTaskOccurrenceCompletion(task.id, new Date(`${MONDAY_LOCAL}T12:00:00`));
+  const plan = resolveDailyPlan([task], [], [completion], MONDAY_LOCAL, MONDAY);
+  const state = resolveCurrentTaskState(applyScheduleMode(plan, { mode: "continuous" }), new Date("2026-01-05T06:30:00"), null);
+  assert.equal(state.current, null);
+  assert.equal(state.next, null);
+  assert.deepEqual(state.overdue, []);
+});
+
+test("resolveCurrentTaskState: entries resolved fresh per date never carry a previous day's overdue/current task forward", () => {
+  const task = recurringTask("t1", "ריצה", {
+    recurrence: { kind: "recurring", daysOfWeek: [1, 2] }, // Monday AND Tuesday, so the same task legitimately recurs both days
+    scheduledTime: "00:30",
+    expectedDurationMinutes: null,
+  });
+  const planToday = resolveDailyPlan([task], [], [], MONDAY_LOCAL, MONDAY);
+  const stateToday = resolveCurrentTaskState(applyScheduleMode(planToday, { mode: "continuous" }), new Date("2026-01-05T06:40:00"), null);
+  assert.equal(stateToday.current, null);
+  assert.equal(stateToday.next, null, "with nothing else scheduled, there is genuinely nothing left today -- never a stale carryover proposed as next");
+
+  const tuesdayLocal = "2026-01-06";
+  const tuesday = new Date("2026-01-06T00:00:00");
+  const planTuesday = resolveDailyPlan([task], [], [], tuesdayLocal, tuesday);
+  const stateTuesday = resolveCurrentTaskState(applyScheduleMode(planTuesday, { mode: "continuous" }), new Date("2026-01-06T00:15:00"), null);
+  assert.equal(stateTuesday.next?.task.id, "t1", "Tuesday's own fresh occurrence of the SAME recurring task is unaffected by Monday's history");
+});
+
+test("resolveCurrentTaskState excludes the given excludeTaskId from every bucket", () => {
+  const scheduled = applyScheduleMode([fixedEntry("t1", "06:00", 60)], { mode: "continuous" });
+  const state = resolveCurrentTaskState(scheduled, new Date("2026-01-05T06:30:00"), null, "t1");
+  assert.equal(state.current, null);
+  assert.equal(state.next, null);
 });

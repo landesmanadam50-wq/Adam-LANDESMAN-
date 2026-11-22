@@ -26,6 +26,8 @@ import { formatMinutesToClockTime, parseClockTimeToMinutes } from "./dailyRoutin
 import { isTaskOccurrenceCompleted, type TaskOccurrenceCompletion } from "./taskOccurrence.ts";
 import { isRecurringOccurrenceVisibleOnDate, resolveEffectiveOccurrence, type TaskOccurrenceOverride } from "./taskOccurrenceOverride.ts";
 import { resolveGapMinutes, type WeeklyScheduleMode } from "./weeklyScheduleMode.ts";
+import { isActiveTaskStillCurrent } from "./todaySchedule.ts";
+import type { TaskTimerRun } from "./taskTimer.ts";
 
 export interface DailyPlanEntry {
   task: Task;
@@ -243,6 +245,14 @@ export function applyScheduleMode(entries: DailyPlanEntry[], mode: WeeklySchedul
  * -- callers decide what "today" and "effective" mean by how they built
  * `scheduled` (resolveDailyPlan + applyScheduleMode), never re-derived
  * here.
+ *
+ * Weekly/Flexible-Daily/ARC-LIVE task-sync fix: superseded for every
+ * navigation/suggestion purpose by resolveCurrentTaskState below, which
+ * adds the one check this function always lacked -- whether the
+ * returned entry's own scheduled window has already passed. Kept
+ * as-is (not removed) only because it has its own long-standing,
+ * passing tests; every real caller now goes through
+ * resolveCurrentTaskState instead.
  */
 export function resolveNextActionableTask(scheduled: ScheduledPlanEntry[]): ScheduledPlanEntry | null {
   return scheduled.find((entry) => !entry.isCompletedToday && entry.task.status !== "archived") ?? null;
@@ -258,6 +268,10 @@ export function resolveNextActionableTask(scheduled: ScheduledPlanEntry[]): Sche
  * read through, never re-derived independently. `activeTaskId` is
  * null-safe (no active task at all -- e.g. the Task Details pre-start
  * screen for a task not yet started -- simply excludes nothing extra).
+ *
+ * Weekly/Flexible-Daily/ARC-LIVE task-sync fix: same superseded status
+ * as resolveNextActionableTask above, and for the same reason -- see
+ * resolveCurrentTaskState.
  */
 export function resolveNextScheduledTaskAfter(scheduled: ScheduledPlanEntry[], activeTaskId: string | null): ScheduledPlanEntry | null {
   return scheduled.find((entry) => entry.task.id !== activeTaskId && !entry.isCompletedToday && entry.task.status !== "archived") ?? null;
@@ -277,6 +291,86 @@ export function isScheduledPlanEntryOverdue(entry: ScheduledPlanEntry, now: Date
   if (startMinutes === null) return false;
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   return nowMinutes > startMinutes;
+}
+
+/**
+ * Weekly/Flexible-Daily/ARC-LIVE task-sync fix: the ONE central
+ * "what's current/next right now" decision -- every navigation/
+ * suggestion call site that used to call resolveNextActionableTask/
+ * resolveNextScheduledTaskAfter (Home's "😄 Next Task", Task LIVE's
+ * "next scheduled task" display + lock-screen notification, and ARC
+ * LIVE's own action-selection step) now goes through this instead, so
+ * there is exactly one place that decides it, never several that can
+ * silently drift apart.
+ *
+ * Bug this replaces (verbatim repro): at 6:40am, a recurring "go to
+ * sleep" task scheduled for e.g. 00:30 with no duration was proposed
+ * as the thing to do right now, because the two functions above never
+ * checked whether an entry's own scheduled window had already passed
+ * -- only whether it was "not completed." This function does check:
+ * `current` is drawn from either a genuinely still-running task
+ * (status "active", confirmed via isActiveTaskStillCurrent's real
+ * TaskTimerRun elapsed-time math -- the exact same check
+ * arc/todaySchedule.ts's Today screen already relies on, reused here
+ * rather than re-implemented) or, when none, the first not-yet-
+ * completed entry whose effective window [effectiveStartTime,
+ * effectiveEndTime) actually contains `now`. An entry whose window has
+ * already fully elapsed (a zero-duration entry's window is just its
+ * own start minute) is NEVER promoted to `current` or `next` -- it
+ * only ever lands in `overdue`, exactly mirroring
+ * arc/todaySchedule.ts's own current/overdue/nextTask split.
+ *
+ * `next` is the nearest entry whose window hasn't started yet --
+ * `scheduled` is already chronologically ordered (resolveDailyPlan +
+ * applyScheduleMode), so a plain forward scan is enough; `next` is
+ * never drawn from `overdue`. Both `current` and `next` are null when
+ * nothing fits -- callers must show an explicit "nothing left today"
+ * state rather than falling back to a stale/overdue entry.
+ */
+export interface CurrentTaskState {
+  current: ScheduledPlanEntry | null;
+  overdue: ScheduledPlanEntry[];
+  next: ScheduledPlanEntry | null;
+}
+
+function hasScheduledPlanEntryStarted(entry: ScheduledPlanEntry, nowMinutes: number): boolean {
+  if (entry.effectiveStartTime === null) return false;
+  const startMinutes = parseClockTimeToMinutes(entry.effectiveStartTime);
+  return startMinutes !== null && startMinutes <= nowMinutes;
+}
+
+function hasScheduledPlanEntryWindowElapsed(entry: ScheduledPlanEntry, nowMinutes: number): boolean {
+  if (entry.effectiveEndTime !== null) {
+    const endMinutes = parseClockTimeToMinutes(entry.effectiveEndTime);
+    return endMinutes !== null && endMinutes <= nowMinutes;
+  }
+  if (entry.effectiveStartTime !== null) {
+    const startMinutes = parseClockTimeToMinutes(entry.effectiveStartTime);
+    return startMinutes !== null && startMinutes < nowMinutes;
+  }
+  return false;
+}
+
+export function resolveCurrentTaskState(
+  scheduled: ScheduledPlanEntry[],
+  now: Date,
+  activeRun: TaskTimerRun | null = null,
+  excludeTaskId: string | null = null
+): CurrentTaskState {
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const candidates = scheduled.filter((entry) => entry.task.id !== excludeTaskId && !entry.isCompletedToday && entry.task.status !== "archived");
+
+  const activeEntry = candidates.find((entry) => entry.task.status === "active" && isActiveTaskStillCurrent(entry.task, now, activeRun)) ?? null;
+
+  const current =
+    activeEntry ?? candidates.find((entry) => hasScheduledPlanEntryStarted(entry, nowMinutes) && !hasScheduledPlanEntryWindowElapsed(entry, nowMinutes)) ?? null;
+
+  const overdue = candidates.filter(
+    (entry) => entry !== current && hasScheduledPlanEntryStarted(entry, nowMinutes) && hasScheduledPlanEntryWindowElapsed(entry, nowMinutes)
+  );
+  const next = candidates.find((entry) => entry !== current && !hasScheduledPlanEntryStarted(entry, nowMinutes)) ?? null;
+
+  return { current, overdue, next };
 }
 
 /**

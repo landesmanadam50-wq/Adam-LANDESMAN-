@@ -24,7 +24,7 @@
  *   second ARC implementation.
  * - "Next Task" reuses arc/tasks.ts's findActiveTask and
  *   arc/dailyPlan.ts's resolveDailyPlan/applyScheduleMode/
- *   resolveNextActionableTask -- the exact same Flexible Daily
+ *   resolveCurrentTaskState -- the exact same Flexible Daily
  *   Timetable resolution build/FlexibleDailyScreen.tsx's own reload()
  *   already performs, never a second, parallel "what's next" engine.
  *
@@ -43,7 +43,7 @@ import { STANDALONE_ARC_TASK_ID } from "../arc/newArcLiveTypes.ts";
 import type { ArcGymCheckInChoice } from "../arc/arcGym.ts";
 import type { ArcFocusMoodChoice } from "../arc/arcFocusSession.ts";
 import { hasLinkedArcResult } from "../arc/arcResult.ts";
-import { applyScheduleMode, resolveDailyPlan, resolveNextActionableTask } from "../arc/dailyPlan.ts";
+import { applyScheduleMode, resolveCurrentTaskState, resolveDailyPlan } from "../arc/dailyPlan.ts";
 import { resolveEffectiveScheduleMode } from "../arc/weeklyScheduleMode.ts";
 import { parseCalendarDate, todayLocalDateString } from "../program/dateUtils.ts";
 import { loadArcResultExercises, loadDailyScheduleModeOverrides, loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, loadWeeklyScheduleModeSettings } from "./storage.ts";
@@ -252,12 +252,19 @@ async function navigateToTaskOrArcResultSuggestion(taskId: string, options: Navi
 
 /**
  * "😄 מעולה -- Next Task": an already-active task's own Task LIVE screen
- * if one exists; otherwise the first actionable entry in today's
- * EFFECTIVE Flexible Daily Timetable (never auto-started -- no
+ * if one exists; otherwise today's EFFECTIVE Flexible Daily Timetable's
+ * own current-or-nearest-next entry (never auto-started -- no
  * `autoStart` param, exactly the spec's own "open the task without
  * automatically starting its timer"); otherwise today's planning
  * screen (Home itself, which already shows the Flexible Daily
  * Timetable above/below the check-in bar).
+ *
+ * Weekly/Flexible-Daily/ARC-LIVE task-sync fix: reads through
+ * arc/dailyPlan.ts's own resolveCurrentTaskState -- the one central
+ * current/next decision every relevant consumer shares -- so this can
+ * never propose a task whose own scheduled window has already passed
+ * (e.g. an overnight "go to sleep" task still sitting first in the
+ * day's own chronological order).
  */
 export async function resolveAndOpenNextTask(options: NavigateOptions = {}): Promise<void> {
   const tasks = await loadTasks();
@@ -280,10 +287,11 @@ export async function resolveAndOpenNextTask(options: NavigateOptions = {}): Pro
   const effectiveMode = resolveEffectiveScheduleMode(weekday, dateLocal, weekdaySettings, dateModeOverrides);
   const plan = resolveDailyPlan(tasks, overrides, completions, dateLocal, dateObj);
   const scheduled = applyScheduleMode(plan, effectiveMode);
-  const next = resolveNextActionableTask(scheduled);
+  const { current, next } = resolveCurrentTaskState(scheduled, new Date(), null, null);
+  const target = current ?? next;
 
-  if (next) {
-    await navigateToTaskOrArcResultSuggestion(next.task.id, options);
+  if (target) {
+    await navigateToTaskOrArcResultSuggestion(target.task.id, options);
     return;
   }
 

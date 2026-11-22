@@ -18,7 +18,7 @@
  * third, additively-introduced copy of the same five-call pipeline,
  * never a fourth, DIFFERENT "what's scheduled today" algorithm.
  */
-import { applyScheduleMode, isScheduledPlanEntryOverdue, resolveDailyPlan, resolveNextScheduledTaskAfter } from "../arc/dailyPlan.ts";
+import { applyScheduleMode, resolveCurrentTaskState, resolveDailyPlan } from "../arc/dailyPlan.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
 import { resolveEffectiveScheduleMode } from "../arc/weeklyScheduleMode.ts";
 import type { Task } from "../arc/tasks.ts";
@@ -48,10 +48,18 @@ export async function resolveTodaysScheduledPlan(now: Date = new Date()): Promis
  * next scheduled task" lookup for both live/ActiveTaskScreen.tsx's
  * Task LIVE and Task Details renders, and the ongoing lock-screen
  * notification payload -- built entirely from resolveTodaysScheduledPlan
- * above (never a second "what's scheduled today" IO pipeline) plus
- * arc/dailyPlan.ts's own pure resolveNextScheduledTaskAfter/
- * isScheduledPlanEntryOverdue. `activeTaskId` excludes whichever task
- * is currently open/running so it never reports itself as "next".
+ * above (never a second "what's scheduled today" IO pipeline).
+ * `activeTaskId` excludes whichever task is currently open/running so
+ * it never reports itself as "next".
+ *
+ * Weekly/Flexible-Daily/ARC-LIVE task-sync fix: now reads through
+ * arc/dailyPlan.ts's own resolveCurrentTaskState -- the one central
+ * current/next decision every relevant consumer shares -- instead of
+ * the superseded resolveNextScheduledTaskAfter/isScheduledPlanEntryOverdue
+ * pair, so this display can never show a task whose own window has
+ * already passed. `next` is never overdue by construction, so
+ * `isOverdue` is always `false` now (kept in the shape only so existing
+ * consumers of this interface don't need to change).
  */
 export interface NextScheduledTaskDisplay {
   task: Task;
@@ -61,7 +69,7 @@ export interface NextScheduledTaskDisplay {
 
 export async function resolveNextScheduledTaskDisplay(activeTaskId: string | null, now: Date = new Date()): Promise<NextScheduledTaskDisplay | null> {
   const scheduled = await resolveTodaysScheduledPlan(now);
-  const next = resolveNextScheduledTaskAfter(scheduled, activeTaskId);
+  const { next } = resolveCurrentTaskState(scheduled, now, null, activeTaskId);
   if (!next) return null;
-  return { task: next.task, effectiveStartTime: next.effectiveStartTime, isOverdue: isScheduledPlanEntryOverdue(next, now) };
+  return { task: next.task, effectiveStartTime: next.effectiveStartTime, isOverdue: false };
 }

@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
  * `node --test` -- this is a source-text regression guard for the
  * wiring itself. The real DECISION logic it calls into
  * (arc/tasks.ts's findActiveTask, arc/dailyPlan.ts's
- * resolveNextActionableTask) has its own genuine, fully-executed unit
+ * resolveCurrentTaskState) has its own genuine, fully-executed unit
  * tests in arc/tasks.test.ts and arc/dailyPlan.test.ts.
  */
 function readSource(relativePath: string): string {
@@ -51,7 +51,7 @@ test("required test 6 continued: a next task found in the daily plan is opened W
   // through navigateToTaskOrArcResultSuggestion (which itself opens
   // "/tasks/[id]" verbatim when no result is linked -- see the
   // dedicated ARC Result tests below), never a bare navigateTo call.
-  assert.ok(module_.includes("await navigateToTaskOrArcResultSuggestion(next.task.id, options);"));
+  assert.ok(module_.includes("await navigateToTaskOrArcResultSuggestion(target.task.id, options);"));
 });
 
 test("required test 6 continued: when no active task and no actionable entry exists, falls back to Home ('/') -- today's own planning screen, never a dead end", () => {
@@ -64,7 +64,12 @@ test("required test 6 continued: resolveAndOpenNextTask resolves the SAME Flexib
   assert.ok(module_.includes("resolveEffectiveScheduleMode(weekday, dateLocal, weekdaySettings, dateModeOverrides)"));
   assert.ok(module_.includes("resolveDailyPlan(tasks, overrides, completions, dateLocal, dateObj)"));
   assert.ok(module_.includes("applyScheduleMode(plan, effectiveMode)"));
-  assert.ok(module_.includes("resolveNextActionableTask(scheduled)"));
+});
+
+test("Weekly/Flexible-Daily/ARC-LIVE task-sync fix: resolveAndOpenNextTask reads the one central resolveCurrentTaskState, never the superseded resolveNextActionableTask, so it can never propose a task whose own window has already passed", () => {
+  assert.ok(module_.includes("resolveCurrentTaskState(scheduled, new Date(), null, null)"), "must resolve current/next through the one shared decision");
+  assert.ok(module_.includes("const target = current ?? next;"), "prefers whatever is genuinely current right now, falling back to the nearest not-yet-started entry");
+  assert.ok(!module_.includes("resolveNextActionableTask"), "the superseded function must no longer be called here");
 });
 
 test("required test 14 (no duplicated ARC sessions): Full/Shortened ARC both route through the ONE existing /tasks/[id]/arc screen -- this module never constructs or writes a NewArcLiveSessionState itself, so the existing resume/conflict logic (live/NewArcLiveScreen.tsx's own reload()) is always what decides resume-vs-fresh, never bypassed", () => {
