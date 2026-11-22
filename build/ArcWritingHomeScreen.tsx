@@ -59,6 +59,9 @@ export default function ArcWritingHomeScreen() {
             <Pressable style={styles.primaryCard} onPress={() => router.push({ pathname: "/arc-gym/book/[id]", params: { id: "new" } })}>
               <Text style={styles.primaryCardText}>📖 כתיבת ספר</Text>
             </Pressable>
+            <Pressable style={styles.primaryCard} onPress={() => router.push("/arc-gym/video")}>
+              <Text style={styles.primaryCardText}>🎬 ספריית הסרטונים שלי</Text>
+            </Pressable>
 
             <Text style={styles.sectionTitle}>המשך כתיבה</Text>
             {items.length === 0 && <Text style={styles.hint}>עדיין לא יצרת טקסטים או ספרים.</Text>}
