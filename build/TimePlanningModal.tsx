@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { router } from "expo-router";
 
 import { createEmptyTask, generateTaskId } from "../arc/tasks.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
-import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride } from "../arc/taskOccurrenceOverride.ts";
+import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride, markTaskOccurrenceRemoved } from "../arc/taskOccurrenceOverride.ts";
 import { resolveEffectiveTodoOrder, reorderTodoEntry, resolveResortByRating } from "../arc/todoList.ts";
 import type { TodoPlanEntry } from "../arc/todoList.ts";
 import { deleteTask, getTask, loadTaskOccurrenceOverrides, upsertTask, upsertTaskOccurrenceOverrideEntry } from "../data/storage.ts";
@@ -147,6 +148,51 @@ export default function TimePlanningModal({
     const expectedDurationMinutes = parsed !== null && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
     await upsertTask({ ...task, expectedDurationMinutes });
     onChanged();
+  }
+
+  /**
+   * "Add scheduled task" button task: opens the SAME full task editor
+   * (/tasks/[id]/edit, id="new") the pre-existing "+ משימה" quick action
+   * on build/FlexibleDailyScreen.tsx already uses for this exact date --
+   * never a second, cut-down creation form here. `scheduledDate` alone
+   * is passed: the editor's own `isTodoItem`/recurrence controls default
+   * to a plain one-off task for THIS date only, never touching the Fixed
+   * Weekly Routine template unless the trainee explicitly sets a
+   * recurrence inside that same editor. The modal itself is left open
+   * (never closed here) -- its own `scheduled` prop is recomputed by the
+   * parent's reload() the moment focus returns to it, so the new task
+   * shows up in this tab immediately with no extra tap.
+   */
+  function handleAddScheduledTask() {
+    router.push({ pathname: "/tasks/[id]/edit", params: { id: "new", scheduledDate: dateLocal } });
+  }
+
+  /**
+   * "Remove scheduled task" button task: the SAME remove primitive
+   * build/FlexibleDailyScreen.tsx's own handleRemoveForToday already
+   * uses -- a weekly-origin entry is only ever marked removed for THIS
+   * one date (markTaskOccurrenceRemoved -> a per-occurrence override,
+   * never touching the Fixed Weekly Routine template), while a oneoff
+   * entry (including one just added from this same modal) is deleted
+   * outright. Never a second, competing removal mechanism.
+   */
+  async function handleRemoveScheduled(entry: ScheduledPlanEntry) {
+    if (entry.origin === "weekly") {
+      const overrides = await loadTaskOccurrenceOverrides();
+      await upsertTaskOccurrenceOverrideEntry(markTaskOccurrenceRemoved(entry.task, entry.occurrenceDateLocal, overrides, new Date().toISOString()));
+    } else {
+      await deleteTask(entry.task.id);
+    }
+    await reconcileTaskAlarms();
+    onChanged();
+  }
+
+  function confirmRemoveScheduled(entry: ScheduledPlanEntry) {
+    const message = entry.origin === "weekly" ? "המשימה תוסר מהיום הזה בלבד -- השבוע הקבוע לא ישתנה." : "המשימה תימחק.";
+    Alert.alert("הסרת משימה", message, [
+      { text: "ביטול", style: "cancel" },
+      { text: "הסר", style: "destructive", onPress: () => handleRemoveScheduled(entry) },
+    ]);
   }
 
   async function handleSaveScheduledRow(entry: ScheduledPlanEntry) {
@@ -299,6 +345,10 @@ export default function TimePlanningModal({
               </>
             ) : (
               <>
+                <Pressable style={styles.addScheduledButton} onPress={handleAddScheduledTask}>
+                  <Text style={styles.addScheduledButtonText}>+ הוסף משימה מתוזמנת</Text>
+                </Pressable>
+
                 {scheduled.length === 0 && <Text style={styles.hint}>אין משימות מתוזמנות לתאריך הזה.</Text>}
                 {scheduled.map((entry) => {
                   const draft = rowDrafts[entry.task.id] ?? { scheduledTime: "", durationMinutes: "" };
@@ -325,6 +375,9 @@ export default function TimePlanningModal({
                         />
                         <Pressable style={styles.entryActionButton} onPress={() => handleSaveScheduledRow(entry)}>
                           <Text style={styles.entryActionText}>שמור</Text>
+                        </Pressable>
+                        <Pressable style={styles.entryActionButton} onPress={() => confirmRemoveScheduled(entry)}>
+                          <Text style={styles.entryActionTextRemove}>הסר</Text>
                         </Pressable>
                       </View>
                     </View>
@@ -383,6 +436,8 @@ const styles = StyleSheet.create({
   addTodoRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
   addButton: { backgroundColor: "#0a7ea4", borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12 },
   addButtonText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  addScheduledButton: { backgroundColor: "#0a7ea4", borderRadius: 8, paddingVertical: 10, alignItems: "center", marginBottom: 10 },
+  addScheduledButtonText: { color: "#fff", fontSize: 14, fontWeight: "700" },
   scheduledRow: { borderBottomWidth: 1, borderBottomColor: "#eee", paddingVertical: 10 },
   scheduledEditRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginTop: 6 },
   timeInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 6, fontSize: 13, width: 64 },

@@ -133,3 +133,49 @@ test("TimePlanningModal is rendered with the screen's own scheduled/todoEntries 
   assert.ok(renderBody.includes("setTimePlanningModalVisible(false);"));
   assert.ok(renderBody.includes("reload();"));
 });
+
+test("required: a clear '+ הוסף משימה מתוזמנת' button is rendered in the 'משימות מתוזמנות' tab, unconditionally -- it shows even when scheduled.length === 0, since it sits above the empty-state hint and the list, never inside either", () => {
+  assert.ok(modal.includes("+ הוסף משימה מתוזמנת"));
+  const tabBodyStart = modal.indexOf(") : (");
+  const addButtonIndex = modal.indexOf("styles.addScheduledButton", tabBodyStart);
+  const hintIndex = modal.indexOf("אין משימות מתוזמנות לתאריך הזה", tabBodyStart);
+  assert.ok(addButtonIndex !== -1 && hintIndex !== -1 && addButtonIndex < hintIndex, "the add button must render BEFORE the empty-state hint, so it is never conditioned on scheduled.length");
+});
+
+test("required: the add button opens the SAME full task editor (/tasks/[id]/edit, id=\"new\") the pre-existing '+ משימה' quick action on FlexibleDailyScreen already uses for this date -- never a second, cut-down creation form inside the modal", () => {
+  const fnIndex = modal.indexOf("function handleAddScheduledTask()");
+  const fnBody = modal.slice(fnIndex, modal.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes('router.push({ pathname: "/tasks/[id]/edit", params: { id: "new", scheduledDate: dateLocal } });'));
+});
+
+test("required: adding a scheduled task never closes the modal itself -- onClose/setTimePlanningModalVisible is never called from the add handler, so the SAME modal (still open, re-fed by the parent's own reload on refocus) shows the new task immediately on return, with no extra tap to reopen anything", () => {
+  const fnIndex = modal.indexOf("function handleAddScheduledTask()");
+  const fnBody = modal.slice(fnIndex, modal.indexOf("\n  }", fnIndex));
+  assert.ok(!fnBody.includes("onClose"));
+});
+
+test("required test 5 (remove a scheduled task): a weekly-origin entry is marked removed for THIS ONE DATE ONLY via markTaskOccurrenceRemoved (never touching the Fixed Weekly Routine template), while a oneoff entry is deleted outright -- the exact same remove primitive FlexibleDailyScreen's own handleRemoveForToday already uses", () => {
+  assert.ok(modal.includes('import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride, markTaskOccurrenceRemoved } from "../arc/taskOccurrenceOverride.ts";'));
+  const fnIndex = modal.indexOf("async function handleRemoveScheduled(");
+  const fnBody = modal.slice(fnIndex, modal.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes('entry.origin === "weekly"'));
+  assert.ok(fnBody.includes("markTaskOccurrenceRemoved(entry.task, entry.occurrenceDateLocal, overrides, new Date().toISOString())"));
+  assert.ok(fnBody.includes("await deleteTask(entry.task.id);"));
+  assert.ok(fnBody.includes("await reconcileTaskAlarms();"));
+  assert.ok(fnBody.includes("onChanged();"));
+});
+
+test("removing a scheduled task is confirmed first, with wording that makes the weekly-vs-oneoff distinction explicit to the trainee", () => {
+  const fnIndex = modal.indexOf("function confirmRemoveScheduled(");
+  const fnBody = modal.slice(fnIndex, modal.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes('"המשימה תוסר מהיום הזה בלבד -- השבוע הקבוע לא ישתנה."'));
+  assert.ok(fnBody.includes('"המשימה תימחק."'));
+  assert.ok(fnBody.includes('Alert.alert("הסרת משימה"'));
+});
+
+test("every scheduled row offers both שמור (save the inline time/duration edit) and הסר (remove), so the tab is a complete add/edit/remove surface for scheduled tasks, not just an editor for tasks that already exist", () => {
+  const scheduledMapIndex = modal.indexOf("{scheduled.map((entry) => {");
+  const rowBody = modal.slice(scheduledMapIndex, modal.indexOf("})}", scheduledMapIndex));
+  assert.ok(rowBody.includes("onPress={() => handleSaveScheduledRow(entry)}"));
+  assert.ok(rowBody.includes("onPress={() => confirmRemoveScheduled(entry)}"));
+});
