@@ -48,9 +48,7 @@ import {
   hasSeenNotificationExplanation,
   loadArcInsights,
   loadPendingIdentityInsightTaskId,
-  loadTaskOccurrenceCompletions,
   loadTaskOccurrenceOverrides,
-  loadTasks,
   loadTaskStageProgress,
   loadTaskTimerRun,
   loadTodoSplitSession,
@@ -70,13 +68,13 @@ import { armTaskTimerEndAlarm, cancelAnyAlarmFor, cancelTaskTimerEndAlarm, sched
 import { showFloatingTimerOverlay, showIdleFloatingOverlayPanel, updateFloatingTimerOverlay } from "../data/floatingTimerOverlay.ts";
 import type { NextScheduledTaskForOverlay } from "../arc/floatingTimerOverlayPayload.ts";
 import { playTimerCompletionSound } from "../data/timerSound.ts";
-import { buildTodaySections, resolveNextTaskEntry, resolveTaskClockTime } from "../arc/todaySchedule.ts";
+import { resolveTaskClockTime } from "../arc/todaySchedule.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import { findLatestOutcomeForTask, recordStartedOriginalTaskAfter } from "../arc/postponementObstacle.ts";
 import { loadPostponementObstacleOutcomes, upsertPostponementObstacleOutcome } from "../data/storage.ts";
 import { resolveContinuousRoutineOutcome } from "../data/dailyRoutine.ts";
 import { formatMinutesToClockTime, parseClockTimeToMinutes } from "../arc/dailyRoutine.ts";
-import { resolveNextScheduledTaskDisplay } from "../data/dailyPlan.ts";
+import { resolveMostUrgentScheduledTask, resolveNextScheduledTaskDisplay } from "../data/dailyPlan.ts";
 import type { NextScheduledTaskDisplay } from "../data/dailyPlan.ts";
 import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
 import { createArcFocusSession, generateArcFocusPracticeId } from "../arc/arcFocusSession.ts";
@@ -1078,15 +1076,22 @@ export default function ActiveTaskScreen({
   /**
    * ARC-system upgrade task, Part J: shared "move to whatever's next, or
    * back to the tasks list if nothing is left today" navigation, used by
-   * both "Next Task" and "Skip Task" below (never a second, competing
-   * calculation of "what's next" -- always resolveNextTaskEntry, the
-   * exact same sort/bucketing Today's own dashboard uses). "No next
-   * task" returns to the tasks list with an explicit flag so it can show
-   * the "nothing left today" message, instead of navigating nowhere.
+   * both "Next Task" and "Skip Task" below.
+   *
+   * Task LIVE / To-Do List / Flexible Day sync fix: never a second,
+   * competing calculation of "what's next" -- always
+   * resolveMostUrgentScheduledTask (data/dailyPlan.ts), built from the
+   * ONE real, resolved flexible-day plan every other sync-fixed screen
+   * already reads, replacing the old arc/todaySchedule.ts
+   * resolveNextTaskEntry call, which independently recomputed "today"
+   * straight from raw Task fields and could surface a To-Do item never
+   * placed into the flexible day, or disagree with the flexible day's
+   * own chained/auto-scheduled times. "No next task" returns to the
+   * tasks list with an explicit flag so it can show the "nothing left
+   * today" message, instead of navigating nowhere.
    */
   async function navigateToNextOrTasksList(excludeTaskId: string) {
-    const [allTasks, completions, overrides] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()]);
-    const next = resolveNextTaskEntry(allTasks, completions, excludeTaskId, new Date(), overrides, timerRun);
+    const next = await resolveMostUrgentScheduledTask(excludeTaskId, new Date(), timerRun);
     if (!next) {
       router.push({ pathname: "/tasks", params: { noMoreTasks: "1" } });
       return;

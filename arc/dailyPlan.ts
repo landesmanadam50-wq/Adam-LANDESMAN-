@@ -380,6 +380,36 @@ export function resolveCurrentTaskState(
 }
 
 /**
+ * Task LIVE / To-Do List / Flexible Day sync fix: the ONE "what to jump
+ * to or auto-start right now" pick for every navigation/suggestion call
+ * site that used to fall back through arc/todaySchedule.ts's own
+ * resolveMostUrgentEntry/resolveNextTaskEntry (live/ActiveTaskScreen.tsx's
+ * Next Task/Skip Task, live/PersistentTaskControls.tsx's "התחל משימה",
+ * live/PostTaskRewardScreen.tsx's post-completion auto-advance,
+ * live/ManifestMeditationScreen.tsx's "today's action" suggestion).
+ *
+ * That old engine independently recomputed "what's scheduled today"
+ * straight from Task's own scheduledDate/scheduledTime -- never
+ * excluding isTodoItem tasks (a To-Do item not yet placed into the
+ * flexible day could surface as "next"), and never reading the chained
+ * effectiveStartTime/effectiveEndTime applyScheduleMode computes (so its
+ * own idea of "urgent" could disagree with what the Flexible Day screen
+ * itself shows). This picks exclusively from `state`, which the caller
+ * must have already built from THIS date's real, resolved flexible-day
+ * plan (resolveDailyPlan + applyScheduleMode + resolveCurrentTaskState)
+ * -- so a task removed from the flexible day, or never scheduled into it
+ * in the first place, can never be chosen here, by construction.
+ *
+ * Mirrors resolveMostUrgentEntry's own fallback order exactly (current,
+ * else the earliest overdue entry, else the next upcoming one) -- same
+ * semantics trainees already know from that screen, just sourced from
+ * the one real plan instead of a second, independent calculation.
+ */
+export function resolveMostUrgentScheduledEntry(state: CurrentTaskState): ScheduledPlanEntry | null {
+  return state.current ?? state.overdue[0] ?? state.next ?? null;
+}
+
+/**
  * Morning Flow Simplification task, section 3: "a suitable schedule"
  * for today means at least this many effectively-scheduled entries --
  * matching the spec's own "recommendation to select at least three

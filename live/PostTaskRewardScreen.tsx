@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
 import type { Task } from "../arc/tasks.ts";
-import { resolveNextTaskEntry } from "../arc/todaySchedule.ts";
+import { resolveMostUrgentScheduledTask } from "../data/dailyPlan.ts";
 import { findOutcomeBySmallerTaskId, recordSmallerStepCompleted } from "../arc/postponementObstacle.ts";
 import { loadPostponementObstacleOutcomes, upsertPostponementObstacleOutcome } from "../data/storage.ts";
 import { POSITIVE_IMAGERY_PROMPTS, resolveNextPositiveImageryIndex } from "../arc/positiveImagery.ts";
@@ -20,9 +20,6 @@ import {
   getTask,
   loadPositiveImageryProgress,
   loadPostTaskRewardsState,
-  loadTaskOccurrenceCompletions,
-  loadTaskOccurrenceOverrides,
-  loadTasks,
   loadTaskTimerRun,
   savePositiveImageryProgress,
   savePostTaskRewardsState,
@@ -159,8 +156,8 @@ export default function PostTaskRewardScreen({
       router.replace({ pathname: "/tasks/[id]/postpone-return", params: { id: task.parentTaskId } });
       return;
     }
-    const [allTasks, completions, overrides, activeRun] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides(), loadTaskTimerRun()]);
-    const next = resolveNextTaskEntry(allTasks, completions, taskId, new Date(), overrides, activeRun);
+    const activeRun = await loadTaskTimerRun();
+    const next = await resolveMostUrgentScheduledTask(taskId, new Date(), activeRun);
     if (!next) {
       router.back();
       return;

@@ -54,18 +54,18 @@ test("Start Task with an active task just returns to it -- no autoStart param, s
   assert.match(fnBody, /pathname: "\/tasks\/\[id\]", params: \{ id: activeTaskId \}/);
 });
 
-test("Start Task with no active task resolves the next relevant scheduled task via the shared resolveNextTaskEntry and opens it with autoStart=1 -- which itself already respects the Daily Visualization gate", () => {
+test("Start Task with no active task resolves the next relevant scheduled task via the shared resolveMostUrgentScheduledTask (Task LIVE / To-Do List / Flexible Day sync fix -- built from the ONE real, resolved flexible-day plan) and opens it with autoStart=1 -- which itself already respects the Daily Visualization gate", () => {
   const fnIndex = controls.indexOf("async function handleStartTaskPress()");
   const fnBody = controls.slice(fnIndex, fnIndex + 700);
-  assert.ok(fnBody.includes("resolveNextTaskEntry(tasks, completions, "));
+  assert.ok(fnBody.includes("resolveMostUrgentScheduledTask(null, new Date(), currentRun)"));
   assert.match(fnBody, /pathname: "\/tasks\/\[id\]", params: \{ id: next\.task\.id, autoStart: "1" \}/);
   assert.ok(fnBody.includes('router.push("/tasks");'), "falls back to the tasks list when nothing is left to start");
 });
 
-test("resolveNextTaskEntry is called with the already-loaded currentRun -- never a second TaskTimerRun load, so another, separately-stale active task elsewhere in the list is also correctly excluded from 'what's next'", () => {
+test("resolveMostUrgentScheduledTask is called with the already-loaded currentRun -- never a second TaskTimerRun load, so another, separately-stale active task elsewhere in the list is also correctly excluded from 'what's next'", () => {
   const fnIndex = controls.indexOf("async function handleStartTaskPress()");
   const fnBody = controls.slice(fnIndex, fnIndex + 700);
-  assert.ok(fnBody.includes('resolveNextTaskEntry(tasks, completions, "", new Date(), overrides, currentRun)'));
+  assert.ok(fnBody.includes("resolveMostUrgentScheduledTask(null, new Date(), currentRun)"));
 });
 
 test("the Start Task button is a plain, always-visible Pressable, centered horizontally (Part 10.2) -- never conditionally hidden by timer state", () => {

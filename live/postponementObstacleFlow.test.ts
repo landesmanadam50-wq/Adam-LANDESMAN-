@@ -139,11 +139,11 @@ test("after completing a smaller step, PostTaskRewardScreen offers to continue w
   assert.ok(fnBody.includes('router.replace({ pathname: "/tasks/[id]/postpone-return", params: { id: task.parentTaskId } });'));
 });
 
-test("the parentTaskId redirect is checked BEFORE the generic resolveNextTaskEntry calculation -- a smaller step never falls through to 'what's next' instead of its own parent", () => {
+test("the parentTaskId redirect is checked BEFORE the generic resolveMostUrgentScheduledTask calculation -- a smaller step never falls through to 'what's next' instead of its own parent", () => {
   const fnIndex = rewardScreen.indexOf("async function advanceToNextTask");
   const fnBody = rewardScreen.slice(fnIndex, fnIndex + 1400);
   const parentCheckIndex = fnBody.indexOf("task?.parentTaskId");
-  const resolveIndex = fnBody.indexOf("resolveNextTaskEntry(");
+  const resolveIndex = fnBody.indexOf("resolveMostUrgentScheduledTask(");
   assert.ok(parentCheckIndex !== -1 && resolveIndex !== -1 && parentCheckIndex < resolveIndex);
 });
 

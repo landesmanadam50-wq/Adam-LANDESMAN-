@@ -30,9 +30,9 @@ test("the suggestions are read from real saved records (IdentityProfile, recurri
   assert.ok(screen.includes("loadIdentityProfiles()"));
 });
 
-test("today's action can be set from the real current/next task (Stage I's own buildTodaySections), never a guessed one", () => {
-  assert.match(screen, /import\s*\{[\s\S]*?buildTodaySections[\s\S]*?\}\s*from\s*["']\.\.\/arc\/todaySchedule\.ts["']/);
-  assert.ok(screen.includes("resolveMostUrgentEntry(today)?.task ?? null"));
+test("today's action can be set from the real current/next task in the ONE resolved flexible-day plan (Task LIVE / To-Do List / Flexible Day sync fix: resolveMostUrgentScheduledTask), never a guessed one and never the old, independently-recomputed arc/todaySchedule.ts buildTodaySections", () => {
+  assert.match(screen, /import\s*\{[\s\S]*?resolveMostUrgentScheduledTask[\s\S]*?\}\s*from\s*["']\.\.\/data\/dailyPlan\.ts["']/);
+  assert.ok(screen.includes("resolveMostUrgentScheduledTask(null, new Date(), activeRun))?.task ?? null"));
 });
 
 test("turning today's action into a task requires an explicit confirmation step -- never created on a single tap", () => {

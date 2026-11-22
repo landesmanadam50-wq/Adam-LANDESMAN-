@@ -19,9 +19,9 @@ import {
   suggestPersonalSentencesFromIdentityProfiles,
   suggestValuesFromIdentityProfiles,
 } from "../arc/manifestMeditationDataSources.ts";
-import { buildTodaySections, resolveMostUrgentEntry } from "../arc/todaySchedule.ts";
+import { resolveMostUrgentScheduledTask } from "../data/dailyPlan.ts";
 import { createEmptyTask, generateTaskId } from "../arc/tasks.ts";
-import { loadIdentityProfiles, loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, loadTaskTimerRun, upsertTask } from "../data/storage.ts";
+import { loadIdentityProfiles, loadTasks, loadTaskTimerRun, upsertTask } from "../data/storage.ts";
 
 /**
  * live/ManifestMeditationScreen.tsx (route /manifest-meditation)
@@ -67,13 +67,19 @@ export default function ManifestMeditationScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      Promise.all([loadIdentityProfiles(), loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides(), loadTaskTimerRun()]).then(([profiles, tasks, completions, overrides, activeRun]) => {
+      Promise.all([loadIdentityProfiles(), loadTasks(), loadTaskTimerRun()]).then(async ([profiles, tasks, activeRun]) => {
         setSuggestedValues(suggestValuesFromIdentityProfiles(profiles));
         setSuggestedIdentities(suggestIdentitiesFromIdentityProfiles(profiles));
         setSuggestedHabits(suggestHabitsFromRecurringTasks(tasks));
         setSuggestedSentences(suggestPersonalSentencesFromIdentityProfiles(profiles));
-        const today = buildTodaySections(tasks, completions, new Date(), overrides, activeRun);
-        const currentTask = resolveMostUrgentEntry(today)?.task ?? null;
+        // Task LIVE / To-Do List / Flexible Day sync fix: "today's action"
+        // now comes from the ONE real, resolved flexible-day plan
+        // (resolveMostUrgentScheduledTask), never the old
+        // arc/todaySchedule.ts buildTodaySections/resolveMostUrgentEntry
+        // pair, which independently recomputed "today" from raw Task
+        // fields and could surface a To-Do item never placed into the
+        // flexible day.
+        const currentTask = (await resolveMostUrgentScheduledTask(null, new Date(), activeRun))?.task ?? null;
         setSuggestedTodaysAction(currentTask ? currentTask.currentAction ?? currentTask.firstAction : null);
       });
     }, [])

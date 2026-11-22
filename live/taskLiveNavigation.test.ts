@@ -44,11 +44,11 @@ test("handleSkipTask records a plain 'task_skipped' journal entry and never touc
   assert.ok(fnBody.includes("navigateToNextOrTasksList(task.id)"));
 });
 
-test("navigateToNextOrTasksList uses resolveNextTaskEntry (never buildTodaySections directly, which would wrongly re-include the current task) and falls back to the tasks list with a flag when nothing is left", () => {
+test("navigateToNextOrTasksList uses resolveMostUrgentScheduledTask (Task LIVE / To-Do List / Flexible Day sync fix -- built from the ONE real, resolved flexible-day plan, never the old arc/todaySchedule.ts buildTodaySections/resolveNextTaskEntry, which would never exclude a To-Do item or re-include the current task) and falls back to the tasks list with a flag when nothing is left", () => {
   const fnIndex = screen.indexOf("async function navigateToNextOrTasksList");
   assert.ok(fnIndex !== -1);
   const fnBody = screen.slice(fnIndex, fnIndex + 550);
-  assert.ok(fnBody.includes("resolveNextTaskEntry(allTasks, completions, excludeTaskId, new Date(), overrides, timerRun)"));
+  assert.ok(fnBody.includes("resolveMostUrgentScheduledTask(excludeTaskId, new Date(), timerRun)"));
   assert.ok(fnBody.includes('pathname: "/tasks", params: { noMoreTasks: "1" }'));
   assert.ok(fnBody.includes('pathname: "/tasks/[id]", params: { id: next.task.id }'));
 });

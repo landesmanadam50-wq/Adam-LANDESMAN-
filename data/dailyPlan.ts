@@ -18,10 +18,11 @@
  * third, additively-introduced copy of the same five-call pipeline,
  * never a fourth, DIFFERENT "what's scheduled today" algorithm.
  */
-import { applyScheduleMode, resolveCurrentTaskState, resolveDailyPlan } from "../arc/dailyPlan.ts";
+import { applyScheduleMode, resolveCurrentTaskState, resolveDailyPlan, resolveMostUrgentScheduledEntry } from "../arc/dailyPlan.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
 import { resolveEffectiveScheduleMode } from "../arc/weeklyScheduleMode.ts";
 import type { Task } from "../arc/tasks.ts";
+import type { TaskTimerRun } from "../arc/taskTimer.ts";
 import { parseCalendarDate, todayLocalDateString } from "../program/dateUtils.ts";
 import { loadDailyScheduleModeOverrides, loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, loadWeeklyScheduleModeSettings } from "./storage.ts";
 
@@ -72,4 +73,29 @@ export async function resolveNextScheduledTaskDisplay(activeTaskId: string | nul
   const { next } = resolveCurrentTaskState(scheduled, now, null, activeTaskId);
   if (!next) return null;
   return { task: next.task, effectiveStartTime: next.effectiveStartTime, isOverdue: false };
+}
+
+/**
+ * Task LIVE / To-Do List / Flexible Day sync fix: the ONE IO-level
+ * "what to jump to or auto-start right now" lookup -- built entirely
+ * from resolveTodaysScheduledPlan above (the exact same real, resolved
+ * flexible-day plan build/FlexibleDailyScreen.tsx itself shows) and
+ * arc/dailyPlan.ts's own resolveMostUrgentScheduledEntry, replacing
+ * every former call site of arc/todaySchedule.ts's resolveNextTaskEntry/
+ * resolveMostUrgentEntry (a second, independent "what's scheduled
+ * today" calculation that never excluded To-Do items and never read the
+ * chained effective times applyScheduleMode computes). `activeRun` is
+ * real, caller-supplied state (never hardcoded null) so a genuinely
+ * still-running active task is correctly distinguished from a stale
+ * one, matching the Current-task logic fix's own "thread activeRun
+ * through every buildTodaySections call site" precedent.
+ */
+export async function resolveMostUrgentScheduledTask(
+  excludeTaskId: string | null,
+  now: Date = new Date(),
+  activeRun: TaskTimerRun | null = null
+): Promise<ScheduledPlanEntry | null> {
+  const scheduled = await resolveTodaysScheduledPlan(now);
+  const state = resolveCurrentTaskState(scheduled, now, activeRun, excludeTaskId);
+  return resolveMostUrgentScheduledEntry(state);
 }

@@ -2,9 +2,9 @@ import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 
-import { resolveNextTaskEntry } from "../arc/todaySchedule.ts";
+import { resolveMostUrgentScheduledTask } from "../data/dailyPlan.ts";
 import { getTaskTimerStatus, type TaskTimerRun } from "../arc/taskTimer.ts";
-import { loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, loadTaskTimerRun } from "../data/storage.ts";
+import { loadTaskTimerRun } from "../data/storage.ts";
 
 /**
  * live/PersistentTaskControls.tsx
@@ -29,10 +29,12 @@ import { loadTaskOccurrenceCompletions, loadTaskOccurrenceOverrides, loadTasks, 
  * exists and is already fully tested elsewhere -- it implements no new
  * start logic of its own: with a task active, simply returns to it (no
  * new timer is ever created just by pressing this). With none active,
- * resolves the next relevant scheduled task via arc/todaySchedule.ts's
- * own resolveNextTaskEntry -- the exact same "what's next" calculation
- * every other screen in this app already agrees on -- and opens it
- * with autoStart=1, which itself already routes through the Daily
+ * resolves the next relevant scheduled task via data/dailyPlan.ts's own
+ * resolveMostUrgentScheduledTask -- built from the ONE real, resolved
+ * flexible-day plan (Task LIVE / To-Do List / Flexible Day sync fix),
+ * the exact same "what's next" calculation every other sync-fixed
+ * screen in this app already agrees on -- and opens it with
+ * autoStart=1, which itself already routes through the Daily
  * Visualization completion/bypass gate (live/ActiveTaskScreen.tsx's
  * own handleStart) before anything actually starts.
  */
@@ -65,8 +67,7 @@ export default function PersistentTaskControls() {
       router.push({ pathname: "/tasks/[id]", params: { id: activeTaskId } });
       return;
     }
-    const [tasks, completions, overrides] = await Promise.all([loadTasks(), loadTaskOccurrenceCompletions(), loadTaskOccurrenceOverrides()]);
-    const next = resolveNextTaskEntry(tasks, completions, "", new Date(), overrides, currentRun);
+    const next = await resolveMostUrgentScheduledTask(null, new Date(), currentRun);
     if (next) {
       router.push({ pathname: "/tasks/[id]", params: { id: next.task.id, autoStart: "1" } });
       return;

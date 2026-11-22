@@ -27,7 +27,7 @@ function readSource(relativePath: string): string {
 const screen = readSource("live/ActiveTaskScreen.tsx");
 
 test("imports the one shared next-scheduled-task resolver (data/dailyPlan.ts) and the shared conflict/shorten primitives -- never a second, re-derived algorithm", () => {
-  assert.ok(screen.includes('import { resolveNextScheduledTaskDisplay } from "../data/dailyPlan.ts";'));
+  assert.match(screen, /import\s*\{[\s\S]*?resolveNextScheduledTaskDisplay[\s\S]*?\}\s*from\s*["']\.\.\/data\/dailyPlan\.ts["']/);
   assert.match(screen, /import\s*\{[\s\S]*?shortenTaskTimerRun[\s\S]*?\}\s*from\s*["']\.\.\/arc\/taskTimer\.ts["']/);
 });
 

@@ -48,11 +48,11 @@ test("requirement 3: the sound effect is skipped entirely while a rest run is ac
 // live/PostTaskRewardScreen.tsx's own advanceToNextTask, which is what
 // actually runs once the trainee finishes/skips the shared post-
 // completion smiling/imagery/reward screen.
-test("requirement 5/6: PostTaskRewardScreen looks up the next task via the SAME arc/todaySchedule.ts resolveNextTaskEntry Today's own dashboard uses -- never a second, competing 'what's next' calculation", () => {
-  assert.match(rewardScreen, /import\s*\{\s*resolveNextTaskEntry\s*\}\s*from\s*["']\.\.\/arc\/todaySchedule\.ts["']/);
+test("requirement 5/6: PostTaskRewardScreen looks up the next task via the SAME data/dailyPlan.ts resolveMostUrgentScheduledTask every other sync-fixed screen uses (Task LIVE / To-Do List / Flexible Day sync fix) -- never a second, competing 'what's next' calculation", () => {
+  assert.match(rewardScreen, /import\s*\{\s*resolveMostUrgentScheduledTask\s*\}\s*from\s*["']\.\.\/data\/dailyPlan\.ts["']/);
   const fnIndex = rewardScreen.indexOf("async function advanceToNextTask");
   const fnBody = rewardScreen.slice(fnIndex, fnIndex + 1400);
-  assert.ok(fnBody.includes("resolveNextTaskEntry(allTasks, completions, taskId, new Date(), overrides, activeRun)"));
+  assert.ok(fnBody.includes("resolveMostUrgentScheduledTask(taskId, new Date(), activeRun)"));
   assert.ok(fnBody.includes('router.replace({ pathname, params: { id: next.task.id } })'));
 });
 
