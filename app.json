@@ -58,7 +58,15 @@
           }
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "expo-video",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "ARCHI צריך גישה למצלמה כדי לצלם את הסרטונים שלך ב-ARC Video.",
+          "microphonePermission": "ARCHI צריך גישה למיקרופון כדי להקליט את הקול שלך בזמן צילום סרטון ב-ARC Video."
+        }
+      ]
     ],
     "extra": {
       "eas": {

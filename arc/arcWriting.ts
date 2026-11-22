@@ -17,11 +17,18 @@
  * exactly like ArcInsight itself: created once, linked from many texts/
  * chapters/books, never duplicated.
  *
- * Three more record types: ArcWritingText (one free-form text, optionally
+ * Four more record types: ArcWritingText (one free-form text, optionally
  * associated with a book chapter), ArcBook (name/topic/purpose/description
  * plus its own book-level working set of insights/relationships and
  * ArcGymGoal links), ArcBookChapter (one chapter's own purpose/content/
- * insights/relationships/order/status).
+ * insights/relationships/order/status), and ArcVideoRecording (ARC Video
+ * task: the ONE recorded take belonging to an ArcWritingText whose own
+ * `kind` is "video_script" -- "ARC Video is an extension of ARC Writing,
+ * not a separate writing system," so a video script is still a plain
+ * ArcWritingText, never a parallel text entity; only the finished
+ * recording itself -- a local video file, never raw bytes in storage --
+ * is its own record, linked back to the script by id the same
+ * consumer-side way everything else here links).
  *
  * Every insight/relationship/text link here is a plain id-array on the
  * CONSUMER side (text/chapter/book), exactly the established
@@ -101,10 +108,13 @@ export function resolveRelationshipsForInsights(relationships: ArcInsightRelatio
 // ArcWritingText -- one free-form ARC Writing text.
 // ---------------------------------------------------------------------------
 
+/** ARC Video task: a plain ArcWritingText is either an ordinary free-form text or a video script -- the SAME entity, never a second parallel one, so every existing text-editing function/screen keeps working unchanged for "standard" texts. */
+export type ArcWritingTextKind = "standard" | "video_script";
+
 export interface ArcWritingText {
   id: string;
   title: string;
-  /** Free-form, no length limit -- always the trainee's own words. */
+  /** Free-form, no length limit -- always the trainee's own words. For a video_script, this IS the teleprompter script text. */
   body: string;
   insightIds: string[];
   relationshipIds: string[];
@@ -114,6 +124,13 @@ export interface ArcWritingText {
   /** Optional: "associate this text with a chapter of an existing book." Always both set or both null. */
   associatedBookId: string | null;
   associatedChapterId: string | null;
+  /** Defaults to "standard" -- a pre-existing text backfilled with this field is never silently reclassified as a video script. */
+  kind: ArcWritingTextKind;
+  /** The video's own topic/purpose, captured when the trainee sets up a video script (spec section 1) -- null for a "standard" text. Distinct from an ArcVideoRecording's own topic/purpose, which default FROM these but may be edited independently once the video exists (spec section 4's own title/topic/purpose/description belong to the uploaded video, not the script). */
+  videoTopic: string | null;
+  videoPurpose: string | null;
+  /** The script's own CURRENT recording, if any -- "update the script and re-record" (spec section 3) replaces this pointer via setWritingTextVideoRecording, it never multiplies; a prior take's own ArcVideoRecording row is deleted by the caller, not cascaded here (same "consumer decides, this module never cascades" convention as the rest of the file). */
+  videoRecordingId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -133,6 +150,10 @@ export function createArcWritingText(id: string, now: string): ArcWritingText {
     isDraft: true,
     associatedBookId: null,
     associatedChapterId: null,
+    kind: "standard",
+    videoTopic: null,
+    videoPurpose: null,
+    videoRecordingId: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -140,7 +161,7 @@ export function createArcWritingText(id: string, now: string): ArcWritingText {
 
 export function updateArcWritingText(
   text: ArcWritingText,
-  patch: Partial<Pick<ArcWritingText, "title" | "body" | "isDraft">>,
+  patch: Partial<Pick<ArcWritingText, "title" | "body" | "isDraft" | "kind" | "videoTopic" | "videoPurpose">>,
   now: string
 ): ArcWritingText {
   return {
@@ -148,8 +169,33 @@ export function updateArcWritingText(
     title: patch.title !== undefined ? patch.title.trim() : text.title,
     body: patch.body !== undefined ? patch.body : text.body,
     isDraft: patch.isDraft !== undefined ? patch.isDraft : text.isDraft,
+    kind: patch.kind !== undefined ? patch.kind : text.kind,
+    videoTopic: patch.videoTopic !== undefined ? patch.videoTopic?.trim() || null : text.videoTopic,
+    videoPurpose: patch.videoPurpose !== undefined ? patch.videoPurpose?.trim() || null : text.videoPurpose,
     updatedAt: now,
   };
+}
+
+/** ARC Video task: backfills kind/videoTopic/videoPurpose/videoRecordingId on an ArcWritingText loaded from storage before this field set existed -- same "?? default, never reclassify/invent a value" convention as arc/tasks.ts's own normalizeTask. A record missing these fields is simply an ordinary "standard" text, exactly as it always behaved. */
+export function normalizeArcWritingText(text: ArcWritingText): ArcWritingText {
+  return {
+    ...text,
+    kind: text.kind ?? "standard",
+    videoTopic: text.videoTopic ?? null,
+    videoPurpose: text.videoPurpose ?? null,
+    videoRecordingId: text.videoRecordingId ?? null,
+  };
+}
+
+/** Points the script at its current recording -- "update the script and re-record" (spec section 3) calls this again with the NEW recording's id, simply replacing the pointer; it never keeps a history of prior takes here (the trainee's own ArcVideoRecording list is the history, if they choose not to delete an old one). */
+export function setWritingTextVideoRecording(text: ArcWritingText, recordingId: string | null, now: string): ArcWritingText {
+  if (text.videoRecordingId === recordingId) return text;
+  return { ...text, videoRecordingId: recordingId, updatedAt: now };
+}
+
+/** Every video-script text, regardless of draft/associated-chapter status -- the "כתיבת תסריט לסרטון" list a dedicated ARC Video entry point would show, kept separate from resolveStandaloneWritingTexts (which still includes video scripts too, since a script IS a text -- this is an ADDITIONAL, narrower view, not a replacement). */
+export function resolveVideoScriptTexts(texts: ArcWritingText[]): ArcWritingText[] {
+  return texts.filter((text) => text.kind === "video_script");
 }
 
 export function upsertArcWritingTextInList(texts: ArcWritingText[], text: ArcWritingText): ArcWritingText[] {
@@ -468,4 +514,183 @@ export function computeArcBookWordCount(chapters: ArcBookChapter[], bookId: stri
 /** Resolves the insights touching either a book's own working set or one of its chapters -- never duplicates ArcInsight records, only follows the id links. */
 export function resolveInsightsForIds(insights: ArcInsight[], insightIds: string[]): ArcInsight[] {
   return insightIds.map((id) => insights.find((insight) => insight.id === id)).filter((insight): insight is ArcInsight => insight !== undefined);
+}
+
+// ---------------------------------------------------------------------------
+// ArcVideoRecording -- ARC Video task: the one recorded take belonging to a
+// video-script ArcWritingText, organized for browsing/sharing by topic and
+// goal. The actual video bytes live in the filesystem (arc/arcVideoFile.ts
+// is the one module that ever touches that file); `localUri` here is a
+// plain string field, exactly like every other optional field on an
+// existing record in this file -- this module itself never imports any
+// native/file-system/camera module, keeping the "pure types + pure
+// functions only" contract intact for the whole file, ARC Video included.
+// ---------------------------------------------------------------------------
+
+/**
+ * No accounts/backend exist anywhere in this app (data/storage.ts's own
+ * top banner: "per tester" persistence means per-device) -- "published"
+ * can only mean a LOCAL distinction ("organized/finished, meant to be
+ * found and shared out from this device," e.g. via the OS share sheet,
+ * the same arc/arcBookExport.ts precedent) vs "private" (hidden from any
+ * browsable/shareable list), never literally visible to other users.
+ * publishArcVideoRecording/unpublishArcVideoRecording below are the ONLY
+ * two functions that ever change this field, so "publishing a video only
+ * happens after the trainee's own confirmation" (spec section 4) holds
+ * structurally: the UI gates the ONE call to publishArcVideoRecording
+ * behind a confirmation dialog, never flips the field inline elsewhere.
+ */
+export type ArcVideoVisibility = "private" | "published";
+
+export interface ArcVideoRecording {
+  id: string;
+  /** The ArcWritingText (kind "video_script") this take was recorded from. */
+  scriptId: string;
+  /** A local file path/URI (expo-file-system document directory) -- never raw video bytes. */
+  localUri: string;
+  /** Null until the file is known/measured; set once by the record screen. */
+  durationSeconds: number | null;
+  recordedAt: string;
+  /** Defaults from the script's own videoTopic/videoPurpose at creation, but is this record's OWN field from then on -- editing it never rewrites the script. */
+  title: string;
+  topic: string;
+  purpose: string;
+  description: string | null;
+  visibility: ArcVideoVisibility;
+  isDraft: boolean;
+  insightIds: string[];
+  relationshipIds: string[];
+  /** ArcGymGoal links, the exact same consumer-side convention as ArcBook.linkedGoalIds above. */
+  linkedGoalIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function generateArcVideoRecordingId(): string {
+  return `arc-video-recording-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function createArcVideoRecording(id: string, scriptId: string, localUri: string, title: string, topic: string, purpose: string, now: string): ArcVideoRecording {
+  return {
+    id,
+    scriptId,
+    localUri,
+    durationSeconds: null,
+    recordedAt: now,
+    title: title.trim(),
+    topic: topic.trim(),
+    purpose: purpose.trim(),
+    description: null,
+    visibility: "private",
+    isDraft: true,
+    insightIds: [],
+    relationshipIds: [],
+    linkedGoalIds: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function updateArcVideoRecording(
+  recording: ArcVideoRecording,
+  patch: Partial<Pick<ArcVideoRecording, "title" | "topic" | "purpose" | "description" | "durationSeconds" | "isDraft" | "localUri">>,
+  now: string
+): ArcVideoRecording {
+  return {
+    ...recording,
+    title: patch.title !== undefined ? patch.title.trim() : recording.title,
+    topic: patch.topic !== undefined ? patch.topic.trim() : recording.topic,
+    purpose: patch.purpose !== undefined ? patch.purpose.trim() : recording.purpose,
+    description: patch.description !== undefined ? patch.description?.trim() || null : recording.description,
+    durationSeconds: patch.durationSeconds !== undefined ? patch.durationSeconds : recording.durationSeconds,
+    isDraft: patch.isDraft !== undefined ? patch.isDraft : recording.isDraft,
+    localUri: patch.localUri !== undefined ? patch.localUri : recording.localUri,
+    updatedAt: now,
+  };
+}
+
+export function upsertArcVideoRecordingInList(recordings: ArcVideoRecording[], recording: ArcVideoRecording): ArcVideoRecording[] {
+  const index = recordings.findIndex((existing) => existing.id === recording.id);
+  if (index === -1) return [...recordings, recording];
+  const next = [...recordings];
+  next[index] = recording;
+  return next;
+}
+
+/** Removes the recording record itself only -- never deletes the underlying file (arc/arcVideoFile.ts's own deleteRecordingFile is a separate, explicit step the caller takes first/alongside, same "this module is pure, I/O lives elsewhere" contract as the rest of the file). */
+export function deleteArcVideoRecordingFromList(recordings: ArcVideoRecording[], id: string): ArcVideoRecording[] {
+  return recordings.filter((recording) => recording.id !== id);
+}
+
+export function linkInsightToVideoRecording(recording: ArcVideoRecording, insightId: string, now: string): ArcVideoRecording {
+  if (recording.insightIds.includes(insightId)) return recording;
+  return { ...recording, insightIds: [...recording.insightIds, insightId], updatedAt: now };
+}
+
+export function unlinkInsightFromVideoRecording(recording: ArcVideoRecording, insightId: string, now: string): ArcVideoRecording {
+  if (!recording.insightIds.includes(insightId)) return recording;
+  return { ...recording, insightIds: recording.insightIds.filter((id) => id !== insightId), updatedAt: now };
+}
+
+export function linkRelationshipToVideoRecording(recording: ArcVideoRecording, relationshipId: string, now: string): ArcVideoRecording {
+  if (recording.relationshipIds.includes(relationshipId)) return recording;
+  return { ...recording, relationshipIds: [...recording.relationshipIds, relationshipId], updatedAt: now };
+}
+
+export function unlinkRelationshipFromVideoRecording(recording: ArcVideoRecording, relationshipId: string, now: string): ArcVideoRecording {
+  if (!recording.relationshipIds.includes(relationshipId)) return recording;
+  return { ...recording, relationshipIds: recording.relationshipIds.filter((id) => id !== relationshipId), updatedAt: now };
+}
+
+export function linkArcGymGoalToVideoRecording(recording: ArcVideoRecording, goalId: string, now: string): ArcVideoRecording {
+  if (recording.linkedGoalIds.includes(goalId)) return recording;
+  return { ...recording, linkedGoalIds: [...recording.linkedGoalIds, goalId], updatedAt: now };
+}
+
+export function unlinkArcGymGoalFromVideoRecording(recording: ArcVideoRecording, goalId: string, now: string): ArcVideoRecording {
+  if (!recording.linkedGoalIds.includes(goalId)) return recording;
+  return { ...recording, linkedGoalIds: recording.linkedGoalIds.filter((id) => id !== goalId), updatedAt: now };
+}
+
+/** The ONE place visibility ever becomes "published" -- the UI gates this single call behind an explicit confirmation dialog (spec section 4: "publishing a video only happens after the trainee's own confirmation"), never flips the field any other way. */
+export function publishArcVideoRecording(recording: ArcVideoRecording, now: string): ArcVideoRecording {
+  if (recording.visibility === "published") return recording;
+  return { ...recording, visibility: "published", updatedAt: now };
+}
+
+/** The reverse -- reverting a published video back to private, e.g. if the trainee changes their mind. No confirmation is required going this direction (making something MORE private is never the risky action the spec's own confirmation requirement is about). */
+export function unpublishArcVideoRecording(recording: ArcVideoRecording, now: string): ArcVideoRecording {
+  if (recording.visibility === "private") return recording;
+  return { ...recording, visibility: "private", updatedAt: now };
+}
+
+export function resolveVideoRecordingsForScript(recordings: ArcVideoRecording[], scriptId: string): ArcVideoRecording[] {
+  return recordings.filter((recording) => recording.scriptId === scriptId);
+}
+
+export function resolvePublishedVideoRecordings(recordings: ArcVideoRecording[]): ArcVideoRecording[] {
+  return recordings.filter((recording) => recording.visibility === "published");
+}
+
+export function resolvePrivateVideoRecordings(recordings: ArcVideoRecording[]): ArcVideoRecording[] {
+  return recordings.filter((recording) => recording.visibility === "private");
+}
+
+/** The derived, never-persisted "which videos does this goal have" view -- same convention as resolveArcBooksLinkedToGoal. */
+export function resolveVideoRecordingsLinkedToGoal(recordings: ArcVideoRecording[], goalId: string): ArcVideoRecording[] {
+  return recordings.filter((recording) => recording.linkedGoalIds.includes(goalId));
+}
+
+/** Every distinct, non-empty topic across all recordings, alphabetically sorted -- the video library screen's own "browse by topic" section headers, computed fresh, never a second, separately-maintained topic list. */
+export function resolveDistinctVideoTopics(recordings: ArcVideoRecording[]): string[] {
+  const topics = new Set<string>();
+  for (const recording of recordings) {
+    if (recording.topic.trim().length > 0) topics.add(recording.topic);
+  }
+  return [...topics].sort((a, b) => a.localeCompare(b));
+}
+
+/** All recordings sharing one exact topic string -- paired with resolveDistinctVideoTopics for the grouped library view. */
+export function resolveVideoRecordingsForTopic(recordings: ArcVideoRecording[], topic: string): ArcVideoRecording[] {
+  return recordings.filter((recording) => recording.topic === topic);
 }

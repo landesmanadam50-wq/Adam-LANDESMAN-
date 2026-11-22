@@ -127,12 +127,14 @@ import type { ArcPerspectiveEvent, ArcPerspectiveSession } from "../arc/arcPersp
 import { upsertArcPerspectiveEventInList, upsertArcPerspectiveSessionInList } from "../arc/arcPerspective.ts";
 import type { ArcSavedExercise, ArcSavedBodyOption, ArcTrigger, ArcSavingPendingReview } from "../arc/arcSaving.ts";
 import { upsertArcSavedExerciseInList, upsertArcSavedBodyOptionInList, upsertArcTriggerInList } from "../arc/arcSaving.ts";
-import type { ArcInsightRelationship, ArcWritingText, ArcBook, ArcBookChapter } from "../arc/arcWriting.ts";
+import type { ArcInsightRelationship, ArcWritingText, ArcBook, ArcBookChapter, ArcVideoRecording } from "../arc/arcWriting.ts";
 import {
   upsertArcInsightRelationshipInList,
   upsertArcWritingTextInList,
   upsertArcBookInList,
   upsertArcBookChapterInList,
+  upsertArcVideoRecordingInList,
+  normalizeArcWritingText,
 } from "../arc/arcWriting.ts";
 import type { ArcLearningTopic } from "../arc/arcLearningTopic.ts";
 import { normalizeArcLearningTopic, upsertArcLearningTopicInList } from "../arc/arcLearningTopic.ts";
@@ -158,6 +160,8 @@ import type { DailyVisualizationDailyProgress, DailyVisualizationProfile } from 
 import { normalizeDailyVisualizationDailyProgress, normalizeDailyVisualizationProfile } from "../arc/dailyVisualization.ts";
 import type { ArcFocusSettings } from "../arc/arcFocusSettings.ts";
 import { createDefaultArcFocusSettings, normalizeArcFocusSettings } from "../arc/arcFocusSettings.ts";
+import type { TeleprompterSettings } from "../arc/teleprompterSettings.ts";
+import { createDefaultTeleprompterSettings, normalizeTeleprompterSettings } from "../arc/teleprompterSettings.ts";
 import type { ArcFocusPracticeRecord, ArcFocusSession } from "../arc/arcFocusSession.ts";
 import { migrateLegacyArcFocusSession } from "../arc/arcFocusSession.ts";
 import type { ReviewLaterFactor } from "../arc/reviewLaterFactor.ts";
@@ -4252,10 +4256,11 @@ export async function loadLastEncodingFeelingForTask(taskId: string): Promise<st
 }
 
 // ---------------------------------------------------------------------------
-// ARC Writing & ARC Book task: four strictly separate entities (arc/arcWriting.ts's
-// own doc), each with its own storage key -- never a combined blob, so
-// deleting/editing one never risks corrupting another. Same load/upsert/
-// delete shape as every other section in this file.
+// ARC Writing & ARC Book task: five strictly separate entities (arc/arcWriting.ts's
+// own doc, extended by the ARC Video task for ArcVideoRecording), each
+// with its own storage key -- never a combined blob, so deleting/editing
+// one never risks corrupting another. Same load/upsert/delete shape as
+// every other section in this file.
 // ---------------------------------------------------------------------------
 
 const ARC_INSIGHT_RELATIONSHIPS_KEY = "archi.arcInsightRelationships.v1";
@@ -4290,7 +4295,7 @@ export async function loadArcWritingTexts(): Promise<ArcWritingText[]> {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as ArcWritingText[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(normalizeArcWritingText) : [];
   } catch (error) {
     console.warn("[storage] Stored ArcWritingTexts are not valid JSON -- returning an empty list rather than crashing.", error);
     return [];
@@ -4353,4 +4358,78 @@ export async function upsertArcBookChapterEntry(chapter: ArcBookChapter): Promis
 export async function deleteArcBookChapterEntry(id: string): Promise<void> {
   const chapters = await loadArcBookChapters();
   await AsyncStorage.setItem(ARC_BOOK_CHAPTERS_KEY, JSON.stringify(chapters.filter((chapter) => chapter.id !== id)));
+}
+
+/** ARC Video task: the fifth ArcWriting-family entity -- its own storage key, same non-cascading "deleting one never risks another" convention as the four above. Only the recording's OWN metadata lives here; the actual video file lives on disk (arc/arcVideoFile.ts), never in AsyncStorage. */
+const ARC_VIDEO_RECORDINGS_KEY = "archi.arcVideoRecordings.v1";
+
+export async function loadArcVideoRecordings(): Promise<ArcVideoRecording[]> {
+  const raw = await AsyncStorage.getItem(ARC_VIDEO_RECORDINGS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcVideoRecording[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcVideoRecordings are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcVideoRecordingEntry(recording: ArcVideoRecording): Promise<void> {
+  const recordings = await loadArcVideoRecordings();
+  await AsyncStorage.setItem(ARC_VIDEO_RECORDINGS_KEY, JSON.stringify(upsertArcVideoRecordingInList(recordings, recording)));
+}
+
+export async function deleteArcVideoRecordingEntry(id: string): Promise<void> {
+  const recordings = await loadArcVideoRecordings();
+  await AsyncStorage.setItem(ARC_VIDEO_RECORDINGS_KEY, JSON.stringify(recordings.filter((recording) => recording.id !== id)));
+}
+
+/**
+ * ARC Video task: the camera/microphone analogue of
+ * hasSeenNotificationExplanation/markNotificationExplanationSeen above --
+ * a one-time, dismissible, in-app explanation shown immediately before
+ * the FIRST action that would trigger the real OS camera/microphone
+ * permission dialog (entering the record screen), never shown again
+ * once dismissed. Fails toward `false` (shows the explanation again) on
+ * any storage error, same "never silently skip the explanation" fail
+ * direction as the notification pair.
+ */
+const CAMERA_EXPLANATION_SEEN_KEY = "archi.cameraExplanationSeen.v1";
+
+export async function hasSeenCameraExplanation(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(CAMERA_EXPLANATION_SEEN_KEY)) === "true";
+  } catch (error) {
+    console.warn("[storage] Could not read camera-explanation-seen flag -- showing the explanation again rather than silently skipping it.", error);
+    return false;
+  }
+}
+
+export async function markCameraExplanationSeen(): Promise<void> {
+  await AsyncStorage.setItem(CAMERA_EXPLANATION_SEEN_KEY, "true");
+}
+
+/**
+ * ARC Video task: the teleprompter overlay's own "last used" settings --
+ * a single standalone object, never scoped per-task/per-script (the
+ * trainee's preferred text size/scroll speed/position is a personal
+ * reading preference, not tied to any one recording), same defensive
+ * load/save convention as every other section in this file.
+ */
+const TELEPROMPTER_SETTINGS_KEY = "archi.teleprompterSettings.v1";
+
+export async function loadTeleprompterSettings(): Promise<TeleprompterSettings> {
+  const raw = await AsyncStorage.getItem(TELEPROMPTER_SETTINGS_KEY);
+  if (!raw) return createDefaultTeleprompterSettings();
+  try {
+    return normalizeTeleprompterSettings(JSON.parse(raw) as Partial<TeleprompterSettings>);
+  } catch (error) {
+    console.warn("[storage] Stored TeleprompterSettings are not valid JSON -- returning defaults rather than crashing.", error);
+    return createDefaultTeleprompterSettings();
+  }
+}
+
+export async function saveTeleprompterSettings(settings: TeleprompterSettings): Promise<void> {
+  await AsyncStorage.setItem(TELEPROMPTER_SETTINGS_KEY, JSON.stringify(settings));
 }
