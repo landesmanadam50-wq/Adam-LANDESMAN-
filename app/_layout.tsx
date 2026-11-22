@@ -146,6 +146,7 @@ export default function RootLayout() {
         <Stack.Screen name="arc-gym/book/[id]" options={{ title: "הספר שלי" }} />
         <Stack.Screen name="arc-gym/book/[id]/chapter/[chapterId]" options={{ title: "פרק" }} />
         <Stack.Screen name="arc-gym/video/record/[scriptId]" options={{ title: "צילום סרטון", headerShown: false }} />
+        <Stack.Screen name="arc-gym/video/preview/[id]" options={{ title: "תצוגה מקדימה" }} />
         <Stack.Screen name="arc-perspective/[id]" options={{ title: "ARC Perspective" }} />
         {/* ARC Saving, Trigger Management & Quick-Action Buttons task:
             own independent entry card (never nested under arc-gym/*),
