@@ -24,14 +24,20 @@ const screen = readSource("live/ActiveTaskScreen.tsx");
 
 test("performStart starts the FIRST configured stage's own duration (never the whole task's total at once) and creates a fresh TaskStageProgress for it -- a legacy (no stages) task falls back to task.expectedDurationMinutes exactly as before", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 8300);
+  const fnBody = screen.slice(fnIndex, fnIndex + 8500);
   assert.ok(fnBody.includes("const staged = hasConfiguredActionStages(task.actionStages);"));
   assert.ok(fnBody.includes("const firstStage = staged ? resolveFirstActionStage(task.actionStages!) : null;"));
-  // Smart To-Do List task, section 6: the duration calculation also
-  // checks isTodoSplit now, but still falls back to
-  // task.expectedDurationMinutes ?? 25 for every ordinary (non-split,
-  // non-staged) task exactly as before.
-  assert.ok(fnBody.includes("const durationMinutes = firstStage ? firstStage.durationMinutes : isTodoSplit ? splitMinutes : task.expectedDurationMinutes ?? 25;"));
+  // Smart To-Do List task, section 6, and ARCHI -- To-Do Bank +
+  // Duration/Split Selection task, section 3/4: the duration
+  // calculation also checks pendingSplitSegment/isTodoSplit now, but
+  // still falls back to task.expectedDurationMinutes ?? 25 for every
+  // ordinary (non-split, non-staged) task exactly as before. firstStage
+  // still takes priority over both.
+  assert.ok(
+    fnBody.includes(
+      "const durationMinutes = firstStage\n      ? firstStage.durationMinutes\n      : pendingSplitSegment\n      ? pendingSplitSegment.durationMinutes\n      : isTodoSplit\n      ? splitMinutes\n      : task.expectedDurationMinutes ?? 25;"
+    )
+  );
   assert.ok(fnBody.includes("const freshStageProgress = firstStage ? createTaskStageProgress(task.id, firstStage.id) : null;"));
   assert.ok(fnBody.includes("await saveTaskStageProgress(freshStageProgress);"));
 });

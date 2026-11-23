@@ -292,6 +292,19 @@ export interface Task {
   todoIsSplittable: boolean;
   /** Minutes of this item's own expectedDurationMinutes already completed across prior partial (split) sessions. 0 for every pre-existing/never-split task. Once todoCompletedMinutes >= expectedDurationMinutes the item is complete via the normal completeTask path -- this field is the ONLY place partial progress lives; there is never a second/duplicate Task record for "the rest of the split." See recordTodoSplitProgress below. */
   todoCompletedMinutes: number;
+  /**
+   * To-Do Bank task: a pure, optional back-reference to the reusable
+   * `TodoBankItem` (arc/todoBank.ts) this day-occurrence was placed from,
+   * null for a to-do typed directly into a flexible day. Mirrors
+   * `routineTaskTemplateId`'s own "template id on the materialized
+   * record" shape exactly. NEVER read by resolveDailyPlan/
+   * resolveCurrentTaskState/applyScheduleMode/resolveTodoList/
+   * compareTodoPriority -- this occurrence is, and behaves exactly like,
+   * an ordinary one-off To-Do Task in every one of those; editing or
+   * removing the bank item later never touches this Task, and
+   * completing/removing this Task never touches the bank item.
+   */
+  todoBankItemId: string | null;
   createdAt: string;
   updatedAt: string;
   schemaVersion: number;
@@ -363,6 +376,7 @@ export function createEmptyTask(id: string, title: string, firstAction: string, 
     todoOrder: null,
     todoIsSplittable: true,
     todoCompletedMinutes: 0,
+    todoBankItemId: null,
     createdAt: now,
     updatedAt: now,
     schemaVersion: CURRENT_TASK_SCHEMA_VERSION,
@@ -426,6 +440,7 @@ export function normalizeTask(task: Task): Task {
     todoOrder: task.todoOrder ?? null,
     todoIsSplittable: task.todoIsSplittable ?? true,
     todoCompletedMinutes: task.todoCompletedMinutes ?? 0,
+    todoBankItemId: task.todoBankItemId ?? null,
     schemaVersion: task.schemaVersion ?? CURRENT_TASK_SCHEMA_VERSION,
   };
 }

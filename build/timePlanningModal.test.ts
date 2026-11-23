@@ -179,3 +179,18 @@ test("every scheduled row offers both שמור (save the inline time/duration ed
   assert.ok(rowBody.includes("onPress={() => handleSaveScheduledRow(entry)}"));
   assert.ok(rowBody.includes("onPress={() => confirmRemoveScheduled(entry)}"));
 });
+
+test("required (To-Do Bank task): the To-Do tab offers a '+ הוסף מהמאגר' button that places a bank item onto THIS date as an ordinary To-Do Task plus a pure todoBankItemId back-reference -- never urgency/importance/duration copied from or written back onto the bank item itself", () => {
+  assert.ok(modal.includes('import { listActiveTodoBankItems } from "../arc/todoBank.ts";'));
+  assert.ok(modal.includes('onPress={() => setShowBankPicker((shown) => !shown)}'));
+  assert.ok(modal.includes("+ הוסף מהמאגר"));
+  const fnIndex = modal.indexOf("async function handleAddFromBank(");
+  const fnBody = modal.slice(fnIndex, modal.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes("isTodoItem: true, scheduledDate: dateLocal, todoBankItemId: bankItem.id"));
+  assert.ok(fnBody.includes("await upsertTask(task);"));
+  assert.ok(!fnBody.includes("todoUrgency"), "a fresh placement never copies/sets urgency from the bank item -- it keeps the default, same as any other new to-do");
+});
+
+test("required (To-Do Bank task): the bank picker lists only ACTIVE (non-archived) bank items, via listActiveTodoBankItems -- never the raw unfiltered list", () => {
+  assert.ok(modal.includes("listActiveTodoBankItems(bankItems).map((bankItem) =>"));
+});

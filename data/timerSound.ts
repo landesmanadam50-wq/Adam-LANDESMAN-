@@ -152,3 +152,26 @@ export async function playContinueAvailableCue(): Promise<void> {
     // Best-effort -- a missed cue is never a progression failure; Continue is still enabled regardless.
   }
 }
+
+/**
+ * ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
+ * task, section 4: a short, gentle cue the instant a split work segment
+ * ends and a break segment begins (live/ActiveTaskScreen.tsx's own
+ * segment-advance branch) -- "צליל קצר ועדין", required to be DIFFERENT
+ * from playTimerCompletionSound above. Reuses the SAME existing
+ * CONTINUE_AVAILABLE_SOUND asset (a genuinely different file from
+ * TIMER_COMPLETION_SOUND, so the two are never confused) at its own,
+ * even quieter volume, so it also never gets mistaken for
+ * playContinueAvailableCue's own ARC-protocol cue. Never plays when
+ * `enabled` is false (the Settings mute toggle) -- the caller is
+ * responsible for passing the current preference; this function itself
+ * has no persistence dependency.
+ */
+export async function playBreakStartSound(enabled: boolean): Promise<void> {
+  if (!enabled) return;
+  try {
+    await playOneShotSound(CONTINUE_AVAILABLE_SOUND, 0.35);
+  } catch {
+    // Best-effort -- a missed cue is never a progression failure.
+  }
+}

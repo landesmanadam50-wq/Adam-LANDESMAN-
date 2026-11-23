@@ -40,16 +40,24 @@ test("required test 12 continued: performStart computes isTodoSplit ONLY when th
 
 test("required test 12 continued: when isTodoSplit, the TaskTimerRun is created for EXACTLY splitMinutes -- never the task's full expectedDurationMinutes -- so the timer only ever runs for the confirmed split chunk", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 8300);
-  assert.ok(fnBody.includes("const durationMinutes = firstStage ? firstStage.durationMinutes : isTodoSplit ? splitMinutes : task.expectedDurationMinutes ?? 25;"));
+  const fnBody = screen.slice(fnIndex, fnIndex + 8500);
+  // ARCHI -- To-Do Bank + Duration/Split Selection task, section 3/4:
+  // a pendingSplitSegment (the new "עבודה מחולקת" mode) now outranks
+  // isTodoSplit (the "עבודה רציפה" splitMinutes reuse), which still
+  // outranks the ordinary task.expectedDurationMinutes fallback.
+  assert.ok(
+    fnBody.includes(
+      "const durationMinutes = firstStage\n      ? firstStage.durationMinutes\n      : pendingSplitSegment\n      ? pendingSplitSegment.durationMinutes\n      : isTodoSplit\n      ? splitMinutes\n      : task.expectedDurationMinutes ?? 25;"
+    )
+  );
   // Staged tasks still take priority over a split duration -- unaffected by this feature.
   const durationLine = fnBody.slice(fnBody.indexOf("const durationMinutes ="));
-  assert.ok(durationLine.startsWith("const durationMinutes = firstStage ?"));
+  assert.ok(durationLine.startsWith("const durationMinutes = firstStage"));
 });
 
 test("required test 8/9 (split session persisted at start): performStart saves a TodoSplitSession for this task/plannedMinutes pair ONLY when isTodoSplit -- an ordinary task start never creates one", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 8300);
+  const fnBody = screen.slice(fnIndex, fnIndex + 8500);
   assert.ok(fnBody.includes("if (isTodoSplit) await saveTodoSplitSession(createTodoSplitSession(task.id, splitMinutes));"));
   assert.match(screen, /import\s*\{[^}]*createTodoSplitSession[^}]*\}\s*from\s*["']\.\.\/arc\/todoSplitSession\.ts["']/);
   assert.match(screen, /import\s*\{[^}]*saveTodoSplitSession[^}]*\}\s*from\s*["']\.\.\/data\/storage\.ts["']/);

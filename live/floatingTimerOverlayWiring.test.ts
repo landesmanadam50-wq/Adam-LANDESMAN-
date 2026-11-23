@@ -31,7 +31,10 @@ test("imports the floating-overlay bridge from data/floatingTimerOverlay.ts, nev
 
 test("requirements 1+6: performStart (reached via handleStart's required-before-tasks gate from both a plain tap and the task-alarm's own autoStart) shows the overlay the instant a timer actually starts", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 8500);
+  // ARCHI -- To-Do Bank + Duration/Split Selection task, section 3/4:
+  // widened to also cover the new pendingSplitSegment branch this
+  // function now checks before computing durationMinutes.
+  const fnBody = screen.slice(fnIndex, fnIndex + 10500);
   assert.ok(fnBody.includes("await showFloatingTimerOverlay(runWithNotification, task, freshStageProgress, nextScheduledTaskForOverlay);"));
 });
 
@@ -95,7 +98,10 @@ test("starting a rest period updates the overlay to the new rest run, and finish
 
 test("requirement 7: reload() (every focus, including after ARCHI itself was reopened) re-shows the overlay for whichever run (task or rest) is actually persisted -- never a fresh independent count, always the one loaded TaskTimerRun", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 5800);
+  // ARCHI -- To-Do Bank + Duration/Split Selection task, section 4:
+  // widened to cover the new setSplitProgress(...) line added just
+  // before this call.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 6100);
   assert.ok(reloadBody.includes("showFloatingTimerOverlay(restMatch ?? taskMatch!, effectiveTask, relevantStageProgress, nextScheduledTaskForOverlayRef.current);"));
   assert.ok(reloadBody.includes("if (effectiveTask && (taskMatch || restMatch)) {"));
 });

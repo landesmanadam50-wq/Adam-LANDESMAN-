@@ -24,7 +24,7 @@ const screen = readSource("live/ActiveTaskScreen.tsx");
 const rewardScreen = readSource("live/PostTaskRewardScreen.tsx");
 
 test("requirement 3: the foreground completion sound is gated by a ref keyed on the run's own id -- never replayed on a later re-render while the end-of-timer prompt stays on screen", () => {
-  assert.match(screen, /import\s*\{\s*playTimerCompletionSound\s*\}\s*from\s*["']\.\.\/data\/timerSound\.ts["']/);
+  assert.match(screen, /import\s*\{[^}]*\bplayTimerCompletionSound\b[^}]*\}\s*from\s*["']\.\.\/data\/timerSound\.ts["']/);
   const effectIndex = screen.indexOf("if (!timerRun || restRun) return;\n    const statusNow = getTaskTimerStatus(timerRun, Date.now());");
   assert.ok(effectIndex !== -1, "the sound-guard effect must exist");
   const effectBody = screen.slice(effectIndex, effectIndex + 400);

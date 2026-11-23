@@ -7,7 +7,9 @@ import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
 import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride, markTaskOccurrenceRemoved } from "../arc/taskOccurrenceOverride.ts";
 import { resolveEffectiveTodoOrder, reorderTodoEntry, resolveResortByRating } from "../arc/todoList.ts";
 import type { TodoPlanEntry } from "../arc/todoList.ts";
-import { deleteTask, getTask, loadTaskOccurrenceOverrides, upsertTask, upsertTaskOccurrenceOverrideEntry } from "../data/storage.ts";
+import { listActiveTodoBankItems } from "../arc/todoBank.ts";
+import type { TodoBankItem } from "../arc/todoBank.ts";
+import { deleteTask, getTask, loadTaskOccurrenceOverrides, loadTodoBankItems, upsertTask, upsertTaskOccurrenceOverrideEntry } from "../data/storage.ts";
 import { reconcileTaskAlarms } from "../data/taskAlarm.ts";
 
 const TODO_RATING_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -67,6 +69,8 @@ export default function TimePlanningModal({
   const [newTodoTitle, setNewTodoTitle] = useState("");
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [rowDrafts, setRowDrafts] = useState<Record<string, { scheduledTime: string; durationMinutes: string }>>({});
+  const [bankItems, setBankItems] = useState<TodoBankItem[]>([]);
+  const [showBankPicker, setShowBankPicker] = useState(false);
 
   useEffect(() => {
     if (!visible) {
@@ -74,6 +78,9 @@ export default function TimePlanningModal({
       setNewTodoTitle("");
       setEditingTodoId(null);
       setRowDrafts({});
+      setShowBankPicker(false);
+    } else {
+      loadTodoBankItems().then(setBankItems);
     }
   }, [visible]);
 
@@ -107,6 +114,23 @@ export default function TimePlanningModal({
   async function handleDeleteTodo(taskId: string) {
     await deleteTask(taskId);
     await reconcileTaskAlarms();
+    onChanged();
+  }
+
+  /**
+   * To-Do Bank + Duration/Split Selection task: places a reusable bank
+   * item (arc/todoBank.ts) onto THIS date -- an ORDINARY per-day To-Do
+   * Task, exactly like handleAddTodo above, plus the one new
+   * todoBankItemId back-reference. Fresh todoUrgency/todoImportance
+   * (default 5), same as any other to-do -- rated afterward via the
+   * existing rating chips below, same as any other row. Never touches
+   * the bank item itself.
+   */
+  async function handleAddFromBank(bankItem: TodoBankItem) {
+    const now = new Date().toISOString();
+    const task = { ...createEmptyTask(generateTaskId(), bankItem.title, bankItem.title, now), isTodoItem: true, scheduledDate: dateLocal, todoBankItemId: bankItem.id };
+    await upsertTask(task);
+    setShowBankPicker(false);
     onChanged();
   }
 
@@ -342,6 +366,20 @@ export default function TimePlanningModal({
                     placeholder="פריט To-Do חדש"
                   />
                 </View>
+
+                <Pressable style={styles.addScheduledButton} onPress={() => setShowBankPicker((shown) => !shown)}>
+                  <Text style={styles.addScheduledButtonText}>+ הוסף מהמאגר</Text>
+                </Pressable>
+                {showBankPicker && (
+                  <View>
+                    {bankItems.length === 0 && <Text style={styles.hint}>המאגר ריק -- אפשר להוסיף משימות למאגר מהשבוע הקבוע.</Text>}
+                    {listActiveTodoBankItems(bankItems).map((bankItem) => (
+                      <Pressable key={bankItem.id} style={styles.todoRow} onPress={() => handleAddFromBank(bankItem)}>
+                        <Text style={styles.todoTitle}>{bankItem.title}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
               </>
             ) : (
               <>

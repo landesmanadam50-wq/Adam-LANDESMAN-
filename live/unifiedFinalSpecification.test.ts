@@ -54,6 +54,12 @@ function readSource(relativePath: string): string {
 }
 
 const homeScreen = readSource("build/FlexibleDailyScreen.tsx");
+// ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
+// task, section 5: the combined "מחשבה / דחף" button (and the rest of
+// the mood check-in bar) moved from this screen's own former inline
+// block into the shared FeelingCube component -- tests below now read
+// it from there.
+const feelingCubeComponent = readSource("live/components/HomeCubes.tsx");
 const overlayKt = readSource("modules/floating-timer-overlay/android/src/main/java/expo/modules/floatingtimeroverlay/OverlayService.kt");
 const liveScreen = readSource("live/NewArcLiveScreen.tsx");
 const emotionalCheckInRouting = readSource("data/emotionalCheckInRouting.ts");
@@ -63,9 +69,9 @@ const dailyPlanModule = readSource("arc/dailyPlan.ts");
 // Combined shortcut (1-7)
 // ============================================================
 
-test("1. Combined button appears on Home, labeled 'מחשבה / דחף' (not two separate thought/urge buttons)", () => {
-  assert.ok(homeScreen.includes("מחשבה / דחף"));
-  assert.ok(homeScreen.includes('onPress={() => handleCheckIn("urge")}'));
+test("1. Combined button appears on Home (via the shared FeelingCube), labeled 'מחשבה / דחף' (not two separate thought/urge buttons)", () => {
+  assert.ok(feelingCubeComponent.includes("מחשבה / דחף"));
+  assert.ok(feelingCubeComponent.includes('onPress={() => handleEmotionalCheckInChoice("urge")}'));
 });
 
 test("2. Combined button appears in the expanded floating cube, labeled the same way", () => {
@@ -73,11 +79,11 @@ test("2. Combined button appears in the expanded floating cube, labeled the same
   assert.ok(overlayKt.includes('openCheckIn("urge")'));
 });
 
-test("3. No duplicate separate thought/urge buttons remain -- exactly one combined row on Home and one in the cube", () => {
-  assert.equal((homeScreen.match(/handleCheckIn\("urge"\)/g) ?? []).length, 1);
+test("3. No duplicate separate thought/urge buttons remain -- exactly one combined row on Home (via the shared FeelingCube) and one in the floating cube", () => {
+  assert.equal((feelingCubeComponent.match(/handleEmotionalCheckInChoice\("urge"\)/g) ?? []).length, 1);
   assert.equal((overlayKt.match(/urgeTextView|urgeRow|urgeView/g) ?? []).length > 0, true);
   assert.equal((overlayKt.match(/} else if \(downOnUrge\) \{/g) ?? []).length, 1, "exactly one dispatch site for the combined button's own tap, never a second duplicated one");
-  assert.ok(!homeScreen.includes("💥"), "the old urge-only emoji must be gone, replaced by the combined button's own emoji");
+  assert.ok(!feelingCubeComponent.includes("💥"), "the old urge-only emoji must be gone, replaced by the combined button's own emoji");
 });
 
 test("4. Thought/interpretation/urge support multi-selection -- checking all three at once on cognitive_selector", () => {
@@ -113,10 +119,12 @@ test("6. Emotion selection is skipped ONLY for the new combined-shortcut entry p
   assert.equal(ordinary.currentStep, "emotion", "an ordinary session still asks -- never skipped for it");
 });
 
-test("7. Existing mood shortcuts (😟/🙂/😄) remain unchanged -- unaffected by the combined shortcut's own new skipEmotionSelection param", () => {
-  assert.ok(homeScreen.includes('onPress={() => handleCheckIn("full_arc")}'));
-  assert.ok(homeScreen.includes('onPress={() => handleCheckIn("shortened_arc")}'));
-  assert.ok(homeScreen.includes('onPress={() => handleCheckIn("next_task")}'));
+test("7. Existing mood shortcuts (😟/🙂) remain unchanged on the shared FeelingCube -- unaffected by the combined shortcut's own new skipEmotionSelection param. The ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry 'Cubes' task, section 5, later removed the 😄 smiley from this specific cube -- it still exists, unchanged, on Task LIVE's own post-completion button.", () => {
+  assert.ok(feelingCubeComponent.includes('onPress={() => handleEmotionalCheckInChoice("full_arc")}'));
+  assert.ok(feelingCubeComponent.includes('onPress={() => handleEmotionalCheckInChoice("shortened_arc")}'));
+  assert.ok(!feelingCubeComponent.includes("😄"));
+  const activeTaskScreen = readSource("live/ActiveTaskScreen.tsx");
+  assert.ok(activeTaskScreen.includes("😄 מעולה"), "the 😄 smiley must still exist, unchanged, on Task LIVE's own post-completion button");
   const fullArcIndex = emotionalCheckInRouting.indexOf("export async function openFullArc(");
   const shortenedArcIndex = emotionalCheckInRouting.indexOf("export async function openShortenedArc(");
   const fullArcBody = emotionalCheckInRouting.slice(fullArcIndex, shortenedArcIndex);

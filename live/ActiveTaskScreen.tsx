@@ -20,6 +20,13 @@ import type { Task } from "../arc/tasks.ts";
 // call site already calls) in handleComplete.
 import { createTodoSplitSession } from "../arc/todoSplitSession.ts";
 import { createTaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
+// ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
+// task, section 3/4: the single-slot TaskSplitProgress record a To-Do
+// task's own duration-selection screen (live/TaskDurationSelectionScreen.tsx)
+// persists BEFORE returning here with autoStart=1 -- read back below to
+// start the first segment, and advanced in place as each segment ends.
+import { advanceTaskSplitProgress, currentSplitSegment, isTaskSplitProgressComplete } from "../arc/taskSplitProgress.ts";
+import type { TaskSplitProgress } from "../arc/taskSplitProgress.ts";
 import { createTaskJournalEntry } from "../data/taskJournal.ts";
 import { bypassDailyVisualizationForToday, isDailyVisualizationNeededNow } from "../data/dailyVisualization.ts";
 import {
@@ -48,12 +55,15 @@ import {
   hasSeenNotificationExplanation,
   loadArcInsights,
   loadPendingIdentityInsightTaskId,
+  loadBreakSoundEnabled,
   loadTaskOccurrenceOverrides,
+  loadTaskSplitProgress,
   loadTaskStageProgress,
   loadTaskTimerRun,
   loadTodoSplitSession,
   markNotificationExplanationSeen,
   saveTaskOccurrenceOverrides,
+  saveTaskSplitProgress,
   saveTaskStageProgress,
   saveTaskTimerRun,
   saveTodoSplitSession,
@@ -67,7 +77,7 @@ import { cancelScheduledNotification } from "../data/notifications.ts";
 import { armTaskTimerEndAlarm, cancelAnyAlarmFor, cancelTaskTimerEndAlarm, scheduleTaskAlarm } from "../data/taskAlarm.ts";
 import { showFloatingTimerOverlay, showIdleFloatingOverlayPanel, updateFloatingTimerOverlay } from "../data/floatingTimerOverlay.ts";
 import type { NextScheduledTaskForOverlay } from "../arc/floatingTimerOverlayPayload.ts";
-import { playTimerCompletionSound } from "../data/timerSound.ts";
+import { playBreakStartSound, playTimerCompletionSound } from "../data/timerSound.ts";
 import { resolveTaskClockTime } from "../arc/todaySchedule.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import { findLatestOutcomeForTask, recordStartedOriginalTaskAfter } from "../arc/postponementObstacle.ts";
@@ -211,6 +221,17 @@ export default function ActiveTaskScreen({
   const [visualizationGateBusy, setVisualizationGateBusy] = useState(false);
   /** Unified Task Stages task: null for a task with no configured stage breakdown, or whenever no stage-aware run is currently in flight -- every stage-specific rendering/behavior below is gated on this being non-null, so a legacy task's screen is completely unaffected. */
   const [stageProgress, setStageProgress] = useState<TaskStageProgress | null>(null);
+  /**
+   * ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
+   * task, section 4: null for a legacy/non-split task, or once every
+   * segment of a chosen "עבודה מחולקת" plan has ended -- every
+   * split-specific effect/rendering below is gated on this being
+   * non-null AND matching this task, so an ordinary task/To-Do start
+   * is completely unaffected.
+   */
+  const [splitProgress, setSplitProgress] = useState<TaskSplitProgress | null>(null);
+  /** Guards the segment-advance effect below against firing twice for the SAME ended run (a re-render before the next segment's own fresh TaskTimerRun is visible in state) -- the exact same per-runId guard pattern already used for the completion-sound effect. */
+  const segmentAdvancedForRunId = useRef<string | null>(null);
   /** Guards handleCompleteStage against a rapid double-tap (or the overlay's own deep-link racing a manual tap) within the same render -- the PURE markStageCompleted/advanceStageProgress functions are already idempotent once state has caught up, but this closes the window between two calls firing before a re-render. */
   const [completingStage, setCompletingStage] = useState(false);
   /**
@@ -308,7 +329,8 @@ export default function ActiveTaskScreen({
       loadPurposeManifests(),
       loadArcGymGoals(),
       loadArcGoals(),
-    ]).then(([loadedTask, loadedRun, explanationSeen, loadedStageProgress, overrides, pendingInsightTaskId, allInsights, manifests, arcGymGoals, arcGoals]) => {
+      loadTaskSplitProgress(),
+    ]).then(([loadedTask, loadedRun, explanationSeen, loadedStageProgress, overrides, pendingInsightTaskId, allInsights, manifests, arcGymGoals, arcGoals, loadedSplitProgress]) => {
       setLinkedInsights(allInsights.filter((insight) => insight.taskId === taskId));
       setPurposeManifests(manifests);
       setPurposeArcGymGoals(arcGymGoals);
@@ -373,6 +395,7 @@ export default function ActiveTaskScreen({
       // MAIN task run, never the rest sub-timer -- restored here so a
       // process restart mid-stage resumes at the correct active stage.
       setStageProgress(taskMatch && loadedStageProgress && loadedStageProgress.taskId === taskId ? loadedStageProgress : null);
+      setSplitProgress(loadedSplitProgress && loadedSplitProgress.taskId === taskId ? loadedSplitProgress : null);
       // Stage AB: shown once, before the first action that would trigger the real OS permission dialog (starting a timer schedules a notification) -- never shown again once dismissed.
       setShowNotificationExplanation(!explanationSeen);
       // Floating task timer task, requirement 7: restores the floating
@@ -412,6 +435,34 @@ export default function ActiveTaskScreen({
       playTimerCompletionSound();
     }
   }, [timerRun, restRun, now]);
+
+  // ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
+  // task, section 4: mirrors the completion-sound effect directly above
+  // -- recomputes "ended" itself from timerRun/restRun/now (never the
+  // timerRunEnded/restRunEnded consts further down, which this effect
+  // must run BEFORE in render order, ahead of the `if (!task) return`
+  // below) so a work segment or break ending, whether by natural
+  // countdown or an early finish (both already converge on the same
+  // completedAt/status.complete signal), advances the SAME persisted
+  // TaskSplitProgress to its next segment with NO manual tap, before
+  // the existing (double-tap-hardened) end-of-timer JSX further down
+  // ever gets a chance to render the ordinary end-of-timer prompt for
+  // it. Only the LAST segment (always a work segment -- buildSplitPlan
+  // never ends on a break) is deliberately left alone: advanceToNextSplitSegment
+  // below no-ops once there is no next segment, so it falls through to
+  // the real, completely unmodified handleComplete() path exactly like
+  // an ordinary (non-split) task.
+  useEffect(() => {
+    if (!task || !task.isTodoItem || !splitProgress || splitProgress.taskId !== task.id) return;
+    if (isTaskSplitProgressComplete(splitProgress)) return;
+    const endedRun = restRun ?? timerRun;
+    if (!endedRun) return;
+    const statusNow = getTaskTimerStatus(endedRun, Date.now());
+    const ended = endedRun.completedAt !== null || statusNow.complete === true;
+    if (!ended || segmentAdvancedForRunId.current === endedRun.runId) return;
+    segmentAdvancedForRunId.current = endedRun.runId;
+    advanceToNextSplitSegment(endedRun);
+  }, [task, splitProgress, timerRun, restRun, now]);
 
   // Today screen's own "start"/"postpone" card actions (see this
   // component's own doc comment above) -- fires at most once per screen
@@ -592,6 +643,17 @@ export default function ActiveTaskScreen({
    */
   async function handleStart() {
     if (!task) return;
+    // ARCHI -- To-Do Bank + Duration/Split Selection task, section 3: a
+    // To-Do task's duration is decided ONLY when started -- redirects to
+    // the duration-selection screen, UNLESS this call is the return trip
+    // from it (splitMinutes handed back, or a matching TaskSplitProgress
+    // already persisted there) -- checking both avoids a redirect loop.
+    // A non-To-Do task's own start path below is completely untouched.
+    const hasPendingSplitPlan = splitProgress !== null && splitProgress.taskId === task.id && !isTaskSplitProgressComplete(splitProgress);
+    if (task.isTodoItem && splitMinutes === null && !hasPendingSplitPlan) {
+      router.push({ pathname: "/tasks/[id]/duration", params: { id: task.id } });
+      return;
+    }
     if (await isDailyVisualizationNeededNow()) {
       setShowVisualizationGate(true);
       return;
@@ -721,7 +783,21 @@ export default function ActiveTaskScreen({
     // actually passed (an ordinary scheduled task's own start is
     // completely unaffected, since neither condition holds for it).
     const isTodoSplit = task.isTodoItem && splitMinutes !== null;
-    const durationMinutes = firstStage ? firstStage.durationMinutes : isTodoSplit ? splitMinutes : task.expectedDurationMinutes ?? 25;
+    // ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
+    // task, section 3/4: "עבודה מחולקת" -- the duration-selection screen
+    // already persisted a fresh TaskSplitProgress (activeSegmentIndex 0)
+    // before returning here with autoStart=1 and no splitMinutes; this
+    // starts ONLY that first segment's own duration -- every LATER
+    // segment is started by the segment-advance effect above, never by
+    // this function again.
+    const pendingSplitSegment = task.isTodoItem && splitProgress && splitProgress.taskId === task.id ? currentSplitSegment(splitProgress) : null;
+    const durationMinutes = firstStage
+      ? firstStage.durationMinutes
+      : pendingSplitSegment
+      ? pendingSplitSegment.durationMinutes
+      : isTodoSplit
+      ? splitMinutes
+      : task.expectedDurationMinutes ?? 25;
     const run = createTaskTimerRun(task.id, generateTaskTimerRunId(), durationMinutes, new Date().toISOString());
     const notificationId = await scheduleTaskTimerNotification(run, task);
     const runWithNotification = { ...run, notificationId };
@@ -770,6 +846,50 @@ export default function ActiveTaskScreen({
     if (targetTask.arcWritingTextId) {
       router.push({ pathname: "/arc-gym/writing/[id]", params: { id: targetTask.arcWritingTextId } });
     }
+  }
+
+  /**
+   * ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
+   * task, section 4: called ONLY from the segment-advance effect above,
+   * the instant a split segment ends. Advances the persisted
+   * TaskSplitProgress and, when there IS a next segment, silently
+   * starts its own fresh TaskTimerRun (work -> kind "task", break ->
+   * kind "rest") in the SAME single storage slot every other run
+   * already uses -- `endedRun` is left exactly as it is (nothing here
+   * clears/re-clears it; the new run simply supersedes it in storage
+   * and in whichever of timerRun/restRun state now holds it), so this
+   * never disturbs taskCompletingRef's own guard ordering. A break
+   * segment also plays the new break-start sound, gated by the mute
+   * setting, exactly once per segment (the per-runId ref guard in the
+   * calling effect already ensures this function itself only ever runs
+   * once per ended run). When there is NO next segment (the split's own
+   * last, always-work segment just ended), this is a deliberate no-op
+   * -- the real, completely unmodified handleComplete() path below
+   * takes over via the ordinary end-of-timer UI, exactly as it already
+   * does for a non-split task.
+   */
+  async function advanceToNextSplitSegment(endedRun: TaskTimerRun) {
+    if (!task || !splitProgress) return;
+    await cancelTaskTimerEndAlarm(endedRun.notificationId);
+    const advanced = advanceTaskSplitProgress(splitProgress);
+    const nextSegment = currentSplitSegment(advanced);
+    if (!nextSegment) return;
+    await saveTaskSplitProgress(advanced);
+    setSplitProgress(advanced);
+    const kind = nextSegment.kind === "break" ? "rest" : "task";
+    const nextRun = createTaskTimerRun(task.id, generateTaskTimerRunId(), nextSegment.durationMinutes, new Date().toISOString(), kind);
+    const notificationId = kind === "rest" ? await scheduleRestTimerNotification(nextRun, task) : await scheduleTaskTimerNotification(nextRun, task);
+    const nextRunWithNotification = { ...nextRun, notificationId };
+    await saveTaskTimerRun(nextRunWithNotification);
+    if (kind === "rest") {
+      setRestRun(nextRunWithNotification);
+      setTimerRun(null);
+      await playBreakStartSound(await loadBreakSoundEnabled());
+    } else {
+      setTimerRun(nextRunWithNotification);
+      setRestRun(null);
+    }
+    await updateFloatingTimerOverlay(nextRunWithNotification, task, stageProgress, nextScheduledTaskForOverlay);
   }
 
   async function handlePause() {

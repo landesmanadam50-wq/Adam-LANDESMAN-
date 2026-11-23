@@ -41,17 +41,25 @@ test("requirement 2/3: the merged effectiveTask carries the OVERRIDE's scheduled
     )
   );
   const performStartIndex = screen.indexOf("async function performStart()");
-  const performStartBody = screen.slice(performStartIndex, performStartIndex + 7200);
-  // Smart To-Do List task, section 6: the duration calculation also
-  // checks isTodoSplit now, but still falls back to
-  // task.expectedDurationMinutes ?? 25 for every ordinary (non-split)
-  // task exactly as before.
-  assert.ok(performStartBody.includes("const durationMinutes = firstStage ? firstStage.durationMinutes : isTodoSplit ? splitMinutes : task.expectedDurationMinutes ?? 25;"));
+  const performStartBody = screen.slice(performStartIndex, performStartIndex + 7700);
+  // Smart To-Do List task, section 6, and ARCHI -- To-Do Bank +
+  // Duration/Split Selection task, section 3/4: the duration
+  // calculation also checks pendingSplitSegment/isTodoSplit now, but
+  // still falls back to task.expectedDurationMinutes ?? 25 for every
+  // ordinary (non-split) task exactly as before.
+  assert.ok(
+    performStartBody.includes(
+      "const durationMinutes = firstStage\n      ? firstStage.durationMinutes\n      : pendingSplitSegment\n      ? pendingSplitSegment.durationMinutes\n      : isTodoSplit\n      ? splitMinutes\n      : task.expectedDurationMinutes ?? 25;"
+    )
+  );
 });
 
 test("requirement 4: the merged effectiveTask (not the raw loaded task) is what showFloatingTimerOverlay restores with on every focus -- the floating overlay's own duration/title must agree with today's effective occurrence", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 5800);
+  // ARCHI -- To-Do Bank + Duration/Split Selection task, section 4:
+  // widened to cover the new setSplitProgress(...) line added just
+  // before this call.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 6100);
   assert.ok(reloadBody.includes("showFloatingTimerOverlay(restMatch ?? taskMatch!, effectiveTask, relevantStageProgress, nextScheduledTaskForOverlayRef.current);"));
 });
 

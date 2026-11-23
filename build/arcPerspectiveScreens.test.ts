@@ -27,6 +27,12 @@ const listScreen = readSource("build/ArcGymPerspectiveListScreen.tsx");
 const eventDetailScreen = readSource("build/ArcGymPerspectiveEventDetailScreen.tsx");
 const arcGymScreen = readSource("build/ArcGymScreen.tsx");
 const homeScreen = readSource("build/FlexibleDailyScreen.tsx");
+// ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
+// task, section 5: the "מחשבה / דחף" + "שינוי פרספקטיבה" rows moved
+// from this screen's own former inline check-in block into the
+// shared FeelingCube component both the home screen and the entry
+// screen now mount -- this test now reads them from there.
+const feelingCubeComponent = readSource("live/components/HomeCubes.tsx");
 const situationScreen = readSource("build/ArcGymSituationScreen.tsx");
 const trainingScreen = readSource("live/ArcGymTrainingScreen.tsx");
 const layout = readSource("app/_layout.tsx");
@@ -188,9 +194,9 @@ test("20. the event detail screen lists this event's own completed practice hist
 
 // --- Home real-time button ---
 
-test("2. Home's own real-time ARC Perspective button sits in the exact same unconditional check-in block as the existing 'מחשבה / דחף' button -- available regardless of task state, never disturbing an active task's own timer", () => {
-  const urgeRowIndex = homeScreen.indexOf("מחשבה / דחף");
-  const afterUrgeRow = homeScreen.slice(urgeRowIndex, urgeRowIndex + 2600);
+test("2. Home's own real-time ARC Perspective button sits in the exact same unconditional FeelingCube as the existing 'מחשבה / דחף' button -- available regardless of task state, never disturbing an active task's own timer", () => {
+  const urgeRowIndex = feelingCubeComponent.indexOf("מחשבה / דחף");
+  const afterUrgeRow = feelingCubeComponent.slice(urgeRowIndex, urgeRowIndex + 600);
   assert.ok(afterUrgeRow.includes("שינוי פרספקטיבה"));
   assert.ok(afterUrgeRow.includes('mode: "real_time"'));
   assert.ok(afterUrgeRow.includes("generateArcPerspectiveSessionId()"));

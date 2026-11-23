@@ -16,6 +16,7 @@ import {
   loadMorningFlowCheckInState,
   loadNewArcLiveSession,
   loadPsychologyFactProgress,
+  loadShowHomeInsightButtonSetting,
   loadTaskTimerRun,
   saveMorningAlarmConfig,
   saveMorningFlowCheckInState,
@@ -31,6 +32,8 @@ import { scheduleTaskAlarm } from "../data/taskAlarm.ts";
 import { handleEmotionalCheckInChoice } from "../data/emotionalCheckInRouting.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 import ManifestVisualizationCard from "./ManifestVisualizationCard.tsx";
+import { FeelingCube, TaskCube } from "./components/HomeCubes.tsx";
+import AddInfoMenu from "./components/AddInfoMenu.tsx";
 
 /**
  * Critical-bug task ("Startup Popups Still Not Working After Modal
@@ -202,6 +205,8 @@ export default function DailyStartupSequenceOverlay() {
    * cached in a second piece of state that could drift from it.
    */
   const [planEntries, setPlanEntries] = useState<ScheduledPlanEntry[] | null>(null);
+  /** ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes" task, section 5/6: the SAME Settings-controlled preference build/FlexibleDailyScreen.tsx's own showHomeInsightButton reads, loaded once here so AddInfoMenu's gating matches Home's exactly -- never a second, independent setting. */
+  const [showHomeInsightButton, setShowHomeInsightButton] = useState(true);
   /**
    * Nine Functional Improvements task, Improvement 7 ("create tasks
    * directly during morning planning" -- a DIFFERENT feature from
@@ -518,6 +523,7 @@ export default function DailyStartupSequenceOverlay() {
         console.warn("[DailyStartupSequenceOverlay] Failed to resolve today's scheduled plan -- skipping the planning step and continuing to preparation.", error);
         finish();
       });
+    loadShowHomeInsightButtonSetting().then(setShowHomeInsightButton);
   }, [step]);
 
   useEffect(() => {
@@ -760,6 +766,9 @@ export default function DailyStartupSequenceOverlay() {
             <View style={styles.card}>
               <Text style={styles.title}>התוכנית שלי מוכנה</Text>
               <Text style={styles.text}>אפשר לעבור על התוכנית למטה, לערוך משימה במידת הצורך, ואז להמשיך להכנה המנטלית.</Text>
+              <TaskCube />
+              <FeelingCube />
+              <AddInfoMenu showHomeInsightButton={showHomeInsightButton} />
               {planReviewList}
               <Pressable style={styles.secondaryButton} onPress={() => setShowAddTaskForm((shown) => !shown)}>
                 <Text style={styles.secondaryButtonText}>➕ הוסף משימה להיום</Text>
@@ -773,6 +782,9 @@ export default function DailyStartupSequenceOverlay() {
             <View style={styles.card}>
               <Text style={styles.title}>תכנון קצר ליום</Text>
               <Text style={styles.text}>מומלץ לבחור לפחות 3 משימות להיום.</Text>
+              <TaskCube />
+              <FeelingCube />
+              <AddInfoMenu showHomeInsightButton={showHomeInsightButton} />
               {planReviewList}
               <Pressable style={styles.button} onPress={() => setShowAddTaskForm((shown) => !shown)}>
                 <Text style={styles.buttonText}>➕ הוסף משימה להיום</Text>

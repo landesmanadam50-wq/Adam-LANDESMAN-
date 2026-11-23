@@ -192,6 +192,10 @@ export default function WeeklyRoutineScreen() {
         <Text style={styles.title}>שבוע קבוע</Text>
         <PersistentTaskControls />
 
+        <Pressable style={styles.secondaryButton} onPress={() => router.push("/todo-bank")}>
+          <Text style={styles.secondaryButtonText}>🗂️ מאגר To-Do</Text>
+        </Pressable>
+
         <View style={styles.weekNavRow}>
           <Pressable style={styles.weekNavButton} onPress={() => setWeekStartLocal(shiftWeek(weekStartLocal, "prev"))}>
             <Text style={styles.weekNavButtonText}>‹ שבוע קודם</Text>

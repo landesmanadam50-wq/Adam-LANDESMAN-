@@ -29,6 +29,13 @@ const activateScreen = readSource("build/ArcSavingActivateScreen.tsx");
 const reviewScreen = readSource("build/ArcSavingReviewScreen.tsx");
 const arcGymSituationScreen = readSource("build/ArcGymSituationScreen.tsx");
 const flexibleDailyScreen = readSource("build/FlexibleDailyScreen.tsx");
+// ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
+// task, section 6: the four quick-action buttons moved from this
+// screen's own former inline quickActionsRow into the shared
+// AddInfoMenu component both the home screen and the entry screen now
+// mount behind one "+ להוסיף מידע" button -- this test now reads
+// their destinations/style from there.
+const addInfoMenu = readSource("live/components/AddInfoMenu.tsx");
 const overlayKt = readSource("modules/floating-timer-overlay/android/src/main/java/expo/modules/floatingtimeroverlay/OverlayService.kt");
 const widgetXml = readSource("modules/emotional-checkin-widget/android/src/main/res/layout/emotional_checkin_widget.xml");
 const widgetProviderKt = readSource("modules/emotional-checkin-widget/android/src/main/java/expo/modules/emotionalcheckinwidget/EmotionalCheckInWidgetProvider.kt");
@@ -156,15 +163,15 @@ test("Home's quickActionsRow has all FOUR buttons with shortened labels, and the
 });
 
 test("the four quick-action buttons share exactly ONE style object -- uniform height/corners/typography by construction, never four separately-tuned styles", () => {
-  const occurrences = [...flexibleDailyScreen.matchAll(/style=\{styles\.quickActionButton\}/g)].length;
+  const occurrences = [...addInfoMenu.matchAll(/style=\{styles\.menuRow\}/g)].length;
   assert.equal(occurrences, 4, "all four buttons must use the SAME shared style object");
 });
 
 test("the '+ ARC Save' button opens the activate screen; the first three buttons keep their exact pre-existing destinations (never recreated)", () => {
-  assert.ok(flexibleDailyScreen.includes('router.push("/arc-saving/activate")'));
-  assert.ok(flexibleDailyScreen.includes('router.push("/insights/new")'));
-  assert.ok(flexibleDailyScreen.includes('router.push({ pathname: "/tasks/[id]/edit", params: { id: "new" } })'));
-  assert.ok(flexibleDailyScreen.includes('router.push("/positive-memories/new")'));
+  assert.ok(addInfoMenu.includes('router.push("/arc-saving/activate")'));
+  assert.ok(addInfoMenu.includes('router.push("/insights/new")'));
+  assert.ok(addInfoMenu.includes('router.push({ pathname: "/tasks/[id]/edit", params: { id: "new" } })'));
+  assert.ok(addInfoMenu.includes('router.push("/positive-memories/new")'));
 });
 
 test("Home shows the active triggers as tappable chips under 'הטריגרים שלי כרגע', each opening its own matching exercise via the activate screen", () => {

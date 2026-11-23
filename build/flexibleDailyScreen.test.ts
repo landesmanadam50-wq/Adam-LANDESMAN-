@@ -18,6 +18,11 @@ function readSource(relativePath: string): string {
 }
 
 const screen = readSource("build/FlexibleDailyScreen.tsx");
+// ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
+// task, section 5: the mood check-in bar moved from this screen's own
+// former inline block into the shared FeelingCube component -- this
+// screen now mounts <TaskCube/><FeelingCube/> in its place.
+const feelingCubeComponent = readSource("live/components/HomeCubes.tsx");
 const layout = readSource("app/_layout.tsx");
 
 test("the routine-day route is registered and the route file renders FlexibleDailyScreen", () => {
@@ -237,22 +242,21 @@ test("reorder buttons are disabled at the top/bottom of the resolved (and schedu
 
 // --- Unified Emotional Check-In and Task Postponement System, section 1 (ARCHI Home) ---
 
-test("required test 1 (all three Home check-in options): the check-in bar shows all three smileys, each routed through the SAME shared handleEmotionalCheckInChoice dispatcher used by the widget and the Postponement screen", () => {
-  assert.match(screen, /import\s*\{[\s\S]*?handleEmotionalCheckInChoice[\s\S]*?\}\s*from\s*["']\.\.\/data\/emotionalCheckInRouting\.ts["']/);
-  assert.ok(screen.includes("איך אתה מרגיש כרגע?"));
-  assert.ok(screen.includes('onPress={() => handleCheckIn("full_arc")}') && screen.includes("😟") && screen.includes("פחות טוב"));
-  assert.ok(screen.includes('onPress={() => handleCheckIn("shortened_arc")}') && screen.includes("🙂") && screen.includes("סבבה"));
-  assert.ok(screen.includes('onPress={() => handleCheckIn("next_task")}') && screen.includes("😄") && screen.includes("מעולה"));
-  const fnIndex = screen.indexOf("function handleCheckIn(");
-  const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
-  assert.ok(fnBody.includes("handleEmotionalCheckInChoice(choice)"));
+test("required test 1 (Home check-in options): the FeelingCube shows both remaining smileys, each routed through the SAME shared handleEmotionalCheckInChoice dispatcher used by the widget and the Postponement screen -- the 😄 smiley is deliberately absent here per the To-Do Bank/Cubes task, section 5", () => {
+  assert.match(feelingCubeComponent, /import\s*\{[\s\S]*?handleEmotionalCheckInChoice[\s\S]*?\}\s*from\s*["']\.\.\/\.\.\/data\/emotionalCheckInRouting\.ts["']/);
+  assert.ok(feelingCubeComponent.includes("איך ההרגשה?"));
+  assert.ok(feelingCubeComponent.includes('onPress={() => handleEmotionalCheckInChoice("full_arc")}') && feelingCubeComponent.includes("😟") && feelingCubeComponent.includes("פחות טוב"));
+  assert.ok(
+    feelingCubeComponent.includes('onPress={() => handleEmotionalCheckInChoice("shortened_arc")}') && feelingCubeComponent.includes("🙂") && feelingCubeComponent.includes("סבבה")
+  );
+  assert.ok(!feelingCubeComponent.includes("😄"), "the 😄 smiley must never appear in this cube -- only on Task LIVE's own post-completion button");
 });
 
-test("the check-in bar only renders in today mode (ARCHI Home itself) -- a fixed-date instance opened from the Weekly screen never shows it", () => {
-  const checkInBlockIndex = screen.indexOf("{isTodayMode && (");
+test("the FeelingCube/TaskCube mount only in today mode (ARCHI Home itself) -- a fixed-date instance opened from the Weekly screen never shows them", () => {
+  const checkInBlockIndex = screen.indexOf("{isTodayMode && (\n          <>\n            <TaskCube");
   assert.ok(checkInBlockIndex >= 0);
-  const checkInBlock = screen.slice(checkInBlockIndex, checkInBlockIndex + 900);
-  assert.ok(checkInBlock.includes("איך אתה מרגיש כרגע?"));
+  const checkInBlock = screen.slice(checkInBlockIndex, checkInBlockIndex + 120);
+  assert.ok(checkInBlock.includes("<FeelingCube />"));
 });
 
 test("the check-in bar never interrupts or pauses an active task/timer by itself -- it only ever navigates, same as every other button on this screen", () => {

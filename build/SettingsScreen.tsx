@@ -6,7 +6,14 @@ import { router, useFocusEffect } from "expo-router";
 import { ARC_APPEARANCE_COLOR_PRESETS, DEFAULT_ARC_APPEARANCE_SETTINGS, isValidArcAppearanceColor } from "../arc/arcAppearanceSettings.ts";
 import type { ArcAppearanceSettings } from "../arc/arcAppearanceSettings.ts";
 import { resolveFocusColorHex } from "../arc/focusColorPalette.ts";
-import { loadArcAppearanceSettings, loadShowHomeInsightButtonSetting, saveArcAppearanceSettings, saveShowHomeInsightButtonSetting } from "../data/storage.ts";
+import {
+  loadArcAppearanceSettings,
+  loadBreakSoundEnabled,
+  loadShowHomeInsightButtonSetting,
+  saveArcAppearanceSettings,
+  saveBreakSoundEnabled,
+  saveShowHomeInsightButtonSetting,
+} from "../data/storage.ts";
 
 /**
  * build/SettingsScreen.tsx (route /settings)
@@ -38,6 +45,7 @@ export default function SettingsScreen() {
   const [pointDraft, setPointDraft] = useState("");
   const [circleDraft, setCircleDraft] = useState("");
   const [showHomeInsightButton, setShowHomeInsightButton] = useState(true);
+  const [breakSoundEnabled, setBreakSoundEnabled] = useState(true);
 
   const reload = useCallback(() => {
     loadArcAppearanceSettings().then((loaded) => {
@@ -46,6 +54,7 @@ export default function SettingsScreen() {
       setCircleDraft(loaded.circleColor ?? "");
     });
     loadShowHomeInsightButtonSetting().then(setShowHomeInsightButton);
+    loadBreakSoundEnabled().then(setBreakSoundEnabled);
   }, []);
 
   useFocusEffect(reload);
@@ -155,6 +164,18 @@ export default function SettingsScreen() {
         <Pressable style={styles.secondaryButton} onPress={() => router.push("/insights")}>
           <Text style={styles.secondaryButtonText}>אוסף תובנות</Text>
         </Pressable>
+
+        <Text style={styles.sectionTitle}>צלילים</Text>
+        <View style={styles.switchRow}>
+          <Switch
+            value={breakSoundEnabled}
+            onValueChange={(value) => {
+              setBreakSoundEnabled(value);
+              saveBreakSoundEnabled(value);
+            }}
+          />
+          <Text style={styles.fieldLabel}>צליל עדין בתחילת הפסקה (עבודה מחולקת)</Text>
+        </View>
 
         <Text style={styles.sectionTitle}>קיצורי דרך</Text>
         <Pressable style={styles.secondaryButton} onPress={() => router.push("/tasks/emotional-checkin-settings")}>

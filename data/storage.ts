@@ -93,6 +93,8 @@ import { normalizeTaskStageProgress } from "../arc/taskStageProgress.ts";
 import type { TaskStageProgress } from "../arc/taskStageProgress.ts";
 import { normalizeTodoSplitSession } from "../arc/todoSplitSession.ts";
 import type { TodoSplitSession } from "../arc/todoSplitSession.ts";
+import { normalizeTaskSplitProgress } from "../arc/taskSplitProgress.ts";
+import type { TaskSplitProgress } from "../arc/taskSplitProgress.ts";
 import type { TaskTimerRun } from "../arc/taskTimer.ts";
 import type { TaskOccurrenceCompletion } from "../arc/taskOccurrence.ts";
 import type { TaskOccurrenceOverride } from "../arc/taskOccurrenceOverride.ts";
@@ -153,6 +155,8 @@ import type { PositiveMemory } from "../arc/positiveMemory.ts";
 import { normalizePositiveMemory, upsertPositiveMemoryInList } from "../arc/positiveMemory.ts";
 import type { PositiveMemoryDraft } from "../arc/positiveMemoryDraft.ts";
 import { finalizePositiveMemoryDraft, normalizePositiveMemoryDraft, upsertPositiveMemoryDraftInList } from "../arc/positiveMemoryDraft.ts";
+import type { TodoBankItem } from "../arc/todoBank.ts";
+import { normalizeTodoBankItem, upsertTodoBankItemInList } from "../arc/todoBank.ts";
 import type { PositiveMemorySelectionHistoryEntry } from "../arc/positiveMemorySelectionHistory.ts";
 import { upsertLastEncodingFeeling } from "../arc/lastEncodingFeeling.ts";
 import type { LastEncodingFeelingRecord } from "../arc/lastEncodingFeeling.ts";
@@ -1386,6 +1390,25 @@ export async function saveShowHomeInsightButtonSetting(value: boolean): Promise<
 }
 
 /**
+ * To-Do Bank + Duration/Split Selection task: mutes/unmutes
+ * data/timerSound.ts's own playBreakStartSound only -- an opt-OUT-style
+ * toggle (default true = enabled), same convention as
+ * SHOW_HOME_INSIGHT_BUTTON_KEY above. Never affects
+ * playTimerCompletionSound/playContinueAvailableCue, which stay
+ * unconditional exactly as they already are.
+ */
+const BREAK_SOUND_ENABLED_KEY = "archi.breakSoundEnabled.v1";
+
+export async function loadBreakSoundEnabled(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(BREAK_SOUND_ENABLED_KEY);
+  return raw === null ? true : raw === "true";
+}
+
+export async function saveBreakSoundEnabled(value: boolean): Promise<void> {
+  await AsyncStorage.setItem(BREAK_SOUND_ENABLED_KEY, value ? "true" : "false");
+}
+
+/**
  * "התבוננות וחיבור לעצמי" task: the trainee's own personal first name,
  * asked once (on the self_observation_exercise screen, the first time
  * it's reached with none saved) and never re-asked afterward. A single
@@ -2338,11 +2361,18 @@ export async function saveTaskTimerRun(run: TaskTimerRun): Promise<void> {
  * (arc/todoSplitSession.ts) -- a split session is only ever meaningful
  * for the one TaskTimerRun it was started alongside, so it is cleared
  * here too, with zero changes needed at any existing call site.
+ *
+ * To-Do Bank + Duration/Split Selection task: the same reasoning
+ * applies a third time to TaskSplitProgress (arc/taskSplitProgress.ts,
+ * the NEW multi-segment "עבודה מחולקת" plan) -- cleared here too, so
+ * every existing completion/finish-early/postponement/ARC-entry call
+ * site stays correct with zero other edits.
  */
 export async function clearTaskTimerRun(): Promise<void> {
   await AsyncStorage.removeItem(TASK_TIMER_RUN_KEY);
   await AsyncStorage.removeItem(TASK_STAGE_PROGRESS_KEY);
   await AsyncStorage.removeItem(TODO_SPLIT_SESSION_KEY);
+  await AsyncStorage.removeItem(TASK_SPLIT_PROGRESS_KEY);
 }
 
 /**
@@ -2393,6 +2423,32 @@ export async function loadTodoSplitSession(): Promise<TodoSplitSession | null> {
 
 export async function saveTodoSplitSession(session: TodoSplitSession): Promise<void> {
   await AsyncStorage.setItem(TODO_SPLIT_SESSION_KEY, JSON.stringify(session));
+}
+
+/**
+ * To-Do Bank + Duration/Split Selection task: single-slot store for the
+ * ONE in-flight TaskSplitProgress (arc/taskSplitProgress.ts, the NEW
+ * multi-segment "עבודה מחולקת" plan), exact mirror of
+ * TASK_STAGE_PROGRESS_KEY's/TODO_SPLIT_SESSION_KEY's own convention
+ * above -- see clearTaskTimerRun's own doc for why all three are
+ * always cleared together. Absent/null means the current TaskTimerRun
+ * (if any) is not part of a multi-segment split plan.
+ */
+const TASK_SPLIT_PROGRESS_KEY = "archi.taskSplitProgress.v1";
+
+export async function loadTaskSplitProgress(): Promise<TaskSplitProgress | null> {
+  const raw = await AsyncStorage.getItem(TASK_SPLIT_PROGRESS_KEY);
+  if (!raw) return null;
+  try {
+    return normalizeTaskSplitProgress(JSON.parse(raw) as TaskSplitProgress);
+  } catch (error) {
+    console.warn("[storage] Stored TaskSplitProgress is not valid JSON -- treating as none rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveTaskSplitProgress(progress: TaskSplitProgress): Promise<void> {
+  await AsyncStorage.setItem(TASK_SPLIT_PROGRESS_KEY, JSON.stringify(progress));
 }
 
 /** Single-slot read, exact mirror of loadTaskTimerRun's own shape -- null when no ARC LIVE session is currently in progress. The session must survive backgrounding and app restart (the task's own explicit requirement); this is the only mechanism that provides that, written on every step transition by live/NewArcLiveScreen.tsx. */
@@ -4161,6 +4217,34 @@ export async function upsertPositiveMemoryEntry(memory: PositiveMemory): Promise
 export async function deletePositiveMemoryEntry(id: string): Promise<void> {
   const memories = await loadPositiveMemories();
   await savePositiveMemories(memories.filter((memory) => memory.id !== id));
+}
+
+const TODO_BANK_ITEMS_KEY = "archi.todoBankItems.v1";
+
+export async function loadTodoBankItems(): Promise<TodoBankItem[]> {
+  const raw = await AsyncStorage.getItem(TODO_BANK_ITEMS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as TodoBankItem[];
+    return Array.isArray(parsed) ? parsed.map(normalizeTodoBankItem) : [];
+  } catch (error) {
+    console.warn("[storage] Stored TodoBankItems are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+async function saveTodoBankItems(items: TodoBankItem[]): Promise<void> {
+  await AsyncStorage.setItem(TODO_BANK_ITEMS_KEY, JSON.stringify(items));
+}
+
+export async function upsertTodoBankItemEntry(item: TodoBankItem): Promise<void> {
+  const items = await loadTodoBankItems();
+  await saveTodoBankItems(upsertTodoBankItemInList(items, item));
+}
+
+export async function deleteTodoBankItemEntry(id: string): Promise<void> {
+  const items = await loadTodoBankItems();
+  await saveTodoBankItems(items.filter((item) => item.id !== id));
 }
 
 const POSITIVE_MEMORY_DRAFTS_KEY = "archi.positiveMemoryDrafts.v1";

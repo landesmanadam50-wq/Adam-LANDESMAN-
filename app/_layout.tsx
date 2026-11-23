@@ -194,6 +194,7 @@ export default function RootLayout() {
         <Stack.Screen name="today" options={{ title: "תכנון משימות" }} />
         <Stack.Screen name="routine-week" options={{ title: "שבוע קבוע" }} />
         <Stack.Screen name="routine-day" options={{ title: "היום הגמיש" }} />
+        <Stack.Screen name="todo-bank" options={{ title: "מאגר To-Do" }} />
         <Stack.Screen name="daily-schedule-legacy" options={{ title: "לוח יומי (ישן)" }} />
         <Stack.Screen name="routine-setup-legacy" options={{ title: "בניית שגרה (ישן)" }} />
         <Stack.Screen name="build/index" options={{ title: "ARC Builds" }} />
@@ -321,6 +322,7 @@ export default function RootLayout() {
         <Stack.Screen name="planned-arcs/[id]/alarm" options={{ title: "שעון מעורר", headerShown: false }} />
         <Stack.Screen name="tasks/[id]" options={{ title: "משימה" }} />
         <Stack.Screen name="tasks/[id]/edit" options={{ title: "עריכת משימה" }} />
+        <Stack.Screen name="tasks/[id]/duration" options={{ title: "בחירת משך עבודה" }} />
         {/* Task-alarm task: the full-screen ringing UI, opened by notifee's
             own fullScreenAction (even over a locked screen) or by tapping
             the alarm notification. */}

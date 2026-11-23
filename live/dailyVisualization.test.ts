@@ -179,7 +179,10 @@ test("a failed check fails open -- the Modal still closes and the trainee still 
 
 test("live/ActiveTaskScreen.tsx's handleStart is the ONE gate every task-start path shares (the manual button AND the autoStart effect both call it), checking isDailyVisualizationNeededNow before ever delegating to performStart", () => {
   const fnIndex = activeTaskScreen.indexOf("async function handleStart()");
-  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 300);
+  // ARCHI -- To-Do Bank + Duration/Split Selection task, section 3: the window
+  // was widened to also cover the new To-Do duration-selection redirect this
+  // function now checks BEFORE isDailyVisualizationNeededNow.
+  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 1000);
   assert.ok(fnBody.includes("if (await isDailyVisualizationNeededNow()) {"));
   assert.ok(fnBody.includes("setShowVisualizationGate(true);"));
   assert.ok(fnBody.includes("await performStart();"));

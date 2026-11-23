@@ -38,14 +38,13 @@ import {
 import { deleteContinuousRoutineGroup, loadContinuousRoutineGroupsForDate, saveNewContinuousRoutineGroup } from "../data/continuousRoutineGroup.ts";
 import { isConsecutiveSelection, type ContinuousRoutineGroup } from "../arc/continuousRoutineGroup.ts";
 import { reconcileTaskAlarms } from "../data/taskAlarm.ts";
-import { handleEmotionalCheckInChoice } from "../data/emotionalCheckInRouting.ts";
-import type { EmotionalCheckInChoice } from "../data/emotionalCheckInRouting.ts";
 import { isDailyVisualizationCompletedNow } from "../data/dailyVisualization.ts";
 import { isValidCalendarDateString, parseCalendarDate, todayLocalDateString } from "../program/dateUtils.ts";
 import PersistentTaskControls from "../live/PersistentTaskControls.tsx";
+import { FeelingCube, TaskCube } from "../live/components/HomeCubes.tsx";
+import AddInfoMenu from "../live/components/AddInfoMenu.tsx";
 import { hasFloatingOverlayPermissionAsync, requestFloatingOverlayPermissionAsync, showFloatingTimerOverlay, showIdleFloatingOverlayPanel } from "../data/floatingTimerOverlay.ts";
 import { resolveNextScheduledTaskDisplay } from "../data/dailyPlan.ts";
-import { generateArcPerspectiveSessionId } from "../arc/arcPerspective.ts";
 import TimePlanningModal from "./TimePlanningModal.tsx";
 
 /**
@@ -397,15 +396,6 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
     }
   }
 
-  // Unified Emotional Check-In and Task Postponement System, section 1:
-  // the SAME three choices, resolved by the SAME shared routing module
-  // the Android widget and the Postponement screen's own emotional
-  // sub-choice both call -- this screen never decides where to
-  // navigate itself, only which choice was tapped.
-  function handleCheckIn(choice: EmotionalCheckInChoice) {
-    handleEmotionalCheckInChoice(choice);
-  }
-
   /**
    * ARCHI -- Two Additions to the Existing Floating Cube task,
    * addition 1: pushes whichever payload is ACTUALLY correct right
@@ -634,74 +624,21 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>היום הגמיש · {dateLocal}</Text>
 
-        {/* Unified Emotional Check-In and Task Postponement System,
-            section 1: ARCHI Home only (isTodayMode) -- a fixed-date
-            instance opened from the Weekly screen never shows this, it
-            is specifically "ARCHI's main Home screen." A plain,
-            always-visible set of buttons, never an auto-popup: it
-            never interrupts an active task, and navigating away and
-            back never re-triggers anything beyond normal re-render. */}
+        {/* ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry
+            "Cubes" task, section 5: replaces the screen's own former
+            inline check-in block -- TaskCube/FeelingCube are the SAME
+            shared components live/DailyStartupSequenceOverlay.tsx's
+            "planning" step mounts, so both the home screen and the
+            app's entry screen show the exact same task/feeling state,
+            never two separate implementations. FeelingCube itself
+            preserves every existing button this block used to render
+            (urge/perspective rows included) -- only the 😄 smiley was
+            dropped, per spec. */}
         {isTodayMode && (
-          <View style={styles.checkInBlock}>
-            <Text style={styles.checkInQuestion}>איך אתה מרגיש כרגע?</Text>
-            <View style={styles.checkInRow}>
-              <Pressable style={styles.checkInButton} onPress={() => handleCheckIn("full_arc")}>
-                <Text style={styles.checkInEmoji}>😟</Text>
-                <Text style={styles.checkInLabel}>פחות טוב</Text>
-              </Pressable>
-              <Pressable style={styles.checkInButton} onPress={() => handleCheckIn("shortened_arc")}>
-                <Text style={styles.checkInEmoji}>🙂</Text>
-                <Text style={styles.checkInLabel}>סבבה</Text>
-              </Pressable>
-              <Pressable style={styles.checkInButton} onPress={() => handleCheckIn("next_task")}>
-                <Text style={styles.checkInEmoji}>😄</Text>
-                <Text style={styles.checkInLabel}>מעולה</Text>
-              </Pressable>
-            </View>
-            {/* ARCHI -- Unified Final Specification task, section 1
-                (combined "מחשבה / דחף" shortcut -- supersedes the
-                earlier urge-only button of the same row/handler; the
-                internal "urge" choice string is kept unrenamed, see
-                data/emotionalCheckInRouting.ts): its own row directly
-                below the mood row, aligned under "😟 פחות טוב"
-                (row-reverse places the first/only child on the same
-                side 😟 itself renders on, right above it). One button
-                opens Full ARC's existing cognitive_selector, letting
-                the trainee check any combination of מחשבה/פרשנות/דחף
-                -- never two separate thought/urge buttons. Available
-                regardless of whether a task is active, paused, or not
-                started -- this check-in bar itself is unconditional on
-                any task state already. */}
-            <View style={styles.urgeRow}>
-              <Pressable style={styles.checkInButton} onPress={() => handleCheckIn("urge")}>
-                <Text style={styles.checkInEmoji}>🧠</Text>
-                <Text style={styles.checkInLabel}>מחשבה / דחף</Text>
-              </Pressable>
-            </View>
-            {/*
-             * ARC Perspective task, section 10: the real-time entry
-             * point -- a new session id generated locally (no async
-             * write needed before navigating; build/ArcPerspectiveFlowScreen.tsx
-             * creates+saves the fresh session itself on first focus,
-             * same precedent as the ARC Decision Gym screen above).
-             * Sits in the exact same unconditional check-in block as
-             * "מחשבה / דחף" above, so it is available regardless of
-             * whether a task is active, paused, or not started, and
-             * never disturbs that task's own timer -- the mood
-             * check-in it leads to links to whichever task is already
-             * active (session.activeTaskId, captured once), exactly
-             * like every other check-in entry on this screen.
-             */}
-            <View style={styles.urgeRow}>
-              <Pressable
-                style={styles.checkInButton}
-                onPress={() => router.push({ pathname: "/arc-perspective/[id]", params: { id: generateArcPerspectiveSessionId(), mode: "real_time" } })}
-              >
-                <Text style={styles.checkInEmoji}>🔄</Text>
-                <Text style={styles.checkInLabel}>שינוי פרספקטיבה</Text>
-              </Pressable>
-            </View>
-          </View>
+          <>
+            <TaskCube />
+            <FeelingCube />
+          </>
         )}
 
         {/* ARCHI -- Two Additions to the Existing Floating Cube task,
@@ -761,24 +698,12 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
          * out of settingsRow below, which keeps only the view/collection
          * links (⚙️/📱/📜/📚/📖) -- never duplicated, never recreated.
          */}
-        {isTodayMode && (
-          <View style={styles.quickActionsRow}>
-            {showHomeInsightButton && (
-              <Pressable style={styles.quickActionButton} onPress={() => router.push("/insights/new")}>
-                <Text style={styles.quickActionButtonText}>+ תובנה</Text>
-              </Pressable>
-            )}
-            <Pressable style={styles.quickActionButton} onPress={() => router.push({ pathname: "/tasks/[id]/edit", params: { id: "new" } })}>
-              <Text style={styles.quickActionButtonText}>+ משימה</Text>
-            </Pressable>
-            <Pressable style={styles.quickActionButton} onPress={() => router.push("/positive-memories/new")}>
-              <Text style={styles.quickActionButtonText}>+ אירוע חיובי</Text>
-            </Pressable>
-            <Pressable style={styles.quickActionButton} onPress={() => router.push("/arc-saving/activate")}>
-              <Text style={styles.quickActionButtonText}>+ ARC Save</Text>
-            </Pressable>
-          </View>
-        )}
+        {/* ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry
+            "Cubes" task, section 6: the four buttons above are
+            preserved verbatim (same routes, same showHomeInsightButton
+            gating) behind the single, shared "+ להוסיף מידע" menu --
+            never deleted, only reorganized. */}
+        {isTodayMode && <AddInfoMenu showHomeInsightButton={showHomeInsightButton} />}
 
         {/* ARC Saving task, section 11: the trainee's own currently-
             active trigger shortcuts -- tapping one opens the SAME
