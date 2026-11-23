@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Animated, AppState, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
@@ -7,7 +7,7 @@ import { createEmptyTask, ensureTimePlanningTaskInList, generateTaskId, TIME_PLA
 import type { Task } from "../arc/tasks.ts";
 import { applyScheduleMode, reorderDailyPlanEntry, resolveAutoScheduleWriteBacks, resolveDailyPlan } from "../arc/dailyPlan.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
-import { resolveTodoList, resolveWovenDaySections } from "../arc/todoList.ts";
+import { resolveTodoList, resolveWovenDaySections, TODO_PIN_START_OF_DAY } from "../arc/todoList.ts";
 import type { TodoPlanEntry } from "../arc/todoList.ts";
 import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride, markTaskOccurrenceRemoved } from "../arc/taskOccurrenceOverride.ts";
 import { resolveEffectiveScheduleMode, WEEKLY_SPACED_GAP_PRESETS } from "../arc/weeklyScheduleMode.ts";
@@ -121,6 +121,25 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
    */
   const [todoEntries, setTodoEntries] = useState<TodoPlanEntry[]>([]);
   const [timePlanningModalVisible, setTimePlanningModalVisible] = useState(false);
+
+  /**
+   * "גרירה חופשית של השורה במסך" (free dragging): a To-Do row's drag
+   * handle (never a fixed/scheduled row -- those keep their own time-
+   * based position and ▲▼ reorder, untouched) measures its own and
+   * every other visible row's content-relative Y via onLayout into
+   * rowLayoutsRef, and on release computes the row it was dropped
+   * after, persisting that as Task.todoPinnedAfterTaskId
+   * (arc/todoList.ts's resolveWovenDaySections then honors it directly,
+   * overriding the automatic free-time weave for that one entry). The
+   * outer ScrollView is deliberately disabled for the duration of the
+   * drag (scrollEnabled={draggingTodoId === null}) so the drag gesture
+   * never has to compete with the ScrollView's own pan responder --
+   * the one real touch-conflict risk a free-floating drag over a
+   * ScrollView would otherwise have.
+   */
+  const rowLayoutsRef = useRef<Map<string, { y: number; height: number }>>(new Map());
+  const [draggingTodoId, setDraggingTodoId] = useState<string | null>(null);
+  const dragTranslateY = useRef(new Animated.Value(0)).current;
 
   // Unified ARC & Productivity Update task, requirement 9: "select
   // multiple consecutive scheduled tasks and group them as שגרה
@@ -402,6 +421,42 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
     router.push({ pathname: "/tasks/[id]", params: { id: entry.task.id, autoStart: "1" } });
   }
 
+  async function handleTodoDragEnd(taskId: string, dy: number) {
+    setDraggingTodoId(null);
+    dragTranslateY.setValue(0);
+    const baseLayout = rowLayoutsRef.current.get(taskId);
+    const todoEntry = todoEntries.find((candidate) => candidate.task.id === taskId);
+    if (!baseLayout || !todoEntry) return;
+    const droppedMidY = baseLayout.y + baseLayout.height / 2 + dy;
+    let targetId: string | null = null;
+    for (const item of wovenDaySections) {
+      if (item.entry.task.id === taskId) continue;
+      const layout = rowLayoutsRef.current.get(item.entry.task.id);
+      if (!layout) continue;
+      if (layout.y + layout.height / 2 < droppedMidY) targetId = item.entry.task.id;
+    }
+    const newPin = targetId ?? TODO_PIN_START_OF_DAY;
+    if (todoEntry.task.todoPinnedAfterTaskId === newPin) return;
+    await upsertTask({ ...todoEntry.task, todoPinnedAfterTaskId: newPin, updatedAt: new Date().toISOString() });
+    reload();
+  }
+
+  function createTodoDragResponder(taskId: string) {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        setDraggingTodoId(taskId);
+        dragTranslateY.setValue(0);
+      },
+      onPanResponderMove: Animated.event([null, { dy: dragTranslateY }], { useNativeDriver: false }),
+      onPanResponderRelease: (_event, gestureState) => handleTodoDragEnd(taskId, gestureState.dy),
+      onPanResponderTerminate: () => {
+        setDraggingTodoId(null);
+        dragTranslateY.setValue(0);
+      },
+    });
+  }
+
   function handleEdit(entry: ScheduledPlanEntry) {
     if (entry.origin === "weekly") {
       router.push({ pathname: "/tasks/[id]/edit", params: { id: entry.task.id, occurrenceDate: entry.occurrenceDateLocal } });
@@ -642,7 +697,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} scrollEnabled={draggingTodoId === null}>
         <Text style={styles.title}>היום הגמיש · {dateLocal}</Text>
 
         {/* ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry
@@ -912,27 +967,43 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
         {wovenDaySections.map((item) => {
           if (item.kind === "todo") {
             const todoEntry = item.entry;
+            const taskId = todoEntry.task.id;
+            const isDragging = draggingTodoId === taskId;
+            const dragResponder = createTodoDragResponder(taskId);
             return (
-              <View key={`todo-${todoEntry.task.id}`} style={[styles.entryCard, styles.entryCardTodo]}>
-                <Pressable style={styles.entryMain} onPress={() => handleStartTodo(todoEntry)}>
-                  <View style={styles.entryHeaderRow}>
-                    <Text style={styles.entryTitle}>{todoEntry.task.title}</Text>
-                    <Text style={styles.badgeTodo}>To-Do</Text>
-                  </View>
-                  <Text style={styles.entryMeta}>
-                    דחיפות {todoEntry.task.todoUrgency} · חשיבות {todoEntry.task.todoImportance}
-                    {todoEntry.remainingMinutes !== null ? ` · ${todoEntry.remainingMinutes} דק'` : ""}
-                  </Text>
-                </Pressable>
-                <View style={styles.entryActions}>
-                  <Pressable style={styles.entryActionButton} onPress={() => handleStartTodo(todoEntry)}>
-                    <Text style={styles.entryActionText}>התחל</Text>
-                  </Pressable>
-                  <Pressable style={styles.entryActionButton} onPress={() => setTimePlanningModalVisible(true)}>
-                    <Text style={styles.entryActionText}>ערוך</Text>
-                  </Pressable>
+              <Animated.View
+                key={`todo-${taskId}`}
+                onLayout={(event) => rowLayoutsRef.current.set(taskId, { y: event.nativeEvent.layout.y, height: event.nativeEvent.layout.height })}
+                style={[
+                  styles.entryCard,
+                  styles.entryCardTodo,
+                  isDragging && { transform: [{ translateY: dragTranslateY }], zIndex: 10, opacity: 0.9, elevation: 6 },
+                ]}
+              >
+                <View {...dragResponder.panHandlers} style={styles.dragHandle} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={styles.dragHandleIcon}>⠿</Text>
                 </View>
-              </View>
+                <View style={styles.entryCardTodoBody}>
+                  <Pressable style={styles.entryMain} onPress={() => handleStartTodo(todoEntry)}>
+                    <View style={styles.entryHeaderRow}>
+                      <Text style={styles.entryTitle}>{todoEntry.task.title}</Text>
+                      <Text style={styles.badgeTodo}>To-Do</Text>
+                    </View>
+                    <Text style={styles.entryMeta}>
+                      דחיפות {todoEntry.task.todoUrgency} · חשיבות {todoEntry.task.todoImportance}
+                      {todoEntry.remainingMinutes !== null ? ` · ${todoEntry.remainingMinutes} דק'` : ""}
+                    </Text>
+                  </Pressable>
+                  <View style={styles.entryActions}>
+                    <Pressable style={styles.entryActionButton} onPress={() => handleStartTodo(todoEntry)}>
+                      <Text style={styles.entryActionText}>התחל</Text>
+                    </Pressable>
+                    <Pressable style={styles.entryActionButton} onPress={() => setTimePlanningModalVisible(true)}>
+                      <Text style={styles.entryActionText}>ערוך</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </Animated.View>
             );
           }
           const entry = item.entry;
@@ -940,7 +1011,11 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
           const group = continuousGroups.find((candidate) => candidate.taskIds.includes(entry.task.id)) ?? null;
           const isSelected = selectedTaskIds.includes(entry.task.id);
           return (
-            <View key={entry.task.id} style={[styles.entryCard, entry.isCompletedToday && styles.entryCardCompleted, isSelected && styles.entryCardSelected]}>
+            <View
+              key={entry.task.id}
+              onLayout={(event) => rowLayoutsRef.current.set(entry.task.id, { y: event.nativeEvent.layout.y, height: event.nativeEvent.layout.height })}
+              style={[styles.entryCard, entry.isCompletedToday && styles.entryCardCompleted, isSelected && styles.entryCardSelected]}
+            >
               <Pressable
                 style={styles.entryMain}
                 onPress={() => (selectingContinuousGroup ? toggleTaskSelectedForGroup(entry.task.id) : handleStart(entry))}
@@ -1084,7 +1159,10 @@ const styles = StyleSheet.create({
   badgeInherited: { fontSize: 11, color: "#0a7ea4", borderWidth: 1, borderColor: "#0a7ea4", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   badgeModified: { fontSize: 11, color: "#a06a00", borderWidth: 1, borderColor: "#a06a00", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   badgeAdded: { fontSize: 11, color: "#1a7a3a", borderWidth: 1, borderColor: "#1a7a3a", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
-  entryCardTodo: { borderWidth: 1, borderColor: "#d8c7ea", backgroundColor: "#FAF7FD" },
+  entryCardTodo: { borderWidth: 1, borderColor: "#d8c7ea", backgroundColor: "#FAF7FD", flexDirection: "row-reverse", alignItems: "flex-start", gap: 8 },
+  entryCardTodoBody: { flex: 1 },
+  dragHandle: { paddingTop: 2, paddingHorizontal: 2 },
+  dragHandleIcon: { fontSize: 18, color: "#9b7fb8" },
   badgeTodo: { fontSize: 11, color: "#6b3fa0", borderWidth: 1, borderColor: "#6b3fa0", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   badgeConflict: { fontSize: 11, color: "#fff", backgroundColor: "#b00020", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   // Unified ARC & Productivity Update task, requirement 9.

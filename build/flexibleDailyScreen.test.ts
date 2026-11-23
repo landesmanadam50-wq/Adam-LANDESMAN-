@@ -80,7 +80,7 @@ test("required test: in today mode, `dateLocal` is re-resolved to the device's o
 });
 
 test("required test: in today mode, 'today' is ALSO re-resolved on every AppState 'active' transition -- covers midnight passing while the app sat backgrounded, which a focus event alone never catches since Home's own navigation focus never changes on an OS resume", () => {
-  assert.match(screen, /import \{ Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View \} from "react-native";/);
+  assert.match(screen, /import \{[^}]*\bAppState\b[^}]*\} from "react-native";/);
   const effectIndex = screen.indexOf('AppState.addEventListener("change"');
   assert.ok(effectIndex >= 0);
   const effectBody = screen.slice(screen.lastIndexOf("useEffect(", effectIndex), effectIndex + 250);
@@ -503,7 +503,7 @@ test("prevents duplicate overlay instances: the activation button never calls an
 // --- "אני רוצה שתהיה אפשרות להעביר את המשימה מה-To-Do ליסט ליום הגמיש בין המשימות הקבועות" ---
 
 test("required: today's To-Do entries are woven into the main visible list via resolveWovenDaySections, imported from arc/todoList.ts -- never a second, independent merge computed inside this screen", () => {
-  assert.ok(screen.includes('import { resolveTodoList, resolveWovenDaySections } from "../arc/todoList.ts";'));
+  assert.match(screen, /import \{[^}]*\bresolveWovenDaySections\b[^}]*\} from "\.\.\/arc\/todoList\.ts";/);
   assert.ok(screen.includes("const wovenDaySections = resolveWovenDaySections(scheduled, todoEntries);"));
 });
 
@@ -522,4 +522,41 @@ test("required: each woven To-Do row has its own direct start action (handleStar
 test("required: a to-do's position in scheduled's own up/down reorder arrows is looked up from scheduledIndexById -- the woven list's own running index is never reused as the scheduled-only position, which would desync ▲▼ disabled-state from the real scheduled array", () => {
   assert.ok(screen.includes("const scheduledIndexById = new Map(scheduled.map((entry, index) => [entry.task.id, index]));"));
   assert.ok(screen.includes("const position = scheduledIndexById.get(entry.task.id) ?? 0;"));
+});
+
+// --- "גרירה חופשית של השורה במסך" (free dragging) ---
+
+test("required: only To-Do rows get a drag handle/PanResponder -- fixed/scheduled rows keep their own time-based position and ▲▼ reorder, completely untouched", () => {
+  assert.ok(screen.includes("const dragResponder = createTodoDragResponder(taskId);"));
+  assert.ok(screen.includes('<View {...dragResponder.panHandlers} style={styles.dragHandle}'));
+  const scheduledBranchIndex = screen.indexOf("const entry = item.entry;\n          const position = scheduledIndexById.get(entry.task.id)");
+  assert.ok(scheduledBranchIndex > 0);
+  const scheduledBranchBody = screen.slice(scheduledBranchIndex, screen.indexOf("<Pressable style={styles.secondaryButton} onPress={handleBackToWeek}>"));
+  assert.ok(!scheduledBranchBody.includes("dragResponder"), "a fixed/scheduled row must never get a drag handle");
+});
+
+test("required: the outer ScrollView is disabled for the duration of a drag (scrollEnabled={draggingTodoId === null}) -- the one real touch-conflict risk a free-floating drag over a ScrollView would otherwise have", () => {
+  assert.ok(screen.includes('<ScrollView contentContainerStyle={styles.content} scrollEnabled={draggingTodoId === null}>'));
+});
+
+test("required: every row (fixed AND to-do) measures its own content-relative position via onLayout into rowLayoutsRef, so a to-do can be dropped relative to ANY row, not only other to-do rows", () => {
+  assert.equal(
+    (screen.match(/rowLayoutsRef\.current\.set\([^,]+, \{ y: event\.nativeEvent\.layout\.y, height: event\.nativeEvent\.layout\.height \}\)/g) ?? []).length,
+    2,
+    "both the to-do branch and the scheduled branch must record their own row's layout"
+  );
+});
+
+test("required: handleTodoDragEnd computes the drop target from the CURRENT woven order and persists it as Task.todoPinnedAfterTaskId (falling back to TODO_PIN_START_OF_DAY when dropped above everything) -- never a silent client-only reorder that drops on the next reload", () => {
+  const fnIndex = screen.indexOf("async function handleTodoDragEnd(taskId: string, dy: number)");
+  const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes("const newPin = targetId ?? TODO_PIN_START_OF_DAY;"));
+  assert.ok(fnBody.includes("await upsertTask({ ...todoEntry.task, todoPinnedAfterTaskId: newPin, updatedAt: new Date().toISOString() });"));
+  assert.ok(fnBody.includes("reload();"));
+});
+
+test("required: a drag that ends back at the entry's own current spot (pin unchanged) is a deliberate no-op -- never an unnecessary write/reload on every tiny finger jitter", () => {
+  const fnIndex = screen.indexOf("async function handleTodoDragEnd(taskId: string, dy: number)");
+  const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes("if (todoEntry.task.todoPinnedAfterTaskId === newPin) return;"));
 });

@@ -195,6 +195,13 @@ export function resolveCurrentTaskStateWithTodoSuggestion(
 export type WovenDayItem = { kind: "scheduled"; entry: ScheduledPlanEntry } | { kind: "todo"; entry: TodoPlanEntry };
 
 /**
+ * Reserved sentinel for Task.todoPinnedAfterTaskId: "pin this to-do
+ * before every other entry on this day," never a real task id
+ * (generateTaskId() always produces a random id, never this literal).
+ */
+export const TODO_PIN_START_OF_DAY = "__start_of_day__";
+
+/**
  * "אני רוצה שתהיה אפשרות להעביר את המשימה מה-To-Do ליסט ליום הגמיש בין
  * המשימות הקבועות": weaves today's To-Do entries INTO the gaps between
  * the day's own fixed/scheduled entries, for a single screen that shows
@@ -206,25 +213,47 @@ export type WovenDayItem = { kind: "scheduled"; entry: ScheduledPlanEntry } | { 
  * resolveRecommendedTodoAction already uses, just applied once per gap
  * instead of only to "now".
  *
- * Walks `scheduled` in its own existing chronological order
- * (effectiveStartTime/effectiveEndTime, already computed by
- * applyScheduleMode -- never re-derived here); after each entry, greedily
- * places every not-yet-placed To-Do entry (priority order via
- * resolveEffectiveTodoOrder) whose remainingMinutes fits that gap. A gap
- * whose bounds aren't both known gets 0 free minutes (conservative: an
- * item with an estimate never gets front-loaded into an uncertain slot),
- * EXCEPT the always-open trailing gap after the last scheduled entry (or
- * the whole day, when there are no scheduled entries at all), which is
- * unlimited -- so an item that fits nowhere earlier is still always
- * shown, never silently dropped.
+ * AUTOMATIC placement (the default, for any entry with no manual pin,
+ * or whose pin doesn't resolve): walks `scheduled` in its own existing
+ * chronological order (effectiveStartTime/effectiveEndTime, already
+ * computed by applyScheduleMode -- never re-derived here); after each
+ * entry, greedily places every not-yet-placed To-Do entry (priority
+ * order via resolveEffectiveTodoOrder) whose remainingMinutes fits that
+ * gap. A gap whose bounds aren't both known gets 0 free minutes
+ * (conservative: an item with an estimate never gets front-loaded into
+ * an uncertain slot), EXCEPT the always-open trailing gap after the
+ * last scheduled entry (or the whole day, when there are no scheduled
+ * entries at all), which is unlimited -- so an item that fits nowhere
+ * earlier is still always shown, never silently dropped.
+ *
+ * MANUAL placement ("גרירה חופשית של השורה במסך" -- free dragging):
+ * an entry whose task.todoPinnedAfterTaskId names another entry present
+ * in this exact woven result (scheduled OR to-do, including another
+ * pinned to-do, resolved in dependency order) is spliced in directly
+ * after that entry instead, bypassing the free-time fit check entirely
+ * -- a deliberate, explicit trainee choice always wins over the
+ * automatic heuristic. TODO_PIN_START_OF_DAY pins before everything.
+ * Resolution runs to a fixed point (repeated passes placing whatever
+ * newly resolves, since a pin can target another pinned entry); a
+ * dangling or cyclic pin never errors or loops -- it simply falls back
+ * to the exact same automatic placement as an unpinned entry, same
+ * "never silently drop an item" guarantee the automatic weave already
+ * gives.
  */
 export function resolveWovenDaySections(scheduled: ScheduledPlanEntry[], todoEntries: TodoPlanEntry[]): WovenDayItem[] {
-  const orderedTodo = resolveEffectiveTodoOrder(todoEntries);
+  const pinnedToStart = todoEntries.filter((entry) => entry.task.todoPinnedAfterTaskId === TODO_PIN_START_OF_DAY);
+  const pinnedAfterOther = todoEntries.filter(
+    (entry) => entry.task.todoPinnedAfterTaskId !== null && entry.task.todoPinnedAfterTaskId !== TODO_PIN_START_OF_DAY
+  );
+  const unpinnedIds = new Set(todoEntries.filter((entry) => entry.task.todoPinnedAfterTaskId === null).map((entry) => entry.task.id));
+  const unpinned = resolveEffectiveTodoOrder(todoEntries.filter((entry) => unpinnedIds.has(entry.task.id)));
+
+  const orderedTodo = unpinned;
   const placed = new Set<string>();
   const fits = (entry: TodoPlanEntry, freeMinutes: number | null): boolean =>
     entry.remainingMinutes === null || freeMinutes === null || entry.remainingMinutes <= freeMinutes;
 
-  const result: WovenDayItem[] = [];
+  let result: WovenDayItem[] = resolveEffectiveTodoOrder(pinnedToStart).map((entry) => ({ kind: "todo", entry }));
   function placeFittingInto(freeMinutes: number | null): void {
     for (const entry of orderedTodo) {
       if (placed.has(entry.task.id) || !fits(entry, freeMinutes)) continue;
@@ -246,6 +275,41 @@ export function resolveWovenDaySections(scheduled: ScheduledPlanEntry[], todoEnt
     placeFittingInto(gapMinutesAfter(current, scheduled[index + 1] ?? null));
   });
   placeFittingInto(null);
+
+  // Resolve manual "pinned after X" placements to a fixed point: each
+  // pass splices in whatever pins now resolve against the current
+  // result (so a pin targeting another pin, placed in an earlier pass,
+  // resolves too); entries sharing the same target are grouped and
+  // inserted together in priority order so they land correctly relative
+  // to each other, not just relative to the target.
+  let remainingPinned = pinnedAfterOther;
+  let progress = true;
+  while (progress && remainingPinned.length > 0) {
+    progress = false;
+    const stillUnresolved: TodoPlanEntry[] = [];
+    const byTargetIndex = new Map<number, TodoPlanEntry[]>();
+    for (const entry of remainingPinned) {
+      const targetIndex = result.findIndex((item) => item.entry.task.id === entry.task.todoPinnedAfterTaskId);
+      if (targetIndex === -1) {
+        stillUnresolved.push(entry);
+        continue;
+      }
+      const group = byTargetIndex.get(targetIndex) ?? [];
+      group.push(entry);
+      byTargetIndex.set(targetIndex, group);
+    }
+    for (const targetIndex of [...byTargetIndex.keys()].sort((a, b) => b - a)) {
+      const group = resolveEffectiveTodoOrder(byTargetIndex.get(targetIndex)!);
+      result.splice(targetIndex + 1, 0, ...group.map((entry) => ({ kind: "todo" as const, entry })));
+      progress = true;
+    }
+    remainingPinned = stillUnresolved;
+  }
+  // a dangling or cyclic pin never drops the item -- it falls back to
+  // the exact same automatic placement an unpinned entry would get.
+  for (const entry of resolveEffectiveTodoOrder(remainingPinned)) {
+    result.push({ kind: "todo", entry });
+  }
 
   return result;
 }

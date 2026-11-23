@@ -14,6 +14,7 @@ import {
   resolveResortByRating,
   resolveTodoList,
   resolveWovenDaySections,
+  TODO_PIN_START_OF_DAY,
 } from "./todoList.ts";
 import type { TodoPlanEntry } from "./todoList.ts";
 
@@ -361,4 +362,55 @@ test("resolveWovenDaySections never crosses a gap whose bounds aren't both known
   const estimated = entry(todoTask("estimated", "estimated", { expectedDurationMinutes: 10 }));
   const woven = resolveWovenDaySections(scheduled, [estimated]);
   assert.deepEqual(woven.map((item) => item.entry.task.id), ["flex", "anchor", "estimated"], "deferred to the trailing slot, never placed into the unknown gap after the flexible entry");
+});
+
+// --- resolveWovenDaySections: manual pin override ("גרירה חופשית של השורה במסך") ---
+
+test("resolveWovenDaySections: a to-do pinned after a fixed/scheduled task renders directly after it, overriding what the automatic free-time fit would otherwise have chosen", () => {
+  const scheduled = applyScheduleMode(
+    [fixedScheduledEntry("breakfast", "08:00", 30), fixedScheduledEntry("lunch", "13:00", 30)],
+    { mode: "continuous" }
+  );
+  // a short, high-priority to-do would normally auto-fit into the big 08:30 -> 13:00 gap (right after breakfast).
+  const pinnedAfterLunch = entry(todoTask("t1", "t1", { todoUrgency: 10, expectedDurationMinutes: 10, todoPinnedAfterTaskId: "lunch" }));
+  const woven = resolveWovenDaySections(scheduled, [pinnedAfterLunch]);
+  assert.deepEqual(woven.map((item) => item.entry.task.id), ["breakfast", "lunch", "t1"]);
+});
+
+test("resolveWovenDaySections: TODO_PIN_START_OF_DAY pins a to-do before every entry, including the first scheduled one", () => {
+  const scheduled = applyScheduleMode([fixedScheduledEntry("morning", "08:00", 30)], { mode: "continuous" });
+  const pinnedFirst = entry(todoTask("t1", "t1", { todoPinnedAfterTaskId: TODO_PIN_START_OF_DAY }));
+  const woven = resolveWovenDaySections(scheduled, [pinnedFirst]);
+  assert.deepEqual(woven.map((item) => item.entry.task.id), ["t1", "morning"]);
+});
+
+test("resolveWovenDaySections: a pin CHAIN (to-do B pinned after to-do A, A itself pinned after a fixed task) resolves in the correct relative order in one call -- never requires a second pass from the caller", () => {
+  const scheduled = applyScheduleMode([fixedScheduledEntry("lunch", "13:00", 30)], { mode: "continuous" });
+  const a = entry(todoTask("a", "a", { todoPinnedAfterTaskId: "lunch" }));
+  const b = entry(todoTask("b", "b", { todoPinnedAfterTaskId: "a" }));
+  const woven = resolveWovenDaySections(scheduled, [b, a]);
+  assert.deepEqual(woven.map((item) => item.entry.task.id), ["lunch", "a", "b"]);
+});
+
+test("resolveWovenDaySections: multiple to-dos pinned to the SAME target are inserted together, in priority order, not reversed", () => {
+  const scheduled = applyScheduleMode([fixedScheduledEntry("lunch", "13:00", 30)], { mode: "continuous" });
+  const low = entry(todoTask("low", "low", { todoUrgency: 2, todoPinnedAfterTaskId: "lunch" }));
+  const high = entry(todoTask("high", "high", { todoUrgency: 9, todoPinnedAfterTaskId: "lunch" }));
+  const woven = resolveWovenDaySections(scheduled, [low, high]);
+  assert.deepEqual(woven.map((item) => item.entry.task.id), ["lunch", "high", "low"]);
+});
+
+test("resolveWovenDaySections: a pin targeting a task id that doesn't exist on this day (removed/completed/never-placed) falls back to automatic placement -- never dropped, never an error", () => {
+  const scheduled = applyScheduleMode([fixedScheduledEntry("sched", "09:00", 30)], { mode: "continuous" });
+  const dangling = entry(todoTask("t1", "t1", { todoPinnedAfterTaskId: "does-not-exist" }));
+  const woven = resolveWovenDaySections(scheduled, [dangling]);
+  assert.deepEqual(woven.map((item) => item.entry.task.id), ["sched", "t1"]);
+});
+
+test("resolveWovenDaySections: a cyclic pin (A after B, B after A) never loops -- both fall back to automatic placement", () => {
+  const scheduled = applyScheduleMode([fixedScheduledEntry("sched", "09:00", 30)], { mode: "continuous" });
+  const a = entry(todoTask("a", "a", { todoUrgency: 9, todoPinnedAfterTaskId: "b" }));
+  const b = entry(todoTask("b", "b", { todoUrgency: 5, todoPinnedAfterTaskId: "a" }));
+  const woven = resolveWovenDaySections(scheduled, [a, b]);
+  assert.deepEqual(woven.map((item) => item.entry.task.id), ["sched", "a", "b"], "both fall back together, in priority order, same as any unpinned pair");
 });

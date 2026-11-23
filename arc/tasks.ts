@@ -305,6 +305,24 @@ export interface Task {
    * completing/removing this Task never touches the bank item.
    */
   todoBankItemId: string | null;
+  /**
+   * "גרירה חופשית של השורה במסך" (free dragging): a pure, optional
+   * manual-placement override for THIS day's own woven display order
+   * (arc/todoList.ts's resolveWovenDaySections) -- null means "no
+   * manual override, use the automatic priority/free-time weave"
+   * (the pre-existing, still-default behavior). When set, it names the
+   * id of the scheduled OR to-do entry this one should render directly
+   * after on this exact day, or the reserved sentinel
+   * TODO_PIN_START_OF_DAY to pin it before every entry. A dangling
+   * reference (the target was removed/completed, or a cycle) is never
+   * an error -- resolveWovenDaySections simply falls back to the
+   * automatic weave for that one entry, same "never silently drop an
+   * item" rule the automatic weave itself already follows. Lives on
+   * this day-occurrence Task, same as todoUrgency/todoImportance --
+   * dragging a to-do on one day never affects any other day it (or its
+   * bank item) appears on.
+   */
+  todoPinnedAfterTaskId: string | null;
   createdAt: string;
   updatedAt: string;
   schemaVersion: number;
@@ -377,6 +395,7 @@ export function createEmptyTask(id: string, title: string, firstAction: string, 
     todoIsSplittable: true,
     todoCompletedMinutes: 0,
     todoBankItemId: null,
+    todoPinnedAfterTaskId: null,
     createdAt: now,
     updatedAt: now,
     schemaVersion: CURRENT_TASK_SCHEMA_VERSION,
@@ -441,6 +460,7 @@ export function normalizeTask(task: Task): Task {
     todoIsSplittable: task.todoIsSplittable ?? true,
     todoCompletedMinutes: task.todoCompletedMinutes ?? 0,
     todoBankItemId: task.todoBankItemId ?? null,
+    todoPinnedAfterTaskId: task.todoPinnedAfterTaskId ?? null,
     schemaVersion: task.schemaVersion ?? CURRENT_TASK_SCHEMA_VERSION,
   };
 }
