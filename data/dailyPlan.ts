@@ -21,6 +21,7 @@
 import { applyScheduleMode, resolveCurrentTaskState, resolveDailyPlan, resolveMostUrgentScheduledEntry } from "../arc/dailyPlan.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
 import { resolveEffectiveScheduleMode } from "../arc/weeklyScheduleMode.ts";
+import { resolveCurrentTaskStateWithTodoSuggestion, resolveTodoList } from "../arc/todoList.ts";
 import type { Task } from "../arc/tasks.ts";
 import type { TaskTimerRun } from "../arc/taskTimer.ts";
 import { parseCalendarDate, todayLocalDateString } from "../program/dateUtils.ts";
@@ -58,9 +59,27 @@ export async function resolveTodaysScheduledPlan(now: Date = new Date()): Promis
  * current/next decision every relevant consumer shares -- instead of
  * the superseded resolveNextScheduledTaskAfter/isScheduledPlanEntryOverdue
  * pair, so this display can never show a task whose own window has
- * already passed. `next` is never overdue by construction, so
- * `isOverdue` is always `false` now (kept in the shape only so existing
- * consumers of this interface don't need to change).
+ * already passed.
+ *
+ * "הסדר של המשימות צריך לעקוב אחרי הזמן ... [ו]סדר המשימות בטו דו
+ * ליסט" (floating-overlay/Task-LIVE/"current task" sync task):
+ * broadened to resolveMostUrgentScheduledEntry's own current/overdue/
+ * next priority (the EXACT SAME decision data/taskCubeData.ts's
+ * resolveTaskCubeData already makes for the "המשימות שלי" cube), so a
+ * fixed task whose own clock window has already started -- but has no
+ * TaskTimerRun yet -- is shown here too, never silently skipped past
+ * (the bug this fixes: the floating overlay's idle panel and Task
+ * LIVE's own "הבאה" row used to show nothing, or the task AFTER the
+ * due one, for exactly this case). When nothing fixed is due/overdue/
+ * upcoming at all, falls back to the SAME To-Do suggestion
+ * resolveCurrentTaskStateWithTodoSuggestion already computes for the
+ * cube (via resolveTodoList, excluding `activeTaskId` the same way),
+ * so a To-Do item's own priority order can surface here too -- never a
+ * second, independent "what's next" pick that could disagree with the
+ * cube. `isOverdue` is true only for a genuinely overdue fixed entry
+ * (resolveMostUrgentScheduledEntry's own `state.overdue[0]` branch);
+ * both a due-now/upcoming fixed task and a To-Do suggestion (which has
+ * no fixed clock window to be late against) are never overdue.
  */
 export interface NextScheduledTaskDisplay {
   task: Task;
@@ -69,10 +88,18 @@ export interface NextScheduledTaskDisplay {
 }
 
 export async function resolveNextScheduledTaskDisplay(activeTaskId: string | null, now: Date = new Date()): Promise<NextScheduledTaskDisplay | null> {
-  const scheduled = await resolveTodaysScheduledPlan(now);
-  const { next } = resolveCurrentTaskState(scheduled, now, null, activeTaskId);
-  if (!next) return null;
-  return { task: next.task, effectiveStartTime: next.effectiveStartTime, isOverdue: false };
+  const [scheduled, tasks] = await Promise.all([resolveTodaysScheduledPlan(now), loadTasks()]);
+  const dateLocal = todayLocalDateString(now);
+  const todoEntries = resolveTodoList(tasks, dateLocal);
+  const withSuggestion = resolveCurrentTaskStateWithTodoSuggestion(scheduled, todoEntries, now, null, activeTaskId);
+  const dueNow = resolveMostUrgentScheduledEntry(withSuggestion);
+  if (dueNow) {
+    return { task: dueNow.task, effectiveStartTime: dueNow.effectiveStartTime, isOverdue: dueNow === withSuggestion.overdue[0] };
+  }
+  if (withSuggestion.todoSuggestion?.entry) {
+    return { task: withSuggestion.todoSuggestion.entry.task, effectiveStartTime: null, isOverdue: false };
+  }
+  return null;
 }
 
 /**

@@ -588,12 +588,12 @@ test("scenario: collapsed defaults to true ('Collapsed mode (default)'), loaded 
   assert.ok(!serviceKt.slice(serviceKt.indexOf("override fun onStartCommand("), serviceKt.indexOf("\n    return START_NOT_STICKY")).includes("PREF_COLLAPSED"), "onStartCommand must never re-read the collapsed pref -- onCreate is the only read site");
 });
 
-test("the pill shows the remaining timer while a task is active, and the next scheduled task's own start time (or the plain app-name fallback when nothing is scheduled) while idle -- reusing the SAME two data sources the expanded panel already shows, never a second/duplicate countdown or schedule lookup", () => {
+test("the pill shows the remaining timer while a task is active, and the current/next task's own NAME (or the plain app-name fallback when nothing is scheduled) while idle -- reusing the SAME data source the expanded panel already shows, never a second/duplicate countdown or schedule lookup", () => {
   const fnIndex = serviceKt.indexOf("private fun pillSummaryText(");
   const fnBody = serviceKt.slice(fnIndex, serviceKt.indexOf("\n  }", fnIndex));
   assert.ok(fnBody.includes("if (!isIdle) return overlayGlyph(remaining) + \" \" + formatRemaining(remaining)"));
-  // ARCHI -- Home-Screen Widget Sync task, section 4: an overdue next task gets its own distinct glyph (⚠ instead of ⏰), even in the collapsed pill.
-  assert.ok(fnBody.includes('return nextScheduledTaskTime?.let { if (nextScheduledTaskIsOverdue) "⚠ $it" else "⏰ $it" } ?: "ARCHI"'));
+  // Floating timer / current-task-title sync task: the collapsed pill shows the task's own name (not just its start time), so it reads the same as the cube's "המשימה הנוכחית"; an overdue one still gets its own distinct glyph (⚠ instead of ⏰).
+  assert.ok(fnBody.includes('return nextScheduledTaskTitle?.let { if (nextScheduledTaskIsOverdue) "⚠ $it" else "⏰ $it" } ?: "ARCHI"'));
 });
 
 test("renderNow() recomputes the pill's own text on every render, same as everything else -- a tick/update call never resets or overrides the collapsed/expanded CHOICE itself (only setCollapsed does), so the pill and the panel can never silently flip back on their own", () => {

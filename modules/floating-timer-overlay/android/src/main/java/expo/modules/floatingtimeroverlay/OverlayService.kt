@@ -431,11 +431,17 @@ class OverlayService : Service() {
    */
   private fun pillSummaryText(remaining: Double, isIdle: Boolean): String {
     if (!isIdle) return overlayGlyph(remaining) + " " + formatRemaining(remaining)
-    // ARCHI -- Home-Screen Widget Sync task, section 4: the collapsed
-    // pill is the FIRST thing seen while idle -- an overdue next task
-    // gets its own distinct glyph (⚠ instead of ⏰) right here too, so
-    // the overdue state is visible even without expanding the panel.
-    return nextScheduledTaskTime?.let { if (nextScheduledTaskIsOverdue) "⚠ $it" else "⏰ $it" } ?: "ARCHI"
+    // ARCHI -- Floating timer / current-task-title sync task: the
+    // collapsed pill is the FIRST thing seen while idle -- it now shows
+    // the task's own NAME (never only a bare clock time), so the exact
+    // same task the "המשימות שלי" cube calls "המשימה הנוכחית" is
+    // readable here too without expanding the panel. nextScheduledTaskTitle
+    // is, by construction (data/dailyPlan.ts's resolveNextScheduledTaskDisplay),
+    // already a due-now/overdue fixed task when one exists, else a
+    // genuinely upcoming one, else a To-Do suggestion -- never a second,
+    // independent pick. An overdue one gets its own distinct glyph (⚠
+    // instead of ⏰), same as before this task.
+    return nextScheduledTaskTitle?.let { if (nextScheduledTaskIsOverdue) "⚠ $it" else "⏰ $it" } ?: "ARCHI"
   }
 
   /**
