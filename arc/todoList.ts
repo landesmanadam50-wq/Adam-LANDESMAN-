@@ -25,6 +25,7 @@
 
 import type { Task } from "./tasks.ts";
 import { resolveCurrentTaskState, resolveFreeMinutesUntilNextTask, type CurrentTaskState, type ScheduledPlanEntry } from "./dailyPlan.ts";
+import { parseClockTimeToMinutes } from "./dailyRoutine.ts";
 import type { TaskTimerRun } from "./taskTimer.ts";
 
 export interface TodoPlanEntry {
@@ -189,4 +190,62 @@ export function resolveCurrentTaskStateWithTodoSuggestion(
   if (state.current) return { ...state, todoSuggestion: null };
   const freeMinutes = resolveFreeMinutesUntilNextTask(scheduled, now, excludeTaskId);
   return { ...state, todoSuggestion: resolveRecommendedTodoAction(todoEntries, freeMinutes) };
+}
+
+export type WovenDayItem = { kind: "scheduled"; entry: ScheduledPlanEntry } | { kind: "todo"; entry: TodoPlanEntry };
+
+/**
+ * "אני רוצה שתהיה אפשרות להעביר את המשימה מה-To-Do ליסט ליום הגמיש בין
+ * המשימות הקבועות": weaves today's To-Do entries INTO the gaps between
+ * the day's own fixed/scheduled entries, for a single screen that shows
+ * both together in their visual day-order -- a pure DISPLAY merge, same
+ * boundary resolveRecommendedTodoAction above already draws ("a to-do's
+ * duration genuinely isn't known until start time" -- see this task's
+ * plan, decision 5), never a second scheduling engine: it reuses the
+ * EXACT same remainingMinutes/"fits the free window" rule
+ * resolveRecommendedTodoAction already uses, just applied once per gap
+ * instead of only to "now".
+ *
+ * Walks `scheduled` in its own existing chronological order
+ * (effectiveStartTime/effectiveEndTime, already computed by
+ * applyScheduleMode -- never re-derived here); after each entry, greedily
+ * places every not-yet-placed To-Do entry (priority order via
+ * resolveEffectiveTodoOrder) whose remainingMinutes fits that gap. A gap
+ * whose bounds aren't both known gets 0 free minutes (conservative: an
+ * item with an estimate never gets front-loaded into an uncertain slot),
+ * EXCEPT the always-open trailing gap after the last scheduled entry (or
+ * the whole day, when there are no scheduled entries at all), which is
+ * unlimited -- so an item that fits nowhere earlier is still always
+ * shown, never silently dropped.
+ */
+export function resolveWovenDaySections(scheduled: ScheduledPlanEntry[], todoEntries: TodoPlanEntry[]): WovenDayItem[] {
+  const orderedTodo = resolveEffectiveTodoOrder(todoEntries);
+  const placed = new Set<string>();
+  const fits = (entry: TodoPlanEntry, freeMinutes: number | null): boolean =>
+    entry.remainingMinutes === null || freeMinutes === null || entry.remainingMinutes <= freeMinutes;
+
+  const result: WovenDayItem[] = [];
+  function placeFittingInto(freeMinutes: number | null): void {
+    for (const entry of orderedTodo) {
+      if (placed.has(entry.task.id) || !fits(entry, freeMinutes)) continue;
+      result.push({ kind: "todo", entry });
+      placed.add(entry.task.id);
+    }
+  }
+  function gapMinutesAfter(current: ScheduledPlanEntry, next: ScheduledPlanEntry | null): number | null {
+    if (next === null) return null;
+    if (current.effectiveEndTime === null || next.effectiveStartTime === null) return 0;
+    const endMinutes = parseClockTimeToMinutes(current.effectiveEndTime);
+    const startMinutes = parseClockTimeToMinutes(next.effectiveStartTime);
+    if (endMinutes === null || startMinutes === null) return 0;
+    return Math.max(0, startMinutes - endMinutes);
+  }
+
+  scheduled.forEach((current, index) => {
+    result.push({ kind: "scheduled", entry: current });
+    placeFittingInto(gapMinutesAfter(current, scheduled[index + 1] ?? null));
+  });
+  placeFittingInto(null);
+
+  return result;
 }

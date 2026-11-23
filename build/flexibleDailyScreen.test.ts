@@ -380,14 +380,14 @@ test("confirmUngroup asks for confirmation before removing a group (a destructiv
 });
 
 test("the entry list shows a checkbox per task ONLY while selectingContinuousGroup is true, and tapping an entry toggles selection instead of starting the task in that mode", () => {
-  const mapIndex = screen.indexOf("{scheduled.map((entry, position) => {");
+  const mapIndex = screen.indexOf("{wovenDaySections.map((item) => {");
   const mapBody = screen.slice(mapIndex, screen.indexOf("<Pressable style={styles.secondaryButton} onPress={handleBackToWeek}>"));
   assert.ok(mapBody.includes("selectingContinuousGroup && <Text style={styles.selectionCheckbox}>{isSelected ? \"☑\" : \"☐\"}</Text>"));
   assert.ok(mapBody.includes("onPress={() => (selectingContinuousGroup ? toggleTaskSelectedForGroup(entry.task.id) : handleStart(entry))}"));
 });
 
 test("a grouped entry shows the 'שגרה רצופה' badge and, outside selection mode, its own ungroup action -- both derived from continuousGroups, never a second source of truth", () => {
-  const mapIndex = screen.indexOf("{scheduled.map((entry, position) => {");
+  const mapIndex = screen.indexOf("{wovenDaySections.map((item) => {");
   const mapBody = screen.slice(mapIndex, screen.indexOf("<Pressable style={styles.secondaryButton} onPress={handleBackToWeek}>"));
   assert.ok(mapBody.includes("const group = continuousGroups.find((candidate) => candidate.taskIds.includes(entry.task.id)) ?? null;"));
   assert.ok(mapBody.includes("{group && <Text style={styles.badgeContinuous}>שגרה רצופה</Text>}"));
@@ -498,4 +498,28 @@ test("prevents duplicate overlay instances: the activation button never calls an
   const fnIndex = screen.indexOf("async function handleToggleFloatingOverlay()");
   const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
   assert.ok(!fnBody.includes("new OverlayService") && !fnBody.includes("startForegroundService"));
+});
+
+// --- "אני רוצה שתהיה אפשרות להעביר את המשימה מה-To-Do ליסט ליום הגמיש בין המשימות הקבועות" ---
+
+test("required: today's To-Do entries are woven into the main visible list via resolveWovenDaySections, imported from arc/todoList.ts -- never a second, independent merge computed inside this screen", () => {
+  assert.ok(screen.includes('import { resolveTodoList, resolveWovenDaySections } from "../arc/todoList.ts";'));
+  assert.ok(screen.includes("const wovenDaySections = resolveWovenDaySections(scheduled, todoEntries);"));
+});
+
+test("required: each woven To-Do row has its own direct start action (handleStartTodo), navigating straight to the task with autoStart=1 -- the SAME redirect every other To-Do start entry point (the cube, the planning modal) already uses, never a second/competing start path", () => {
+  const fnIndex = screen.indexOf("function handleStartTodo(entry: TodoPlanEntry)");
+  const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes('router.push({ pathname: "/tasks/[id]", params: { id: entry.task.id, autoStart: "1" } });'));
+
+  const mapIndex = screen.indexOf("{wovenDaySections.map((item) => {");
+  const mapBody = screen.slice(mapIndex, screen.indexOf("<Pressable style={styles.secondaryButton} onPress={handleBackToWeek}>"));
+  assert.ok(mapBody.includes('if (item.kind === "todo") {'));
+  assert.ok((mapBody.match(/onPress={\(\) => handleStartTodo\(todoEntry\)}/g) ?? []).length === 2, "both the row's main press area and its own explicit 'התחל' button call the same direct-start handler");
+  assert.ok(mapBody.includes("<Text style={styles.entryActionText}>התחל</Text>"));
+});
+
+test("required: a to-do's position in scheduled's own up/down reorder arrows is looked up from scheduledIndexById -- the woven list's own running index is never reused as the scheduled-only position, which would desync ▲▼ disabled-state from the real scheduled array", () => {
+  assert.ok(screen.includes("const scheduledIndexById = new Map(scheduled.map((entry, index) => [entry.task.id, index]));"));
+  assert.ok(screen.includes("const position = scheduledIndexById.get(entry.task.id) ?? 0;"));
 });

@@ -107,7 +107,7 @@ test("every row action calls onChanged() immediately (so the parent re-derives s
 });
 
 test("FlexibleDailyScreen imports resolveTodoList and holds its own todoEntries state, computed in reload() from the SAME tasks it already loaded -- one source, passed down as a prop, never recomputed inside the modal", () => {
-  assert.match(screen, /import\s*\{\s*resolveTodoList\s*\}\s*from\s*["']\.\.\/arc\/todoList\.ts["']/);
+  assert.match(screen, /import\s*\{[^}]*\bresolveTodoList\b[^}]*\}\s*from\s*["']\.\.\/arc\/todoList\.ts["']/);
   assert.ok(screen.includes("const [todoEntries, setTodoEntries] = useState<TodoPlanEntry[]>([]);"));
   const reloadIndex = screen.indexOf("const reload = useCallback");
   const reloadBody = screen.slice(reloadIndex, reloadIndex + 2000);
@@ -193,4 +193,12 @@ test("required (To-Do Bank task): the To-Do tab offers a '+ הוסף מהמאג�
 
 test("required (To-Do Bank task): the bank picker lists only ACTIVE (non-archived) bank items, via listActiveTodoBankItems -- never the raw unfiltered list", () => {
   assert.ok(modal.includes("listActiveTodoBankItems(bankItems).map((bankItem) =>"));
+});
+
+test("required: each To-Do row in this popup offers its own direct 'התחל' start button -- closing the modal and navigating straight to the task with autoStart=1, the SAME redirect every other To-Do start entry point already uses, never a second/competing start path", () => {
+  assert.ok(modal.includes('router.push({ pathname: "/tasks/[id]", params: { id: entry.task.id, autoStart: "1" } });'));
+  const rowIndex = modal.indexOf("<View style={styles.todoActionsRow}>");
+  const rowBody = modal.slice(rowIndex, modal.indexOf("<Pressable style={styles.entryActionButton} onPress={() => setEditingTodoId", rowIndex));
+  assert.ok(rowBody.includes("onClose();"), "closes the popup before navigating away, exactly like every other full-screen navigation this modal triggers");
+  assert.ok(rowBody.includes("<Text style={styles.entryActionText}>התחל</Text>"));
 });

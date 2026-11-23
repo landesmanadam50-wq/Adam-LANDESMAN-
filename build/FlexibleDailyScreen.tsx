@@ -7,7 +7,7 @@ import { createEmptyTask, ensureTimePlanningTaskInList, generateTaskId, TIME_PLA
 import type { Task } from "../arc/tasks.ts";
 import { applyScheduleMode, reorderDailyPlanEntry, resolveAutoScheduleWriteBacks, resolveDailyPlan } from "../arc/dailyPlan.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
-import { resolveTodoList } from "../arc/todoList.ts";
+import { resolveTodoList, resolveWovenDaySections } from "../arc/todoList.ts";
 import type { TodoPlanEntry } from "../arc/todoList.ts";
 import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride, markTaskOccurrenceRemoved } from "../arc/taskOccurrenceOverride.ts";
 import { resolveEffectiveScheduleMode, WEEKLY_SPACED_GAP_PRESETS } from "../arc/weeklyScheduleMode.ts";
@@ -388,6 +388,20 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
     router.push({ pathname: "/tasks/[id]", params: { id: entry.task.id, autoStart: "1" } });
   }
 
+  /**
+   * "אני רוצה שתהיה אפשרות להעביר את המשימה מה-To-Do ליסט ליום הגמיש
+   * בין המשימות הקבועות": the To-Do entries woven into the main list
+   * below (resolveWovenDaySections) each get this same direct start
+   * action -- autoStart=1 on a To-Do task lands on ActiveTaskScreen's
+   * OWN existing isTodoItem redirect to the duration/split-selection
+   * screen (live/TaskDurationSelectionScreen.tsx), exactly like every
+   * other To-Do start entry point in this app (the cube, ARC LIVE's
+   * suggestion) -- never a second, competing start path.
+   */
+  function handleStartTodo(entry: TodoPlanEntry) {
+    router.push({ pathname: "/tasks/[id]", params: { id: entry.task.id, autoStart: "1" } });
+  }
+
   function handleEdit(entry: ScheduledPlanEntry) {
     if (entry.origin === "weekly") {
       router.push({ pathname: "/tasks/[id]/edit", params: { id: entry.task.id, occurrenceDate: entry.occurrenceDateLocal } });
@@ -618,6 +632,13 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
       </SafeAreaView>
     );
   }
+
+  // "אני רוצה שתהיה אפשרות להעביר את המשימה מה-To-Do ליסט ליום הגמיש
+  // בין המשימות הקבועות": a pure display derivation from this screen's
+  // own existing scheduled/todoEntries state -- never a second source
+  // of truth, never recomputed inside the render loop below.
+  const wovenDaySections = resolveWovenDaySections(scheduled, todoEntries);
+  const scheduledIndexById = new Map(scheduled.map((entry, index) => [entry.task.id, index]));
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -887,8 +908,35 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
           </View>
         )}
 
-        {scheduled.length === 0 && <Text style={styles.hint}>אין משימות מתוזמנות לתאריך הזה.</Text>}
-        {scheduled.map((entry, position) => {
+        {scheduled.length === 0 && todoEntries.length === 0 && <Text style={styles.hint}>אין משימות מתוזמנות לתאריך הזה.</Text>}
+        {wovenDaySections.map((item) => {
+          if (item.kind === "todo") {
+            const todoEntry = item.entry;
+            return (
+              <View key={`todo-${todoEntry.task.id}`} style={[styles.entryCard, styles.entryCardTodo]}>
+                <Pressable style={styles.entryMain} onPress={() => handleStartTodo(todoEntry)}>
+                  <View style={styles.entryHeaderRow}>
+                    <Text style={styles.entryTitle}>{todoEntry.task.title}</Text>
+                    <Text style={styles.badgeTodo}>To-Do</Text>
+                  </View>
+                  <Text style={styles.entryMeta}>
+                    דחיפות {todoEntry.task.todoUrgency} · חשיבות {todoEntry.task.todoImportance}
+                    {todoEntry.remainingMinutes !== null ? ` · ${todoEntry.remainingMinutes} דק'` : ""}
+                  </Text>
+                </Pressable>
+                <View style={styles.entryActions}>
+                  <Pressable style={styles.entryActionButton} onPress={() => handleStartTodo(todoEntry)}>
+                    <Text style={styles.entryActionText}>התחל</Text>
+                  </Pressable>
+                  <Pressable style={styles.entryActionButton} onPress={() => setTimePlanningModalVisible(true)}>
+                    <Text style={styles.entryActionText}>ערוך</Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          }
+          const entry = item.entry;
+          const position = scheduledIndexById.get(entry.task.id) ?? 0;
           const group = continuousGroups.find((candidate) => candidate.taskIds.includes(entry.task.id)) ?? null;
           const isSelected = selectedTaskIds.includes(entry.task.id);
           return (
@@ -1036,6 +1084,8 @@ const styles = StyleSheet.create({
   badgeInherited: { fontSize: 11, color: "#0a7ea4", borderWidth: 1, borderColor: "#0a7ea4", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   badgeModified: { fontSize: 11, color: "#a06a00", borderWidth: 1, borderColor: "#a06a00", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   badgeAdded: { fontSize: 11, color: "#1a7a3a", borderWidth: 1, borderColor: "#1a7a3a", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
+  entryCardTodo: { borderWidth: 1, borderColor: "#d8c7ea", backgroundColor: "#FAF7FD" },
+  badgeTodo: { fontSize: 11, color: "#6b3fa0", borderWidth: 1, borderColor: "#6b3fa0", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   badgeConflict: { fontSize: 11, color: "#fff", backgroundColor: "#b00020", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   // Unified ARC & Productivity Update task, requirement 9.
   badgeContinuous: { fontSize: 11, color: "#fff", backgroundColor: "#0a7ea4", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },

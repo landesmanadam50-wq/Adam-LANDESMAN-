@@ -282,6 +282,15 @@ export default function TimePlanningModal({
                         {entry.remainingMinutes !== null ? ` · ${entry.remainingMinutes} דק' נותרו` : ""}
                       </Text>
                       <View style={styles.todoActionsRow}>
+                        <Pressable
+                          style={styles.entryActionButton}
+                          onPress={() => {
+                            onClose();
+                            router.push({ pathname: "/tasks/[id]", params: { id: entry.task.id, autoStart: "1" } });
+                          }}
+                        >
+                          <Text style={styles.entryActionText}>התחל</Text>
+                        </Pressable>
                         <Pressable style={styles.entryActionButton} onPress={() => setEditingTodoId(isEditing ? null : entry.task.id)}>
                           <Text style={styles.entryActionText}>{isEditing ? "סגור" : "ערוך"}</Text>
                         </Pressable>

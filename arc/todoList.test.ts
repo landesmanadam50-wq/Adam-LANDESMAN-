@@ -13,6 +13,7 @@ import {
   resolveRecommendedTodoAction,
   resolveResortByRating,
   resolveTodoList,
+  resolveWovenDaySections,
 } from "./todoList.ts";
 import type { TodoPlanEntry } from "./todoList.ts";
 
@@ -310,4 +311,54 @@ test("required test 14: a To-Do entry's own task is never given a scheduledTime 
   const todoItem = todoTask("todo1", "todo1", { todoUrgency: 10, expectedDurationMinutes: 10 });
   const result = resolveCurrentTaskStateWithTodoSuggestion(scheduled, [entry(todoItem)], new Date("2026-01-05T08:00:00"), null, null);
   assert.equal(result.todoSuggestion?.entry?.task.scheduledTime, null, "the suggested task's own scheduledTime is still null -- a recommendation is never a write");
+});
+
+// --- resolveWovenDaySections: "להעביר את המשימה מה-To-Do ליסט ליום הגמיש בין המשימות הקבועות" ---
+
+test("resolveWovenDaySections weaves a fitting To-Do entry into the gap right after the scheduled entry it fits behind, and defers a non-fitting one to the always-open trailing slot", () => {
+  const scheduled = applyScheduleMode(
+    [fixedScheduledEntry("sched1", "09:00", 30), fixedScheduledEntry("sched2", "10:00", 30)],
+    { mode: "continuous" }
+  );
+  // the 09:00-09:30 / 10:00-10:30 pair leaves a 30-minute gap (09:30 -> 10:00).
+  const fits20 = entry(todoTask("fits", "fits", { todoUrgency: 10, expectedDurationMinutes: 20 }));
+  const tooLong = entry(todoTask("tooLong", "tooLong", { todoUrgency: 5, expectedDurationMinutes: 60 }));
+  const woven = resolveWovenDaySections(scheduled, [fits20, tooLong]);
+  assert.deepEqual(
+    woven.map((item) => (item.kind === "scheduled" ? item.entry.task.id : item.entry.task.id)),
+    ["sched1", "fits", "sched2", "tooLong"]
+  );
+});
+
+test("resolveWovenDaySections places every To-Do entry, in priority order, at the end when there are no scheduled entries at all -- never drops one", () => {
+  const todoHigh = entry(todoTask("high", "high", { todoUrgency: 10 }));
+  const todoLow = entry(todoTask("low", "low", { todoUrgency: 1 }));
+  const woven = resolveWovenDaySections([], [todoLow, todoHigh]);
+  assert.deepEqual(woven, [
+    { kind: "todo", entry: todoHigh },
+    { kind: "todo", entry: todoLow },
+  ]);
+});
+
+test("resolveWovenDaySections treats a To-Do entry with no duration estimate as fitting ANY gap (even a tiny or uncertain one) -- same 'no estimate -> assume it fits' rule resolveRecommendedTodoAction already uses, so it lands in the very first gap, not deferred to the end", () => {
+  const scheduled = applyScheduleMode(
+    [fixedScheduledEntry("sched1", "09:00", 30), fixedScheduledEntry("sched2", "09:35", 30)],
+    { mode: "continuous" }
+  );
+  // only a 5-minute gap (09:30 -> 09:35) -- too small for any real estimate, but a no-estimate item still fits it.
+  const noEstimate = entry(todoTask("noEstimate", "noEstimate", { expectedDurationMinutes: null }));
+  const woven = resolveWovenDaySections(scheduled, [noEstimate]);
+  assert.deepEqual(woven.map((item) => item.entry.task.id), ["sched1", "noEstimate", "sched2"]);
+});
+
+test("resolveWovenDaySections never crosses a gap whose bounds aren't both known (treated as 0 free minutes, not unlimited) -- an estimated item is never front-loaded into an uncertain early slot", () => {
+  // a flexible (non-manual-time) first entry has no effectiveStartTime until a later anchor sets the cursor,
+  // so the gap after it is unknown, not unlimited.
+  const flexibleFirst: DailyPlanEntry = { ...fixedScheduledEntry("flex", "09:00", 30), timeIsManual: false };
+  const anchored = fixedScheduledEntry("anchor", "11:00", 30);
+  const scheduled = applyScheduleMode([flexibleFirst, anchored], { mode: "continuous" });
+  assert.equal(scheduled[0].effectiveStartTime, null, "sanity check: the flexible entry's own effective time is genuinely unknown here");
+  const estimated = entry(todoTask("estimated", "estimated", { expectedDurationMinutes: 10 }));
+  const woven = resolveWovenDaySections(scheduled, [estimated]);
+  assert.deepEqual(woven.map((item) => item.entry.task.id), ["flex", "anchor", "estimated"], "deferred to the trailing slot, never placed into the unknown gap after the flexible entry");
 });
