@@ -65,7 +65,10 @@ test("scheduleReminderNotification redirects every interruptive kind to schedule
 
 test("scheduleNativeReminderNotification uses notifee's createTriggerNotification with asForegroundService: true and AlarmType.SET_ALARM_CLOCK -- the exact same native mechanism data/taskAlarm.ts's own alarms use, reused rather than a second, parallel engine", () => {
   const fnIndex = notificationsModule.indexOf("async function scheduleNativeReminderNotification");
-  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 3200);
+  // ARC Reminders task: widened from 3200 -- the new per-kind inline-
+  // reply `actions` construction (Active Recall's AndroidInput action)
+  // pushed this function's later lines further into its own body.
+  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 4700);
   assert.ok(fnBody.includes("await notifee.createTriggerNotification("));
   assert.ok(fnBody.includes("asForegroundService: true,"));
   assert.ok(fnBody.includes("alarmManager: { type: AlarmType.SET_ALARM_CLOCK },"));
@@ -192,7 +195,7 @@ test("handleTaskAlarmEvent routes a tapped notifee-delivered reminder (Boolean(d
 });
 
 test("taskAlarm.ts imports routeTappedReminder/isInterruptiveReminderKind/redisplayReminderLoud/redisplayReminderQuiet/REMINDER_DATA_FLAG from their single source of truth modules, never a second, locally re-derived copy", () => {
-  assert.ok(taskAlarmModule.includes('import { cancelScheduledNotification, isInterruptiveReminderKind, redisplayReminderLoud, redisplayReminderQuiet, REMINDER_DATA_FLAG } from "./notifications.ts";'));
+  assert.ok(taskAlarmModule.includes('import { ACTION_ARC_RECALL_ANSWER, cancelScheduledNotification, isInterruptiveReminderKind, redisplayReminderLoud, redisplayReminderQuiet, REMINDER_DATA_FLAG } from "./notifications.ts";'));
   assert.ok(taskAlarmModule.includes('import { routeTappedReminder } from "./reminders.ts";'));
 });
 
@@ -290,4 +293,54 @@ test("Part 2 (every alarm/reminder/Daily-Visualization kind uses AlarmType.SET_A
     assert.ok(occurrences >= 1, `${label} must schedule via AlarmType.SET_ALARM_CLOCK`);
     assert.ok(!source.includes("AlarmType.SET_EXACT"), `${label} must never use the non-exempt SET_EXACT/SET_EXACT_AND_ALLOW_WHILE_IDLE trigger types`);
   }
+});
+
+// --- ARC Reminders task, Phase 4: Active Recall inline reply ---
+
+test("checkpoint (one new action, one kind): scheduleNativeReminderNotification attaches the ACTION_ARC_RECALL_ANSWER action -- carrying notifee's existing AndroidInput support -- ONLY for kind 'arcRecallQuestion', and no actions at all for every other kind, exactly as before this task", () => {
+  const fnIndex = notificationsModule.indexOf("async function scheduleNativeReminderNotification");
+  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 4700);
+  assert.ok(fnBody.includes('input.kind === "arcRecallQuestion"'));
+  assert.ok(fnBody.includes("pressAction: { id: ACTION_ARC_RECALL_ANSWER }"));
+  assert.ok(fnBody.includes("input: { allowFreeFormInput: true, placeholder:"));
+  assert.ok(fnBody.includes(": undefined,"), "every other kind must still get no actions at all");
+});
+
+test("checkpoint (the exact message a reply is recorded against): the data payload carries arcRecallChatMessageId alongside the pre-existing arcReminderId, both only for the kinds that need them", () => {
+  assert.match(notificationsModule, /arcRecallChatMessageId\?: string;/);
+  const fnIndex = notificationsModule.indexOf("async function scheduleNativeReminderNotification");
+  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 4700);
+  assert.ok(fnBody.includes("...(input.arcRecallChatMessageId !== undefined ? { arcRecallChatMessageId: input.arcRecallChatMessageId } : {}),"));
+});
+
+test("checkpoint (never a second inline-reply primitive): ReminderRedisplayOptions widens its own actions type to allow notifee's AndroidInput, so the SAME redisplayReminderQuiet/Loud -> android.actions pass-through every other kind already relies on carries the recall action through a busy-state redisplay unchanged", () => {
+  assert.match(notificationsModule, /actions\?: \{ title: string; pressAction: \{ id: string \}; input\?: true \| AndroidInput \}\[\];/);
+  assert.match(notificationsModule, /import type \{ AndroidInput \} from "@notifee\/react-native";/);
+});
+
+test("checkpoint (inline answer never falls through to the plain tap handler): handleTaskAlarmEvent checks data.kind === 'arcRecallQuestion' + the exact ACTION_ARC_RECALL_ANSWER id + a non-empty event.detail.input BEFORE the generic Boolean(data[REMINDER_DATA_FLAG]) branch, and returns without ever calling routeTappedReminder for that same press", () => {
+  const genericBranchIndex = taskAlarmModule.indexOf("if (Boolean(data[REMINDER_DATA_FLAG])) {");
+  const inlineReplyIndex = taskAlarmModule.indexOf('data.kind === "arcRecallQuestion" &&');
+  assert.ok(inlineReplyIndex !== -1 && genericBranchIndex !== -1);
+  assert.ok(inlineReplyIndex < genericBranchIndex, "the inline-reply branch must be checked BEFORE the generic soft-reminder tap branch");
+  const fnBody = taskAlarmModule.slice(inlineReplyIndex, genericBranchIndex);
+  assert.ok(fnBody.includes("event.type === EventType.ACTION_PRESS &&"));
+  assert.ok(fnBody.includes("event.detail.pressAction?.id === ACTION_ARC_RECALL_ANSWER &&"));
+  assert.ok(fnBody.includes('typeof event.detail.input === "string" &&'));
+  assert.ok(fnBody.includes("event.detail.input.trim().length > 0"));
+  assert.ok(fnBody.includes("await recordArcRecallAnswer(chatMessageId, event.detail.input, new Date().toISOString());"));
+  // Scoped to this branch's own `{ ... }` body only (through its closing
+  // `return;`) -- the NEXT branch's own doc comment legitimately names
+  // routeTappedReminder in prose, which would be a false positive here.
+  const ownBodyEnd = taskAlarmModule.indexOf("return;", taskAlarmModule.indexOf("if (notificationId) await notifee.cancelNotification", inlineReplyIndex));
+  const ownBody = taskAlarmModule.slice(inlineReplyIndex, ownBodyEnd);
+  assert.ok(!ownBody.includes("routeTappedReminder"), "the inline-reply branch must never also call routeTappedReminder for the same press");
+});
+
+test("checkpoint (dismiss the notification after an inline answer, same as a plain action press on every other reminder kind): the inline-reply branch cancels the notification by its real event-carried id, never a stale/invented one", () => {
+  const inlineReplyIndex = taskAlarmModule.indexOf('data.kind === "arcRecallQuestion" &&');
+  const genericBranchIndex = taskAlarmModule.indexOf("if (Boolean(data[REMINDER_DATA_FLAG])) {");
+  const fnBody = taskAlarmModule.slice(inlineReplyIndex, genericBranchIndex);
+  assert.ok(fnBody.includes("const notificationId = event.detail.notification?.id;"));
+  assert.ok(fnBody.includes("if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});"));
 });

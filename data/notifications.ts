@@ -23,6 +23,7 @@
 
 import * as Notifications from "expo-notifications";
 import notifee, { AlarmType, TriggerType } from "@notifee/react-native";
+import type { AndroidInput } from "@notifee/react-native";
 import { Platform } from "react-native";
 import type { ReminderKind, TimerType } from "./storage.ts";
 // Intentional circular import with ./taskAlarm.ts (which imports
@@ -191,8 +192,18 @@ function generateReminderNativeId(): string {
  * second notification-building implementation of its own.
  */
 export interface ReminderRedisplayOptions {
-  /** Preserves a scheduled notification's own action buttons (e.g. data/dailyVisualizationAlarm.ts's "התחל ויזואליזציה") across the redisplay -- omitted for every kind that never had one of its own. */
-  actions?: { title: string; pressAction: { id: string } }[];
+  /**
+   * Preserves a scheduled notification's own action buttons (e.g.
+   * data/dailyVisualizationAlarm.ts's "התחל ויזואליזציה") across the
+   * redisplay -- omitted for every kind that never had one of its own.
+   * `input` (ARC Reminders task, requirement -- Active Recall inline
+   * reply): notifee's own existing `AndroidInput` support, never
+   * exercised in this repo before this -- an action carrying it lets
+   * the trainee type an answer directly from the notification/lock
+   * screen, with no screen opened. Omitted for every action that isn't
+   * the one inline-reply action.
+   */
+  actions?: { title: string; pressAction: { id: string }; input?: true | AndroidInput }[];
   pressAction?: { id: string };
 }
 
@@ -426,7 +437,12 @@ export interface ScheduleReminderNotificationInput {
   arcGymExerciseId?: string;
   /** ARC Reminders task: only meaningful for the "arcMantra*"/"arcRecallQuestion" kinds -- which specific ArcMantraReminder/ArcRecallReminder this notification belongs to (arc/arcReminders.ts), so tapping an "arcRecallQuestion" notification (data/reminders.ts's routeTappedReminder) opens that exact reminder's own chat thread. Omitted for every other kind. */
   arcReminderId?: string;
+  /** ARC Reminders task: only meaningful for kind "arcRecallQuestion" -- the exact ArcRecallChatMessage (arc/arcReminders.ts) this specific delivered notification corresponds to, so an inline-reply typed from this notification (data/taskAlarm.ts's own handleTaskAlarmEvent) records the answer against the SAME message a tap would open, never a different/ambiguous one. Omitted for every other kind. */
+  arcRecallChatMessageId?: string;
 }
+
+/** ARC Reminders task: the one inline-reply action's own id -- data/taskAlarm.ts's handleTaskAlarmEvent checks for this exact id (with event.detail.input present) before ever falling through to the generic routeTappedReminder tap handling every other soft reminder kind already uses. */
+export const ACTION_ARC_RECALL_ANSWER = "arc_recall_answer";
 
 /**
  * ARCHI -- Complete the Non-Interrupting Notification System task,
@@ -491,6 +507,7 @@ async function scheduleNativeReminderNotification(input: ScheduleReminderNotific
           ...(input.arcGymExerciseKind !== undefined ? { arcGymExerciseKind: input.arcGymExerciseKind } : {}),
           ...(input.arcGymExerciseId !== undefined ? { arcGymExerciseId: input.arcGymExerciseId } : {}),
           ...(input.arcReminderId !== undefined ? { arcReminderId: input.arcReminderId } : {}),
+          ...(input.arcRecallChatMessageId !== undefined ? { arcRecallChatMessageId: input.arcRecallChatMessageId } : {}),
         },
         android: {
           channelId: SILENT_DELIVERY_CHANNEL_ID,
@@ -504,6 +521,22 @@ async function scheduleNativeReminderNotification(input: ScheduleReminderNotific
           foregroundServiceTypes: ALARM_FOREGROUND_SERVICE_TYPES,
           autoCancel: true,
           pressAction: { id: "default" },
+          // ARC Reminders task, Active Recall inline reply: the ONE
+          // action notifee's existing (never-before-exercised in this
+          // repo) AndroidInput powers -- answering directly from the
+          // notification/lock screen, no screen opened. data/taskAlarm.ts's
+          // own handleTaskAlarmEvent reads this answer straight out of
+          // the ACTION_PRESS event before it would otherwise fall through
+          // to the generic routeTappedReminder tap handling. Carried
+          // through this SAME trigger notification's own `android.actions`
+          // by data/taskAlarm.ts's existing `redisplayOptions = { actions:
+          // notification.android?.actions, ... }` read-back (see that
+          // file) -- never duplicated at redisplay time. Every other kind
+          // gets no actions at all, exactly as before this task.
+          actions:
+            input.kind === "arcRecallQuestion"
+              ? [{ title: "השב", pressAction: { id: ACTION_ARC_RECALL_ANSWER }, input: { allowFreeFormInput: true, placeholder: "התשובה שלך..." } }]
+              : undefined,
         },
       },
       {

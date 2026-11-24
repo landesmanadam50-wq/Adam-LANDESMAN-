@@ -105,7 +105,8 @@ import {
 } from "./storage.ts";
 import type { ArcAlarmRealTestResult, ArcAlarmTestKind, TaskAlarmRealTaskTestResult, TaskAlarmTestResult } from "./storage.ts";
 import { startRinging, stopRinging } from "./taskAlarmSound.ts";
-import { cancelScheduledNotification, isInterruptiveReminderKind, redisplayReminderLoud, redisplayReminderQuiet, REMINDER_DATA_FLAG } from "./notifications.ts";
+import { ACTION_ARC_RECALL_ANSWER, cancelScheduledNotification, isInterruptiveReminderKind, redisplayReminderLoud, redisplayReminderQuiet, REMINDER_DATA_FLAG } from "./notifications.ts";
+import { recordArcRecallAnswer } from "./arcRecallDelivery.ts";
 import type { ReminderKind } from "./storage.ts";
 import { routeTappedReminder } from "./reminders.ts";
 import { handleDailyVisualizationAlarmEvent } from "./dailyVisualizationAlarm.ts";
@@ -1605,6 +1606,29 @@ export async function handleTaskAlarmEvent(event: Event): Promise<void> {
         await cancelTaskTimerEndAlarm(id);
       }
     }
+    return;
+  }
+
+  // ARC Reminders task, Active Recall inline reply: checked BEFORE the
+  // generic soft-reminder tap branch right below, since an inline
+  // answer is itself an ACTION_PRESS and must never ALSO fall through
+  // to routeTappedReminder's plain "open the chat" navigation --
+  // answering from the notification/lock screen stays exactly there,
+  // no screen opened. event.detail.input is only ever populated by
+  // notifee when the pressed action actually carried an AndroidInput
+  // (data/notifications.ts's own ACTION_ARC_RECALL_ANSWER action), so
+  // this never misfires for a plain tap on this same notification.
+  if (
+    data.kind === "arcRecallQuestion" &&
+    event.type === EventType.ACTION_PRESS &&
+    event.detail.pressAction?.id === ACTION_ARC_RECALL_ANSWER &&
+    typeof event.detail.input === "string" &&
+    event.detail.input.trim().length > 0
+  ) {
+    const chatMessageId = typeof data.arcRecallChatMessageId === "string" ? data.arcRecallChatMessageId : null;
+    if (chatMessageId) await recordArcRecallAnswer(chatMessageId, event.detail.input, new Date().toISOString());
+    const notificationId = event.detail.notification?.id;
+    if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});
     return;
   }
 
