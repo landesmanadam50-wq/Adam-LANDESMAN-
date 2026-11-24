@@ -99,6 +99,15 @@ export interface Task {
   description: string | null;
   /** Final Morning Flow Requirements Audit task: free-text, optional -- where the task happens, so the Daily Visualization exercise's own per-task visualization can use it alongside the saved time and first action. Never required, never inferred. */
   location: string | null;
+  /**
+   * ARC Reminders task: optional custom phrasing for THIS task's own
+   * line in the task-transition notification (arc/taskTransitionMantra.ts's
+   * resolveTransitionMantra), supporting "{current}"/"{next}"
+   * placeholders -- e.g. "אתה מתאמן עכשיו, ולאחר מכן אתה {next}." `null`
+   * (the default) falls back to resolveTransitionMantra's own default
+   * template; never required, never auto-derived from the title.
+   */
+  transitionMantraTemplate: string | null;
   /** Local YYYY-MM-DD, same convention as program/dateUtils.ts's todayLocalDateString. */
   scheduledDate: string | null;
   /** "HH:MM", 24-hour, device-local -- same convention as ScheduledRoutine's separate hour/minute fields, kept here as one string since a task (unlike a routine) has no recurrence-time reuse to justify splitting it. */
@@ -351,6 +360,7 @@ export function createEmptyTask(id: string, title: string, firstAction: string, 
     title,
     description: null,
     location: null,
+    transitionMantraTemplate: null,
     scheduledDate: null,
     scheduledTime: null,
     expectedDurationMinutes: null,
@@ -416,6 +426,7 @@ export function normalizeTask(task: Task): Task {
     ...task,
     description: task.description ?? null,
     location: task.location ?? null,
+    transitionMantraTemplate: task.transitionMantraTemplate ?? null,
     scheduledDate: task.scheduledDate ?? null,
     scheduledTime: task.scheduledTime ?? null,
     expectedDurationMinutes: task.expectedDurationMinutes ?? null,

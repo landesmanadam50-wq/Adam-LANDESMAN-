@@ -8,6 +8,7 @@ import {
   deleteArcGymGoalObjectiveFromList,
   reorderArcGymGoalObjectives,
   resolveArcGymGoalObjectiveProgress,
+  resolveFirstIncompleteArcGymGoalObjective,
   resolveLinkedExercisesForArcGymGoal,
   resolveObjectivesForArcGymGoal,
   toggleArcGymGoalObjectiveCompleted,
@@ -126,6 +127,21 @@ test("objective CRUD: create/upsert/resolve/reorder/toggle/delete, scoped strict
 
   objectives = deleteArcGymGoalObjectiveFromList(objectives, reordered[0].id);
   assert.equal(resolveObjectivesForArcGymGoal(objectives, "g1").length, 1);
+});
+
+test("resolveFirstIncompleteArcGymGoalObjective returns the first not-yet-completed objective in manual order, null once all complete or none exist, and never looks at another goal's objectives", () => {
+  let objectives = [createArcGymGoalObjective("g1", "יעד א", 0, NOW), createArcGymGoalObjective("g1", "יעד ב", 1, NOW), createArcGymGoalObjective("g2", "יעד אחר", 0, NOW)];
+  assert.equal(resolveFirstIncompleteArcGymGoalObjective(objectives, "g1")?.title, "יעד א");
+
+  const first = resolveObjectivesForArcGymGoal(objectives, "g1")[0];
+  objectives = toggleArcGymGoalObjectiveCompleted(objectives, first.id, NOW);
+  assert.equal(resolveFirstIncompleteArcGymGoalObjective(objectives, "g1")?.title, "יעד ב");
+
+  const second = resolveObjectivesForArcGymGoal(objectives, "g1")[1];
+  objectives = toggleArcGymGoalObjectiveCompleted(objectives, second.id, NOW);
+  assert.equal(resolveFirstIncompleteArcGymGoalObjective(objectives, "g1"), null);
+
+  assert.equal(resolveFirstIncompleteArcGymGoalObjective(objectives, "g-none"), null);
 });
 
 test("upsertArcGymGoalObjectiveInList adds a new objective or replaces an existing one by id", () => {

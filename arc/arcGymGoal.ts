@@ -138,6 +138,20 @@ export function resolveArcGymGoalObjectiveProgress(objectives: ArcGymGoalObjecti
   return { completed: linked.filter((objective) => objective.completed).length, total: linked.length };
 }
 
+/**
+ * ARC Reminders task: the one "which objective is next" decision for the
+ * ARC Goal mantra reminder (arc/arcMantraContent.ts's
+ * resolveFirstIncompleteObjectiveMantra) -- the first not-yet-completed
+ * objective in this goal's own manual display order (same order
+ * resolveObjectivesForArcGymGoal already returns), or null once every
+ * objective is completed (or the goal has none yet). Never a second
+ * "what's left" computation: any other screen needing this same answer
+ * should call this, not re-filter objectives itself.
+ */
+export function resolveFirstIncompleteArcGymGoalObjective(objectives: ArcGymGoalObjective[], goalId: string): ArcGymGoalObjective | null {
+  return resolveObjectivesForArcGymGoal(objectives, goalId).find((objective) => !objective.completed) ?? null;
+}
+
 export type ArcGymExerciseKind = "behaviour" | "memory" | "result" | "focus";
 
 export interface ArcGymExerciseRef {
