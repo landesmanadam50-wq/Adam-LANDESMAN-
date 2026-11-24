@@ -130,6 +130,24 @@ export default function ArcGymMemoryDetailScreen({ id }: { id: string }) {
           )}
         </View>
 
+        {/* ARC Reminders task, Phase 5: "remind me of this" entry point -- constructs the exact arc_memory sourceRef for either family and opens the central ARC Reminders screen pre-filled, skipping the picker steps. */}
+        <View style={styles.remindersBlock}>
+          <Text style={styles.sectionTitle}>ARC Reminders</Text>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/arc-reminders",
+                params: { mantraSubtype: "arc_memory", mantraSourceRef: JSON.stringify({ kind: "arc_memory", memoryExerciseId: exercise.id }) },
+              })
+            }
+          >
+            <Text style={styles.linkText}>+ תזכורת מנטרה מהפעולה הזו</Text>
+          </Pressable>
+          <Pressable onPress={() => router.push({ pathname: "/arc-reminders", params: { recallSourceKind: "arc_memory", recallSourceId: exercise.id } })}>
+            <Text style={styles.linkText}>+ תזכורת זכירה מהזיכרון הזה</Text>
+          </Pressable>
+        </View>
+
         {records.length > 0 && (
           <View style={styles.historyBlock}>
             <Text style={styles.sectionTitle}>היסטוריית אימונים</Text>

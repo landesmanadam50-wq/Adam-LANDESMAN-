@@ -8,9 +8,15 @@ import { revealArcRecallChatMessage } from "../arc/arcReminders.ts";
 import { loadArcRecallChatHistory, updateArcRecallChatMessageEntry } from "../data/storage.ts";
 import { recordArcRecallAnswer, resolveArcRecallSourceQuestion } from "../data/arcRecallDelivery.ts";
 
-const SOURCE_ROUTE_BY_KIND: Record<ArcRecallSourceKind, string> = {
+/**
+ * `insight_relationship` has no own-id detail route: an ArcInsightRelationship
+ * (arc/arcWriting.ts) only ever appears inline inside the ArcWritingText
+ * screen that links it, never as a standalone navigable screen -- so
+ * that kind is omitted here (the chat bubble above already shows its
+ * live revealText in full, which is its own `explanation` field).
+ */
+const SOURCE_ROUTE_BY_KIND: Partial<Record<ArcRecallSourceKind, string>> = {
   insight: "/insights/[id]",
-  insight_relationship: "/arc-creativity/connections/[id]",
   learning_material: "/arc-learning/insight/[id]",
   arc_memory: "/arc-gym/memory/[id]",
 };
@@ -86,12 +92,16 @@ export default function ArcRecallChatScreen({ reminderId }: { reminderId: string
               <View style={styles.revealBox}>
                 <Text style={styles.revealLabel}>{message.revealedEarly ? "גולה מוקדם:" : "התשובה המקורית:"}</Text>
                 <Text style={styles.revealText}>{revealTexts[message.id] ?? "..."}</Text>
-                <Pressable
-                  style={styles.sourceLink}
-                  onPress={() => router.push({ pathname: SOURCE_ROUTE_BY_KIND[message.sourceRef.kind] as never, params: { id: message.sourceRef.sourceId } })}
-                >
-                  <Text style={styles.sourceLinkText}>צפה במקור החי</Text>
-                </Pressable>
+                {SOURCE_ROUTE_BY_KIND[message.sourceRef.kind] && (
+                  <Pressable
+                    style={styles.sourceLink}
+                    onPress={() =>
+                      router.push({ pathname: SOURCE_ROUTE_BY_KIND[message.sourceRef.kind] as never, params: { id: message.sourceRef.sourceId } })
+                    }
+                  >
+                    <Text style={styles.sourceLinkText}>צפה במקור החי</Text>
+                  </Pressable>
+                )}
               </View>
             ) : (
               <View>

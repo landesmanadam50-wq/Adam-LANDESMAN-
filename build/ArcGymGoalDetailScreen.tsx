@@ -124,6 +124,17 @@ export default function ArcGymGoalDetailScreen({ id }: { id: string }) {
           </Text>
         </Pressable>
 
+        {/* ARC Reminders task, Phase 5: "remind me of this" entry point -- reminds the trainee of the next incomplete objective, read-through at every delivery (never a frozen snapshot of today's objectives). */}
+        <Pressable
+          style={styles.card}
+          onPress={() =>
+            router.push({ pathname: "/arc-reminders", params: { mantraSubtype: "arc_goal", mantraSourceRef: JSON.stringify({ kind: "arc_goal", goalId: goal.id }) } })
+          }
+        >
+          <Text style={styles.cardTitle}>🔔 ARC Reminders</Text>
+          <Text style={styles.cardSubtitle}>+ תזכורת מנטרה שמזכירה את היעד הבא שלא הושלם</Text>
+        </Pressable>
+
         <Pressable style={styles.deleteButton} onPress={handleDelete}>
           <Text style={styles.deleteButtonText}>מחיקת מטרה</Text>
         </Pressable>

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
@@ -63,8 +63,22 @@ function defaultSchedule(now: string): ReminderSchedule {
  * wizard only ever stores a `sourceRef` id (never copied text) --
  * the mechanical form of "read-through."
  */
-export default function ArcRemindersScreen() {
-  const [tab, setTab] = useState<Tab>("mantras");
+/**
+ * `prefill`: carried in from one of the per-source "remind me of this"
+ * entry points on an existing screen (ARC Memory, identity/insight,
+ * ARC Build profile, ARC Goal, learning-material/insight screens) --
+ * jumps straight to the schedule step with the right sourceRef already
+ * chosen, skipping the subtype/source pickers this screen's own "+"
+ * button still goes through. Only ever applied once per mount (the
+ * trainee can still freely navigate away from the schedule step
+ * afterward without it re-triggering).
+ */
+export default function ArcRemindersScreen({
+  prefill,
+}: {
+  prefill?: { kind: "mantra"; subtype: ArcMantraSubtype; sourceRef: ArcMantraSourceRef } | { kind: "recall"; sourceKind: ArcRecallSourceKind; sourceId: string };
+} = {}) {
+  const [tab, setTab] = useState<Tab>(prefill?.kind === "recall" ? "recall" : "mantras");
   const [mantras, setMantras] = useState<{ reminder: ArcMantraReminder; preview: string | null }[]>([]);
   const [recalls, setRecalls] = useState<{ reminder: ArcRecallReminder; preview: string | null }[]>([]);
   const [transitionPreview, setTransitionPreview] = useState<string>("");
@@ -80,6 +94,19 @@ export default function ArcRemindersScreen() {
   const [allInsights, setAllInsights] = useState<ArcInsight[]>([]);
   const [relationships, setRelationships] = useState<ArcInsightRelationship[]>([]);
   const [learningInsights, setLearningInsights] = useState<ArcLearningInsight[]>([]);
+
+  useEffect(() => {
+    if (!prefill) return;
+    const now = new Date().toISOString();
+    if (prefill.kind === "mantra") {
+      setMantraWizard({ kind: "schedule", subtype: prefill.subtype, sourceRef: prefill.sourceRef });
+      setPendingMantraSchedule(defaultSchedule(now));
+    } else {
+      setRecallWizard({ kind: "schedule", sourceKind: prefill.sourceKind, sourceId: prefill.sourceId });
+      setPendingRecallSchedule(defaultSchedule(now));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally once-per-mount, see doc above.
+  }, []);
 
   const reload = useCallback(() => {
     (async () => {

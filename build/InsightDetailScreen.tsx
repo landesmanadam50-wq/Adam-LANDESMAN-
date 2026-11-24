@@ -149,6 +149,30 @@ export default function InsightDetailScreen({ id }: { id: string }) {
           <Text style={styles.secondaryButtonText}>שמירת שינויים</Text>
         </Pressable>
 
+        {/* ARC Reminders task, Phase 5: "remind me of this" entry point. present_identity mantras only make sense for an identity-tagged insight -- Active Recall works for any insight. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>ARC Reminders</Text>
+          {insight.beliefKind === "identity" && (
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() =>
+                router.push({
+                  pathname: "/arc-reminders",
+                  params: { mantraSubtype: "present_identity", mantraSourceRef: JSON.stringify({ kind: "present_identity", insightId: insight.id }) },
+                })
+              }
+            >
+              <Text style={styles.secondaryButtonText}>+ תזכורת מנטרה מהתובנה הזו</Text>
+            </Pressable>
+          )}
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => router.push({ pathname: "/arc-reminders", params: { recallSourceKind: "insight", recallSourceId: insight.id } })}
+          >
+            <Text style={styles.secondaryButtonText}>+ תזכורת זכירה מהתובנה הזו</Text>
+          </Pressable>
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>משימה מקושרת</Text>
           {linkedTask ? (

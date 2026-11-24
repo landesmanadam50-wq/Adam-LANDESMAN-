@@ -116,6 +116,11 @@ export default function ArcLearningInsightDetailScreen({ id }: { id: string }) {
           <Text style={styles.linkText}>ערוך תובנה</Text>
         </Pressable>
 
+        {/* ARC Reminders task, Phase 5: "remind me of this" entry point into Active Recall. */}
+        <Pressable onPress={() => router.push({ pathname: "/arc-reminders", params: { recallSourceKind: "learning_material", recallSourceId: insight.id } })}>
+          <Text style={styles.linkText}>+ תזכורת זכירה מהתובנה הזו</Text>
+        </Pressable>
+
         {isArcLearningInsightReadyForRecall(insight) && (
           <Pressable style={styles.primaryButton} onPress={() => router.push({ pathname: "/arc-learning/insight/[id]/edit", params: { id: insight.id } })}>
             <Text style={styles.primaryButtonText}>תרגול שליפה</Text>
