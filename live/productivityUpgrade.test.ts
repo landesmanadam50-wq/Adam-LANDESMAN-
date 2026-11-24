@@ -27,7 +27,10 @@ test("requirement 3: the foreground completion sound is gated by a ref keyed on 
   assert.match(screen, /import\s*\{[^}]*\bplayTimerCompletionSound\b[^}]*\}\s*from\s*["']\.\.\/data\/timerSound\.ts["']/);
   const effectIndex = screen.indexOf("if (!timerRun || restRun) return;\n    const statusNow = getTaskTimerStatus(timerRun, Date.now());");
   assert.ok(effectIndex !== -1, "the sound-guard effect must exist");
-  const effectBody = screen.slice(effectIndex, effectIndex + 400);
+  // ARC Reminders task, requirement 9: widened -- the sound is now gated
+  // by the new ArcTaskReminderSettings.completionSoundEnabled toggle
+  // (loaded async, documented inline) instead of playing unconditionally.
+  const effectBody = screen.slice(effectIndex, effectIndex + 1100);
   assert.ok(effectBody.includes("soundPlayedForRunId.current !== timerRun.runId"));
   assert.ok(effectBody.includes("soundPlayedForRunId.current = timerRun.runId"));
   assert.ok(effectBody.includes("playTimerCompletionSound()"));
@@ -56,21 +59,28 @@ test("requirement 5/6: PostTaskRewardScreen looks up the next task via the SAME 
   assert.ok(fnBody.includes('router.replace({ pathname, params: { id: next.task.id } })'));
 });
 
-test("requirement 5/6: handleComplete navigates to the reflection screen after marking the task complete, UNLESS Part I's identity-insight prompt is pending for this exact task -- then the reflection screen waits for that prompt to finish, never skipped outright", () => {
+// ARC Reminders task, requirement 8: superseded -- handleComplete's
+// non-continuous fallback no longer navigates to reflect at all (it
+// records the reward/sound and recomputes the one transition
+// notification, staying on screen instead -- see
+// live/activeTaskScreen.test.ts's own dedicated test). Part I's
+// identity-insight prompt still delays reaching that same "done" state
+// exactly as before; it just no longer delays a reflect navigation,
+// since there isn't one any more.
+test("requirement 5/6 (superseded by ARC Reminders requirement 8): handleComplete marks the task complete and, when Part I's identity-insight prompt is pending for this exact task, shows that prompt FIRST -- finishIdentityInsight (skip or continue) then recomputes the transition notification, never force-navigating to reflect", () => {
   const fnIndex = screen.indexOf("async function handleComplete()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 12000);
+  const fnBody = screen.slice(fnIndex, fnIndex + 12300);
   assert.ok(fnBody.includes("completeTask(task, now)"));
-  // Task Completion Navigation fix: `replace`, not `push` -- once
-  // completed, Back must never return to the now-stale Task LIVE screen.
-  assert.ok(fnBody.includes('router.replace({ pathname: "/tasks/[id]/reflect", params: { id: task.id } })'));
   assert.ok(fnBody.includes("if (pendingTaskId === task.id) {"));
   assert.ok(fnBody.includes("setShowIdentityInsightPrompt(true)"));
+  assert.ok(fnBody.includes("await recomputeTaskTransitionNotification(task.id);"));
   const finishFnIndex = screen.indexOf("async function finishIdentityInsight");
-  const finishFnBody = screen.slice(finishFnIndex, finishFnIndex + 1250);
+  const finishFnBody = screen.slice(finishFnIndex, finishFnIndex + 1450);
   assert.ok(
-    finishFnBody.includes('router.replace({ pathname: "/tasks/[id]/reflect", params: { id: task.id } })'),
-    "both skip and continue must still eventually reach the reflection screen -- the prompt only delays it, never drops it"
+    finishFnBody.includes("await recomputeTaskTransitionNotification(task.id);"),
+    "both skip and continue must still reach the same 'done' state via the shared transition-notification recompute, never a force-navigated reflect screen"
   );
+  assert.ok(!finishFnBody.includes('router.replace({ pathname: "/tasks/[id]/reflect"'));
 });
 
 test("requirement 5: advanceToNextTask never auto-starts the next task's timer -- it only navigates to its plain screen (or that task's own ARC window), with no autoStart param", () => {

@@ -43,7 +43,7 @@ test("resuming (performStart, reached via handleStart's required-before-tasks ga
   const startIndex = activeTaskScreen.indexOf("async function performStart()");
   assert.ok(activeTaskScreen.slice(startIndex, startIndex + 5600).includes("if (task.notificationId) await cancelScheduledNotification(task.notificationId)"));
   const completeIndex = activeTaskScreen.indexOf("async function handleComplete()");
-  assert.ok(activeTaskScreen.slice(completeIndex, completeIndex + 1700).includes("if (task.notificationId) await cancelScheduledNotification(task.notificationId)"));
+  assert.ok(activeTaskScreen.slice(completeIndex, completeIndex + 2500).includes("if (task.notificationId) await cancelScheduledNotification(task.notificationId)"));
 });
 
 test("re-postponing cancels any EXISTING postponed-return notification before scheduling the new one, never stacking two", () => {

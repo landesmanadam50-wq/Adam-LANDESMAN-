@@ -36,9 +36,16 @@ test("the route passes the id param straight through to SessionReflectionScreen"
 // task, Phase 1) this screen was deliberately left registered but
 // unreachable from normal navigation; this task reconnects it on
 // purpose.
-test("ActiveTaskScreen links to the reflection screen from BOTH completion paths -- the plain complete (its own non-continuous fallback AND its continuous-routine summary branch), and after the identity-insight prompt finishes", () => {
+// ARC Reminders task, requirement 8: the non-continuous fallback and
+// finishIdentityInsight no longer force-navigate to reflect at all (see
+// live/activeTaskScreen.test.ts/live/identityInsightPrompt.test.ts's own
+// dedicated tests for what they do instead -- recordSilentTaskCompletionReward
+// + recomputeTaskTransitionNotification, staying on screen). The ONLY
+// remaining reflect destination in ActiveTaskScreen.tsx is the
+// continuous-routine branch's own one combined summary reflection.
+test("ActiveTaskScreen links to the reflection screen from EXACTLY ONE remaining place -- the continuous-routine branch's own one combined summary reflection -- never from the (now auto-advancing, non-navigating) non-continuous fallback or finishIdentityInsight", () => {
   const occurrences = activeTaskScreen.split('pathname: "/tasks/[id]/reflect"').length - 1;
-  assert.equal(occurrences, 3, "handleComplete's two branches (continuous-summary, non-continuous fallback) plus finishIdentityInsight");
+  assert.equal(occurrences, 1, "only the continuous-routine summary branch should still navigate to reflect");
 });
 
 // Psychology/Smiling/Positive-Reinforcement task: "דלג" no longer

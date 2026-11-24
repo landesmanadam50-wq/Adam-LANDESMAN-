@@ -25,10 +25,12 @@ const todayScreen = readSource("build/TodayScreen.tsx");
 const reflectionScreen = readSource("live/SessionReflectionScreen.tsx");
 const manifestScreen = readSource("live/ManifestTaskLiveScreen.tsx");
 
-test("the route is registered in app/_layout.tsx and passes id + source straight through", () => {
+test("the route is registered in app/_layout.tsx and passes id + source straight through, plus (ARC Reminders task) the new toTaskId param for the notification entry's own explicit from/to pair", () => {
   assert.match(layout, /<Stack\.Screen name="tasks\/\[id\]\/post-task-reward"/);
   assert.match(route, /from ["']\.\.\/\.\.\/\.\.\/live\/PostTaskRewardScreen\.tsx["']/);
-  assert.ok(route.includes("PostTaskRewardScreen taskId={id} source={source}"));
+  assert.ok(route.includes("taskId={id}"));
+  assert.ok(route.includes("source={source}"));
+  assert.ok(route.includes("toTaskId={toTaskId ?? null}"));
 });
 
 test("the reward is recorded exactly once per screen instance, guarded by a ref (never re-fired by a re-render)", () => {

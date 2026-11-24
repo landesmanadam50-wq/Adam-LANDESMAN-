@@ -53,10 +53,17 @@ test("navigateToNextOrTasksList uses resolveMostUrgentScheduledTask (Task LIVE /
   assert.ok(fnBody.includes('pathname: "/tasks/[id]", params: { id: next.task.id }'));
 });
 
-test("the end-of-timer 'next_task' choice is wired to handleNextTask, fixing the bug where it dead-ended at the plain tasks list", () => {
-  const nextTaskIndex = screen.indexOf('endChoice === "next_task"');
-  const nextTaskBody = screen.slice(nextTaskIndex, nextTaskIndex + 700);
-  assert.ok(nextTaskBody.includes("onPress={handleNextTask}"));
+// ARC Reminders task, requirement 5/8: superseded -- the end-of-timer
+// choice UI (ARC/Rest/"המשימה הבאה", including this "next_task" choice)
+// is gone entirely. The natural timer-reaching-0 case now auto-triggers
+// handleComplete() directly (see live/activeTaskScreen.test.ts's own
+// dedicated test for the autoCompletedForRunId effect), so there is no
+// longer an end-of-timer "next_task" choice to dead-end anywhere --
+// handleNextTask remains reachable only via the ordinary button row,
+// covered by the very next test below.
+test("the end-of-timer 'next_task' choice no longer exists -- the former dead-end bug is moot now that the natural timer-end case auto-completes directly instead of presenting any choice", () => {
+  assert.ok(!screen.includes('endChoice === "next_task"'));
+  assert.ok(!screen.includes("const [endChoice, setEndChoice]"));
 });
 
 test("all three actions -- Complete, Next, Skip -- are offered as separate, clearly labeled buttons whenever the task isn't already completed", () => {

@@ -33,10 +33,15 @@ test("the arc route is registered in app/_layout.tsx and passes the id param str
   assert.ok(route.includes("taskId={id}"));
 });
 
-test("entry: the end-of-timer 'צריך ARC' choice preserves the task id and opens the new flow, never ARC BUILD or the old LIVE chooser", () => {
-  const startArcIndex = activeTaskScreen.indexOf('if (choice === "start_arc")');
-  const startArcBody = activeTaskScreen.slice(startArcIndex, startArcIndex + 700);
-  assert.ok(startArcBody.includes('pathname: "/tasks/[id]/arc", params: { id: task.id }'));
+// ARC Reminders task, requirement 8: the end-of-timer 3-choice prompt
+// (and its own "צריך ARC" choice) is retired -- `timerEnded` now
+// auto-completes the task directly (see live/activeTaskScreen.test.ts's
+// own dedicated test for the new auto-trigger effect). Needing ARC once
+// a task has ended is reachable only via the new task-transition
+// notification's own 😟/🙂 actions (data/taskTransitionNotification.ts),
+// never a bare-task-id deep-link constructed here any more.
+test("entry: the end-of-timer 'צריך ARC' choice is gone -- there is no more 'if (choice === \"start_arc\")' branch in ActiveTaskScreen.tsx; ARC-while-the-task-is-active (the mood buttons, next test) and ARC-after-completion (the transition notification) are the only two ARC entry points left", () => {
+  assert.ok(!activeTaskScreen.includes('if (choice === "start_arc")'), "the retired end-of-timer ARC choice branch must not reappear");
 });
 
 // ARCHI -- Consolidated Implementation Request, Part 12.1: ARC remains

@@ -126,15 +126,21 @@ test("the next stage's own description is shown in a distinct hint line, and ove
 
 // --- Clearing stage progress alongside the timer run ---
 
-test("every point that clears the timer run and resets local state to null also resets stageProgress to null -- clearEndedTimer, the 'start_arc' end-choice, and starting a rest period", () => {
+// ARC Reminders task, requirement 5/8: superseded -- the whole
+// end-of-timer choice UI (ARC/Rest/"המשימה הבאה", including the
+// 'start_arc' end-choice and its own rest-starting choice, which used
+// to use a local `minutes` const) is gone entirely. clearEndedTimer is
+// now the ONLY remaining place that resets stageProgress to null -- the
+// standalone "break" calendar entry's own rest timer (performStart,
+// using its own `restMinutes` const) is a different, pre-existing path
+// that was never part of the end-of-timer prompt and never touched
+// stageProgress either.
+test("ARC Reminders task, requirement 5/8 (superseded): the 'start_arc' end-choice and the end-of-timer rest-starting choice no longer exist -- clearEndedTimer is now the ONLY place that resets stageProgress to null", () => {
+  assert.ok(!screen.includes('if (choice === "start_arc")'));
   const clearIndex = screen.indexOf("async function clearEndedTimer()");
   assert.ok(screen.slice(clearIndex, clearIndex + 500).includes("setStageProgress(null);"));
-
-  const startArcIndex = screen.indexOf('if (choice === "start_arc")');
-  assert.ok(screen.slice(startArcIndex, startArcIndex + 300).includes("setStageProgress(null);"));
-
-  const restIndex = screen.indexOf('createTaskTimerRun(task.id, generateTaskTimerRunId(), minutes, new Date().toISOString(), "rest")');
-  assert.ok(screen.slice(Math.max(0, restIndex - 200), restIndex).includes("setStageProgress(null);"));
+  const occurrences = screen.split("setStageProgress(null);").length - 1;
+  assert.equal(occurrences, 1, "clearEndedTimer must be the only remaining call site now that the end-of-timer choice UI is gone");
 });
 
 // --- Floating overlay stays in sync with the full screen's own stage state ---

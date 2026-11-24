@@ -143,7 +143,7 @@ test("checkpoint (optional 'Finish + smile', reachable only via this notificatio
   const fnIndex = module_.indexOf("export async function handleTaskTransitionNotificationEvent");
   const fnBody = module_.slice(fnIndex);
   assert.ok(fnBody.includes('pathname: "/tasks/[id]/post-task-reward",'));
-  assert.ok(fnBody.includes("fromTaskId: fromTaskId ?? \"\", toTaskId: current?.id ?? \"\""));
+  assert.ok(fnBody.includes('source: "notification", toTaskId: current?.id ?? ""'));
 });
 
 test("checkpoint (never a second onBackgroundEvent/onForegroundEvent registration): data/taskAlarm.ts's own shared handleTaskAlarmEvent dispatches data.kind === 'taskTransition' into this module's own handler", () => {

@@ -64,7 +64,7 @@ test("test 12: completing the task hides the overlay (and with it, the ongoing n
   // asserted by the "clearEndedTimer ... hides the overlay" test below),
   // so the overlay is still cleared, just via one shared cleanup path.
   const fnIndex = screen.indexOf("async function handleComplete()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 3000);
+  const fnBody = screen.slice(fnIndex, fnIndex + 3500);
   assert.ok(fnBody.includes("await clearEndedTimer();"));
 });
 
@@ -82,14 +82,23 @@ test("ARCHI -- Unified Floating Overlay & Mini ARC Improvements task: clearEnded
   assert.ok(!fnBody.includes("hideFloatingTimerOverlay"));
 });
 
-test("ARCHI -- Unified Floating Overlay & Mini ARC Improvements task: choosing 'start_arc' from the end-of-timer prompt also switches the overlay to IDLE before navigating into ARC -- the main timer run is cleared there too, so there's no current task left for the panel to show", () => {
-  const startArcIndex = screen.indexOf('if (choice === "start_arc")');
-  const startArcBody = screen.slice(startArcIndex, startArcIndex + 300);
-  assert.ok(startArcBody.includes("showIdleFloatingOverlayPanel(nextScheduledTaskForOverlay);"));
+// ARC Reminders task, requirement 8: the end-of-timer 3-choice prompt
+// (ARC/Rest/"המשימה הבאה") that this test used to cover is retired --
+// `timerEnded` now auto-triggers handleComplete() directly, which
+// already switches the overlay to IDLE via its own clearEndedTimer()
+// call (asserted above by "clearEndedTimer ... switches the overlay to
+// its IDLE state"). There is no longer a separate "start_arc" choice
+// branch to assert on.
+test("ARCHI -- Unified Floating Overlay & Mini ARC Improvements task: completing a task (manual tap OR the new timer-end auto-trigger) always switches the overlay to IDLE via the shared clearEndedTimer() -- never a second, duplicated overlay-clearing path for the retired 'start_arc' end-of-timer choice", () => {
+  assert.ok(!screen.includes('if (choice === "start_arc")'), "the retired end-of-timer ARC choice branch must not reappear");
+  const fnIndex = screen.indexOf("async function handleComplete()");
+  const fnBody = screen.slice(fnIndex, fnIndex + 3500);
+  assert.ok(fnBody.includes("await clearEndedTimer();"), "handleComplete (reached by both completion paths) must still delegate overlay-clearing to clearEndedTimer()");
 });
 
-test("starting a rest period updates the overlay to the new rest run, and finishing the rest period early updates it again to the ended state", () => {
-  const restStartIndex = screen.indexOf('createTaskTimerRun(task.id, generateTaskTimerRunId(), minutes, new Date().toISOString(), "rest")');
+test("starting a rest period updates the overlay to the new rest run, and finishing the rest period early updates it again to the ended state. Surviving entry point after the ARC Reminders task's removal of the end-of-timer 'rest' choice: a standalone break calendar entry's own rest timer (performStart's own 'calendarEntryKind === \"break\"' branch).", () => {
+  const restStartIndex = screen.indexOf('createTaskTimerRun(task.id, generateTaskTimerRunId(), restMinutes, new Date().toISOString(), "rest")');
+  assert.ok(restStartIndex !== -1);
   assert.ok(screen.slice(restStartIndex, restStartIndex + 550).includes("await updateFloatingTimerOverlay(restWithNotification, task, null, nextScheduledTaskForOverlay);"));
 
   const restFinishIndex = screen.indexOf("await cancelTaskTimerEndAlarm(restRun.notificationId);");

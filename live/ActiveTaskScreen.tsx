@@ -40,12 +40,6 @@ import {
 } from "../arc/taskTimer.ts";
 import type { TaskTimerRun } from "../arc/taskTimer.ts";
 import {
-  DEFAULT_REST_DURATION_MINUTES,
-  REST_DURATION_OPTIONS_MINUTES,
-  TASK_TIMER_END_CHOICE_LABELS,
-} from "../arc/taskTimerEndChoice.ts";
-import type { TaskTimerEndChoice } from "../arc/taskTimerEndChoice.ts";
-import {
   appendArcInsight,
   appendTaskJournalEntry,
   appendTaskOccurrenceCompletion,
@@ -87,6 +81,8 @@ import { formatMinutesToClockTime, parseClockTimeToMinutes } from "../arc/dailyR
 import { resolveMostUrgentScheduledTask, resolveNextScheduledTaskDisplay } from "../data/dailyPlan.ts";
 import type { NextScheduledTaskDisplay } from "../data/dailyPlan.ts";
 import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
+import { loadArcTaskReminderSettings } from "../data/storage.ts";
+import { recomputeTaskTransitionNotification } from "../data/taskTransitionNotification.ts";
 import { createArcFocusSession, generateArcFocusPracticeId } from "../arc/arcFocusSession.ts";
 import { loadArcFocusSettings, saveArcFocusSession } from "../data/storage.ts";
 import { addPendingContinuousRoutineSmiles, takePendingContinuousRoutineSmiles } from "../data/continuousRoutineGroup.ts";
@@ -213,7 +209,6 @@ export default function ActiveTaskScreen({
   const rawTaskRef = useRef<Task | null>(null);
   const [timerRun, setTimerRun] = useState<TaskTimerRun | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [endChoice, setEndChoice] = useState<TaskTimerEndChoice | null>(null);
   const [restRun, setRestRun] = useState<TaskTimerRun | null>(null);
   const [showNotificationExplanation, setShowNotificationExplanation] = useState(false);
   /** Daily Visualization task, requirement 5: "before the user begins their first scheduled task... direct them to complete the Daily Visualization" -- shown instead of actually starting, from handleStart below. */
@@ -262,6 +257,8 @@ export default function ActiveTaskScreen({
   const autoActionConsumed = useRef(false);
   /** Productivity upgrade task, requirement 3: which run id the foreground completion sound has already played for -- a plain ref, not state, since it must never itself trigger a re-render; guards against playing it again on every subsequent 1s re-render tick while the end-of-timer prompt stays on screen. */
   const soundPlayedForRunId = useRef<string | null>(null);
+  /** ARC Reminders task: guards the auto-complete-on-timer-end effect below against firing more than once for the exact same run (handleComplete's own taskCompletingRef already makes a second call a safe no-op regardless -- this just avoids calling it redundantly on every 1s tick). */
+  const autoCompletedForRunId = useRef<string | null>(null);
   /**
    * Lock-Screen Timer, Next-Task Schedule and Smart Alarm Conflict
    * Management task, requirement 2: today's EFFECTIVE next scheduled
@@ -432,9 +429,64 @@ export default function ActiveTaskScreen({
     const ended = timerRun.completedAt !== null || statusNow.complete === true;
     if (ended && soundPlayedForRunId.current !== timerRun.runId) {
       soundPlayedForRunId.current = timerRun.runId;
-      playTimerCompletionSound();
+      // ARC Reminders task, requirement 9: this completion cue is now
+      // one of the independent settings toggles
+      // (ArcTaskReminderSettings.completionSoundEnabled) instead of
+      // always playing -- gates ONLY this sound, never the auto-
+      // complete/auto-advance behavior itself (handleComplete below
+      // checks soundPlayedForRunId.current, set synchronously right
+      // here regardless of the setting, so it never plays a SECOND
+      // completion sound for the exact same run once handleComplete's
+      // own auto-trigger fires moments later).
+      loadArcTaskReminderSettings().then((settings) => {
+        if (settings.completionSoundEnabled) playTimerCompletionSound();
+      });
     }
   }, [timerRun, restRun, now]);
+
+  /**
+   * ARC Reminders task, requirement 5 ("a normally-ending task timer
+   * auto-completes the task... ZERO mandatory screens"): the ONLY
+   * place that fires now when the main task timer naturally reaches
+   * 0 -- no 3-choice prompt (ARC/rest/"המשימה הבאה"), no tap required.
+   * Recomputes "ended" itself the same way the completion-sound effect
+   * above already does (never the later `timerEnded` const, which is
+   * computed after this component's own `if (!task) return` branch and
+   * so cannot be a dependency of a hook that must run on every render).
+   * Declared right after that sound effect so, within the same commit,
+   * its ref write (soundPlayedForRunId.current) is already visible to
+   * handleComplete's own soundAlreadyPlayedForThisRun check the instant
+   * it runs here. Calls the EXACT SAME handleComplete() the manual
+   * "השלמת משימה" button already calls -- per the user's own
+   * clarification, both completion paths converge on one automatic
+   * behavior, never two separate implementations. handleComplete's own
+   * taskCompletingRef guard makes this safe even if this effect were to
+   * ever fire twice for the same run.
+   */
+  useEffect(() => {
+    if (!timerRun || restRun) return;
+    // Cubes task's own split-segment-advance effect (right below this
+    // one) owns every segment-end EXCEPT the last: when this task is
+    // mid-split with a real next segment still ahead, that effect's
+    // own advanceToNextSplitSegment is what must run, never this one --
+    // computed the IDENTICAL way that function itself decides
+    // "is there a next segment", since splitProgress's own
+    // isTaskSplitProgressComplete only flips true AFTER that effect
+    // persists the advanced state, which it deliberately never does on
+    // the last segment (see its own doc) -- checking it here would
+    // never distinguish "last segment" from "mid-split" at the exact
+    // moment both effects fire.
+    if (task && task.isTodoItem && splitProgress && splitProgress.taskId === task.id) {
+      const hasNextSegment = currentSplitSegment(advanceTaskSplitProgress(splitProgress)) !== null;
+      if (hasNextSegment) return;
+    }
+    const statusNow = getTaskTimerStatus(timerRun, Date.now());
+    const ended = timerRun.completedAt !== null || statusNow.complete === true;
+    if (ended && autoCompletedForRunId.current !== timerRun.runId) {
+      autoCompletedForRunId.current = timerRun.runId;
+      handleComplete();
+    }
+  }, [task, splitProgress, timerRun, restRun, now]);
 
   // ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
   // task, section 4: mirrors the completion-sound effect directly above
@@ -1027,6 +1079,16 @@ export default function ActiveTaskScreen({
     if (!task || taskCompletingRef.current) return;
     taskCompletingRef.current = true;
     setTaskCompleting(true);
+    // ARC Reminders task: true only when the completion-sound effect
+    // above has ALREADY played the completion cue for this exact timer
+    // run (the natural-timer-reaching-0 case, which now auto-triggers
+    // this very function -- see the timerEnded effect below) -- read
+    // from the closure-captured `timerRun` BEFORE clearEndedTimer()
+    // clears it, so a manual "השלמת משימה" tap while the timer is still
+    // running (that effect never having fired) still gets its own
+    // completion sound, while the auto-triggered natural-end path never
+    // plays a SECOND one for the same run.
+    const soundAlreadyPlayedForThisRun = timerRun !== null && soundPlayedForRunId.current === timerRun.runId;
     // Smart To-Do List task, section 6 (optional task splitting): read
     // BEFORE clearEndedTimer() below, since its own clearTaskTimerRun()
     // (data/storage.ts) clears this exact single slot alongside the
@@ -1117,6 +1179,18 @@ export default function ActiveTaskScreen({
     // בפועל").
     const pendingTaskId = await loadPendingIdentityInsightTaskId();
     if (pendingTaskId === task.id) {
+      // ARC Reminders task, decision 6: recordTaskCompletion fires here
+      // too (via the SAME recordSilentTaskCompletionReward wrapper the
+      // continuous-routine branch below already uses, idempotent by
+      // (taskId, dateLocal) regardless of which call site reaches it
+      // first) -- so smile/streak credit is never lost just because
+      // this prompt interrupts before the normal "done" state renders.
+      // Mirrors handleComplete's own soundAlreadyPlayedForThisRun guard.
+      await recordSilentTaskCompletionReward(task.id, new Date());
+      if (!soundAlreadyPlayedForThisRun) {
+        const settings = await loadArcTaskReminderSettings();
+        if (settings.completionSoundEnabled) await playTimerCompletionSound();
+      }
       setShowIdentityInsightPrompt(true);
       return;
     }
@@ -1152,17 +1226,29 @@ export default function ActiveTaskScreen({
       }
       return;
     }
-    // Alarm-timer integration task, requirement 6: "at completion, the
-    // appropriate reflection appears, then automatic transition to the
-    // next task" -- live/SessionReflectionScreen.tsx's own finish/skip
-    // now perform that automatic transition itself (the exact same
-    // resolveNextTaskEntry-based logic this screen used to run directly
-    // -- see that screen's own doc), so this never duplicates it.
-    // Task Completion Navigation fix: `replace`, not `push` -- once
-    // completed, pressing back must never return to this now-stale
-    // Task LIVE screen (its end-of-timer/complete/next/skip controls
-    // all belong to a session that no longer exists).
-    router.replace({ pathname: "/tasks/[id]/reflect", params: { id: task.id } });
+    // ARC Reminders task, requirement 8 ("automatic advance as the new
+    // default with ZERO mandatory screens"): the forced
+    // reflect -> post-task-reward navigation (Alarm-timer integration
+    // task, requirement 6's own prior behavior) is retired for this,
+    // the ordinary completion path -- recordTaskCompletion (moved here
+    // per decision 6, via the same idempotent recordSilentTaskCompletionReward
+    // wrapper, so a LATER optional visit to post-task-reward can never
+    // double-count) and the completion sound both fire unconditionally,
+    // then this screen simply stays put: taskCompleting is already
+    // true, so the render below already shows "המשימה הושלמה" + "😄
+    // מעולה · המשימה הבאה" in place, with NO forced screen. The optional
+    // reflect/smile/ARC exercise is reachable ONLY via the new
+    // persistent transition notification's own actions, recomputed here
+    // (recomputeTaskTransitionNotification resolves the fresh current/
+    // next pair itself -- the exact same pipeline every other sync-fixed
+    // consumer already reads through -- so this never re-derives
+    // "what's next" a second, competing way).
+    await recordSilentTaskCompletionReward(task.id, new Date());
+    if (!soundAlreadyPlayedForThisRun) {
+      const settings = await loadArcTaskReminderSettings();
+      if (settings.completionSoundEnabled) await playTimerCompletionSound();
+    }
+    await recomputeTaskTransitionNotification(task.id);
   }
 
   /**
@@ -1189,8 +1275,13 @@ export default function ActiveTaskScreen({
     setShowIdentityInsightPrompt(false);
     setIdentityInsightDraft("");
     setIdentityBeliefDraft("");
-    // See handleComplete's own matching comment above -- reflection first, same reasoning, and the same `replace` (never `push`, for the same "never return to the stale completed screen" reason).
-    router.replace({ pathname: "/tasks/[id]/reflect", params: { id: task.id } });
+    // See handleComplete's own matching comment above -- same ARC
+    // Reminders requirement-8 reasoning: no forced navigation.
+    // taskCompleting is already true (set at the top of handleComplete
+    // and never reset since), so clearing showIdentityInsightPrompt
+    // alone is enough for this screen's own render to now show the
+    // "המשימה הושלמה" state in place.
+    await recomputeTaskTransitionNotification(task.id);
   }
 
   /**
@@ -1389,7 +1480,6 @@ export default function ActiveTaskScreen({
     if (endedRun) await cancelTaskTimerEndAlarm(endedRun.notificationId);
     await clearTaskTimerRun();
     setTimerRun(null);
-    setEndChoice(null);
     setRestRun(null);
     // clearTaskTimerRun() above already clears the persisted TaskStageProgress alongside the run (data/storage.ts's own doc) -- this just keeps local state in sync with it.
     setStageProgress(null);
@@ -1553,81 +1643,15 @@ export default function ActiveTaskScreen({
           </View>
         )}
 
-        {/* Task Completion Navigation fix: !taskCompleting -- once
-            "השלמת משימה" is pressed, this end-of-timer prompt (ARC/
-            rest/"המשימה הבאה") must never remain visible/actionable,
-            even during the brief async window before the reflect
-            navigation actually lands. clearEndedTimer() (called from
-            handleComplete) also makes `timerEnded` itself false once
-            the timer run is cleared -- taskCompleting closes the
-            window before that state update is visible. */}
-        {timerEnded && !taskCompleting && (
-          <View style={styles.endPromptBlock}>
-            <Text style={styles.question}>הזמן שהוקצה למשימה הסתיים. מה מתאים לך עכשיו?</Text>
-            {(Object.keys(TASK_TIMER_END_CHOICE_LABELS) as TaskTimerEndChoice[]).map((choice) => (
-              <Pressable
-                key={choice}
-                style={styles.primaryButton}
-                onPress={() => {
-                  if (choice === "start_arc") {
-                    clearTaskTimerRun();
-                    setTimerRun(null);
-                    setStageProgress(null);
-                    showIdleFloatingOverlayPanel(nextScheduledTaskForOverlay);
-                    // Simplified-architecture task, Phase 1: the new ARC LIVE
-                    // sequence is out of scope this phase -- always the
-                    // clearly labeled placeholder, never the old LIVE
-                    // chooser or a BUILD-linked session, regardless of
-                    // whether this task has a linked ArcBuild.
-                    router.push({ pathname: "/tasks/[id]/arc", params: { id: task.id } });
-                    return;
-                  }
-                  setEndChoice(choice);
-                }}
-              >
-                <Text style={styles.primaryButtonText}>{TASK_TIMER_END_CHOICE_LABELS[choice]}</Text>
-              </Pressable>
-            ))}
-
-            {endChoice === "rest" && (
-              <View style={styles.chipRow}>
-                {REST_DURATION_OPTIONS_MINUTES.map((minutes) => (
-                  <Pressable
-                    key={minutes}
-                    style={styles.chip}
-                    onPress={async () => {
-                      await clearTaskTimerRun();
-                      setTimerRun(null);
-                      setStageProgress(null);
-                      const rest = createTaskTimerRun(task.id, generateTaskTimerRunId(), minutes, new Date().toISOString(), "rest");
-                      const notificationId = await scheduleRestTimerNotification(rest, task);
-                      const restWithNotification = { ...rest, notificationId };
-                      await saveTaskTimerRun(restWithNotification);
-                      setRestRun(restWithNotification);
-                      await updateFloatingTimerOverlay(restWithNotification, task, null, nextScheduledTaskForOverlay);
-                      setEndChoice(null);
-                    }}
-                  >
-                    <Text style={styles.chipText}>{minutes} דק&apos;</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-
-            {endChoice === "next_task" && (
-              // ARC-system upgrade task, Part J: fixed to actually open the
-              // next task directly in Task LIVE (via the shared
-              // handleNextTask), instead of returning to the general tasks
-              // list -- the bug this task's own spec reported. The ended
-              // run is left as-is (nothing left to lose by clearing it,
-              // and returning to this task later still shows the same
-              // end-of-timer prompt).
-              <Pressable style={styles.primaryButton} onPress={handleNextTask}>
-                <Text style={styles.primaryButtonText}>המשימה הבאה</Text>
-              </Pressable>
-            )}
-          </View>
-        )}
+        {/* ARC Reminders task, requirement 8: this end-of-timer prompt
+            (ARC/rest/"המשימה הבאה") is retired -- `timerEnded` now
+            auto-triggers handleComplete() directly (see the effect
+            below), so by the time a render could ever reach this
+            branch, taskCompleting is already true and the "המשימה
+            הושלמה" block further down is what actually renders. Zero
+            mandatory screens: reflecting, resting, or starting ARC
+            before moving on are all reachable only via the new
+            persistent transition notification's own optional actions. */}
 
         {restRun && status && (
           <View style={styles.timerBlock}>

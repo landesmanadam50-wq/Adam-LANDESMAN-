@@ -134,33 +134,60 @@ test("starting a task opens Task LIVE -- Today's card 'start' action and the tim
   assert.match(layout, /<Stack\.Screen name="tasks\/\[id\]"/);
 });
 
-test("the timer works and ending it never completes the task -- reaching the end-of-timer prompt never itself calls completeTask", () => {
+// ARC Reminders task, requirement 5/8: superseded -- per the user's own
+// clarification, BOTH completion paths (the manual "השלמת משימה" button
+// AND the natural timer-reaching-0 case) now converge on one automatic,
+// non-navigating completion. So "ending the timer never completes the
+// task" is no longer the invariant -- the opposite is now intentional:
+// reaching timerEnded DOES auto-trigger the exact same handleComplete()
+// the manual button calls, exactly once per run (guarded by
+// autoCompletedForRunId), per the brand-new live/activeTaskScreen.test.ts
+// coverage of that effect.
+test("the timer reaching 0 now auto-triggers the same handleComplete() the manual button calls, exactly once per run, rather than leaving a non-completing end-of-timer prompt", () => {
   const run = createTaskTimerRun("t1", "r1", 25, "2026-01-01T00:00:00.000Z");
   const halfway = getTaskTimerStatus(run, new Date("2026-01-01T00:12:30.000Z").getTime());
   assert.ok(!halfway.complete && halfway.remainingSeconds > 0, "timer must be live mid-run");
   const ended = getTaskTimerStatus(run, new Date("2026-01-01T00:25:01.000Z").getTime());
   assert.ok(ended.complete, "timer must report complete once the duration elapses");
 
-  const endPromptIndex = activeTaskScreen.indexOf("timerEnded && (");
-  const endPromptBlockStart = activeTaskScreen.indexOf("<View style={styles.endPromptBlock}>", endPromptIndex);
-  const endPromptBlockEnd = activeTaskScreen.indexOf("{restRun && status && (", endPromptBlockStart);
-  const endPromptBlock = activeTaskScreen.slice(endPromptBlockStart, endPromptBlockEnd);
-  assert.ok(!endPromptBlock.includes("completeTask"), "the end-of-timer prompt must never mark the task complete on its own");
+  const effectIndex = activeTaskScreen.indexOf("if (ended && autoCompletedForRunId.current !== timerRun.runId) {");
+  assert.ok(effectIndex !== -1, "the auto-complete effect must exist");
+  const effectBody = activeTaskScreen.slice(effectIndex, effectIndex + 150);
+  assert.ok(effectBody.includes("handleComplete();"));
 });
 
-test("all three end choices remain available: 'צריך ARC' / 'צריך מנוחה' / 'להמשיך'", () => {
+// ARC Reminders task, requirement 5/8: superseded -- the end-of-timer
+// three-choice UI (ARC/Rest/"להמשיך") rendered from
+// TASK_TIMER_END_CHOICE_LABELS is gone entirely from ActiveTaskScreen.tsx.
+// The module itself is untouched (still exported, still usable
+// elsewhere) -- only its use as a rendered choice prompt here was
+// removed, since there is no longer an intermediate choice to make
+// before completion.
+test("TASK_TIMER_END_CHOICE_LABELS itself is untouched (still exports all three labels), but ActiveTaskScreen.tsx no longer renders a choice prompt from it -- there is no longer an intermediate end-of-timer choice to make", () => {
   assert.deepEqual(Object.keys(TASK_TIMER_END_CHOICE_LABELS).sort(), ["next_task", "rest", "start_arc"]);
   assert.equal(TASK_TIMER_END_CHOICE_LABELS.start_arc, "צריך ARC");
   assert.equal(TASK_TIMER_END_CHOICE_LABELS.rest, "צריך מנוחה");
   assert.equal(TASK_TIMER_END_CHOICE_LABELS.next_task, "להמשיך");
-  assert.ok(activeTaskScreen.includes("Object.keys(TASK_TIMER_END_CHOICE_LABELS)"), "all three must be rendered from this one shared source, never a duplicated/local set");
+  assert.ok(!activeTaskScreen.includes("Object.keys(TASK_TIMER_END_CHOICE_LABELS)"), "ActiveTaskScreen.tsx must no longer render a choice prompt from this module");
+  assert.ok(!activeTaskScreen.includes('if (choice === "start_arc")'));
 });
 
-test("ARC never opens BUILD -- the end-of-timer ARC choice routes only to the new, self-contained ARC LIVE flow (/tasks/[id]/arc), never /build or a BUILD editor, and that route is itself registered", () => {
-  const startArcIndex = activeTaskScreen.indexOf('if (choice === "start_arc")');
-  const startArcBody = activeTaskScreen.slice(startArcIndex, startArcIndex + 700);
-  assert.ok(startArcBody.includes('pathname: "/tasks/[id]/arc", params: { id: task.id }'));
-  assert.ok(!startArcBody.includes('"/build'));
+// ARC Reminders task, requirement 5/8: superseded -- the old end-of-timer
+// "start_arc" choice is gone, but ARC is still reachable mid-task via the
+// mood-row buttons (Part 12: "😟 פחות טוב"/"🙂 סבבה", openFullArc/
+// openShortenedArc) -- both still route only to the self-contained ARC
+// LIVE flow (/tasks/[id]/arc), never /build or a BUILD editor.
+test("ARC never opens BUILD -- the mood-row ARC entry points (openFullArc/openShortenedArc, the replacement for the removed 'start_arc' end-choice) route only to the self-contained ARC LIVE flow (/tasks/[id]/arc), never /build or a BUILD editor, and that route is itself registered", () => {
+  const routing = readSource("data/emotionalCheckInRouting.ts");
+  const fullArcIndex = routing.indexOf("export async function openFullArc(");
+  const fullArcBody = routing.slice(fullArcIndex, fullArcIndex + 1300);
+  assert.ok(fullArcBody.includes('pathname: "/tasks/[id]/arc"'));
+  assert.ok(!fullArcBody.includes('"/build'));
+  const shortenedArcIndex = routing.indexOf("export async function openShortenedArc(");
+  const shortenedArcBody = routing.slice(shortenedArcIndex, shortenedArcIndex + 1300);
+  assert.ok(shortenedArcBody.includes('pathname: "/tasks/[id]/arc"'));
+  assert.ok(!shortenedArcBody.includes('"/build'));
+  assert.ok(activeTaskScreen.includes("openFullArc(task.id)") && activeTaskScreen.includes("openShortenedArc(task.id)"));
   assert.match(layout, /<Stack\.Screen name="tasks\/\[id\]\/arc"/);
   // Simplified-architecture task, Phase 2: the new ARC LIVE screen itself
   // never forwards into BUILD or the old LIVE chooser at any point.
@@ -168,17 +195,30 @@ test("ARC never opens BUILD -- the end-of-timer ARC choice routes only to the ne
   assert.ok(!newArcLiveScreen.includes('"/build') && !newArcLiveScreen.includes('"/live"') && !newArcLiveScreen.includes('"/live/select"'));
 });
 
-test("Rest returns to the same task -- the rest sub-timer is keyed to the SAME task id and never navigates away", () => {
-  const restIndex = activeTaskScreen.indexOf('endChoice === "rest"');
-  const restBody = activeTaskScreen.slice(restIndex, restIndex + 600);
-  assert.ok(restBody.includes("createTaskTimerRun(task.id, generateTaskTimerRunId(), minutes"), "the rest run must be created for this exact task");
-  assert.ok(!restBody.includes("router.push") && !restBody.includes("router.replace"), "choosing a rest duration must never navigate away from this task's own screen");
+// ARC Reminders task, requirement 5/8: superseded -- the old end-of-timer
+// "rest" choice (keyed off a local `minutes` const) is gone. The one
+// surviving rest-timer creation path is the standalone "break" calendar
+// entry inside performStart (its own `restMinutes` const) -- it still
+// never navigates away from this task's own screen.
+test("Rest -- the one surviving rest-sub-timer creation path (the standalone 'break' calendar entry, replacing the removed end-of-timer 'rest' choice) is keyed to the SAME task id and never navigates away", () => {
+  assert.ok(!activeTaskScreen.includes('endChoice === "rest"'));
+  const breakIndex = activeTaskScreen.indexOf('if (task.calendarEntryKind === "break") {');
+  const breakBody = activeTaskScreen.slice(breakIndex, breakIndex + 600);
+  assert.ok(breakBody.includes("createTaskTimerRun(task.id, generateTaskTimerRunId(), restMinutes"), "the rest run must be created for this exact task");
+  assert.ok(!breakBody.includes("router.push") && !breakBody.includes("router.replace"), "starting the standalone break's own rest timer must never navigate away from this task's own screen");
 });
 
-test("Continue preserves or advances the task correctly -- 'next_task' opens the next task directly via the shared handleNextTask, never the bare tasks list, and never completes the current task", () => {
-  const nextTaskIndex = activeTaskScreen.indexOf('endChoice === "next_task"');
-  const nextTaskBody = activeTaskScreen.slice(nextTaskIndex, nextTaskIndex + 600);
-  assert.ok(nextTaskBody.includes("onPress={handleNextTask}"));
-  assert.ok(!nextTaskBody.includes('router.push("/tasks")'), "the fixed bug: this must never dead-end at the general tasks list when a next task exists");
-  assert.ok(!nextTaskBody.includes("completeTask"), "'continue' must never silently complete the current task");
+// ARC Reminders task, requirement 5/8: superseded -- the old end-of-timer
+// "next_task" choice is gone (see live/taskLiveNavigation.test.ts's own
+// dedicated test for the same point). handleNextTask remains reachable
+// only via the ordinary button row, and still never completes the task.
+test("Continue preserves or advances the task correctly -- handleNextTask (reachable only via the ordinary button row now that the end-of-timer 'next_task' choice is gone) never completes the current task", () => {
+  assert.ok(!activeTaskScreen.includes('endChoice === "next_task"'));
+  const fnIndex = activeTaskScreen.indexOf("async function handleNextTask()");
+  const fnBody = activeTaskScreen.slice(fnIndex, activeTaskScreen.indexOf("\n  }", fnIndex));
+  assert.ok(!fnBody.includes("completeTask"), "'next task' must never silently complete the current task");
+  const rowIndex = activeTaskScreen.lastIndexOf('task.status === "completed" || taskCompleting) ?');
+  const notCompletedIndex = activeTaskScreen.indexOf(") : !showIdentityInsightPrompt && (", rowIndex);
+  const rowBody = activeTaskScreen.slice(notCompletedIndex, notCompletedIndex + 1000);
+  assert.ok(rowBody.includes("onPress={handleNextTask}"));
 });

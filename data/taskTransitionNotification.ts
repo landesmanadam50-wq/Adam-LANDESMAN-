@@ -160,7 +160,7 @@ export async function handleTaskTransitionNotificationEvent(event: Event): Promi
   if (!fromTaskId && !current) return;
   router.push({
     pathname: "/tasks/[id]/post-task-reward",
-    params: { id: fromTaskId ?? current?.id ?? "", fromTaskId: fromTaskId ?? "", toTaskId: current?.id ?? "" },
+    params: { id: fromTaskId ?? current?.id ?? "", source: "notification", toTaskId: current?.id ?? "" },
   });
 }
 

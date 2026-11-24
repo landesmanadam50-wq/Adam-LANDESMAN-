@@ -43,29 +43,29 @@ test("on focus, the screen checks for an already-persisted TaskTimerRun for THIS
   assert.ok(reloadBody.includes("loadedRun.taskId === taskId"));
 });
 
-test("'הטיימר הסתיים' and 'המשימה הושלמה' are kept separate -- reaching the end-of-timer prompt never itself calls completeTask", () => {
-  const endPromptIndex = screen.indexOf("{timerEnded && !taskCompleting && (");
-  assert.ok(endPromptIndex !== -1);
-  const endPromptBlockStart = screen.indexOf("<View style={styles.endPromptBlock}>", endPromptIndex);
-  const endPromptBlockEnd = screen.indexOf("{restRun && status && (", endPromptBlockStart);
-  const endPromptBlock = screen.slice(endPromptBlockStart, endPromptBlockEnd);
-  assert.ok(!endPromptBlock.includes("completeTask"), "the end-of-timer prompt must never mark the task complete on its own");
-  assert.ok(screen.includes("onPress={handleComplete}"), "marking complete must remain its own, separate, always-available action");
+test("ARC Reminders task, requirement 5/8: 'הטיימר הסתיים' now DOES auto-trigger 'המשימה הושלמה' -- the old 3-choice end-of-timer prompt is retired, and a dedicated effect calls completeTask (via handleComplete) the instant the timer naturally ends, with zero tap required", () => {
+  assert.ok(!screen.includes("styles.endPromptBlock"), "the old 3-choice end-of-timer prompt block must be gone");
+  assert.ok(!screen.includes("TASK_TIMER_END_CHOICE_LABELS"), "the old shared label set must no longer be rendered here");
+  // The new auto-trigger effect: recomputes "ended" itself and calls
+  // handleComplete() directly once the main timer run ends.
+  const autoCompleteEffectIndex = screen.indexOf("const autoCompletedForRunId = useRef<string | null>(null);");
+  assert.ok(autoCompleteEffectIndex !== -1, "the new auto-complete-on-timer-end ref must exist");
+  assert.ok(screen.includes("autoCompletedForRunId.current = timerRun.runId;"));
+  assert.ok(screen.includes("handleComplete();"), "the auto-trigger effect must call the SAME handleComplete() the manual button already uses");
+  assert.ok(screen.includes("onPress={handleComplete}"), "marking complete must remain its own, separate, always-available manual action too");
   const handleCompleteIndex = screen.indexOf("async function handleComplete()");
-  assert.ok(screen.slice(handleCompleteIndex, handleCompleteIndex + 5500).includes("completedTask = { ...completeTask(task, now)"));
+  assert.ok(screen.slice(handleCompleteIndex, handleCompleteIndex + 6500).includes("completedTask = { ...completeTask(task, now)"));
 });
 
-test("the three end-of-timer choices are rendered from the shared TASK_TIMER_END_CHOICE_LABELS -- never a duplicated/local label set", () => {
-  assert.match(screen, /import\s*\{[\s\S]*?TASK_TIMER_END_CHOICE_LABELS[\s\S]*?\}\s*from\s*["']\.\.\/arc\/taskTimerEndChoice\.ts["']/);
-  assert.ok(screen.includes("Object.keys(TASK_TIMER_END_CHOICE_LABELS)"));
+test("ARC Reminders task, requirement 8: the three end-of-timer choices (ARC/Rest/'המשימה הבאה') and their shared TASK_TIMER_END_CHOICE_LABELS import are removed from ActiveTaskScreen.tsx entirely -- the module itself (arc/taskTimerEndChoice.ts) still exists and is still tested on its own, just no longer imported/rendered here", () => {
+  assert.ok(!screen.includes('from "../arc/taskTimerEndChoice.ts"'), "ActiveTaskScreen.tsx must no longer import anything from the retired end-of-timer-choice module");
+  assert.ok(!screen.includes("Object.keys(TASK_TIMER_END_CHOICE_LABELS)"));
+  assert.ok(!screen.includes("const [endChoice, setEndChoice]"), "the endChoice state driving that removed prompt must also be gone");
 });
 
-test("Simplified-architecture task, Phase 1: the ARC choice always opens the clearly labeled placeholder, regardless of any linked ArcBuild -- never the old LIVE chooser or a BUILD-linked session", () => {
-  assert.ok(!screen.includes("resolveArcChoiceDestination"), "the old per-build branching must be removed from ActiveTaskScreen for Phase 1");
-  const startArcIndex = screen.indexOf('if (choice === "start_arc")');
-  const startArcBody = screen.slice(startArcIndex, startArcIndex + 700);
-  assert.ok(startArcBody.includes('pathname: "/tasks/[id]/arc", params: { id: task.id }'));
-  assert.ok(!startArcBody.includes('"/live"') && !startArcBody.includes('"/live/select"') && !startArcBody.includes('"/build'));
+test("Simplified-architecture task, Phase 1 (superseded by ARC Reminders requirement 8): the old per-build ARC-before-moving-on branching stays removed -- there is no 'start ARC before completing' end-of-timer choice left to open any screen at all; needing ARC after a task ends is now reachable only via the new task-transition notification's own 😟/🙂 actions (data/taskTransitionNotification.ts)", () => {
+  assert.ok(!screen.includes("resolveArcChoiceDestination"), "the old per-build branching must stay removed from ActiveTaskScreen");
+  assert.ok(!screen.includes('if (choice === "start_arc")'), "the retired end-of-timer ARC choice branch must not reappear");
 });
 
 test("pause/resume/finish-early are wired to the shared pure functions, never a local reimplementation", () => {
@@ -131,10 +131,10 @@ test("subtasks are rendered with a completion toggle (toggleTaskSubtaskCompletio
   assert.ok(screen.includes("setTaskCurrentAction(task, subtask.title, new Date().toISOString())"));
 });
 
-test("the rest sub-timer is persisted through the SAME timestamp-based TaskTimerRun storage as the main timer, tagged kind 'rest' -- it must survive backgrounding/app-restart exactly like the main timer already does", () => {
+test("the rest sub-timer is persisted through the SAME timestamp-based TaskTimerRun storage as the main timer, tagged kind 'rest' -- it must survive backgrounding/app-restart exactly like the main timer already does. Surviving entry point after the ARC Reminders task's removal of the end-of-timer 'rest' choice: a standalone break calendar entry's own rest timer (performStart's own 'calendarEntryKind === \"break\"' branch) -- the Cubes feature's own split-segment break advance (advanceToNextSplitSegment) is the other.", () => {
   assert.match(screen, /import\s*\{[\s\S]*?saveTaskTimerRun[\s\S]*?\}\s*from\s*["']\.\.\/data\/storage\.ts["']/);
-  const startRestIndex = screen.indexOf('createTaskTimerRun(task.id, generateTaskTimerRunId(), minutes, new Date().toISOString(), "rest")');
-  assert.ok(startRestIndex !== -1, "starting a rest period must create a run explicitly tagged kind \"rest\"");
+  const startRestIndex = screen.indexOf('createTaskTimerRun(task.id, generateTaskTimerRunId(), restMinutes, new Date().toISOString(), "rest")');
+  assert.ok(startRestIndex !== -1, "starting a rest period (the standalone break calendar entry's own path) must create a run explicitly tagged kind \"rest\"");
   const nearbyBody = screen.slice(startRestIndex, startRestIndex + 500);
   assert.ok(nearbyBody.includes("await saveTaskTimerRun(restWithNotification)"), "the rest run must be persisted, not kept as local-only React state");
 });

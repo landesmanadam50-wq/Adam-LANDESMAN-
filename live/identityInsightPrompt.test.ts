@@ -47,20 +47,20 @@ test("the Combined and Task tracks both mark the pending marker when reaching 'c
 
 test("handleComplete checks the pending marker for THIS exact task id before deciding whether to show the prompt -- never for a different task's marker", () => {
   const fnIndex = activeTaskScreen.indexOf("async function handleComplete()");
-  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 7200);
+  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 8000);
   assert.ok(fnBody.includes("const pendingTaskId = await loadPendingIdentityInsightTaskId();"));
   assert.ok(fnBody.includes("if (pendingTaskId === task.id) {"));
 });
 
-test("finishIdentityInsight always clears the pending marker and always reaches the reflection screen (alarm-timer integration task, requirement 6), but only persists an insight (and optional belief) when NOT skipped and real text was typed", () => {
+test("finishIdentityInsight always clears the pending marker (but, per the ARC Reminders task's requirement 8, no longer force-navigates to reflect -- it recomputes the one transition notification and stays put, same as handleComplete's own non-continuous ending), and only persists an insight (and optional belief) when NOT skipped and real text was typed", () => {
   const fnIndex = activeTaskScreen.indexOf("async function finishIdentityInsight");
-  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 1250);
+  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 1450);
   assert.ok(fnBody.includes("await clearPendingIdentityInsightTaskId();"));
   assert.ok(fnBody.includes("if (!skip && identityInsightDraft.trim()) {"));
   assert.ok(fnBody.includes('beliefKind: "identity"'));
   assert.ok(fnBody.includes("if (identityBeliefDraft.trim()) {"));
-  // Task Completion Navigation fix: `replace`, not `push` -- see handleComplete's own matching assertion above.
-  assert.ok(fnBody.includes('router.replace({ pathname: "/tasks/[id]/reflect", params: { id: task.id } });'));
+  assert.ok(fnBody.includes("await recomputeTaskTransitionNotification(task.id);"));
+  assert.ok(!fnBody.includes('router.replace({ pathname: "/tasks/[id]/reflect"'), "must never force-navigate to reflect any more");
 });
 
 test("the prompt offers a real skip path, never forcing an answer", () => {

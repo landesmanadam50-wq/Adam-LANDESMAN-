@@ -65,7 +65,7 @@ test("required test 8/9 (split session persisted at start): performStart saves a
 
 test("required test 9 (no duplicate completion record, correct read ordering): handleComplete loads the TodoSplitSession BEFORE clearEndedTimer() runs -- clearEndedTimer's own clearTaskTimerRun() clears this exact single-slot key, so reading it after would always see 'none' and silently fall through to a full, premature completion", () => {
   const fnIndex = screen.indexOf("async function handleComplete()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 2600);
+  const fnBody = screen.slice(fnIndex, fnIndex + 3600);
   const loadIndex = fnBody.indexOf("const todoSplitSession = await loadTodoSplitSession();");
   const clearIndex = fnBody.indexOf("await clearEndedTimer();");
   assert.ok(loadIndex !== -1 && clearIndex !== -1 && loadIndex < clearIndex);

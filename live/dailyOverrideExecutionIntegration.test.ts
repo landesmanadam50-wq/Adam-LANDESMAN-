@@ -96,7 +96,7 @@ test("every persistTask call site derives `next` from the (merged) `task` state 
 
 test("requirement 5, completion fix: a recurring task's completion records only TODAY's occurrence (append-only, never the shared status) and returns the shared Task to 'planned' -- never 'completed', which would permanently disarm every FUTURE occurrence's own alarm; a one-time task's own single completion is unaffected", () => {
   const fnIndex = screen.indexOf("async function handleComplete()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 5500);
+  const fnBody = screen.slice(fnIndex, fnIndex + 6500);
   // Smart To-Do List task, section 6: this branch is now an `else if`
   // (a new To-Do split-progress branch comes first), but every
   // recurring (non-split) task's own behavior is unchanged.
@@ -108,7 +108,7 @@ test("requirement 5, completion fix: a recurring task's completion records only 
 
 test("requirement 1/6, completion fix: after completing a recurring task's occurrence, the alarm is immediately re-synced for the NEXT occurrence via scheduleTaskAlarm, reading the RAW (un-overridden) task from rawTaskRef -- never today's now-stale overridden time", () => {
   const fnIndex = screen.indexOf("async function handleComplete()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 6500);
+  const fnBody = screen.slice(fnIndex, fnIndex + 7500);
   assert.ok(fnBody.includes('if (task.recurrence.kind === "recurring" && rawTaskRef.current) {'));
   assert.ok(fnBody.includes("scheduleTaskAlarm(rawTaskRef.current, new Date())"));
 });

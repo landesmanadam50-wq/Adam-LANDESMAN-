@@ -34,8 +34,12 @@ const setupScreen = readSource("build/RoutineSetupScreen.tsx");
 for (const [name, source, fnStart, windowSize] of [
   // Unified ARC & Productivity Update task, requirement 9: widened for
   // the ad-hoc-group + combined-smiles accumulation code this branch
-  // now carries.
-  ["live/ActiveTaskScreen.tsx's handleComplete", activeTaskScreen, "async function handleComplete()", 9500],
+  // now carries. Widened again by the ARC Reminders task's own
+  // additions earlier in handleComplete (soundAlreadyPlayedForThisRun,
+  // the identity-insight-prompt branch's own recordSilentTaskCompletionReward
+  // + conditional sound call) -- those sit BEFORE this continuous-
+  // routine block, pushing it further into the function body.
+  ["live/ActiveTaskScreen.tsx's handleComplete", activeTaskScreen, "async function handleComplete()", 11500],
   ["build/DailyScheduleScreen.tsx's handleComplete", dailyScheduleScreen, "async function handleComplete(task: Task)", 2000],
   ["build/TodayScreen.tsx's handleComplete", todayScreen, "async function handleComplete(task: Task)", 2000],
 ] as const) {
@@ -68,7 +72,7 @@ for (const [name, source, fnStart, windowSize] of [
 
 test("ActiveTaskScreen's continuous branch navigates DIRECTLY to the next task in the period (router.replace), skipping reflect entirely, when one remains", () => {
   const fnIndex = activeTaskScreen.indexOf("async function handleComplete()");
-  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 9500);
+  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 11500);
   assert.ok(fnBody.includes('router.replace({ pathname: "/tasks/[id]", params: { id: continuousOutcome.nextTaskInPeriod.id } });'));
 });
 
@@ -92,11 +96,24 @@ test("the 'next task in period' calculation (arc/dailyRoutine.ts's resolveNextCo
 
 // --- Spaced routines: unaffected, exact pre-existing behavior ---
 
-test("a non-continuous completion (isContinuous false) falls through to the exact pre-existing post-task-reward/reflect navigation, unchanged, in all three call sites", () => {
+test("a non-continuous completion (isContinuous false) falls through to the exact pre-existing post-task-reward/reflect navigation, unchanged, in the two Today/DailySchedule call sites -- ActiveTaskScreen's own non-continuous fallback changed by the ARC Reminders task (see its own dedicated test below)", () => {
   assert.ok(dailyScheduleScreen.includes('router.push({ pathname: "/tasks/[id]/post-task-reward", params: { id: task.id, source: "today" } });'));
   assert.ok(todayScreen.includes('router.push({ pathname: "/tasks/[id]/post-task-reward", params: { id: task.id, source: "today" } });'));
-  // Task Completion Navigation fix: `replace`, not `push` -- see ActiveTaskScreen.tsx's own doc comment on this exact line.
-  assert.ok(activeTaskScreen.includes('router.replace({ pathname: "/tasks/[id]/reflect", params: { id: task.id } });'));
+});
+
+// ARC Reminders task, requirement 8: ActiveTaskScreen's own non-continuous
+// fallback no longer force-navigates to reflect at all -- it records the
+// reward/sound itself (same as the continuous branch above already did)
+// and recomputes the one transition notification instead, staying on
+// screen so the pre-existing "המשימה הושלמה" block can render in place.
+test("ActiveTaskScreen's non-continuous fallback (isContinuous false) records the reward/sound and recomputes the transition notification instead of navigating to reflect", () => {
+  const fnIndex = activeTaskScreen.indexOf("async function handleComplete()");
+  const continuousBlockIndex = activeTaskScreen.indexOf("if (continuousOutcome.isContinuous) {", fnIndex);
+  const afterContinuousBlockIndex = activeTaskScreen.indexOf("return;\n    }\n", continuousBlockIndex);
+  const afterContinuousBlock = activeTaskScreen.slice(afterContinuousBlockIndex, afterContinuousBlockIndex + 1500);
+  assert.ok(afterContinuousBlock.includes("await recordSilentTaskCompletionReward(task.id, new Date());"));
+  assert.ok(afterContinuousBlock.includes("await recomputeTaskTransitionNotification(task.id);"));
+  assert.ok(!afterContinuousBlock.includes('router.replace({ pathname: "/tasks/[id]/reflect"'), "the non-continuous fallback must never force-navigate to reflect any more");
 });
 
 // --- The one summary reflection at the end of a continuous routine ---

@@ -55,16 +55,40 @@ const ENCOURAGEMENT_LINE = "חיוך קטן יכול לשנות את כל התח
  * Every other entry (the full Task LIVE -> reflect -> here flow) keeps
  * the EXACT pre-existing "advance to next task" behavior that used to
  * live directly in SessionReflectionScreen.tsx's own advanceToNextTask.
+ *
+ * ARC Reminders task, this screen's new, fully OPTIONAL fourth entry
+ * (reached ONLY via the task-transition notification's body tap, see
+ * data/taskTransitionNotification.ts's §6.3(d)): `source="notification"`
+ * carries an explicit `toTaskId` -- the trainee's REAL current task,
+ * already auto-advanced to by live/ActiveTaskScreen.tsx's own
+ * handleComplete before this screen could ever be reached -- so
+ * `finish()` opens it directly, never re-resolving "what's next" a
+ * second time via advanceToNextTask/resolveMostUrgentScheduledTask
+ * (which would risk disagreeing with the flexible day if it changed in
+ * the time between the completion and this optional visit). The reward
+ * itself is NEVER recorded here for this entry: ActiveTaskScreen.tsx's
+ * own handleComplete already called recordTaskCompletion the instant
+ * the task completed (moved there specifically so an auto-advanced
+ * trainee who never opens this screen at all still gets full smile/
+ * streak credit) -- this screen's own mount effect below still calls
+ * recordTaskCompletion too, but resolveTaskCompletionEventId's own
+ * idempotency guard (arc/postTaskRewards.ts) makes that call a safe,
+ * read-only no-op (alreadyProcessed: true, the exact same current
+ * totals) rather than a double count, regardless of which entry reached
+ * this screen.
  */
 export default function PostTaskRewardScreen({
   taskId,
   source = "flow",
   combinedSmiles = null,
+  toTaskId = null,
 }: {
   taskId: string;
-  source?: "today" | "tasksList" | "flow";
+  source?: "today" | "tasksList" | "flow" | "notification";
   /** Unified ARC & Productivity Update task, requirement 9 ("one combined smile-reward experience at the end"): when set, overrides "חיוכים שהרווחת עכשיו" to show the WHOLE continuous routine's combined total instead of outcome.streakRewardSmiles -- which, for the routine's own last task, is correctly 0 here (recordTaskCompletion already processed that exact completion silently, in ActiveTaskScreen.tsx's own handleComplete, before this screen ever mounted; every other number below -- todaySmiles/totalSmiles/newStreak -- is unaffected, since those are the real, already-current running totals regardless of which call recorded them). */
   combinedSmiles?: number | null;
+  /** ARC Reminders task: set ONLY by source="notification" -- the real task already auto-advanced to, read-through at `finish()` time rather than re-resolved. */
+  toTaskId?: string | null;
 }) {
   const [task, setTask] = useState<Task | null>(null);
   const [outcome, setOutcome] = useState<TaskCompletionOutcome | null>(null);
@@ -173,6 +197,14 @@ export default function PostTaskRewardScreen({
     }
     if (source === "tasksList") {
       router.replace("/tasks");
+      return;
+    }
+    // ARC Reminders task: the already-known, already-current task --
+    // never re-resolved via advanceToNextTask's own
+    // resolveMostUrgentScheduledTask, and never auto-started, same as
+    // every other "open the next task" destination in this app.
+    if (source === "notification") {
+      router.replace(toTaskId ? { pathname: "/tasks/[id]", params: { id: toTaskId } } : "/tasks");
       return;
     }
     await advanceToNextTask();
