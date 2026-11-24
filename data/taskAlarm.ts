@@ -316,7 +316,7 @@ export function registerTaskAlarmForegroundService(): void {
           // Visualization's "התחל ויזואליזציה") and press-action id
           // across the redisplay -- never silently dropped just because
           // the delivery decision now runs through this shared gate.
-          const redisplayOptions = { actions: notification.android?.actions, pressAction: notification.android?.pressAction };
+          const redisplayOptions = { actions: notification.android?.actions, pressAction: notification.android?.pressAction, visibility: notification.android?.visibility };
           hasActiveTaskConflict("").then(async (conflict) => {
             if (notificationId) {
               await notifee.cancelNotification(notificationId).catch(() => {});

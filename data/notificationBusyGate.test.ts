@@ -65,10 +65,11 @@ test("scheduleReminderNotification redirects every interruptive kind to schedule
 
 test("scheduleNativeReminderNotification uses notifee's createTriggerNotification with asForegroundService: true and AlarmType.SET_ALARM_CLOCK -- the exact same native mechanism data/taskAlarm.ts's own alarms use, reused rather than a second, parallel engine", () => {
   const fnIndex = notificationsModule.indexOf("async function scheduleNativeReminderNotification");
-  // ARC Reminders task: widened from 3200 -- the new per-kind inline-
-  // reply `actions` construction (Active Recall's AndroidInput action)
-  // pushed this function's later lines further into its own body.
-  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 4700);
+  // ARC Reminders task: widened from 4700 -- the lock-screen visibility
+  // read (ArcTaskReminderSettings.hideContentOnLockScreen) added before
+  // this function's own notification-building call pushed the exact
+  // offset of alarmManager/SET_ALARM_CLOCK to ~4854.
+  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 5200);
   assert.ok(fnBody.includes("await notifee.createTriggerNotification("));
   assert.ok(fnBody.includes("asForegroundService: true,"));
   assert.ok(fnBody.includes("alarmManager: { type: AlarmType.SET_ALARM_CLOCK },"));
@@ -88,7 +89,9 @@ test("scheduleNativeReminderNotification mints its own deterministic-prefix id (
   assert.match(notificationsModule, /const REMINDER_NATIVE_ID_PREFIX = "reminder-";/);
   assert.match(notificationsModule, /function generateReminderNativeId\(\): string \{\s*return `\$\{REMINDER_NATIVE_ID_PREFIX\}/);
   const fnIndex = notificationsModule.indexOf("async function scheduleNativeReminderNotification");
-  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 1100);
+  // Widened from 1100: the lock-screen visibility settings read now
+  // comes before the id is minted (true offset ~1446).
+  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 1600);
   assert.ok(fnBody.includes("const id = generateReminderNativeId();"));
 });
 
@@ -118,13 +121,25 @@ test("redisplayReminderLoud shows on NOTIFEE_REMINDER_CHANNEL_ID (the same real 
 });
 
 test("both redisplay functions preserve a kind's own action buttons/press-action id via the options parameter -- a redisplayed Daily Visualization reminder must keep its 'התחל ויזואליזציה' button, never silently dropped just because delivery now routes through this shared gate", () => {
+  // ARC Reminders task: widened from 500 -- the android object's fields
+  // were reformatted onto their own lines (adding `visibility:
+  // options?.visibility`), pushing actions/pressAction further in.
   const quietIndex = notificationsModule.indexOf("export async function redisplayReminderQuiet");
-  const quietBody = notificationsModule.slice(quietIndex, quietIndex + 500);
+  const quietBody = notificationsModule.slice(quietIndex, quietIndex + 700);
   assert.ok(quietBody.includes("actions: options?.actions"));
   assert.ok(quietBody.includes("pressAction: options?.pressAction ?? { id: \"default\" }"));
   const loudIndex = notificationsModule.indexOf("export async function redisplayReminderLoud");
-  const loudBody = notificationsModule.slice(loudIndex, loudIndex + 500);
+  const loudBody = notificationsModule.slice(loudIndex, loudIndex + 700);
   assert.ok(loudBody.includes("actions: options?.actions"));
+});
+
+test("both redisplay functions pass `visibility` through to android.visibility -- the one shared settings toggle (ArcTaskReminderSettings.hideContentOnLockScreen) applies uniformly across mantra/recall/transition notifications via this same read-back pattern, never a second decision point", () => {
+  const quietIndex = notificationsModule.indexOf("export async function redisplayReminderQuiet");
+  const quietBody = notificationsModule.slice(quietIndex, quietIndex + 700);
+  assert.ok(quietBody.includes("visibility: options?.visibility,"));
+  const loudIndex = notificationsModule.indexOf("export async function redisplayReminderLoud");
+  const loudBody = notificationsModule.slice(loudIndex, loudIndex + 700);
+  assert.ok(loudBody.includes("visibility: options?.visibility,"));
 });
 
 // --- data/alarmChannel.ts: the two new channels ---
@@ -299,7 +314,7 @@ test("Part 2 (every alarm/reminder/Daily-Visualization kind uses AlarmType.SET_A
 
 test("checkpoint (one new action, one kind): scheduleNativeReminderNotification attaches the ACTION_ARC_RECALL_ANSWER action -- carrying notifee's existing AndroidInput support -- ONLY for kind 'arcRecallQuestion', and no actions at all for every other kind, exactly as before this task", () => {
   const fnIndex = notificationsModule.indexOf("async function scheduleNativeReminderNotification");
-  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 4700);
+  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 5200);
   assert.ok(fnBody.includes('input.kind === "arcRecallQuestion"'));
   assert.ok(fnBody.includes("pressAction: { id: ACTION_ARC_RECALL_ANSWER }"));
   assert.ok(fnBody.includes("input: { allowFreeFormInput: true, placeholder:"));
@@ -309,7 +324,7 @@ test("checkpoint (one new action, one kind): scheduleNativeReminderNotification 
 test("checkpoint (the exact message a reply is recorded against): the data payload carries arcRecallChatMessageId alongside the pre-existing arcReminderId, both only for the kinds that need them", () => {
   assert.match(notificationsModule, /arcRecallChatMessageId\?: string;/);
   const fnIndex = notificationsModule.indexOf("async function scheduleNativeReminderNotification");
-  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 4700);
+  const fnBody = notificationsModule.slice(fnIndex, fnIndex + 5200);
   assert.ok(fnBody.includes("...(input.arcRecallChatMessageId !== undefined ? { arcRecallChatMessageId: input.arcRecallChatMessageId } : {}),"));
 });
 

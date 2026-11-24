@@ -22,9 +22,10 @@
  */
 
 import * as Notifications from "expo-notifications";
-import notifee, { AlarmType, TriggerType } from "@notifee/react-native";
+import notifee, { AlarmType, AndroidVisibility, TriggerType } from "@notifee/react-native";
 import type { AndroidInput } from "@notifee/react-native";
 import { Platform } from "react-native";
+import { loadArcTaskReminderSettings } from "./storage.ts";
 import type { ReminderKind, TimerType } from "./storage.ts";
 // Intentional circular import with ./taskAlarm.ts (which imports
 // cancelScheduledNotification from here) -- safe for the exact same
@@ -205,6 +206,8 @@ export interface ReminderRedisplayOptions {
    */
   actions?: { title: string; pressAction: { id: string }; input?: true | AndroidInput }[];
   pressAction?: { id: string };
+  /** ARC Reminders task: carries the original trigger notification's own lock-screen visibility through to the real, user-facing redisplay -- same read-back pattern as `actions`/`pressAction` above, never a second decision point. Omitted (native default, PRIVATE) for every kind scheduled before this setting existed. */
+  visibility?: AndroidVisibility;
 }
 
 export async function redisplayReminderQuiet(id: string, title: string, body: string, data: Record<string, string | number | object>, options?: ReminderRedisplayOptions): Promise<void> {
@@ -215,7 +218,13 @@ export async function redisplayReminderQuiet(id: string, title: string, body: st
       title,
       body,
       data,
-      android: { channelId: QUIET_REMINDER_CHANNEL_ID, autoCancel: true, pressAction: options?.pressAction ?? { id: "default" }, actions: options?.actions },
+      android: {
+        channelId: QUIET_REMINDER_CHANNEL_ID,
+        autoCancel: true,
+        pressAction: options?.pressAction ?? { id: "default" },
+        actions: options?.actions,
+        visibility: options?.visibility,
+      },
     });
   } catch (error) {
     console.error("redisplayReminderQuiet failed", error);
@@ -231,7 +240,13 @@ export async function redisplayReminderLoud(id: string, title: string, body: str
       title,
       body,
       data,
-      android: { channelId: NOTIFEE_REMINDER_CHANNEL_ID, autoCancel: true, pressAction: options?.pressAction ?? { id: "default" }, actions: options?.actions },
+      android: {
+        channelId: NOTIFEE_REMINDER_CHANNEL_ID,
+        autoCancel: true,
+        pressAction: options?.pressAction ?? { id: "default" },
+        actions: options?.actions,
+        visibility: options?.visibility,
+      },
     });
   } catch (error) {
     console.error("redisplayReminderLoud failed", error);
@@ -485,6 +500,13 @@ async function scheduleNativeReminderNotification(input: ScheduleReminderNotific
     // runs. ensureNotifeeReminderChannelAsync() is still called later, by
     // redisplayReminderLoud itself, when the loud channel is actually used.
     await ensureSilentDeliveryChannelAsync();
+    // ARC Reminders task: one shared settings toggle
+    // (ArcTaskReminderSettings.hideContentOnLockScreen) applies uniformly
+    // to every reminder kind scheduled through this one function -- read
+    // fresh here (never cached) so a later settings change takes effect
+    // on the very next notification scheduled, with no re-arming step.
+    const settings = await loadArcTaskReminderSettings();
+    const visibility = settings.hideContentOnLockScreen ? AndroidVisibility.PRIVATE : AndroidVisibility.PUBLIC;
     const id = generateReminderNativeId();
     await notifee.createTriggerNotification(
       {
@@ -521,6 +543,7 @@ async function scheduleNativeReminderNotification(input: ScheduleReminderNotific
           foregroundServiceTypes: ALARM_FOREGROUND_SERVICE_TYPES,
           autoCancel: true,
           pressAction: { id: "default" },
+          visibility,
           // ARC Reminders task, Active Recall inline reply: the ONE
           // action notifee's existing (never-before-exercised in this
           // repo) AndroidInput powers -- answering directly from the
