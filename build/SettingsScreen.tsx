@@ -181,6 +181,14 @@ export default function SettingsScreen() {
         <Pressable style={styles.secondaryButton} onPress={() => router.push("/tasks/emotional-checkin-settings")}>
           <Text style={styles.secondaryButtonText}>הוסף כפתורי ARC למסך הבית ולמסך הנעילה</Text>
         </Pressable>
+
+        <Text style={styles.sectionTitle}>ARC Reminders</Text>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push("/arc-reminders")}>
+          <Text style={styles.secondaryButtonText}>ניהול תזכורות ARC</Text>
+        </Pressable>
+        <Pressable style={styles.secondaryButton} onPress={() => router.push("/arc-reminders/settings")}>
+          <Text style={styles.secondaryButtonText}>הגדרות ARC Reminders</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );

@@ -160,6 +160,9 @@ export default function RootLayout() {
         {/* ARC Saving, Trigger Management & Quick-Action Buttons task:
             own independent entry card (never nested under arc-gym/*),
             same convention as arc-learning/arc-creativity above. */}
+        <Stack.Screen name="arc-reminders/index" options={{ title: "ARC Reminders" }} />
+        <Stack.Screen name="arc-reminders/settings" options={{ title: "הגדרות ARC Reminders" }} />
+        <Stack.Screen name="arc-recall/chat/[reminderId]" options={{ title: "שיח זכירה" }} />
         <Stack.Screen name="arc-saving/index" options={{ title: "ARC Saving" }} />
         <Stack.Screen name="arc-saving/trigger/[id]" options={{ title: "טריגר" }} />
         <Stack.Screen name="arc-saving/active-triggers" options={{ title: "עריכת טריגרים" }} />

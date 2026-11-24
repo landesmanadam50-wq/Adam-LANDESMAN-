@@ -37,9 +37,17 @@ import {
   updateArcRecallChatMessageEntry,
 } from "./storage.ts";
 
-export async function resolveArcRecallReminderQuestion(reminder: ArcRecallReminder): Promise<GeneratedRecallQuestion | null> {
-  const sourceId = reminder.sourceRef.sourceId;
-  switch (reminder.sourceRef.kind) {
+/**
+ * The actual switch-by-source-kind logic, extracted from
+ * resolveArcRecallReminderQuestion below so a caller that only has a
+ * message's own denormalized `sourceRef` (data/arcRecallChatHistory.ts's
+ * chat messages, read by the chat screen for "view source"/reveal) can
+ * resolve the SAME live question/reveal pair without needing to
+ * reconstruct a fake ArcRecallReminder just to call it.
+ */
+export async function resolveArcRecallSourceQuestion(sourceRef: ArcRecallReminder["sourceRef"]): Promise<GeneratedRecallQuestion | null> {
+  const sourceId = sourceRef.sourceId;
+  switch (sourceRef.kind) {
     case "insight": {
       const insights = await loadArcInsights();
       const insight = insights.find((item) => item.id === sourceId) ?? null;
@@ -61,6 +69,10 @@ export async function resolveArcRecallReminderQuestion(reminder: ArcRecallRemind
       return generateArcMemoryRecallQuestion(memory);
     }
   }
+}
+
+export async function resolveArcRecallReminderQuestion(reminder: ArcRecallReminder): Promise<GeneratedRecallQuestion | null> {
+  return resolveArcRecallSourceQuestion(reminder.sourceRef);
 }
 
 /**
