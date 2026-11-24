@@ -206,7 +206,11 @@ test("app/_layout.tsx registers the foreground service and the background event 
 
 test("app/_layout.tsx also listens for foreground events (the app already open) via the SAME handleTaskAlarmEvent, and unsubscribes it on cleanup", () => {
   const effectIndex = layout.indexOf("export default function RootLayout()");
-  const effectBody = layout.slice(effectIndex, effectIndex + 1700);
+  // ARC Reminders task, Phase 5: widened from 1700 after adding the
+  // topUpRemindersIfNeeded() cold-start reconciliation call (plus its
+  // explanatory comment) between syncMorningAlarm() and the cleanup
+  // return -- true offset of unsubscribeTaskAlarm() is now ~1952.
+  const effectBody = layout.slice(effectIndex, effectIndex + 2300);
   assert.ok(effectBody.includes("notifee.onForegroundEvent(handleTaskAlarmEvent)"));
   assert.ok(effectBody.includes("unsubscribeTaskAlarm();"));
 });

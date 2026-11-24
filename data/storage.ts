@@ -4686,3 +4686,43 @@ export async function loadTaskTransitionNotificationState(): Promise<TaskTransit
 export async function saveTaskTransitionNotificationState(state: TaskTransitionNotificationState): Promise<void> {
   await AsyncStorage.setItem(ARC_TASK_TRANSITION_NOTIFICATION_STATE_KEY, JSON.stringify(state));
 }
+
+/**
+ * ARC Reminders task: what data/arcReminderScheduler.ts's own rolling
+ * top-up believes is CURRENTLY scheduled for one mantra/recall reminder
+ * -- one entry per native trigger, keyed by its own deterministic
+ * `triggerId` (arc/reminderRollingSchedule.ts's `triggerIdForTime`)
+ * alongside the REAL notification id `scheduleReminderNotification`
+ * returned for it, since only that real id can actually be passed to
+ * `cancelScheduledNotification`. Keyed per reminderId (never a single
+ * flat list) so topping up/cancelling one reminder's own stale slots
+ * can never touch a different reminder's own schedule.
+ */
+export interface ArcReminderScheduledTrigger {
+  triggerId: string;
+  notificationId: string;
+  fireAt: string;
+}
+
+const ARC_REMINDER_SCHEDULED_TRIGGERS_KEY_PREFIX = "archi.arcReminderScheduledTriggers.v1.";
+
+export async function loadArcReminderScheduledTriggers(reminderId: string): Promise<ArcReminderScheduledTrigger[]> {
+  const raw = await AsyncStorage.getItem(`${ARC_REMINDER_SCHEDULED_TRIGGERS_KEY_PREFIX}${reminderId}`);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcReminderScheduledTrigger[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored ArcReminderScheduledTriggers are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+export async function saveArcReminderScheduledTriggers(reminderId: string, triggers: ArcReminderScheduledTrigger[]): Promise<void> {
+  await AsyncStorage.setItem(`${ARC_REMINDER_SCHEDULED_TRIGGERS_KEY_PREFIX}${reminderId}`, JSON.stringify(triggers));
+}
+
+/** Called when a reminder is deleted -- clears its own scheduled-triggers record so a later reminder id can never accidentally read stale leftovers (ids are randomly generated, but this is a cheap, correct guarantee regardless). */
+export async function clearArcReminderScheduledTriggers(reminderId: string): Promise<void> {
+  await AsyncStorage.removeItem(`${ARC_REMINDER_SCHEDULED_TRIGGERS_KEY_PREFIX}${reminderId}`);
+}

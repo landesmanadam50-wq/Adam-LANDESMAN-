@@ -75,12 +75,12 @@ export async function resolveArcRecallReminderQuestion(reminder: ArcRecallRemind
  * (inline-reply, this module's own `recordArcRecallAnswer` below) in
  * its data payload.
  */
-export async function deliverArcRecallReminder(reminder: ArcRecallReminder, fireAt: Date, now: string): Promise<void> {
+export async function deliverArcRecallReminder(reminder: ArcRecallReminder, fireAt: Date, now: string): Promise<string | null> {
   const question = await resolveArcRecallReminderQuestion(reminder);
-  if (!question) return;
+  if (!question) return null;
   const message = createArcRecallChatMessage(reminder.id, reminder.sourceRef, question.questionText, now);
   await appendArcRecallChatMessageEntry(message);
-  await scheduleReminderNotification({
+  return scheduleReminderNotification({
     kind: "arcRecallQuestion",
     fireAt,
     title: "ARCHI — שאלת זיכרון",

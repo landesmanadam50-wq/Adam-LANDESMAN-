@@ -33,7 +33,9 @@ import {
   resolvePresentIdentityMantra,
 } from "../arc/arcMantraContent.ts";
 import type { ArcMantraReminder } from "../arc/arcReminders.ts";
+import { scheduleReminderNotification } from "./notifications.ts";
 import { loadArcGymGoals, loadArcGymGoalObjectives, loadArcGymMemoryExercises, loadArcInsights, loadDailyVisualizationProfile, loadProfile } from "./storage.ts";
+import type { ReminderKind } from "./storage.ts";
 
 /** Loads whichever source record(s) the reminder's own subtype/sourceRef names, and resolves the exact text to schedule -- `null` means skip this delivery entirely. */
 export async function resolveArcMantraReminderText(reminder: ArcMantraReminder): Promise<string | null> {
@@ -66,4 +68,36 @@ export async function resolveArcMantraReminderText(reminder: ArcMantraReminder):
       return resolveFirstIncompleteObjectiveMantra(goal, objectives);
     }
   }
+}
+
+/** Maps each ArcMantraSubtype to its own ReminderKind (data/storage.ts) -- the 5 distinct `arcMantra*` kinds data/reminders.ts's own routeTappedReminder already matches via `kind.startsWith("arcMantra")`. */
+const MANTRA_SUBTYPE_TO_REMINDER_KIND: Record<ArcMantraReminder["subtype"], ReminderKind> = {
+  desired_feeling: "arcMantraDesiredFeeling",
+  arc_memory: "arcMantraMemory",
+  present_identity: "arcMantraPresentIdentity",
+  future_identity: "arcMantraFutureIdentity",
+  arc_goal: "arcMantraGoal",
+};
+
+/**
+ * Resolves this reminder's live mantra text, skipping silently (never a
+ * fabricated mantra) when `resolveArcMantraReminderText` returns `null`;
+ * otherwise schedules the real OS notification for `fireAt` through the
+ * SAME `scheduleReminderNotification` every other reminder kind already
+ * uses. Mantras never require a response (see data/reminders.ts's
+ * routeTappedReminder, which just opens the central ARC Reminders
+ * screen on tap) -- no chat message, no inline reply, unlike
+ * data/arcRecallDelivery.ts's own deliverArcRecallReminder.
+ */
+export async function deliverArcMantraReminder(reminder: ArcMantraReminder, fireAt: Date): Promise<string | null> {
+  const text = await resolveArcMantraReminderText(reminder);
+  if (!text) return null;
+  return scheduleReminderNotification({
+    kind: MANTRA_SUBTYPE_TO_REMINDER_KIND[reminder.subtype],
+    fireAt,
+    title: "ARCHI — תזכורת",
+    body: text,
+    arcRequested: false,
+    arcReminderId: reminder.id,
+  });
 }

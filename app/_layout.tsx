@@ -9,6 +9,7 @@ import { routeTappedReminder } from "../data/reminders.ts";
 import { handleTaskAlarmEvent, registerTaskAlarmForegroundService } from "../data/taskAlarm.ts";
 import { syncEmotionalCheckInNotification } from "../data/emotionalCheckInNotification.ts";
 import { syncMorningAlarm } from "../data/morningAlarm.ts";
+import { topUpRemindersIfNeeded } from "../data/arcReminderScheduler.ts";
 import DailyStartupSequenceOverlay from "../live/DailyStartupSequenceOverlay.tsx";
 
 /**
@@ -78,6 +79,12 @@ export default function RootLayout() {
     // (all real Date arithmetic, recomputed fresh here) actually take
     // effect without the trainee having to reopen the settings screen.
     syncMorningAlarm();
+    // ARC Reminders task: rolling-window top-up on every cold start --
+    // mitigates notifee's own documented "very-late-reboot can replay
+    // one stale alarm" limitation by re-topping-up the next ~72h of
+    // mantra/recall triggers the instant the app is opened again, same
+    // fire-and-forget pattern as the two syncs above.
+    topUpRemindersIfNeeded();
     return () => {
       subscription.remove();
       unsubscribeTaskAlarm();

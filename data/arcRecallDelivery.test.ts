@@ -26,7 +26,7 @@ test("deliverArcRecallReminder skips silently (never a fabricated question/notif
   const fnIndex = module_.indexOf("export async function deliverArcRecallReminder");
   const fnBody = module_.slice(fnIndex, module_.indexOf("export async function recordArcRecallAnswer"));
   assert.ok(fnBody.includes("const question = await resolveArcRecallReminderQuestion(reminder);"));
-  assert.ok(fnBody.includes("if (!question) return;"));
+  assert.ok(fnBody.includes("if (!question) return null;"));
 });
 
 test("deliverArcRecallReminder appends a new, permanent ArcRecallChatMessage BEFORE scheduling the notification -- the message's own id is baked into the notification's data payload so the inline-reply handler can always find the exact right message", () => {
@@ -34,7 +34,7 @@ test("deliverArcRecallReminder appends a new, permanent ArcRecallChatMessage BEF
   const fnBody = module_.slice(fnIndex, module_.indexOf("export async function recordArcRecallAnswer"));
   const messageIndex = fnBody.indexOf("const message = createArcRecallChatMessage(reminder.id, reminder.sourceRef, question.questionText, now);");
   const appendIndex = fnBody.indexOf("await appendArcRecallChatMessageEntry(message);");
-  const scheduleIndex = fnBody.indexOf("await scheduleReminderNotification({");
+  const scheduleIndex = fnBody.indexOf("return scheduleReminderNotification({");
   assert.ok(messageIndex !== -1 && appendIndex !== -1 && scheduleIndex !== -1);
   assert.ok(messageIndex < appendIndex && appendIndex < scheduleIndex, "must create+persist the chat message before scheduling, never after");
 });

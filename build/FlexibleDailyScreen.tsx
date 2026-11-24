@@ -45,6 +45,7 @@ import { FeelingCube, TaskCube } from "../live/components/HomeCubes.tsx";
 import AddInfoMenu from "../live/components/AddInfoMenu.tsx";
 import { hasFloatingOverlayPermissionAsync, requestFloatingOverlayPermissionAsync, showFloatingTimerOverlay, showIdleFloatingOverlayPanel } from "../data/floatingTimerOverlay.ts";
 import { resolveNextScheduledTaskDisplay } from "../data/dailyPlan.ts";
+import { topUpRemindersIfNeeded } from "../data/arcReminderScheduler.ts";
 import TimePlanningModal from "./TimePlanningModal.tsx";
 
 /**
@@ -247,6 +248,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
             : null
         );
       }
+      void topUpRemindersIfNeeded();
     }
   }, [dateLocal, weekday, isTodayMode]);
 
