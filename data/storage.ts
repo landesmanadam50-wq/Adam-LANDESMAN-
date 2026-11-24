@@ -121,6 +121,13 @@ import type { ArcResultExercise } from "../arc/arcResult.ts";
 import { normalizeArcResultExercise, upsertArcResultExerciseInList } from "../arc/arcResult.ts";
 import type { ArcGymGoal, ArcGymGoalObjective } from "../arc/arcGymGoal.ts";
 import { upsertArcGymGoalInList, upsertArcGymGoalObjectiveInList } from "../arc/arcGymGoal.ts";
+import type { ArcMantraReminder, ArcRecallChatMessage, ArcRecallReminder, ArcTaskReminderSettings } from "../arc/arcReminders.ts";
+import {
+  createDefaultArcTaskReminderSettings,
+  normalizeArcTaskReminderSettings,
+  upsertArcMantraReminderInList,
+  upsertArcRecallReminderInList,
+} from "../arc/arcReminders.ts";
 import type { ArcFocusExercise } from "../arc/arcFocusExercise.ts";
 import { upsertArcFocusExerciseInList } from "../arc/arcFocusExercise.ts";
 import type { ArcGymMemoryCheckInProgress } from "../arc/arcGymMemoryCheckInProgress.ts";
@@ -1787,7 +1794,15 @@ export type ReminderKind =
   /** Productivity upgrade task, requirement 2: fires at a "planned" task's own scheduledDate/scheduledTime (or, for a recurring task, its next qualifying day) -- "it's time to start this task." Tapping deep-links straight to that task's own screen (app/_layout.tsx's handleReminderResponse), same as the other task-kind reminders above. Reuses Task.notificationId/notificationScheduledFor -- a task only ever has ONE pending task-level notification at a time (this, taskTimerEnded's own active-timer notification lives on TaskTimerRun instead, restTimerEnded likewise, or postponedTaskReturn once postponed), so no new field was needed. */
   | "taskScheduledStart"
   /** ARCHI -- Unified Development Specification task, Part 2 ("ARC GYM REMINDERS"): own independent notification per ArcGymReminder (arc/arcGym.ts), never PendingReminder's one-per-kind model -- same "own notification per entity" treatment as "arcGoalTarget"/"routine" above. Tapping deep-links straight to the named exercise's own detail screen (never Task LIVE, never a timer -- this reminder kind never imposes one). */
-  | "arcGymReminder";
+  | "arcGymReminder"
+  /** ARC Reminders task: one independent notification per ArcMantraReminder (arc/arcReminders.ts) -- own-notification-per-entity, same treatment as "arcGymReminder"/"routine" above, never PendingReminder's one-per-kind model (a trainee may have several mantra reminders of the same subtype at once). Never interruptive of an active session in the sense that matters here -- it still goes through the SAME busy-state-respecting native path every other non-current-task kind does (deliberately NOT added to CURRENT_TASK_REMINDER_KINDS below), so it is automatically suppressed while a task/ARC session is already active, satisfying "must never disrupt an active ARC session" by construction. */
+  | "arcMantraDesiredFeeling"
+  | "arcMantraMemory"
+  | "arcMantraPresentIdentity"
+  | "arcMantraFutureIdentity"
+  | "arcMantraGoal"
+  /** ARC Reminders task: one independent notification per ArcRecallReminder -- same own-notification-per-entity treatment as the mantra kinds above. Tapping opens the WhatsApp-style recall chat screen for this reminder (data/reminders.ts's routeTappedReminder); an inline reply is handled separately, by the native RemoteInput background-event path (data/arcRecallDelivery.ts), never through this tap-routing function at all. */
+  | "arcRecallQuestion";
 
 export interface PendingReminder {
   kind: ReminderKind;
@@ -4516,4 +4531,158 @@ export async function loadTeleprompterSettings(): Promise<TeleprompterSettings> 
 
 export async function saveTeleprompterSettings(settings: TeleprompterSettings): Promise<void> {
   await AsyncStorage.setItem(TELEPROMPTER_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+/**
+ * ARC Reminders task: storage for the three reminder families (ARC
+ * Mantras, ARC Active Recall + its chat history, and the ARC Task
+ * Reminders settings/transition-notification state), each its own
+ * key, same flat-list-CRUD / single-blob-settings convention as every
+ * other collection/settings record in this file.
+ */
+const ARC_MANTRA_REMINDERS_KEY = "archi.arcMantraReminders.v1";
+
+export async function loadArcMantraReminders(): Promise<ArcMantraReminder[]> {
+  const raw = await AsyncStorage.getItem(ARC_MANTRA_REMINDERS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcMantraReminder[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored ArcMantraReminders are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveArcMantraReminders(reminders: ArcMantraReminder[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_MANTRA_REMINDERS_KEY, JSON.stringify(reminders));
+}
+
+export async function upsertArcMantraReminderEntry(reminder: ArcMantraReminder): Promise<void> {
+  const reminders = await loadArcMantraReminders();
+  await saveArcMantraReminders(upsertArcMantraReminderInList(reminders, reminder));
+}
+
+export async function deleteArcMantraReminderEntry(id: string): Promise<void> {
+  const reminders = await loadArcMantraReminders();
+  await saveArcMantraReminders(reminders.filter((reminder) => reminder.id !== id));
+}
+
+const ARC_RECALL_REMINDERS_KEY = "archi.arcRecallReminders.v1";
+
+export async function loadArcRecallReminders(): Promise<ArcRecallReminder[]> {
+  const raw = await AsyncStorage.getItem(ARC_RECALL_REMINDERS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcRecallReminder[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored ArcRecallReminders are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveArcRecallReminders(reminders: ArcRecallReminder[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_RECALL_REMINDERS_KEY, JSON.stringify(reminders));
+}
+
+export async function upsertArcRecallReminderEntry(reminder: ArcRecallReminder): Promise<void> {
+  const reminders = await loadArcRecallReminders();
+  await saveArcRecallReminders(upsertArcRecallReminderInList(reminders, reminder));
+}
+
+export async function deleteArcRecallReminderEntry(id: string): Promise<void> {
+  const reminders = await loadArcRecallReminders();
+  await saveArcRecallReminders(reminders.filter((reminder) => reminder.id !== id));
+}
+
+/**
+ * The recall chat history is a permanent append-only log (requirement:
+ * "answers persist permanently") -- never pruned, never deleted
+ * wholesale even if its owning ArcRecallReminder is later deleted (the
+ * message's own denormalized sourceRef keeps "view source" working
+ * regardless).
+ */
+const ARC_RECALL_CHAT_HISTORY_KEY = "archi.arcRecallChatHistory.v1";
+
+export async function loadArcRecallChatHistory(): Promise<ArcRecallChatMessage[]> {
+  const raw = await AsyncStorage.getItem(ARC_RECALL_CHAT_HISTORY_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcRecallChatMessage[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored ArcRecallChatHistory is not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveArcRecallChatHistory(messages: ArcRecallChatMessage[]): Promise<void> {
+  await AsyncStorage.setItem(ARC_RECALL_CHAT_HISTORY_KEY, JSON.stringify(messages));
+}
+
+export async function appendArcRecallChatMessageEntry(message: ArcRecallChatMessage): Promise<void> {
+  const messages = await loadArcRecallChatHistory();
+  await saveArcRecallChatHistory([...messages, message]);
+}
+
+/** Replaces one already-appended message in place (by id) -- used for recording an answer or a reveal, never for creating a new message. */
+export async function updateArcRecallChatMessageEntry(message: ArcRecallChatMessage): Promise<void> {
+  const messages = await loadArcRecallChatHistory();
+  const index = messages.findIndex((existing) => existing.id === message.id);
+  if (index === -1) return;
+  const next = [...messages];
+  next[index] = message;
+  await saveArcRecallChatHistory(next);
+}
+
+const ARC_TASK_REMINDER_SETTINGS_KEY = "archi.arcTaskReminderSettings.v1";
+
+export async function loadArcTaskReminderSettings(): Promise<ArcTaskReminderSettings> {
+  const raw = await AsyncStorage.getItem(ARC_TASK_REMINDER_SETTINGS_KEY);
+  const now = new Date().toISOString();
+  if (!raw) return createDefaultArcTaskReminderSettings(now);
+  try {
+    return normalizeArcTaskReminderSettings(JSON.parse(raw) as Partial<ArcTaskReminderSettings>, now);
+  } catch (error) {
+    console.warn("[storage] Stored ArcTaskReminderSettings are not valid JSON -- returning defaults rather than crashing.", error);
+    return createDefaultArcTaskReminderSettings(now);
+  }
+}
+
+export async function saveArcTaskReminderSettings(settings: ArcTaskReminderSettings): Promise<void> {
+  await AsyncStorage.setItem(ARC_TASK_REMINDER_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+/**
+ * The ONE transition notification's own persisted state -- its stable
+ * notificationId plus the current/next/fromTask ids it was last shown
+ * with, so recomputeTaskTransitionNotification (data/taskTransitionNotification.ts)
+ * always updates the SAME displayed notification in place, never
+ * creates a second one, even across an app restart.
+ */
+export interface TaskTransitionNotificationState {
+  notificationId: string;
+  fromTaskId: string | null;
+  currentTaskId: string | null;
+  nextTaskId: string | null;
+  allDone: boolean;
+  updatedAt: string;
+}
+
+const ARC_TASK_TRANSITION_NOTIFICATION_STATE_KEY = "archi.arcTaskTransitionNotificationState.v1";
+
+export async function loadTaskTransitionNotificationState(): Promise<TaskTransitionNotificationState | null> {
+  const raw = await AsyncStorage.getItem(ARC_TASK_TRANSITION_NOTIFICATION_STATE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as TaskTransitionNotificationState;
+  } catch (error) {
+    console.warn("[storage] Stored TaskTransitionNotificationState is not valid JSON -- treating as unset rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveTaskTransitionNotificationState(state: TaskTransitionNotificationState): Promise<void> {
+  await AsyncStorage.setItem(ARC_TASK_TRANSITION_NOTIFICATION_STATE_KEY, JSON.stringify(state));
 }

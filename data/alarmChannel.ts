@@ -138,6 +138,31 @@ export async function ensureQuietReminderChannelAsync(): Promise<void> {
 }
 
 /**
+ * ARC Reminders task: the ONE task-transition notification's own
+ * channel (data/taskTransitionNotification.ts) -- HIGH importance (a
+ * heads-up pop-up, since "the timer just ended, here's what's current/
+ * next" is time-sensitive), but never bypassDnd, unlike
+ * TASK_ALARM_CHANNEL_ID -- the ARC Reminders spec explicitly calls this
+ * an ordinary, swipe-dismissible notification, never an alarm. Its own
+ * separate channel so a trainee's Android-level channel settings for
+ * this notification specifically (e.g. muting it) never also silence
+ * the real task-start alarm.
+ */
+export const TASK_TRANSITION_CHANNEL_ID = "archi-task-transition-v1";
+
+let taskTransitionChannelEnsured = false;
+
+export async function ensureTaskTransitionChannelAsync(): Promise<void> {
+  if (taskTransitionChannelEnsured) return;
+  taskTransitionChannelEnsured = true;
+  await notifee.createChannel({
+    id: TASK_TRANSITION_CHANNEL_ID,
+    name: "מעבר בין משימות",
+    importance: AndroidImportance.HIGH,
+  });
+}
+
+/**
  * ARCHI -- Final Critical Check: Prevent Sound Before Busy-State
  * Evaluation task. CONFIRMED by decompiling notifee's own
  * app.notifee.core.ForegroundService.class (bytecode, not guessed):

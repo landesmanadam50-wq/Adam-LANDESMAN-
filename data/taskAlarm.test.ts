@@ -384,7 +384,13 @@ test("the foreground-service handler gives the end-of-timer ring its own much-sh
 
 test("handleTaskAlarmEvent gives the end-of-timer ring's own single 'עצור' action/press its own branch -- stopping the ring without any task/navigation side effect, same treatment as the isolated test alarm's own single action", () => {
   const fnIndex = module_.indexOf("export async function handleTaskAlarmEvent");
-  const fnBody = module_.slice(fnIndex, fnIndex + 3600);
+  // ARC Reminders task: widened from 3600 -- the new "taskTransition"
+  // dispatch branch (inserted right after the pre-existing
+  // "emotionalCheckIn" branch, above this one) pushed this function's
+  // later branches further into its own body; same discipline as every
+  // other widened window in this test file, never a byte-offset pin
+  // narrow enough to break on an unrelated, earlier, additive insertion.
+  const fnBody = module_.slice(fnIndex, fnIndex + 4200);
   const branchIndex = fnBody.indexOf('if (data.kind === "taskTimerEnd") {');
   assert.ok(branchIndex !== -1);
   const branchBody = fnBody.slice(branchIndex, branchIndex + 400);

@@ -237,6 +237,18 @@ export function routeTappedReminder(data: Record<string, unknown>): void {
     if (programId) router.push({ pathname: "/personal-development-program/live/[id]", params: { id: programId } });
     return;
   }
+  if (kind.startsWith("arcMantra")) {
+    // ARC Reminders task: mantras never require a response -- tapping
+    // one simply opens the central ARC Reminders screen (where its own
+    // live-resolved preview text is shown), never a forced reply/exercise.
+    router.push("/arc-reminders");
+    return;
+  }
+  if (kind === "arcRecallQuestion") {
+    const reminderId = typeof data.arcReminderId === "string" ? data.arcReminderId : null;
+    if (reminderId) router.push({ pathname: "/arc-recall/chat/[reminderId]", params: { reminderId } });
+    return;
+  }
   if (kind === "arcGymReminder") {
     const exerciseKind = data.arcGymExerciseKind === "memory" ? "memory" : "behaviour";
     const exerciseId = typeof data.arcGymExerciseId === "string" ? data.arcGymExerciseId : null;

@@ -121,6 +121,36 @@ export async function resolveNextScheduledTaskDisplay(activeTaskId: string | nul
 }
 
 /**
+ * ARC Reminders task: the (current, next) PAIR the task-transition
+ * notification needs (data/taskTransitionNotification.ts) -- built
+ * through the EXACT SAME priority chain resolveNextScheduledTaskDisplay
+ * above already uses (current -> overdue -> a fitting To-Do item ->
+ * the next fixed task -> null), just returning both halves instead of
+ * collapsing them into one display entry. `next` is always
+ * `withSuggestion.next` (the next FIXED task today) regardless of
+ * whether `current` itself came from a fixed entry or a To-Do
+ * suggestion -- there is no well-defined "second To-Do item" concept
+ * here, and the fixed task after a To-Do item is still the right
+ * "and after that" answer for the transition mantra.
+ */
+export async function resolveCurrentAndNextTaskForTransition(excludeTaskId: string | null, now: Date = new Date()): Promise<{ current: Task | null; next: Task | null }> {
+  const [scheduled, tasks] = await Promise.all([resolveTodaysScheduledPlan(now), loadTasks()]);
+  const dateLocal = todayLocalDateString(now);
+  const todoEntries = resolveTodoList(tasks, dateLocal);
+  const withSuggestion = resolveCurrentTaskStateWithTodoSuggestion(scheduled, todoEntries, now, null, excludeTaskId);
+  const next = withSuggestion.next?.task ?? null;
+  if (withSuggestion.current) return { current: withSuggestion.current.task, next };
+  const overdue = withSuggestion.overdue[0] ?? null;
+  if (overdue) return { current: overdue.task, next };
+  const suggestion = withSuggestion.todoSuggestion;
+  if (suggestion?.entry && (suggestion.reason === "fits" || suggestion.reason === "split_suggested")) {
+    return { current: suggestion.entry.task, next };
+  }
+  if (withSuggestion.next) return { current: withSuggestion.next.task, next: null };
+  return { current: null, next: null };
+}
+
+/**
  * Task LIVE / To-Do List / Flexible Day sync fix: the ONE IO-level
  * "what to jump to or auto-start right now" lookup -- built entirely
  * from resolveTodaysScheduledPlan above (the exact same real, resolved

@@ -84,6 +84,18 @@ test("resolveNextScheduledTaskDisplay falls back to the next fixed task itself w
   assert.ok(fnBody.includes("return null;"));
 });
 
+test("resolveCurrentAndNextTaskForTransition returns a (current, next) pair through the exact same priority chain as resolveNextScheduledTaskDisplay, with `next` always the next FIXED task regardless of where `current` came from", () => {
+  const fnMatch = source.match(/export async function resolveCurrentAndNextTaskForTransition[\s\S]*?\n}\n/);
+  assert.ok(fnMatch, "resolveCurrentAndNextTaskForTransition function body not found");
+  const fnBody = fnMatch[0];
+  assert.ok(fnBody.includes("const next = withSuggestion.next?.task ?? null;"));
+  assert.ok(fnBody.includes("if (withSuggestion.current) return { current: withSuggestion.current.task, next };"));
+  assert.ok(fnBody.includes("if (overdue) return { current: overdue.task, next };"));
+  assert.ok(fnBody.includes("return { current: suggestion.entry.task, next };"));
+  assert.ok(fnBody.includes("if (withSuggestion.next) return { current: withSuggestion.next.task, next: null };"));
+  assert.ok(fnBody.includes("return { current: null, next: null };"));
+});
+
 test("resolveMostUrgentScheduledTask (the Task LIVE / To-Do / Flexible Day 'jump to or auto-start now' lookup) is untouched by this broadening -- still composed from resolveTodaysScheduledPlan + arc/dailyPlan.ts's own resolveCurrentTaskState/resolveMostUrgentScheduledEntry, with a real caller-supplied activeRun, never hardcoded null", () => {
   const fnMatch = source.match(/export async function resolveMostUrgentScheduledTask\([\s\S]*?\n}\n/);
   assert.ok(fnMatch, "resolveMostUrgentScheduledTask function body not found");

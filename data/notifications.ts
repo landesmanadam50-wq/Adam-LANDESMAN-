@@ -424,6 +424,8 @@ export interface ScheduleReminderNotificationInput {
   /** ARCHI -- Unified Development Specification task, Part 2: only meaningful for kind "arcGymReminder" -- which exercise type/id to deep-link to when tapped (app/_layout.tsx's handleReminderResponse). Omitted for every other kind. */
   arcGymExerciseKind?: "behaviour" | "memory";
   arcGymExerciseId?: string;
+  /** ARC Reminders task: only meaningful for the "arcMantra*"/"arcRecallQuestion" kinds -- which specific ArcMantraReminder/ArcRecallReminder this notification belongs to (arc/arcReminders.ts), so tapping an "arcRecallQuestion" notification (data/reminders.ts's routeTappedReminder) opens that exact reminder's own chat thread. Omitted for every other kind. */
+  arcReminderId?: string;
 }
 
 /**
@@ -488,6 +490,7 @@ async function scheduleNativeReminderNotification(input: ScheduleReminderNotific
           ...(input.personalDevelopmentProgramId !== undefined ? { personalDevelopmentProgramId: input.personalDevelopmentProgramId } : {}),
           ...(input.arcGymExerciseKind !== undefined ? { arcGymExerciseKind: input.arcGymExerciseKind } : {}),
           ...(input.arcGymExerciseId !== undefined ? { arcGymExerciseId: input.arcGymExerciseId } : {}),
+          ...(input.arcReminderId !== undefined ? { arcReminderId: input.arcReminderId } : {}),
         },
         android: {
           channelId: SILENT_DELIVERY_CHANNEL_ID,

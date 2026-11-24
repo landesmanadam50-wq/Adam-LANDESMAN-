@@ -110,6 +110,7 @@ import type { ReminderKind } from "./storage.ts";
 import { routeTappedReminder } from "./reminders.ts";
 import { handleDailyVisualizationAlarmEvent } from "./dailyVisualizationAlarm.ts";
 import { handleEmotionalCheckInNotificationEvent } from "./emotionalCheckInNotification.ts";
+import { handleTaskTransitionNotificationEvent } from "./taskTransitionNotification.ts";
 import { handleMorningAlarmAction, turnOffMorningAlarm } from "./morningAlarm.ts";
 import { resolveLatestReflectionForTask, resolveTaskAlarmNotificationContent } from "../arc/taskReflection.ts";
 
@@ -1533,6 +1534,16 @@ export async function handleTaskAlarmEvent(event: Event): Promise<void> {
   // onBackgroundEvent/onForegroundEvent registration.
   if (data.kind === "emotionalCheckIn") {
     await handleEmotionalCheckInNotificationEvent(event);
+    return;
+  }
+
+  // ARC Reminders task: the one task-transition notification's own
+  // actions (😟/🙂/Start task) and body-tap (optional "Finish + smile")
+  // -- routes through the shared handleTaskTransitionNotificationEvent
+  // (data/taskTransitionNotification.ts), never a second
+  // onBackgroundEvent/onForegroundEvent registration.
+  if (data.kind === "taskTransition") {
+    await handleTaskTransitionNotificationEvent(event);
     return;
   }
 
