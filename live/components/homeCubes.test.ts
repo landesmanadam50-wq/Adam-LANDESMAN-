@@ -45,8 +45,8 @@ test("required: TaskCube reads exclusively through data/taskCubeData.ts's resolv
   assert.ok(!homeCubes.includes("resolveCurrentTaskState("), "TaskCube itself must never call the raw engine function directly -- only through the one data module");
 });
 
-test("required: resolveTaskCubeData is built from pre-existing pieces (resolveTodaysScheduledPlan, resolveTodoList/resolveEffectiveTodoOrder, resolveCurrentTaskStateWithTodoSuggestion, resolveMostUrgentScheduledEntry, loadTaskTimerRun) -- never a new scheduling computation", () => {
-  assert.ok(taskCubeData.includes('import { resolveTodaysScheduledPlan } from "./dailyPlan.ts";'));
+test("required: resolveTaskCubeData is built from pre-existing pieces (resolveTodaysScheduledPlan, resolveNextScheduledTaskDisplay, resolveTodoList/resolveEffectiveTodoOrder, resolveCurrentTaskStateWithTodoSuggestion, resolveMostUrgentScheduledEntry, loadTaskTimerRun) -- never a new scheduling computation", () => {
+  assert.ok(taskCubeData.includes('import { resolveNextScheduledTaskDisplay, resolveTodaysScheduledPlan } from "./dailyPlan.ts";'));
   assert.ok(taskCubeData.includes('import { resolveCurrentTaskState, resolveMostUrgentScheduledEntry } from "../arc/dailyPlan.ts";'));
   assert.ok(
     taskCubeData.includes(
@@ -54,6 +54,17 @@ test("required: resolveTaskCubeData is built from pre-existing pieces (resolveTo
     )
   );
   assert.ok(taskCubeData.includes("const current = resolveMostUrgentScheduledEntry(state);"), "the SyncFix precedent's own urgent-entry fallback must be reused, not re-derived");
+});
+
+test("required: the cube's 'המשימה הבאה' row is resolved through the EXACT SAME resolveNextScheduledTaskDisplay(current.task.id, now) pipeline Task LIVE's own 'הבאה' row and the floating-timer overlay already use -- so a To-Do item woven into the free gap right after `current` (never only the next FIXED entry) surfaces here too, and the three can never disagree. null only when `current` itself is null (nothing fixed remains today at all, so a second To-Do suggestion for 'next' would only duplicate `todoSuggestion`)", () => {
+  assert.ok(taskCubeData.includes("const next = current ? await resolveNextScheduledTaskDisplay(current.task.id, now) : null;"));
+  const fnIndex = taskCubeData.indexOf("export async function resolveTaskCubeData");
+  const fnBody = taskCubeData.slice(fnIndex, taskCubeData.indexOf("\n}", fnIndex));
+  assert.ok(!fnBody.includes("next: state.next,"), "must never fall back to the plain next-FIXED-entry calculation once `current` is non-null");
+});
+
+test("required: HomeCubes.tsx's 'המשימה הבאה' row tags a To-Do item shown there with '(To-Do)', the same disambiguation the woven day list already gives To-Do entries, so two similarly-named tasks (one fixed, one a To-Do suggestion) are never shown as plain, indistinguishable text", () => {
+  assert.ok(homeCubes.includes('data.next.task.isTodoItem ? " (To-Do)" : ""'));
 });
 
 test("required: a scheduled/overdue 'current' entry always wins over a To-Do suggestion for display -- the suggestion is only surfaced when current is null", () => {

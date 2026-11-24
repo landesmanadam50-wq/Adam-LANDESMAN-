@@ -73,7 +73,9 @@ export function TaskCube() {
           <View style={styles.row}>
             <Text style={styles.rowLabel}>המשימה הבאה</Text>
             <Text style={styles.rowValue}>
-              {data?.next ? `${data.next.task.title}${data.next.effectiveStartTime ? ` · ${data.next.effectiveStartTime}` : ""}` : "אין משימה נוספת מתוכננת"}
+              {data?.next
+                ? `${data.next.task.title}${data.next.effectiveStartTime ? ` · ${data.next.effectiveStartTime}` : ""}${data.next.task.isTodoItem ? " (To-Do)" : ""}`
+                : "אין משימה נוספת מתוכננת"}
             </Text>
           </View>
           <Pressable style={styles.tasksToggleRow} onPress={() => setShowTasks((previous) => !previous)}>
