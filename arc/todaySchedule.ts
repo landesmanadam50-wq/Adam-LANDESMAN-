@@ -151,8 +151,8 @@ function resolveClockBucket(task: Task, todayDateLocal: string, now: Date): "ove
  * explicitly completed/finished-early (completedAt set) is likewise
  * never still current, matching isTaskTimerRunStale's own first check.
  *
- * With no matching live run at all, there is deliberately no attempt to
- * second-guess `status === "active"` from the schedule alone: Task's
+ * With NO run persisted anywhere at all, there is deliberately no attempt
+ * to second-guess `status === "active"` from the schedule alone: Task's
  * own scheduledTime says only when the task is DUE, never when IT
  * (or some earlier occurrence of it) was actually started, so a
  * schedule-only heuristic cannot reliably distinguish "started early,
@@ -165,9 +165,25 @@ function resolveClockBucket(task: Task, todayDateLocal: string, now: Date): "ove
  * was already cleared -- staying current here preserves this module's
  * own pre-existing, already-tested "an active task is always current"
  * behavior for exactly that case.
+ *
+ * Home-cube/floating-timer name-mismatch fix: that "no real signal, so
+ * trust status" fallback must NOT also cover the case where a run DOES
+ * exist, just for a genuinely different task -- `findActiveTask`'s own
+ * documented invariant (arc/tasks.ts) is that at most one task is ever
+ * really active at once, so a concrete, different task's live run is
+ * real, positive evidence that THIS task's own stale `status === "active"`
+ * is the leftover (an earlier start whose run was later cleared without
+ * the status being reset) -- it must defer to the schedule-window check
+ * like any other non-running task, never win the `activeEntry` slot
+ * over the task that is actually running. This is what previously let a
+ * stale task's name show as "current" in the home cube while the
+ * floating timer (which reads the real run's own taskId directly)
+ * correctly showed the genuinely running task instead.
  */
 export function isActiveTaskStillCurrent(task: Task, now: Date, activeRun: TaskTimerRun | null): boolean {
-  if (!activeRun || activeRun.taskId !== task.id || activeRun.kind === "rest") return true;
+  if (!activeRun) return true;
+  if (activeRun.taskId !== task.id) return false;
+  if (activeRun.kind === "rest") return true;
   if (activeRun.completedAt !== null) return false;
   return !getTaskTimerStatus(activeRun, now.getTime()).complete;
 }

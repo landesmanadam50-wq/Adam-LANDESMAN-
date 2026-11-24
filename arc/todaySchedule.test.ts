@@ -601,9 +601,13 @@ test("10. a run from two days ago (abandoned, never cleared) never makes its tas
   assert.equal(sections.current, null, "an abandoned run from days ago must never resurrect its task as current while navigating later days");
 });
 
-test("isActiveTaskStillCurrent: no matching run at all (never persisted, or belongs to a different task) always trusts status === 'active' -- preserves this module's own pre-existing behavior for the case with no real elapsed-time signal available", () => {
+test("isActiveTaskStillCurrent: with NO run persisted anywhere, trusts status === 'active' (no real elapsed-time signal available at all) -- but a run that DOES exist, for a genuinely different task, is real evidence this task's own 'active' status is a stale leftover, and must NOT be trusted", () => {
   const active = startTask(task({ id: "active", scheduledDate: TODAY, scheduledTime: "20:00" }), NOW.toISOString());
   assert.equal(isActiveTaskStillCurrent(active, NOW, null), true, "no run at all");
   const otherTasksRun = runFor(task({ id: "someone-else" }), 25, NOW);
-  assert.equal(isActiveTaskStillCurrent(active, NOW, otherTasksRun), true, "a run for a completely different task is irrelevant to this task's own currentness");
+  assert.equal(
+    isActiveTaskStillCurrent(active, NOW, otherTasksRun),
+    false,
+    "home-cube/floating-timer name-mismatch fix: a different task's own live run means that OTHER task is the real current one, not this stale-active one"
+  );
 });
