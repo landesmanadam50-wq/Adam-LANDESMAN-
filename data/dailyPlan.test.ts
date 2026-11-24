@@ -54,21 +54,33 @@ test("resolveNextScheduledTaskDisplay builds today's To-Do list and layers it on
   );
 });
 
-test("resolveNextScheduledTaskDisplay prioritizes a due-now/overdue/upcoming FIXED task over any To-Do suggestion, via resolveMostUrgentScheduledEntry -- so a fixed task whose window has started but has no TaskTimerRun yet is shown, never silently skipped past", () => {
+test("resolveNextScheduledTaskDisplay prioritizes a current/overdue FIXED task above all else -- a task whose window has started but has no TaskTimerRun yet is still shown, never silently skipped past", () => {
   const fnMatch = source.match(/export async function resolveNextScheduledTaskDisplay[\s\S]*?\n}\n/);
   assert.ok(fnMatch);
   const fnBody = fnMatch[0];
-  assert.ok(fnBody.includes("const dueNow = resolveMostUrgentScheduledEntry(withSuggestion);"));
-  assert.ok(fnBody.includes("if (dueNow) {"));
-  assert.ok(fnBody.includes("return { task: dueNow.task, effectiveStartTime: dueNow.effectiveStartTime, isOverdue: dueNow === withSuggestion.overdue[0] };"));
+  assert.ok(fnBody.includes("if (withSuggestion.current) {"));
+  assert.ok(fnBody.includes("return { task: withSuggestion.current.task, effectiveStartTime: withSuggestion.current.effectiveStartTime, isOverdue: false };"));
+  assert.ok(fnBody.includes("const overdue = withSuggestion.overdue[0] ?? null;"));
+  assert.ok(fnBody.includes("if (overdue) {"));
+  assert.ok(fnBody.includes("return { task: overdue.task, effectiveStartTime: overdue.effectiveStartTime, isOverdue: true };"));
 });
 
-test("resolveNextScheduledTaskDisplay falls back to the To-Do suggestion -- never overdue, since a To-Do item has no fixed clock window to be late against -- only when nothing fixed is due/overdue/upcoming", () => {
+test("resolveNextScheduledTaskDisplay surfaces a To-Do item that FITS in the free gap before the next fixed task ahead of that fixed task itself -- never checking resolveMostUrgentScheduledEntry's own 'next' fallback first, which would make the To-Do suggestion dead code on any day with a later fixed task", () => {
   const fnMatch = source.match(/export async function resolveNextScheduledTaskDisplay[\s\S]*?\n}\n/);
   assert.ok(fnMatch);
   const fnBody = fnMatch[0];
-  assert.ok(fnBody.includes("if (withSuggestion.todoSuggestion?.entry) {"));
-  assert.ok(fnBody.includes("return { task: withSuggestion.todoSuggestion.entry.task, effectiveStartTime: null, isOverdue: false };"));
+  assert.ok(!fnBody.includes("resolveMostUrgentScheduledEntry("), "must not re-check resolveMostUrgentScheduledEntry before the To-Do suggestion");
+  assert.ok(fnBody.includes("const suggestion = withSuggestion.todoSuggestion;"));
+  assert.ok(fnBody.includes('if (suggestion?.entry && (suggestion.reason === "fits" || suggestion.reason === "split_suggested")) {'));
+  assert.ok(fnBody.includes("return { task: suggestion.entry.task, effectiveStartTime: null, isOverdue: false };"));
+});
+
+test("resolveNextScheduledTaskDisplay falls back to the next fixed task itself when no To-Do item fits the gap (reason 'top_priority_does_not_fit'/'no_todo_items' still carry a non-null entry but mean nothing is actionable now), and to null when there is no next fixed task either", () => {
+  const fnMatch = source.match(/export async function resolveNextScheduledTaskDisplay[\s\S]*?\n}\n/);
+  assert.ok(fnMatch);
+  const fnBody = fnMatch[0];
+  assert.ok(fnBody.includes("if (withSuggestion.next) {"));
+  assert.ok(fnBody.includes("return { task: withSuggestion.next.task, effectiveStartTime: withSuggestion.next.effectiveStartTime, isOverdue: false };"));
   assert.ok(fnBody.includes("return null;"));
 });
 
