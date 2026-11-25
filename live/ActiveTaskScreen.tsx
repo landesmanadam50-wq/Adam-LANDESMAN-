@@ -105,6 +105,8 @@ import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
 import { loadArcTaskReminderSettings } from "../data/storage.ts";
 import { recomputeTaskTransitionNotification } from "../data/taskTransitionNotification.ts";
 import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
+import { markSupportiveBodySensationUsagesTaskOutcome } from "../data/storage.ts";
+import { resolveBodySensationContextKeys } from "../arc/supportiveBodySensation.ts";
 import { createArcFocusSession, generateArcFocusPracticeId } from "../arc/arcFocusSession.ts";
 import { loadArcFocusSettings, saveArcFocusSession } from "../data/storage.ts";
 import { addPendingContinuousRoutineSmiles, takePendingContinuousRoutineSmiles } from "../data/continuousRoutineGroup.ts";
@@ -1045,6 +1047,12 @@ export default function ActiveTaskScreen({
     // starts another way" guarantee recomputeTaskNotStartedNotification
     // already encodes -- never a second, separate cancel call here.
     void recomputeTaskNotStartedNotification();
+    // Resolves "was the task actually started" the moment a real start happens.
+    void markSupportiveBodySensationUsagesTaskOutcome(
+      resolveBodySensationContextKeys({ taskId: task.id, arcGymSituationId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcFocusPracticeId: null }, task.linkedArcGymSituationId ?? null),
+      true,
+      new Date().toISOString()
+    );
     // Productivity & Personal Development upgrade task, requirement 6: a
     // "manifest"-kind task has no work timer at all -- "starting" it
     // always opens its own guided run (visualize -> ARC -> identity

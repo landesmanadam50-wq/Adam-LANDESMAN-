@@ -5,11 +5,13 @@ import {
   NEW_ARC_LIVE_STEP_ORDER,
   NEW_ARC_MINI_STEP_ORDER,
   advance,
+  bailToComplete,
   completeFreeBreathingIntro,
   completePresenceSteps,
   completeSession,
   confirmActionReadinessCheck,
   confirmBodyScanClosedness,
+  confirmSensationEffectCheck,
   confirmSupportiveAreas,
   confirmUnpleasantAreas,
   createSessionFromPlannedArcFields,
@@ -38,9 +40,11 @@ import {
   setMiniAcceptanceTransition,
   setMiniAwareness,
   setMiniEncoding,
+  setBodySensationUsageId,
   setMiniThought,
   setPositiveMovement,
   setPrimaryOpeningBodyScanRegion,
+  setSuggestedBodySensations,
   setSupportiveArea,
   setSupportiveSensation,
   setThought,
@@ -674,11 +678,14 @@ test("resolveStepOrder picks NEW_ARC_MINI_STEP_ORDER only for 'plannedMini', and
 
 // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
 // section 1: "mini_action_selection" is removed entirely from the step
-// order (the app already knows the task's own action from context) --
-// seven Mini-specific steps remain.
-test("NEW_ARC_MINI_STEP_ORDER has exactly seven Mini-specific steps -- genuinely short, not a subset renamed", () => {
+// order (the app already knows the task's own action from context).
+// ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+// "mini_sensation_effect_check" is then added back, bringing the count
+// to eight -- genuinely a new, content-gated step, not a reintroduction
+// of the removed one.
+test("NEW_ARC_MINI_STEP_ORDER has exactly eight Mini-specific steps -- genuinely short, not a subset renamed", () => {
   const miniOnly = NEW_ARC_MINI_STEP_ORDER.filter((step) => step.startsWith("mini_"));
-  assert.equal(miniOnly.length, 7);
+  assert.equal(miniOnly.length, 8);
   assert.ok(!NEW_ARC_LIVE_STEP_ORDER.some((step) => step.startsWith("mini_")), "the Full ARC sequence must never include any Mini-only step");
 });
 
@@ -707,7 +714,7 @@ test("requirement 11: stop_and_accept_urge/reality_acceptance (Full ARC) and min
 // Emotional Persistence task, section 1: "mini_action_selection" is
 // removed entirely -- mini_acceptance_transition is back to exactly
 // one sub-screen, advancing straight to mini_encoding.
-test("a Mini ARC session walks goal_select -> free_breathing -> mini_thought -> mini_awareness -> mini_presence -> mini_acceptance_transition -> mini_encoding -> complete, skipping every Full-ARC-only step and the now-removed mini_action/emotional_action/emotional_insight trio", () => {
+test("a Mini ARC session walks goal_select -> free_breathing -> mini_thought -> mini_awareness -> mini_presence -> mini_acceptance_transition -> mini_encoding -> mini_sensation_effect_check -> complete, skipping every Full-ARC-only step and the now-removed mini_action/emotional_action/emotional_insight trio", () => {
   let state: NewArcLiveSessionState = { ...fresh(), arcInvocationMode: "plannedMini" };
   state = setGoalType(state, "action", NOW);
   assert.equal(state.currentStep, "self_observation_choice", "self-observation task: this is Mini ARC's own genuine first screen now, right before free_breathing");
@@ -740,6 +747,15 @@ test("a Mini ARC session walks goal_select -> free_breathing -> mini_thought -> 
   // advance() call lands straight on mini_encoding.
   assert.equal(state.currentStep, "mini_encoding");
   state = setMiniEncoding(state, "", "", NOW);
+  // ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+  // a sensation ("רוגע") was marked by setMiniAcceptanceTransition above
+  // (via its area argument "chest"), so mini_sensation_effect_check is
+  // now reachable -- this walk's own Encoding-leads-to-completion intent
+  // (mini_action/emotional_action/emotional_insight all stay gone) is
+  // otherwise unaffected; see the dedicated gating test below for the
+  // "nothing discovered -> step is skipped" case.
+  assert.equal(state.currentStep, "mini_sensation_effect_check");
+  state = confirmSensationEffectCheck(state, 8, true, NOW);
   assert.equal(state.currentStep, "complete", "mini_action/emotional_action/emotional_insight are all gone -- Encoding leads directly to completion, for every goalType");
 });
 
@@ -1605,4 +1621,68 @@ test("arcSavingBodyOptionId/arcSavingExerciseId default to null for every pre-ex
   assert.equal(state.arcSavingBodyOptionId, null);
   assert.equal(state.arcSavingExerciseId, null);
   assert.equal(state.arcSavingTriggerIdForNewOption, null);
+});
+
+// ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+// "sensation_effect_check"/"mini_sensation_effect_check" must never be
+// forced -- a session that never set supportiveBodyArea/supportiveSensation
+// (e.g. one that declined every body-selection screen) skips it entirely.
+test("sensation_effect_check is unreachable whenever no body sensation was discovered this session -- never required to finish", () => {
+  const noSensation: NewArcLiveSessionState = { ...fresh(), currentStep: "encoding" };
+  assert.equal(noSensation.supportiveBodyArea, null);
+  assert.equal(noSensation.supportiveSensation, null);
+  const { step } = resolveNextStep(noSensation);
+  assert.equal(step, "complete", "with nothing discovered, encoding must go straight to complete, never pausing on the effect-check");
+});
+
+test("sensation_effect_check IS reachable once either supportiveBodyArea or supportiveSensation is set, regardless of which one", () => {
+  const withArea: NewArcLiveSessionState = { ...fresh(), currentStep: "encoding", supportiveBodyArea: "chest" };
+  assert.equal(resolveNextStep(withArea).step, "sensation_effect_check");
+  const withSensation: NewArcLiveSessionState = { ...fresh(), currentStep: "encoding", supportiveSensation: "חמימות" };
+  assert.equal(resolveNextStep(withSensation).step, "sensation_effect_check");
+});
+
+test("a direct_action session never reaches sensation_effect_check, even if a sensation happens to be set -- the fast lane always wins", () => {
+  const state: NewArcLiveSessionState = { ...fresh(), currentStep: "encoding", supportiveBodyArea: "chest", actionReadinessOutcome: "direct_action" };
+  const { step } = resolveNextStep(state);
+  assert.notEqual(step, "sensation_effect_check");
+});
+
+test("confirmSensationEffectCheck records both answers separately and advances to complete", () => {
+  const state: NewArcLiveSessionState = { ...fresh(), currentStep: "sensation_effect_check", supportiveBodyArea: "chest" };
+  const confirmed = confirmSensationEffectCheck(state, 8, true, NOW);
+  assert.equal(confirmed.sensationEffectivenessRating, 8);
+  assert.equal(confirmed.readinessImprovedAfterSensation, true);
+  assert.equal(confirmed.currentStep, "complete");
+});
+
+test("bailToComplete jumps straight to complete from any step, for the time-constrained 'act anyway' fallback -- never trapping the trainee mid-practice", () => {
+  const midPractice: NewArcLiveSessionState = { ...fresh(), currentStep: "acceptance" };
+  const bailed = bailToComplete(midPractice, NOW);
+  assert.equal(bailed.currentStep, "complete");
+  assert.equal(bailed.subIndex, 0);
+});
+
+test("suggestedBodySensations/bodySensationUsageId/sensationEffectivenessRating/readinessImprovedAfterSensation all default correctly on a fresh session", () => {
+  const state = createNewArcLiveSessionState("t1", "לכתוב דוח", "לפתוח את המחשב", NOW, "spontaneous");
+  assert.deepEqual(state.suggestedBodySensations, []);
+  assert.equal(state.bodySensationUsageId, null);
+  assert.equal(state.sensationEffectivenessRating, null);
+  assert.equal(state.readinessImprovedAfterSensation, null);
+});
+
+test("setSuggestedBodySensations caches the suggestion list verbatim, pure (no other field touched)", () => {
+  const state = fresh();
+  const suggestions = [{ region: "scanChest" as const, side: null, sensationLabel: "חמימות", movementLabel: null }];
+  const next = setSuggestedBodySensations(state, suggestions);
+  assert.deepEqual(next.suggestedBodySensations, suggestions);
+  assert.equal(next.currentStep, state.currentStep, "caching suggestions must never itself advance the step");
+});
+
+test("setBodySensationUsageId sets the id once and never overwrites an already-set one (one discovery row per session)", () => {
+  const state = fresh();
+  const first = setBodySensationUsageId(state, "usage-1");
+  assert.equal(first.bodySensationUsageId, "usage-1");
+  const second = setBodySensationUsageId(first, "usage-2");
+  assert.equal(second.bodySensationUsageId, "usage-1", "an already-set usage id must never be overwritten");
 });

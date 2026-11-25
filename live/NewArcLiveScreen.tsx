@@ -280,7 +280,13 @@ import {
   toggleOpeningBodyScanRegion,
   toggleSupportiveOpeningRegionBilateral,
   toggleUnpleasantArea,
+  setSuggestedBodySensations,
+  setBodySensationUsageId,
+  confirmSensationEffectCheck,
+  bailToComplete,
 } from "../arc/newArcLiveSteps.ts";
+import { resolveBodySensationContextKeys, recordBodySensationDiscovery, resolveSuggestedBodySensations } from "../arc/supportiveBodySensation.ts";
+import { resolveTimeConstrainedOptions } from "../arc/practiceTimeFallback.ts";
 import { resolveSuggestedSupportiveAreas, resolveSuggestedUnpleasantAreas, resolveSupportiveMovementSuggestionsForAreas } from "../arc/supportiveAnchorSuggestions.ts";
 // Nine Functional Improvements task, Improvement 3 ("Internal Action"
 // timer): reuses arc/taskTimer.ts's own PURE pause/resume math exactly
@@ -328,9 +334,26 @@ import {
   loadArcSavedBodyOptions,
   loadArcSavedExercises,
   saveArcSavingPendingReview,
+  loadSupportiveBodySensationUsages,
+  appendSupportiveBodySensationUsageEntry,
+  upsertArcTriggerEntry,
+  upsertArcSavedExerciseEntry,
+  upsertArcSavedBodyOptionEntry,
 } from "../data/storage.ts";
 import { advanceArcPerspectiveFromMoodCheckIn } from "../arc/arcPerspective.ts";
-import { applyArcBodyProtocolSnapshotToSession, captureArcBodyProtocolSnapshot, findArcSavedBodyOptionById, findArcSavedExerciseById } from "../arc/arcSaving.ts";
+import {
+  applyArcBodyProtocolSnapshotToSession,
+  captureArcBodyProtocolSnapshot,
+  findArcSavedBodyOptionById,
+  findArcSavedExerciseById,
+  createArcSavedExercise,
+  generateArcSavedExerciseId,
+  generateArcSavedBodyOptionId,
+  promoteArcSavedExerciseToBodyOption,
+  createArcTrigger,
+  generateArcTriggerId,
+  addBodyOptionToTrigger,
+} from "../arc/arcSaving.ts";
 // ARCHI -- ARC Result: Automatic, Optional Suggestion Without Extra
 // Shortcuts task, section 3: the one shared check every post-ARC
 // completion path uses before resolving its own destination -- never
@@ -493,6 +516,15 @@ export default function NewArcLiveScreen({
   // the standalone "time_available_check" screen -- never both at
   // once for a single session, so one draft is enough.
   const [timeAvailableDraft, setTimeAvailableDraft] = useState<number | null>(null);
+  // ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+  // the task's own linked ARC Behaviour situation (if any), resolved
+  // once in reload() -- never re-fetched per render. Null for a
+  // standalone/no-task session, same convention as every other
+  // task-derived field here.
+  const [taskLinkedArcGymSituationId, setTaskLinkedArcGymSituationId] = useState<string | null>(null);
+  const [sensationEffectRatingDraft, setSensationEffectRatingDraft] = useState<number | null>(null);
+  const [readinessImprovedDraft, setReadinessImprovedDraft] = useState<boolean | null>(null);
+  const bodySensationDiscoveryWrittenRef = useRef(false);
   const [showMoreMovements, setShowMoreMovements] = useState(false);
   const [showMoreAreas, setShowMoreAreas] = useState(false);
   /** ARC LIVE emotion-based body suggestions task, requirement 3: same "suggested first, reveal all on request" toggle as showMoreAreas above, kept separate since the two screens show different suggestion sets (unpleasant vs. supportive) and can be revealed independently of one another. */
@@ -614,10 +646,18 @@ export default function NewArcLiveScreen({
       loadTaskTimerRun(),
       loadArcSavedBodyOptions(),
       loadArcSavedExercises(),
-    ]).then(([task, existing, items, beliefs, arcGymSituations, internalActionRun, taskTimerRun, arcSavedBodyOptions, arcSavedExercises]) => {
+      loadSupportiveBodySensationUsages(),
+    ]).then(([task, existing, items, beliefs, arcGymSituations, internalActionRun, taskTimerRun, arcSavedBodyOptions, arcSavedExercises, bodySensationUsages]) => {
       if (!task) return;
       setInternalActionRun(internalActionRun);
+      setTaskLinkedArcGymSituationId(task.linkedArcGymSituationId ?? null);
       const now = nowDate.toISOString();
+      // Past-sensation suggestions, computed once per reload, never auto-applied.
+      const bodySensationContextKeys = resolveBodySensationContextKeys(
+        { taskId, arcGymSituationId, arcGymMemoryExerciseId, arcPerspectiveId, arcFocusPracticeId },
+        task.linkedArcGymSituationId ?? null
+      );
+      const bodySensationSuggestions = resolveSuggestedBodySensations(bodySensationContextKeys, bodySensationUsages, 3);
       const plannedArcsById = new Map<string, PlannedArc>(items.map((item) => [item.id, item]));
       const beliefsById = new Map<string, ArcBelief>(beliefs.map((belief) => [belief.id, belief]));
       // ARCHI -- Universal ARC Routing, Emotion Identification & Android
@@ -761,7 +801,7 @@ export default function NewArcLiveScreen({
       const existingUnfinished = existing && existing.taskId === taskId && !existing.completedAt ? existing : null;
 
       if (!existingUnfinished) {
-        const fresh = buildFresh(now);
+        const fresh = { ...buildFresh(now), suggestedBodySensations: bodySensationSuggestions };
         setSession(fresh);
         saveNewArcLiveSession(fresh);
         // Nine Functional Improvements task, Improvement 3: a brand-new
@@ -788,7 +828,8 @@ export default function NewArcLiveScreen({
       }
       if (sessionMatchesRequest(existingUnfinished, request)) {
         // Same type and configuration -- resume it silently, exactly as before.
-        setSession(existingUnfinished);
+        // Suggestions refreshed on resume too, not just a brand-new session.
+        setSession({ ...existingUnfinished, suggestedBodySensations: bodySensationSuggestions });
         return;
       }
       // ARC session-resume conflict fix, requirements 3/4: a DIFFERENT,
@@ -928,6 +969,8 @@ export default function NewArcLiveScreen({
     setUnpleasantIntensityDraft(session?.unpleasantIntensityRating ?? null);
     setActionReadinessDraft(session?.actionReadinessRating ?? null);
     setTimeAvailableDraft(session?.timeAvailableRating ?? null);
+    setSensationEffectRatingDraft(session?.sensationEffectivenessRating ?? null);
+    setReadinessImprovedDraft(session?.readinessImprovedAfterSensation ?? null);
     // Closing any lingering info popup on step change is a UI-only
     // reset -- it never touches session, so the selections it was
     // opened over are already safe regardless (see infoModal's own
@@ -1003,6 +1046,61 @@ export default function NewArcLiveScreen({
       cancelled = true;
     };
   }, [session?.currentStep, session]);
+
+  /**
+   * ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+   * the moment "sensation_effect_check"/"mini_sensation_effect_check"
+   * first becomes the current step with no usage id yet (isStepReachable
+   * has already confirmed a real sensation was actually discovered),
+   * this creates and persists the ONE SupportiveBodySensationUsage row
+   * for this session, then stamps its id onto the session -- so the
+   * effect-check's own "המשך" button updates the SAME row rather than
+   * appending a second one. Guarded by a ref (not state) since this
+   * must fire at most once per session regardless of re-renders.
+   */
+  useEffect(() => {
+    if (!session) return;
+    if (session.currentStep !== "sensation_effect_check" && session.currentStep !== "mini_sensation_effect_check") {
+      bodySensationDiscoveryWrittenRef.current = false;
+      return;
+    }
+    if (session.bodySensationUsageId || bodySensationDiscoveryWrittenRef.current) return;
+    bodySensationDiscoveryWrittenRef.current = true;
+    const contextKeys = resolveBodySensationContextKeys(
+      { taskId: session.taskId, arcGymSituationId: session.arcGymSituationId, arcGymMemoryExerciseId: session.arcGymMemoryExerciseId, arcPerspectiveId: session.arcPerspectiveId, arcFocusPracticeId: session.arcFocusPracticeId },
+      taskLinkedArcGymSituationId
+    );
+    const primaryContextKey = contextKeys[0] ?? "";
+    const track = session.currentStep === "mini_sensation_effect_check" ? "mini" : session.arcInvocationMode === "shortened" ? "shortened" : "full";
+    const usage = recordBodySensationDiscovery(primaryContextKey, null, null, session.supportiveSensation, session.positiveMovement, track, new Date().toISOString());
+    (async () => {
+      await appendSupportiveBodySensationUsageEntry(usage);
+      commit(setBodySensationUsageId(session, usage.id));
+    })();
+  }, [session?.currentStep, session?.bodySensationUsageId, taskLinkedArcGymSituationId]);
+
+  /**
+   * ARCHI -- Body-Sensation Discovery & Four-Component Learning task,
+   * section 9: the "save this case for later ARC Behaviour practice"
+   * quick-exit action -- captures the current session's own body
+   * protocol and files it as a reusable ARC Saving trigger/body option,
+   * never an ArcGymSituation (no real Manifest behavior exists in this
+   * context to attach one to correctly). Always creates a fresh
+   * trigger -- this codebase has no existing "find the trigger for
+   * this task" lookup to dedupe against, and inventing one here would
+   * risk silently merging two unrelated cases.
+   */
+  async function handleSaveForLaterPractice() {
+    if (!session) return;
+    const now = new Date().toISOString();
+    const snapshot = captureArcBodyProtocolSnapshot(session);
+    const exercise = createArcSavedExercise(generateArcSavedExerciseId(), session.taskTitle || "תרגול שמור", snapshot, session.arcInvocationMode === "shortened" ? "shortened" : "full", session.createdAt, now);
+    await upsertArcSavedExerciseEntry(exercise);
+    const bodyOption = promoteArcSavedExerciseToBodyOption(exercise, generateArcSavedBodyOptionId(), exercise.label, now);
+    await upsertArcSavedBodyOptionEntry(bodyOption);
+    const trigger = addBodyOptionToTrigger(createArcTrigger(generateArcTriggerId(), session.taskTitle || session.triggerText || "מקרה שנשמר", now), bodyOption.id, now);
+    await upsertArcTriggerEntry(trigger);
+  }
 
   /** "אירוע אחר": re-selects a different eligible documented memory for the same feeling, never fabricating one. */
   const handlePositiveMemoryEncodingAnother = useCallback(async () => {
@@ -3157,6 +3255,34 @@ export default function NewArcLiveScreen({
                 chip picker that still uses them (e.g. Full ARC's own
                 supportive_area_select below), are completely
                 untouched. */}
+            {/* ARCHI -- Body-Sensation Discovery & Four-Component
+                Learning task: up to 3 previously-discovered sensations
+                for this task/trigger's own context, cached on the
+                session at reload() -- never auto-applied, a tap only
+                PRE-FILLS the two text fields below exactly as if the
+                trainee had typed them, still fully re-editable before
+                "המשך". Empty whenever nothing was ever discovered for
+                this context -- the normal, valid "nothing to suggest
+                yet" state. */}
+            {session!.suggestedBodySensations.length > 0 && (
+              <View>
+                <Text style={styles.supporting}>הצעות מהעבר</Text>
+                <View style={styles.chipRow}>
+                  {session!.suggestedBodySensations.map((suggestion, index) => (
+                    <Pressable
+                      key={`${suggestion.sensationLabel ?? ""}-${index}`}
+                      style={styles.chip}
+                      onPress={() => {
+                        if (suggestion.sensationLabel) setMiniSensationDraft(suggestion.sensationLabel);
+                        if (suggestion.movementLabel) setMiniMovementDraft(suggestion.movementLabel);
+                      }}
+                    >
+                      <Text style={styles.chipText}>{suggestion.sensationLabel ?? suggestion.movementLabel ?? ""}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            )}
             <TextInput style={styles.textInput} value={miniSensationDraft} onChangeText={setMiniSensationDraft} textAlign="right" placeholder="תחושה תומכת" />
             <TextInput style={styles.textInput} value={miniMovementDraft} onChangeText={setMiniMovementDraft} textAlign="right" placeholder="תנועה תומכת" />
             <Pressable
@@ -3208,6 +3334,46 @@ export default function NewArcLiveScreen({
             belowCircleLines={content.supporting}
             onAdvance={() => commit(setMiniEncoding(session!, resolveEncodingMantra(session!), session!.miniBeliefText ?? "", now))}
           />
+        );
+
+      // ARCHI -- Body-Sensation Discovery & Four-Component Learning
+      // task: reached only once a supportive body sensation was
+      // actually discovered this session (isStepReachable's own
+      // content gate) -- a plain 0-10 rating row + yes/no readiness
+      // toggle, never a circle/mantra stage. "המשך" is disabled until
+      // BOTH answers are given, same pattern as mini_acceptance_
+      // transition's own required-fields button above.
+      case "sensation_effect_check":
+      case "mini_sensation_effect_check":
+        return (
+          <View>
+            <View style={styles.chipRow}>
+              {Array.from({ length: 11 }, (_, value) => value).map((value) => (
+                <Pressable
+                  key={value}
+                  style={[styles.chip, sensationEffectRatingDraft === value && styles.chipSelected]}
+                  onPress={() => setSensationEffectRatingDraft(value)}
+                >
+                  <Text style={[styles.chipText, sensationEffectRatingDraft === value && styles.chipTextSelected]}>{value}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.chipRow}>
+              <Pressable style={[styles.chip, readinessImprovedDraft === true && styles.chipSelected]} onPress={() => setReadinessImprovedDraft(true)}>
+                <Text style={[styles.chipText, readinessImprovedDraft === true && styles.chipTextSelected]}>כן</Text>
+              </Pressable>
+              <Pressable style={[styles.chip, readinessImprovedDraft === false && styles.chipSelected]} onPress={() => setReadinessImprovedDraft(false)}>
+                <Text style={[styles.chipText, readinessImprovedDraft === false && styles.chipTextSelected]}>לא</Text>
+              </Pressable>
+            </View>
+            <Pressable
+              style={[styles.primaryButton, (sensationEffectRatingDraft === null || readinessImprovedDraft === null) && styles.disabledButton]}
+              disabled={sensationEffectRatingDraft === null || readinessImprovedDraft === null}
+              onPress={() => commit(confirmSensationEffectCheck(session!, sensationEffectRatingDraft!, readinessImprovedDraft!, now))}
+            >
+              <Text style={styles.primaryButtonText}>המשך</Text>
+            </Pressable>
+          </View>
         );
 
       default:
@@ -3262,6 +3428,29 @@ export default function NewArcLiveScreen({
         )}
 
         {renderBody()}
+
+        {/* ARCHI -- Body-Sensation Discovery & Four-Component Learning
+            task, section 9: a short-depth session only -- a graceful
+            way out of forced repeated practice before being "allowed"
+            to start. "Accept" needs no button (the short-depth path
+            itself already IS that default, minimal continuation).
+            Visually secondary -- a plain text row below the main step
+            content, never competing with the primary "המשך" flow. */}
+        {session.arcPracticeDepth === "short" && resolveTimeConstrainedOptions(session.arcPracticeDepth).length > 0 && (
+          <View style={styles.navRow}>
+            <Pressable onPress={() => commit(bailToComplete(session, now))}>
+              <Text style={styles.linkText}>פעולה בכל מקרה</Text>
+            </Pressable>
+            <Pressable
+              onPress={async () => {
+                await handleSaveForLaterPractice();
+                commit(bailToComplete(session, now));
+              }}
+            >
+              <Text style={styles.linkText}>שמירה לתרגול מאוחר יותר</Text>
+            </Pressable>
+          </View>
+        )}
 
         <View style={styles.navRow}>
           {previous && (

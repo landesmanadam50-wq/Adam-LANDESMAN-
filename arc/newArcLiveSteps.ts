@@ -27,7 +27,7 @@
  */
 
 import { STANDALONE_ARC_TASK_ID, createNewArcLiveSessionState } from "./newArcLiveTypes.ts";
-import type { ArcInvocationMode, EmotionSelection, NewArcLiveGoalType, NewArcLiveSessionState, NewArcLiveStepId } from "./newArcLiveTypes.ts";
+import type { ArcInvocationMode, EmotionSelection, NewArcLiveGoalType, NewArcLiveSessionState, NewArcLiveStepId, SuggestedBodySensationOption } from "./newArcLiveTypes.ts";
 import type { BodyRegion } from "./bodyRegionRoles.ts";
 import type { BodyScanRegion } from "./bodyScanRegions.ts";
 import {
@@ -141,6 +141,10 @@ export const NEW_ARC_MINI_STEP_ORDER: NewArcLiveStepId[] = [
   // migrateLegacyNewArcLiveStep below for the one-time forward
   // migration a session saved mid-flight on one of them needs.
   "mini_encoding",
+  // ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+  // Mini ARC's own equivalent of "sensation_effect_check" above, same
+  // content gate.
+  "mini_sensation_effect_check",
   "complete",
 ];
 
@@ -343,6 +347,15 @@ export const NEW_ARC_LIVE_STEP_ORDER: NewArcLiveStepId[] = [
   // which itself now fires automatically (live/NewArcLiveScreen.tsx's
   // own completeConsumedRef effect) -- never a menu of options. All
   // four step ids/their copy/setters stay fully intact, unreached.
+  //
+  // ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+  // "sensation_effect_check" sits here, right before "complete" --
+  // isStepReachable below gates it on session CONTENT (a supportive
+  // body sensation actually discovered this session), never on
+  // arcInvocationMode, so it is automatically skipped whenever nothing
+  // was discovered, exactly like every other content-gated step in
+  // this array.
+  "sensation_effect_check",
   "complete",
 ];
 
@@ -822,6 +835,15 @@ const DIRECT_ACTION_SKIPPED_STEPS = new Set<NewArcLiveStepId>([
   "acceptance_part_two",
   "regulation",
   "encoding",
+  // ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+  // the direct-action fast lane never does body work at all, so a
+  // sensation can never be genuinely discovered there -- explicit
+  // membership here (rather than relying solely on the content gate in
+  // isStepReachable) guarantees this takes precedence even if a field
+  // happened to be set some other way, same defense-in-depth rationale
+  // as time_available_check/quick_presence/short_body_marking above.
+  "sensation_effect_check",
+  "mini_sensation_effect_check",
   "mini_presence",
   "mini_acceptance_transition",
   "mini_encoding",
@@ -1008,6 +1030,19 @@ function isStepReachable(step: NewArcLiveStepId, state: NewArcLiveSessionState):
   // intact (never deleted) -- simply never reached by any session any
   // more; see migrateLegacyNewArcLiveStep below for the one-time forward
   // migration a session saved mid-flight on either of them needs.
+  // ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+  // "sensation_effect_check"/"mini_sensation_effect_check" are reachable
+  // ONLY once a supportive body sensation was actually discovered this
+  // session (either field set, by the trainee's own tap or by an ARC
+  // Saving snapshot pre-fill -- either way, something real to ask
+  // about) -- never on arcInvocationMode/arcPracticeDepth, so a session
+  // that never touches body work (e.g. the direct-action fast lane, or
+  // a route with no body-work steps at all) simply never reaches it,
+  // satisfying "never require finding a supportive sensation as a
+  // condition for finishing the exercise."
+  if (step === "sensation_effect_check" || step === "mini_sensation_effect_check") {
+    return !!(state.supportiveBodyArea || (state.supportiveSensation && state.supportiveSensation.trim().length > 0));
+  }
   // ARCHI -- Universal ARC Routing, Emotion Identification & Android
   // Shortcuts task, requirement 2/6: the three cognitive CAPTURE
   // screens are reachable only when the trainee actually checked that
@@ -1916,6 +1951,62 @@ export function setSupportiveSensation(state: NewArcLiveSessionState, sensation:
 
 export function setPositiveMovement(state: NewArcLiveSessionState, movement: string, now: string): NewArcLiveSessionState {
   return advance({ ...state, positiveMovement: movement.trim() || null }, now);
+}
+
+/**
+ * ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+ * caches the once-per-session, read-only suggestion list
+ * (arc/supportiveBodySensation.ts's own resolveSuggestedBodySensations,
+ * computed by the screen from its own async storage read) onto the
+ * session itself -- pure, never touches storage. Called once at session
+ * creation/reload, before the trainee ever reaches a body-work step.
+ */
+export function setSuggestedBodySensations(state: NewArcLiveSessionState, suggestions: SuggestedBodySensationOption[]): NewArcLiveSessionState {
+  return { ...state, suggestedBodySensations: suggestions };
+}
+
+/**
+ * Stores the id of the SupportiveBodySensationUsage row the screen just
+ * created (arc/supportiveBodySensation.ts's recordBodySensationDiscovery)
+ * the moment "sensation_effect_check"/"mini_sensation_effect_check"
+ * first became reachable -- pure, the actual storage append happens in
+ * the screen. Never overwrites an already-set id (one discovery row per
+ * session, matching "record at the moment of real-world commitment,
+ * rate afterward").
+ */
+export function setBodySensationUsageId(state: NewArcLiveSessionState, usageId: string): NewArcLiveSessionState {
+  if (state.bodySensationUsageId) return state;
+  return { ...state, bodySensationUsageId: usageId };
+}
+
+/**
+ * The effect-check step's own single "confirm both answers" action --
+ * section 7's own explicitly SEPARATE measurements: how much the body
+ * sensation itself helped (0-10, distinct from the internal-action
+ * effectiveness rating live/SupportiveActionFlowScreen.tsx records on
+ * its own, later, unrelated usage row) and whether readiness to act
+ * improved (yes/no, distinct from the rating). Advances exactly like
+ * every other confirm* function -- straight to "complete" next, since
+ * this is always the last reachable step before it.
+ */
+export function confirmSensationEffectCheck(state: NewArcLiveSessionState, sensationEffectivenessRating: number, readinessImproved: boolean, now: string): NewArcLiveSessionState {
+  return advance({ ...state, sensationEffectivenessRating, readinessImprovedAfterSensation: readinessImproved }, now);
+}
+
+/**
+ * ARCHI -- Body-Sensation Discovery & Four-Component Learning task,
+ * section 9 (time-constrained fallback): "act anyway, without waiting
+ * for the feeling to improve" -- jumps straight to "complete" from
+ * wherever the trainee currently stands, bypassing every remaining
+ * step (including "sensation_effect_check" itself, if a sensation was
+ * already marked but there's truly no time left to rate it -- the
+ * trainee is never trapped answering one more question before they can
+ * finish). Never used to skip FORWARD past steps already completed;
+ * only ever reachable from the short-depth quick-exit action row,
+ * arc/practiceTimeFallback.ts's own resolveTimeConstrainedOptions.
+ */
+export function bailToComplete(state: NewArcLiveSessionState, now: string): NewArcLiveSessionState {
+  return { ...state, currentStep: "complete", subIndex: 0, currentStepEnteredAt: now };
 }
 
 /**

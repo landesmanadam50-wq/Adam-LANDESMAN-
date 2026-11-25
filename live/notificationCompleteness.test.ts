@@ -41,10 +41,10 @@ test("starting the rest sub-timer arms the real end-of-timer ring with its own d
 
 test("resuming (performStart, reached via handleStart's required-before-tasks gate) and completing a task both cancel any stale notification already on the task record (e.g. a postponed-return reminder)", () => {
   const startIndex = activeTaskScreen.indexOf("async function performStart()");
-  // Window widened (5600 -> 6200): ARCHI task-not-started task's own
-  // recomputeTaskNotStartedNotification call/comment, inserted at the
-  // top of performStart, pushed this line further from the anchor.
-  assert.ok(activeTaskScreen.slice(startIndex, startIndex + 6200).includes("if (task.notificationId) await cancelScheduledNotification(task.notificationId)"));
+  // Window widened (6200 -> 6700): the BodySensation task's own
+  // markSupportiveBodySensationUsagesTaskOutcome call/comment, inserted
+  // near the top of performStart, pushed this line further from the anchor.
+  assert.ok(activeTaskScreen.slice(startIndex, startIndex + 6700).includes("if (task.notificationId) await cancelScheduledNotification(task.notificationId)"));
   const completeIndex = activeTaskScreen.indexOf("async function handleComplete()");
   assert.ok(activeTaskScreen.slice(completeIndex, completeIndex + 2500).includes("if (task.notificationId) await cancelScheduledNotification(task.notificationId)"));
 });

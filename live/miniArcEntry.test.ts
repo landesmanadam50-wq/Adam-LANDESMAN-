@@ -31,9 +31,9 @@ test("the route reads 'mini'/'spontaneous'/'shortened' params and resolves them 
 
 test("the screen only applies startMode when creating a FRESH session -- an existing, resumed session keeps its own already-persisted arcInvocationMode", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
-  // (9000 -> 10500) to fit the new arcSavingSnapshot resolution reload() grew.
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 10500);
+  // BodySensation task: widened (10500 -> 11200) to fit the new
+  // bodySensationContextKeys/bodySensationSuggestions resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 11200);
   assert.ok(reloadBody.includes("existing.taskId === taskId && !existing.completedAt"));
   assert.ok(reloadBody.includes("createNewArcLiveSessionState(taskId, task.title, task.firstAction, buildNow, startMode, null, skipEmotionSelection)"));
 });

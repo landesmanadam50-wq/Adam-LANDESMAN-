@@ -671,6 +671,22 @@ export function getStepContent(state: NewArcLiveSessionState): NewArcLiveStepCon
       // happened.
       return { title: "הושלם", primary: "חוזרים למשימה.", supporting: ["שווה לשים לב שהתרגול הזה קרה. על מה אתה מודה לעצמך כרגע?"] };
 
+    // ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+    // reached only once a supportive body sensation was actually
+    // discovered this session (isStepReachable's own content gate) --
+    // asks two separate questions, never conflated: how much the
+    // sensation itself helped (0-10, distinct from the internal-action
+    // effectiveness rating recorded elsewhere), and whether readiness
+    // to act improved. Never claims an outcome itself -- same
+    // restraint as "complete" above, just asks rather than asserts.
+    case "sensation_effect_check":
+    case "mini_sensation_effect_check":
+      return {
+        title: "בדיקת השפעת התחושה",
+        primary: "עד כמה התחושה הגופנית הזו עזרה לך כרגע? (0-10)",
+        supporting: ["האם אתה מרגיש מוכן יותר לביצוע הפעולה?"],
+      };
+
     // Part G: Mini ARC's own combined screens.
     case "mini_awareness":
       // Unified awareness/urge/thought/interpretation update, section 6:

@@ -223,6 +223,21 @@ async function finishOrGiveUpTask(taskId: string, now: Date): Promise<void> {
   const { reconcileTaskAlarms } = await import("./taskAlarm.ts");
   await reconcileTaskAlarms(now);
   await recomputeTaskNotStartedNotification(now);
+  // ARCHI -- Body-Sensation Discovery & Four-Component Learning task,
+  // section 7: this is the genuine "given up / not started" outcome --
+  // never the "mark done" path (which never reaches this function) --
+  // so any still-unresolved usage under this task's own context is
+  // resolved to taskStarted: false here.
+  const { resolveBodySensationContextKeys } = await import("../arc/supportiveBodySensation.ts");
+  const { markSupportiveBodySensationUsagesTaskOutcome } = await import("./storage.ts");
+  await markSupportiveBodySensationUsagesTaskOutcome(
+    resolveBodySensationContextKeys(
+      { taskId: entry.task.id, arcGymSituationId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcFocusPracticeId: null },
+      entry.task.linkedArcGymSituationId ?? null
+    ),
+    false,
+    now.toISOString()
+  );
 }
 
 /**

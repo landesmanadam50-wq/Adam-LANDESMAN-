@@ -144,6 +144,7 @@ import {
   upsertSupportiveFeelingInList,
 } from "../arc/supportiveFeelings.ts";
 import type { ArcTrackChosen, InternalActionUsage, InternalState } from "../arc/internalActionRating.ts";
+import type { SupportiveBodySensationUsage } from "../arc/supportiveBodySensation.ts";
 import type { TaskContinuationLoopState } from "../arc/taskContinuationLoop.ts";
 import type { ArcGymMemoryCheckInProgress } from "../arc/arcGymMemoryCheckInProgress.ts";
 import type { ArcDecisionSession } from "../arc/arcDecision.ts";
@@ -2561,6 +2562,14 @@ export async function loadNewArcLiveSession(): Promise<NewArcLiveSessionState | 
     // made). A session saved AFTER this task already has `role` on
     // every entry, so `entry.role ?? "opening"` is a no-op for it.
     openingBodyScanRegions: (parsed.openingBodyScanRegions ?? []).map((entry) => ({ region: entry.region, side: entry.side, role: entry.role ?? "opening" })),
+    // ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+    // a session saved before this task existed has none of these four
+    // fields at all -- the true "no suggestions cached yet / nothing
+    // discovered yet" default, same ?? convention as every field above.
+    suggestedBodySensations: parsed.suggestedBodySensations ?? [],
+    bodySensationUsageId: parsed.bodySensationUsageId ?? null,
+    sensationEffectivenessRating: parsed.sensationEffectivenessRating ?? null,
+    readinessImprovedAfterSensation: parsed.readinessImprovedAfterSensation ?? null,
     // ARCHI -- Universal ARC Routing, Emotion Identification & Android
     // Shortcuts task, requirement 2/9: backfills the four new fields --
     // the true "never chosen"/"not Task-LIVE-triggered" default for a
@@ -4897,6 +4906,71 @@ export async function updateInternalActionUsageEntry(usage: InternalActionUsage)
   const next = [...usages];
   next[index] = usage;
   await saveInternalActionUsages(next);
+}
+
+/**
+ * ARCHI -- Body-Sensation Discovery & Four-Component Learning task: the
+ * flat, append-only history behind arc/supportiveBodySensation.ts's own
+ * computeBodySensationRanking -- a SEPARATE key from INTERNAL_ACTION_USAGES_KEY
+ * above, same rationale as that module's own doc comment (a body-sensation
+ * discovery is a structurally different event, with fields the internal-
+ * action history has no business holding). Never pruned, never
+ * aggregated at write time, same convention as every other flat history
+ * in this file.
+ */
+const SUPPORTIVE_BODY_SENSATION_USAGES_KEY = "archi.supportiveBodySensationUsages.v1";
+
+export async function loadSupportiveBodySensationUsages(): Promise<SupportiveBodySensationUsage[]> {
+  const raw = await AsyncStorage.getItem(SUPPORTIVE_BODY_SENSATION_USAGES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as SupportiveBodySensationUsage[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored SupportiveBodySensationUsages are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveSupportiveBodySensationUsages(usages: SupportiveBodySensationUsage[]): Promise<void> {
+  await AsyncStorage.setItem(SUPPORTIVE_BODY_SENSATION_USAGES_KEY, JSON.stringify(usages));
+}
+
+export async function appendSupportiveBodySensationUsageEntry(usage: SupportiveBodySensationUsage): Promise<void> {
+  const usages = await loadSupportiveBodySensationUsages();
+  await saveSupportiveBodySensationUsages([...usages, usage]);
+}
+
+/** Finds and replaces one usage by id (used when a discovery transitions to "rated") -- never appends a second row for the same discovery. */
+export async function updateSupportiveBodySensationUsageEntry(usage: SupportiveBodySensationUsage): Promise<void> {
+  const usages = await loadSupportiveBodySensationUsages();
+  const index = usages.findIndex((existing) => existing.id === usage.id);
+  if (index === -1) return;
+  const next = [...usages];
+  next[index] = usage;
+  await saveSupportiveBodySensationUsages(next);
+}
+
+/**
+ * Resolves "was the task actually started" (section 7's own separately-
+ * measured outcome) from OUTSIDE ARC entirely -- called once from
+ * live/ActiveTaskScreen.tsx's performStart() with `started: true`, and
+ * once from data/taskNotStartedNotification.ts's finishOrGiveUpTask()
+ * give-up branch with `started: false`. Only touches rows still
+ * unresolved (taskStarted === null) under one of the given context
+ * keys -- a row already resolved by an earlier, more specific signal is
+ * never overwritten.
+ */
+export async function markSupportiveBodySensationUsagesTaskOutcome(contextKeys: string[], started: boolean, now: string): Promise<void> {
+  if (contextKeys.length === 0) return;
+  const usages = await loadSupportiveBodySensationUsages();
+  let changed = false;
+  const next = usages.map((usage) => {
+    if (usage.taskStarted !== null || !contextKeys.includes(usage.contextKey)) return usage;
+    changed = true;
+    return { ...usage, taskStarted: started, startedCheckedAt: now };
+  });
+  if (changed) await saveSupportiveBodySensationUsages(next);
 }
 
 /**

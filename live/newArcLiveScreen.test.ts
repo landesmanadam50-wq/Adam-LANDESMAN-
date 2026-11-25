@@ -266,9 +266,9 @@ test("body_scan_opening_region (Screen Two) restricts selectableRegions to resol
 
 test("the screen resumes an existing persisted session only when its own taskId matches and it isn't already completed -- never resuming a finished or a different task's session", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
-  // (9000 -> 10500) to fit the new arcSavingSnapshot resolution reload() grew.
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 10500);
+  // BodySensation task: widened (10500 -> 11200) to fit the new
+  // bodySensationContextKeys/bodySensationSuggestions resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 11200);
   assert.ok(reloadBody.includes("existing.taskId === taskId"));
   assert.ok(reloadBody.includes("!existing.completedAt"));
 });
@@ -397,9 +397,9 @@ test("the screen accepts an optional autoStartAfter prop, defaulting to false fo
 
 test("reload() resolves what's requested from plannedArcId (looking the draft up by id, never inventing one for a since-deleted draft) BEFORE comparing it against any existing unfinished session", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
-  // (9000 -> 10500) to fit the new arcSavingSnapshot resolution reload() grew.
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 10500);
+  // BodySensation task: widened (10500 -> 11200) to fit the new
+  // bodySensationContextKeys/bodySensationSuggestions resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 11200);
   assert.ok(reloadBody.includes("const requestedItem = plannedArcId ? plannedArcsById.get(plannedArcId) ?? null : null;"));
   const requestedItemIndex = reloadBody.indexOf("const requestedItem");
   const existingUnfinishedIndex = reloadBody.indexOf("const existingUnfinished");
@@ -408,9 +408,9 @@ test("reload() resolves what's requested from plannedArcId (looking the draft up
 
 test("reload(): no existing unfinished session -- starts and persists a fresh one immediately, exactly as before this fix", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
-  // (9400 -> 10700) to fit the new arcSavingSnapshot resolution reload() grew.
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 10700);
+  // BodySensation task: widened (10700 -> 11400) to fit the new
+  // bodySensationContextKeys/bodySensationSuggestions resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 11400);
   const branchIndex = reloadBody.indexOf("if (!existingUnfinished) {");
   const branchBody = reloadBody.slice(branchIndex, branchIndex + 200);
   assert.ok(branchBody.includes("setSession(fresh)"));
@@ -419,20 +419,23 @@ test("reload(): no existing unfinished session -- starts and persists a fresh on
 
 test("reload(): an existing unfinished session of the SAME type and configuration (sessionMatchesRequest) is resumed silently -- never overwritten, never surfaced as a conflict", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
-  // (9900 -> 12300) to fit the new arcSavingSnapshot resolution reload() grew.
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 12300);
+  // BodySensation task: widened (12300 -> 13000) to fit the new
+  // bodySensationContextKeys/bodySensationSuggestions resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 13000);
   const branchIndex = reloadBody.indexOf("if (sessionMatchesRequest(existingUnfinished, request)) {");
-  const branchBody = reloadBody.slice(branchIndex, branchIndex + 250);
-  assert.ok(branchBody.includes("setSession(existingUnfinished)"));
+  const branchBody = reloadBody.slice(branchIndex, branchIndex + 350);
+  // BodySensation task: the resumed session is now spread with a fresh
+  // suggestedBodySensations cache rather than passed through verbatim --
+  // still the SAME existingUnfinished object's own fields underneath.
+  assert.ok(branchBody.includes("setSession({ ...existingUnfinished, suggestedBodySensations: bodySensationSuggestions })"));
   assert.ok(!branchBody.includes("saveNewArcLiveSession"), "resuming a matching session must never re-save/overwrite it");
 });
 
 test("reload(): an existing unfinished session of a DIFFERENT type/configuration sets conflict state instead of silently resuming or discarding it (requirements 3/4)", () => {
   const reloadIndex = screen.indexOf("const reload = useCallback");
-  // ARC Saving, Trigger Management & Quick-Action Buttons task: widened
-  // (11200 -> 14300) to fit the new arcSavingSnapshot resolution reload() grew.
-  const reloadBody = screen.slice(reloadIndex, reloadIndex + 14300);
+  // BodySensation task: widened (14300 -> 15000) to fit the new
+  // bodySensationContextKeys/bodySensationSuggestions resolution reload() grew.
+  const reloadBody = screen.slice(reloadIndex, reloadIndex + 15000);
   assert.ok(reloadBody.includes("setConflict({"));
   const conflictBlockIndex = reloadBody.indexOf("setConflict({");
   // ARC Saving, Trigger Management & Quick-Action Buttons task: widened

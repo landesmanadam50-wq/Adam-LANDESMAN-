@@ -28,6 +28,23 @@ import type { ThoughtTimeOrientation } from "./types.ts";
 import { todayLocalDateString } from "../program/dateUtils.ts";
 
 /**
+ * ARCHI -- Body-Sensation Discovery & Four-Component Learning task: the
+ * minimal shape of one past-discovery suggestion cached on the session
+ * (see suggestedBodySensations below) -- deliberately NOT the full
+ * RankedBodySensation shape from arc/supportiveBodySensation.ts (which
+ * also carries score/tryCount, meaningful only to the ranking math
+ * itself, never to the chip that just offers "warmth in the chest"
+ * again). Kept as its own small type so this file never needs to
+ * import that pure-logic module at all.
+ */
+export interface SuggestedBodySensationOption {
+  region: BodyScanRegion | null;
+  side: BodyScanSide;
+  sensationLabel: string | null;
+  movementLabel: string | null;
+}
+
+/**
  * ARC-system upgrade task, Part A: the three ARC tracks --
  * "emotion_only" (Emotional ARC: an emotional action only, no identity
  * action, no outcome/value imagery), "action" (Task ARC: an identity
@@ -358,6 +375,17 @@ export type NewArcLiveStepId =
   // and setSelectedAction.
   | "action_selection"
   | "encoding"
+  // ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+  // a short effect-check, reached only when a supportive body sensation
+  // was actually discovered this session (supportiveBodyArea or
+  // supportiveSensation set, via the body-work steps above). Sits
+  // between "encoding" and "complete" -- never forced when no sensation
+  // was discovered (isStepReachable gates it on session content, not on
+  // arcInvocationMode), satisfying "never require finding a supportive
+  // sensation as a condition for finishing the exercise." See
+  // arc/newArcLiveSteps.ts's own isStepReachable and
+  // confirmSensationEffectCheck.
+  | "sensation_effect_check"
   | "transition"
   | "emotional_action"
   | "emotional_insight"
@@ -404,6 +432,9 @@ export type NewArcLiveStepId =
   // "mini_encoding," gated by the SAME rule as "action_selection" above.
   | "mini_action_selection"
   | "mini_encoding"
+  // Mini ARC's own equivalent of "sensation_effect_check" above --
+  // same content gate, sits between "mini_encoding" and "complete."
+  | "mini_sensation_effect_check"
   | "mini_action"
   | "complete";
 
@@ -857,6 +888,37 @@ export interface NewArcLiveSessionState {
    */
   openingBodyScanRegions: BodyScanOpeningSelection[];
 
+  /**
+   * ARCHI -- Body-Sensation Discovery & Four-Component Learning task:
+   * up to a few previously-discovered, ranked body sensations for
+   * whichever task/trigger context this session carries
+   * (arc/supportiveBodySensation.ts's own resolveSuggestedBodySensations,
+   * computed once at session creation from the full on-device history --
+   * cached here, not recomputed per render, so it survives app
+   * close/reopen like every other session field). Rendered as a
+   * "הצעות מהעבר" chip row during the body-work steps; tapping one
+   * PRE-FILLS supportiveBodyArea/supportiveSensation/positiveMovement,
+   * never auto-applied on its own. Empty whenever the session has no
+   * task/trigger context to suggest from, or nothing was ever
+   * discovered for it yet -- both are the normal, valid "nothing to
+   * suggest" state, never an error.
+   */
+  suggestedBodySensations: SuggestedBodySensationOption[];
+  /**
+   * The id of the arc/supportiveBodySensation.ts SupportiveBodySensationUsage
+   * row created the moment this session first reached
+   * "sensation_effect_check"/"mini_sensation_effect_check" -- null until
+   * then, and for every session where no body sensation was ever
+   * discovered (that step is simply unreachable, so this stays null for
+   * the whole session). Lets the effect-check step update the SAME row
+   * it created, rather than appending a second one.
+   */
+  bodySensationUsageId: string | null;
+  /** The effect-check's own 0-10 rating of how much the discovered body sensation itself helped -- distinct from actionReadinessRating above (asked much earlier, before body work even starts) and from the internal-action effectiveness rating recorded separately by live/SupportiveActionFlowScreen.tsx. Null until the trainee answers the effect-check. */
+  sensationEffectivenessRating: number | null;
+  /** The effect-check's own separate "do you feel more ready to act?" yes/no -- section 7's own explicitly-separate "change in readiness to act" measurement, never conflated with sensationEffectivenessRating above. Null until answered. */
+  readinessImprovedAfterSensation: boolean | null;
+
   /** Part A: the emotional action actually performed -- only ever asked when goalType is "emotion_only" or "combined". A preset label (EMOTIONAL_ACTION_PRESETS) or a free-typed one -- never invented. */
   emotionalActionText: string | null;
   /** Part A/B.3: "מה התובנה שלמדת על עצמך מהפעולה?", captured right after the emotional action -- the trainee's own words, never generated. Persisted as an ArcInsight by the screen, not by this pure state. */
@@ -1073,6 +1135,10 @@ export function createNewArcLiveSessionState(
     primaryOpeningBodyScanRegion: null,
     primaryOpeningBodyScanSide: null,
     openingBodyScanRegions: [],
+    suggestedBodySensations: [],
+    bodySensationUsageId: null,
+    sensationEffectivenessRating: null,
+    readinessImprovedAfterSensation: null,
     emotionalActionText: null,
     emotionalInsightText: null,
     emotionalBeliefText: null,
