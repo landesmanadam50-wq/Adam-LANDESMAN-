@@ -2352,17 +2352,6 @@ export default function ActiveTaskScreen({
                 <Text style={styles.secondaryButtonText}>ARC אופציונלי לפני המשימה</Text>
               </Pressable>
             )}
-            {/* ARCHI -- Extend Task-Not-Started Notification task,
-                requirement 3: "קצר את המשימה" as a secondary option on
-                the task screen itself (never a 4th task-not-started
-                notification button, which would exceed the Android
-                3-action cap) -- reuses the EXISTING task-shrink screen
-                (TaskAdaptationScreen, already reachable from
-                live/SupportiveActionFlowScreen.tsx's own step 7), never
-                a second, separately-authored shrink mechanism. */}
-            <Pressable style={styles.secondaryButton} onPress={() => router.push({ pathname: "/tasks/[id]/adapt", params: { id: task.id } })}>
-              <Text style={styles.secondaryButtonText}>קצר את המשימה</Text>
-            </Pressable>
             {/* Unified Emotional Check-In and Task Postponement System,
                 section 4: Task LIVE's own "דחייה" button now opens the
                 intervention screen -- "מה מונע ממך להתחיל את המשימה?"

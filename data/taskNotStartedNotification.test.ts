@@ -58,12 +58,13 @@ test("never repeats the alert sound on a redisplay for the same still-due task -
   assert.ok(fnBody.includes("onlyAlertOnce: true,"));
 });
 
-test("exactly 3 directly-visible actions, the exact required Hebrew wording and distinct action ids -- the hard 3-button Android cap this spec itself names", () => {
+test("exactly 3 directly-visible actions, the exact required Hebrew wording and distinct action ids -- the hard 3-button Android cap this spec itself names, and the exact set the user asked for: Start / Shorten / Need-support", () => {
   const fnIndex = module_.indexOf("async function displayTaskNotStartedNotification");
   const fnBody = module_.slice(fnIndex, module_.indexOf("export async function cancelTaskNotStartedNotification"));
-  assert.ok(fnBody.includes('{ title: "אני צריך פעולה תומכת", pressAction: { id: ACTION_NOT_STARTED_SUPPORT } }'));
   assert.ok(fnBody.includes('{ title: "התחל משימה", pressAction: { id: ACTION_NOT_STARTED_START } }'));
-  assert.ok(fnBody.includes('{ title: "סיום או ויתור על המשימה", pressAction: { id: ACTION_NOT_STARTED_FINISH_OR_GIVE_UP } }'));
+  assert.ok(fnBody.includes('{ title: "קצר את המשימה", pressAction: { id: ACTION_NOT_STARTED_SHORTEN } }'));
+  assert.ok(fnBody.includes('{ title: "אני צריך פעולה תומכת", pressAction: { id: ACTION_NOT_STARTED_SUPPORT } }'));
+  assert.ok(!fnBody.includes("ACTION_NOT_STARTED_FINISH_OR_GIVE_UP"), "the give-up action is no longer one of the 3 displayed buttons");
   const actionsIndex = fnBody.indexOf("actions: [");
   const actionsBlock = fnBody.slice(actionsIndex, fnBody.indexOf("],", actionsIndex));
   assert.equal(actionsBlock.split("pressAction:").length - 1, 3, "must never exceed the 3-action Android cap");
@@ -91,6 +92,16 @@ test("the resolved success moment is shown under the exact heading 'זוכר ש�
   const fnBody = module_.slice(fnIndex, module_.indexOf("export async function cancelTaskNotStartedNotification"));
   assert.ok(fnBody.includes("const successMomentText = await resolveTaskNotStartedSuccessMomentText(entry.task.id, now);"));
   assert.ok(fnBody.includes("successMomentText ? `${TASK_NOT_STARTED_BODY}\\n\\n${SUCCESS_MOMENT_HEADING}\\n${successMomentText}` : TASK_NOT_STARTED_BODY"));
+});
+
+test("checkpoint ('קצר את המשימה' reuses the EXISTING task-shrink screen, never a second shrink mechanism): deep-links to /tasks/[id]/adapt for the exact alerted task, and cancels the notification first", () => {
+  const fnIndex = module_.indexOf("export async function handleTaskNotStartedNotificationEvent");
+  const fnBody = module_.slice(fnIndex);
+  const branchIndex = fnBody.indexOf("if (actionId === ACTION_NOT_STARTED_SHORTEN) {");
+  assert.ok(branchIndex !== -1);
+  const branchBody = fnBody.slice(branchIndex, branchIndex + 700);
+  assert.ok(branchBody.includes("await cancelTaskNotStartedNotification();"));
+  assert.ok(branchBody.includes('router.push({ pathname: "/tasks/[id]/adapt", params: { id: taskId } });'));
 });
 
 test("the one pure predicate (arc/taskNotStartedAlert.ts's resolveTaskNotStartedAlert) is the ONLY busy-check -- recomputeTaskNotStartedNotification adds no second, competing 'is this task genuinely not started' computation", () => {

@@ -83,6 +83,7 @@ const SUCCESS_MOMENT_HEADING = "זוכר שהצלחת?";
 
 const ACTION_NOT_STARTED_SUPPORT = "task_not_started_support";
 const ACTION_NOT_STARTED_START = "task_not_started_start";
+const ACTION_NOT_STARTED_SHORTEN = "task_not_started_shorten";
 const ACTION_NOT_STARTED_FINISH_OR_GIVE_UP = "task_not_started_finish_or_give_up";
 
 /** `effectiveStartTime` is always a plain "HH:MM" clock time FOR TODAY (applyScheduleMode's own output, resolved from `now`'s own date) -- never a second date-parsing convention. */
@@ -184,9 +185,9 @@ async function displayTaskNotStartedNotification(entry: ScheduledPlanEntry, now:
         autoCancel: false,
         pressAction: { id: "default" },
         actions: [
-          { title: "אני צריך פעולה תומכת", pressAction: { id: ACTION_NOT_STARTED_SUPPORT } },
           { title: "התחל משימה", pressAction: { id: ACTION_NOT_STARTED_START } },
-          { title: "סיום או ויתור על המשימה", pressAction: { id: ACTION_NOT_STARTED_FINISH_OR_GIVE_UP } },
+          { title: "קצר את המשימה", pressAction: { id: ACTION_NOT_STARTED_SHORTEN } },
+          { title: "אני צריך פעולה תומכת", pressAction: { id: ACTION_NOT_STARTED_SUPPORT } },
         ],
       },
     });
@@ -303,6 +304,16 @@ export async function handleTaskNotStartedNotificationEvent(event: Event): Promi
     if (actionId === ACTION_NOT_STARTED_SUPPORT) {
       await cancelTaskNotStartedNotification();
       router.push({ pathname: "/tasks/[id]/supportive-action", params: { id: taskId } });
+      return;
+    }
+    if (actionId === ACTION_NOT_STARTED_SHORTEN) {
+      // ARCHI -- Extend Task-Not-Started Notification task, requirement
+      // 3: "קצר את המשימה" reuses the EXISTING task-shrink screen
+      // (TaskAdaptationScreen, already reachable from
+      // live/SupportiveActionFlowScreen.tsx's own step 7) -- never a
+      // second, separately-authored shrink mechanism.
+      await cancelTaskNotStartedNotification();
+      router.push({ pathname: "/tasks/[id]/adapt", params: { id: taskId } });
       return;
     }
     if (actionId === ACTION_NOT_STARTED_FINISH_OR_GIVE_UP) {
