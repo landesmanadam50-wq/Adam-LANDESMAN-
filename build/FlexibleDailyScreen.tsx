@@ -224,31 +224,27 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
     setScheduled(computed);
 
     // ARCHI -- Unified Floating Overlay & Mini ARC Improvements task,
-    // sections 1+2+8: Home is the ONE place that shows the unified
-    // panel's IDLE state (3 moods, next scheduled task, "עבור למשימה
-    // הבאה", "הוסף תובנה") -- but only while NO task session is
-    // currently active; live/ActiveTaskScreen.tsx is already the one
-    // place that owns the panel the instant a session exists (its own
-    // showFloatingTimerOverlay/updateFloatingTimerOverlay calls), so
-    // this must never fight it for control. isTaskTimerRunStale (same
-    // staleness check live/PersistentTaskControls.tsx's own
-    // handleStartTaskPress already uses) treats a leftover stale run as
-    // "no real session," exactly like that existing precedent.
+    // sections 1+2+8: Home keeps the unified panel current on every
+    // focus -- the IDLE state (3 moods, next scheduled task, "עבור
+    // למשימה הבאה", "הוסף תובנה") when no session is active, or the
+    // ACTIVE state (current task's live title/progress) when one is.
+    //
+    // Task-name sync fix: this used to only ever resync the IDLE state
+    // here, on the theory that live/ActiveTaskScreen.tsx alone owns the
+    // panel while a session is active (its own
+    // showFloatingTimerOverlay/updateFloatingTimerOverlay calls) and
+    // Home resyncing too would "fight it for control." In practice
+    // that meant renaming the currently-running task from Home's own
+    // "ערוך" (without ever revisiting Task LIVE) left the floating
+    // overlay, its lock-screen notification, and the home-screen widget
+    // all showing the OLD title until the trainee next opened Task
+    // LIVE. Home's reload() only ever runs while HOME itself is
+    // focused, i.e. Task LIVE is not -- so there is no real screen to
+    // "fight," and resyncFloatingOverlayToCurrentState (already used by
+    // the activation-button toggle below for exactly this purpose) is
+    // safe and idempotent to call unconditionally here too.
     if (isTodayMode) {
-      const activeRun = await loadTaskTimerRun();
-      if (!activeRun || isTaskTimerRunStale(activeRun, new Date())) {
-        const nextScheduled = await resolveNextScheduledTaskDisplay(null, new Date());
-        await showIdleFloatingOverlayPanel(
-          nextScheduled
-            ? {
-                title: nextScheduled.task.title,
-                effectiveStartTime: nextScheduled.effectiveStartTime,
-                durationMinutes: nextScheduled.task.expectedDurationMinutes,
-                isOverdue: nextScheduled.isOverdue,
-              }
-            : null
-        );
-      }
+      await resyncFloatingOverlayToCurrentState();
       void topUpRemindersIfNeeded();
       void recomputeTaskNotStartedNotification();
     }

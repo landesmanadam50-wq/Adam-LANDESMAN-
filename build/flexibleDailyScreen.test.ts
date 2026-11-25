@@ -411,18 +411,17 @@ test("cancelSelectingContinuousGroup clears the in-progress selection entirely -
 
 // --- ARCHI -- Unified Floating Overlay & Mini ARC Improvements task ---
 
-test("scenario 14 (returning from background restores correct overlay state): reload() -- already re-run on every useFocusEffect AND on AppState 'active' via resolveTodayIfNeeded -- is also the ONE place that keeps the unified panel's IDLE state current, but only in today mode and only while no real task session is active (isTaskTimerRunStale, same staleness check live/PersistentTaskControls.tsx already uses)", () => {
+test("task-name sync fix: reload() -- already re-run on every useFocusEffect AND on AppState 'active' via resolveTodayIfNeeded -- keeps the unified panel current in BOTH its idle and active states, via the single resyncFloatingOverlayToCurrentState helper (never a narrower, idle-only inline rebuild that would leave the overlay/notification/widget showing a stale task title whenever Home -- not Task LIVE -- is the screen that regains focus after a rename)", () => {
   const fnIndex = screen.indexOf("const reload = useCallback");
   const fnBody = screen.slice(fnIndex, screen.indexOf("}, [dateLocal, weekday, isTodayMode]);", fnIndex));
   assert.ok(fnBody.includes("if (isTodayMode) {"));
-  assert.ok(fnBody.includes("const activeRun = await loadTaskTimerRun();"));
-  assert.ok(fnBody.includes("if (!activeRun || isTaskTimerRunStale(activeRun, new Date())) {"));
-  assert.ok(fnBody.includes("await showIdleFloatingOverlayPanel("));
+  assert.ok(fnBody.includes("await resyncFloatingOverlayToCurrentState();"));
+  assert.ok(!fnBody.includes("if (!activeRun || isTaskTimerRunStale(activeRun, new Date())) {"), "must never re-introduce a narrower, idle-only inline resync inside reload() -- the single resyncFloatingOverlayToCurrentState helper is the only place that decides idle vs. active");
 });
 
-test("the idle panel's own next-task fields (title/effectiveStartTime/durationMinutes) come from resolveNextScheduledTaskDisplay -- the SAME 'what's next' pipeline the rest of the app already uses, never a second/duplicate resolution -- and are entirely omitted (null) when nothing is scheduled, never an invented empty task", () => {
-  const fnIndex = screen.indexOf("const reload = useCallback");
-  const fnBody = screen.slice(fnIndex, screen.indexOf("}, [dateLocal, weekday, isTodayMode]);", fnIndex));
+test("the idle panel's own next-task fields (title/effectiveStartTime/durationMinutes) come from resolveNextScheduledTaskDisplay -- the SAME 'what's next' pipeline the rest of the app already uses, never a second/duplicate resolution -- and are entirely omitted (null) when nothing is scheduled, never an invented empty task. This lives in resyncFloatingOverlayToCurrentState's own idle fallback -- the ONE place reload() and the activation-button toggle both now share it, never duplicated inline in either caller", () => {
+  const fnIndex = screen.indexOf("async function resyncFloatingOverlayToCurrentState()");
+  const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
   assert.ok(fnBody.includes("const nextScheduled = await resolveNextScheduledTaskDisplay(null, new Date());"));
   assert.ok(fnBody.includes("title: nextScheduled.task.title,"));
   assert.ok(fnBody.includes("effectiveStartTime: nextScheduled.effectiveStartTime,"));
