@@ -56,19 +56,34 @@ import { router } from "expo-router";
 
 import { resolveCurrentTaskState } from "../arc/dailyPlan.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
+import { selectPositiveMemoryForTaskSuccess } from "../arc/positiveMemorySelection.ts";
+import { recordPositiveMemorySelection } from "../arc/positiveMemorySelectionHistory.ts";
 import { resolveTaskNotStartedAlert } from "../arc/taskNotStartedAlert.ts";
 import { markTaskOccurrenceRemoved } from "../arc/taskOccurrenceOverride.ts";
 import type { TaskTimerRun } from "../arc/taskTimer.ts";
 import { resolveTodaysScheduledPlan } from "./dailyPlan.ts";
 import { ALARM_FOREGROUND_SERVICE_TYPES, ensureNotifeePermissionAsync, ensureTaskNotStartedChannelAsync, SILENT_DELIVERY_CHANNEL_ID, TASK_NOT_STARTED_CHANNEL_ID } from "./alarmChannel.ts";
-import { deleteTask, loadArcTaskReminderSettings, loadTaskOccurrenceOverrides, loadTaskTimerRun, saveTaskNotStartedNotificationState, clearTaskNotStartedNotificationState, upsertTaskOccurrenceOverrideEntry } from "./storage.ts";
+import {
+  deleteTask,
+  loadArcTaskReminderSettings,
+  loadPositiveMemories,
+  loadPositiveMemorySelectionHistory,
+  loadTaskOccurrenceOverrides,
+  loadTaskTimerRun,
+  saveTaskNotStartedNotificationState,
+  savePositiveMemorySelectionHistory,
+  clearTaskNotStartedNotificationState,
+  upsertTaskOccurrenceOverrideEntry,
+} from "./storage.ts";
 
 const TASK_NOT_STARTED_NOTIFICATION_ID = "archi-task-not-started-notification";
 const TASK_NOT_STARTED_ARM_ID = "archi-task-not-started-arm";
 const TASK_NOT_STARTED_BODY = "האם אתה צריך פעולה תומכת?";
+const SUCCESS_MOMENT_HEADING = "זוכר שהצלחת?";
 
 const ACTION_NOT_STARTED_SUPPORT = "task_not_started_support";
 const ACTION_NOT_STARTED_START = "task_not_started_start";
+const ACTION_NOT_STARTED_SHORTEN = "task_not_started_shorten";
 const ACTION_NOT_STARTED_FINISH_OR_GIVE_UP = "task_not_started_finish_or_give_up";
 
 /** `effectiveStartTime` is always a plain "HH:MM" clock time FOR TODAY (applyScheduleMode's own output, resolved from `now`'s own date) -- never a second date-parsing convention. */
@@ -132,14 +147,37 @@ async function armNextTaskNotStartedAlarm(scheduled: ScheduledPlanEntry[], now: 
   }
 }
 
+/**
+ * ARCHI -- Extend Task-Not-Started Notification task, requirement 3:
+ * "זוכר שהצלחת?" -- surfaces a relevant PAST SUCCESS for this exact
+ * task through the SAME automatic-selection engine ARC Success already
+ * uses (selectPositiveMemoryForTaskSuccess, arc/positiveMemorySelection.ts)
+ * -- never a second, separately-authored memory picker, and never a
+ * fabricated success when nothing documented actually matches (returns
+ * null, leaving the notification body exactly as before). Recording the
+ * pick into the SAME "arc_success"/taskId selection-history scope ARC
+ * Success itself uses gives this surface the identical "avoid repeating
+ * the same memory" variety behavior for free.
+ */
+async function resolveTaskNotStartedSuccessMomentText(taskId: string, now: Date): Promise<string | null> {
+  const [memories, history] = await Promise.all([loadPositiveMemories(), loadPositiveMemorySelectionHistory()]);
+  const memory = selectPositiveMemoryForTaskSuccess(memories, taskId, {}, history, []);
+  if (!memory) return null;
+  const updatedHistory = recordPositiveMemorySelection(history, memory.id, "arc_success", taskId, now.toISOString());
+  await savePositiveMemorySelectionHistory(updatedHistory);
+  return memory.successDescription?.trim() || memory.title.trim() || memory.whatWasSpecial.trim() || null;
+}
+
 async function displayTaskNotStartedNotification(entry: ScheduledPlanEntry, now: Date): Promise<void> {
   try {
     await ensureNotifeePermissionAsync();
     await ensureTaskNotStartedChannelAsync();
+    const successMomentText = await resolveTaskNotStartedSuccessMomentText(entry.task.id, now);
+    const body = successMomentText ? `${TASK_NOT_STARTED_BODY}\n\n${SUCCESS_MOMENT_HEADING}\n${successMomentText}` : TASK_NOT_STARTED_BODY;
     await notifee.displayNotification({
       id: TASK_NOT_STARTED_NOTIFICATION_ID,
       title: entry.task.title,
-      body: TASK_NOT_STARTED_BODY,
+      body,
       data: { kind: "taskNotStarted", taskId: entry.task.id },
       android: {
         channelId: TASK_NOT_STARTED_CHANNEL_ID,
@@ -147,9 +185,9 @@ async function displayTaskNotStartedNotification(entry: ScheduledPlanEntry, now:
         autoCancel: false,
         pressAction: { id: "default" },
         actions: [
-          { title: "אני צריך פעולה תומכת", pressAction: { id: ACTION_NOT_STARTED_SUPPORT } },
           { title: "התחל משימה", pressAction: { id: ACTION_NOT_STARTED_START } },
-          { title: "סיום או ויתור על המשימה", pressAction: { id: ACTION_NOT_STARTED_FINISH_OR_GIVE_UP } },
+          { title: "קצר את המשימה", pressAction: { id: ACTION_NOT_STARTED_SHORTEN } },
+          { title: "אני צריך פעולה תומכת", pressAction: { id: ACTION_NOT_STARTED_SUPPORT } },
         ],
       },
     });
@@ -266,6 +304,16 @@ export async function handleTaskNotStartedNotificationEvent(event: Event): Promi
     if (actionId === ACTION_NOT_STARTED_SUPPORT) {
       await cancelTaskNotStartedNotification();
       router.push({ pathname: "/tasks/[id]/supportive-action", params: { id: taskId } });
+      return;
+    }
+    if (actionId === ACTION_NOT_STARTED_SHORTEN) {
+      // ARCHI -- Extend Task-Not-Started Notification task, requirement
+      // 3: "קצר את המשימה" reuses the EXISTING task-shrink screen
+      // (TaskAdaptationScreen, already reachable from
+      // live/SupportiveActionFlowScreen.tsx's own step 7) -- never a
+      // second, separately-authored shrink mechanism.
+      await cancelTaskNotStartedNotification();
+      router.push({ pathname: "/tasks/[id]/adapt", params: { id: taskId } });
       return;
     }
     if (actionId === ACTION_NOT_STARTED_FINISH_OR_GIVE_UP) {

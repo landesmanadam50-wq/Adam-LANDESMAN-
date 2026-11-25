@@ -6,7 +6,7 @@ import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, w
 
 import { BODY_REGIONS, BODY_REGION_LABELS } from "../arc/bodyRegionRoles.ts";
 import type { BodyRegion } from "../arc/bodyRegionRoles.ts";
-import { BODY_SCAN_CLOSEDNESS_INFO, BODY_SCAN_CONTRACTION_INFO, BODY_SCAN_HEAVINESS_INFO, BODY_SCAN_OPENNESS_INFO } from "../arc/bodyScanRegions.ts";
+import { BODY_SCAN_CLOSEDNESS_INFO, BODY_SCAN_CONTRACTION_INFO, BODY_SCAN_HEAVINESS_INFO, BODY_SCAN_OPENNESS_INFO, BODY_SCAN_REGION_LABELS } from "../arc/bodyScanRegions.ts";
 import type { BodyScanRegion } from "../arc/bodyScanRegions.ts";
 import { canPromoteToSupportiveOpening, MAX_SUPPORTIVE_OPENING_SELECTIONS, resolveBodyScanContractionState, resolveBodyScanHeavinessState, resolveBodyScanOpeningRole, resolveNextOpeningRole } from "../arc/bodyScanSelection.ts";
 import type { BodyScanSide } from "../arc/bodyScanSelection.ts";
@@ -217,7 +217,7 @@ import {
   PREDEFINED_EMOTION_OPTIONS,
   SUPPORTIVE_SENSATION_OPTIONS,
 } from "../arc/newArcLiveTypes.ts";
-import type { ArcInvocationMode, ArcSessionRequest, EmotionSelection, NewArcLiveSessionState } from "../arc/newArcLiveTypes.ts";
+import type { ArcInvocationMode, ArcSessionRequest, EmotionSelection, NewArcLiveSessionState, SuggestedBodySensationOption } from "../arc/newArcLiveTypes.ts";
 import { STANDALONE_ARC_TASK_ID, createNewArcLiveSessionState, describeArcSessionConfig, sessionMatchesRequest } from "../arc/newArcLiveTypes.ts";
 import { listSupportiveFeelingAlternatives, resolveSupportiveFeeling } from "../arc/supportiveFeelingMapping.ts";
 import type { SupportiveFeelingMapping } from "../arc/supportiveFeelingMapping.ts";
@@ -2112,6 +2112,7 @@ export default function NewArcLiveScreen({
               isSelected={(region, side) => resolveShortBodyMarkingPhase(session!, region, side) !== "none"}
               onToggle={(region, side) => commit(cycleShortBodyMarking(session!, region, side))}
             />
+            {renderBodySensationRegionSuggestions(session!.suggestedBodySensations, (region, side) => commit(cycleShortBodyMarking(session!, region, side)))}
             <Pressable style={styles.primaryButton} onPress={() => commit(advance(session!, now))}>
               <Text style={styles.primaryButtonText}>המשך</Text>
             </Pressable>
@@ -2259,6 +2260,7 @@ export default function NewArcLiveScreen({
               isSelected={(region, side) => resolveBodyScanContractionState(session!.bodyScanContractionRegions, region, side) === "contraction"}
               onToggle={(region, side) => commit(cycleBodyScanContractionAndGreen(session!, region, side))}
             />
+            {renderBodySensationRegionSuggestions(session!.suggestedBodySensations, (region, side) => commit(cycleBodyScanContractionAndGreen(session!, region, side)))}
             <Pressable
               style={[styles.primaryButton, !canContinue && styles.disabledButton]}
               disabled={!canContinue}
@@ -2370,6 +2372,10 @@ export default function NewArcLiveScreen({
                 if (next) commit(next);
               }}
             />
+            {renderBodySensationRegionSuggestions(session!.suggestedBodySensations, (region, side) => {
+              const next = attemptToggleSupportiveOpeningRegion(session!, region, side);
+              if (next) commit(next);
+            })}
             {!feeling &&
               renderSupportiveFeelingPicker(
                 feeling,
@@ -2572,6 +2578,10 @@ export default function NewArcLiveScreen({
                 if (next) commit(next);
               }}
               />
+              {renderBodySensationRegionSuggestions(session!.suggestedBodySensations, (region, side) => {
+                const next = attemptToggleOpeningBodyScanRegion(session!, region, side);
+                if (next) commit(next);
+              })}
               {renderSupportiveFeelingPicker(
                 resolveFinalSupportiveFeeling(session!),
                 (feeling) => {
@@ -3535,6 +3545,46 @@ export default function NewArcLiveScreen({
  * adding custom-text support here propagates to all three at once --
  * never a second, duplicated supportive-feeling picker.
  */
+/**
+ * ARCHI -- Extend Body-Sensation Suggestions task, requirement 1: the
+ * ONE shared "regions that helped before" chip row for every
+ * color-marking body-selection screen (body_scan_contraction,
+ * body_scan_opening_region, short_body_marking, Shortened ARC's own
+ * supportive_area_select) -- the exact same `session.suggestedBodySensations`
+ * already computed at reload()/buildFresh() for Mini ARC's own
+ * free-text chips above, just filtered to entries that actually name a
+ * body region (free-text-only discoveries, region === null, have
+ * nothing to highlight on a body map and are silently skipped here --
+ * they still appear on Mini ARC's own text-field chips). Tapping a
+ * chip calls the SAME onToggle/commit path the real body-map tap on
+ * that region would use (passed in as `onSelectRegion`), so it is
+ * never a second, separate selection mechanism and never auto-applies
+ * anything without an explicit tap -- "preserve freedom of choice."
+ */
+function renderBodySensationRegionSuggestions(suggestions: SuggestedBodySensationOption[], onSelectRegion: (region: BodyScanRegion, side: BodyScanSide) => void) {
+  const regionSuggestions = suggestions.filter((suggestion): suggestion is SuggestedBodySensationOption & { region: BodyScanRegion } => suggestion.region !== null);
+  if (regionSuggestions.length === 0) return null;
+  return (
+    <View>
+      <Text style={styles.supporting}>אזורים שעזרו לך בעבר (אפשר לבחור אחר)</Text>
+      <View style={styles.chipRow}>
+        {regionSuggestions.map((suggestion, index) => (
+          <Pressable
+            key={`${suggestion.region}-${suggestion.side ?? "center"}-${index}`}
+            style={styles.chip}
+            onPress={() => onSelectRegion(suggestion.region, suggestion.side)}
+          >
+            <Text style={styles.chipText}>
+              {BODY_SCAN_REGION_LABELS[suggestion.region]}
+              {suggestion.side === "left" ? " (שמאל)" : suggestion.side === "right" ? " (ימין)" : ""}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function renderSupportiveFeelingPicker(
   current: SupportiveFeelingMapping | null,
   onPick: (feeling: SupportiveFeelingMapping) => void,

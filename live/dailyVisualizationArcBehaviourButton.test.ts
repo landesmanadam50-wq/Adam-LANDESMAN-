@@ -27,7 +27,7 @@ function renderBranchBody(): string {
   assert.ok(firstOccurrence !== -1);
   const start = module_.indexOf('if (step.kind === "task_body_scan") {', firstOccurrence + 1);
   assert.ok(start !== -1, "expected a second, render-side occurrence of the task_body_scan check");
-  return module_.slice(start, start + 1800);
+  return module_.slice(start, start + 2900);
 }
 
 test("the ARC Behaviour button is only rendered when the current task has a linkedArcGymSituationId -- never shown as a dead/disabled button otherwise", () => {
@@ -44,4 +44,57 @@ test("the existing free-text body-scan note stays completely unchanged alongside
   const body = renderBranchBody();
   assert.ok(body.includes("value={bodyScanNoteDraft}"));
   assert.ok(body.includes("onChangeText={setBodyScanNoteDraft}"));
+});
+
+/**
+ * ARCHI -- Extend Save-For-Later Beyond Linked Situations task,
+ * requirement 2: the NEW always-available save-for-later button never
+ * depends on task.linkedArcGymSituationId -- it must appear in the
+ * render branch unconditionally, strictly before the existing
+ * linked-only button's own guard.
+ */
+test("a NEW save-for-later button is rendered unconditionally -- it never checks task.linkedArcGymSituationId", () => {
+  const body = renderBranchBody();
+  const saveButtonIndex = body.indexOf("onSaveCaseForLaterPractice");
+  assert.ok(saveButtonIndex !== -1, "expected an always-available save-for-later call site");
+  const linkedGuardIndex = body.indexOf("!!task?.linkedArcGymSituationId");
+  assert.ok(saveButtonIndex < linkedGuardIndex, "the new button must render before (independently of) the linked-only guard");
+});
+
+test("the save-for-later handler goes through the ArcTrigger/ArcSavedExercise/ArcSavedBodyOption chain only -- never a fabricated ArcGymSituation/manifestId/behaviorId", () => {
+  const source = readSource("live/DailyVisualizationScreen.tsx");
+  assert.ok(source.includes("createArcSavedExercise("));
+  assert.ok(source.includes("promoteArcSavedExerciseToBodyOption("));
+  assert.ok(source.includes("createArcTrigger("));
+  assert.ok(source.includes("addBodyOptionToTrigger("));
+  assert.ok(source.includes("upsertArcSavedExerciseEntry("));
+  assert.ok(source.includes("upsertArcSavedBodyOptionEntry("));
+  assert.ok(source.includes("upsertArcTriggerEntry("));
+  const handlerIndex = source.indexOf("async function onSaveCaseForLaterPractice");
+  assert.ok(handlerIndex !== -1);
+  const handlerBody = source.slice(handlerIndex, handlerIndex + 1200);
+  assert.ok(!handlerBody.includes("manifestId"));
+  assert.ok(!handlerBody.includes("behaviorId"));
+  assert.ok(!/createArcGymSituation|generateArcGymSituationId/.test(handlerBody));
+});
+
+test("the save-for-later snapshot is genuinely empty -- no field is fabricated from the body-scan note", () => {
+  const source = readSource("live/DailyVisualizationScreen.tsx");
+  const constIndex = source.indexOf("const EMPTY_BODY_PROTOCOL_SNAPSHOT");
+  assert.ok(constIndex !== -1);
+  const constBody = source.slice(constIndex, constIndex + 500);
+  assert.match(constBody, /bodyScanContractionRegions:\s*\[\]/);
+  assert.match(constBody, /openingBodyScanRegions:\s*\[\]/);
+  assert.match(constBody, /supportiveBodyArea:\s*null/);
+  assert.match(constBody, /supportiveSensation:\s*null/);
+  assert.match(constBody, /positiveMovement:\s*null/);
+  assert.match(constBody, /selectedSupportiveFeeling:\s*null/);
+});
+
+test("the free-text body-scan note (when present) is carried into the trigger's own description field -- never forced into a body/sensation field it might mischaracterize", () => {
+  const source = readSource("live/DailyVisualizationScreen.tsx");
+  const handlerIndex = source.indexOf("async function onSaveCaseForLaterPractice");
+  assert.ok(handlerIndex !== -1);
+  const handlerBody = source.slice(handlerIndex, handlerIndex + 1200);
+  assert.ok(handlerBody.includes("updateArcTrigger(trigger, { description: bodyScanNoteDraft }"));
 });

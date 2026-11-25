@@ -7,6 +7,18 @@ import { findBodyScanNote, resolveCurrentStep, type DailyVisualizationStep } fro
 import type { Task } from "../arc/tasks.ts";
 import { findActionStageByKind, hasConfiguredActionStages } from "../arc/taskStage.ts";
 import {
+  addBodyOptionToTrigger,
+  createArcSavedExercise,
+  createArcTrigger,
+  generateArcSavedBodyOptionId,
+  generateArcSavedExerciseId,
+  generateArcTriggerId,
+  promoteArcSavedExerciseToBodyOption,
+  updateArcTrigger,
+} from "../arc/arcSaving.ts";
+import type { ArcBodyProtocolSnapshot } from "../arc/arcSaving.ts";
+import { upsertArcSavedBodyOptionEntry, upsertArcSavedExerciseEntry, upsertArcTriggerEntry } from "../data/storage.ts";
+import {
   advanceDailyVisualization,
   bypassDailyVisualization,
   commitDailyVisualizationImmediateActionTask,
@@ -21,6 +33,28 @@ import {
 
 const FEELING_SUGGESTIONS = ["סיפוק", "רוגע", "ביטחון", "תחושת מימוש", "מוטיבציה", "שלווה פנימית"];
 const MOVEMENT_SUGGESTIONS = ["ישור הגב", "הרפיית הכתפיים", "הרמת הראש", "פתיחת החזה"];
+
+/**
+ * ARCHI -- Extend Save-For-Later Beyond Linked Situations task: the
+ * body-work fields of a saved exercise/body option when there is no
+ * real, just-practiced ARC session to capture them from (Daily
+ * Visualization's body-scan step is a free-text note, never a live
+ * ARC session) -- every field stays at its true "nothing captured"
+ * state, exactly like arc/arcSaving.ts's own captureArcBodyProtocolSnapshot
+ * would produce for a session where nothing was ever selected. Never
+ * fabricated content; the chain (arc/arcSaving.ts, confirmed by direct
+ * read) already tolerates an all-empty snapshot as a valid, storable
+ * entity.
+ */
+const EMPTY_BODY_PROTOCOL_SNAPSHOT: ArcBodyProtocolSnapshot = {
+  bodyScanContractionRegions: [],
+  openingBodyScanRegions: [],
+  supportiveBodyArea: null,
+  supportiveBodyAreaCustomLabel: null,
+  supportiveSensation: null,
+  positiveMovement: null,
+  selectedSupportiveFeeling: null,
+};
 
 /**
  * live/DailyVisualizationScreen.tsx (route /daily-visualization)
@@ -254,6 +288,39 @@ function StepContent({
   bodyScanNoteDraft: string;
   setBodyScanNoteDraft: (value: string) => void;
 }) {
+  const [savingCaseForLater, setSavingCaseForLater] = useState(false);
+  const [savedCaseForLater, setSavedCaseForLater] = useState(false);
+
+  /**
+   * ARCHI -- Extend Save-For-Later Beyond Linked Situations task,
+   * requirement 2: mirrors live/NewArcLiveScreen.tsx's own
+   * handleSaveForLaterPractice EXACTLY (same ArcTrigger/ArcSavedExercise/
+   * ArcSavedBodyOption chain, same three storage upserts), just built
+   * from a task's own title/the free-text body-scan note instead of a
+   * live ARC session's fields -- never through a second, separately-
+   * authored save path, and never creating an ArcGymSituation or any
+   * manifestId/behaviorId (there is no Manifest behavior here to
+   * legitimately point one at).
+   */
+  async function onSaveCaseForLaterPractice(task: Task | undefined) {
+    if (savingCaseForLater) return;
+    setSavingCaseForLater(true);
+    try {
+      const now = new Date().toISOString();
+      const label = task?.title?.trim() || "קושי שתועד בוויזואליזציה היומית";
+      const exercise = createArcSavedExercise(generateArcSavedExerciseId(), label, EMPTY_BODY_PROTOCOL_SNAPSHOT, "full", null, now);
+      await upsertArcSavedExerciseEntry(exercise);
+      const bodyOption = promoteArcSavedExerciseToBodyOption(exercise, generateArcSavedBodyOptionId(), exercise.label, now);
+      await upsertArcSavedBodyOptionEntry(bodyOption);
+      let trigger = addBodyOptionToTrigger(createArcTrigger(generateArcTriggerId(), label, now), bodyOption.id, now);
+      if (bodyScanNoteDraft.trim()) trigger = updateArcTrigger(trigger, { description: bodyScanNoteDraft }, now);
+      await upsertArcTriggerEntry(trigger);
+      setSavedCaseForLater(true);
+    } finally {
+      setSavingCaseForLater(false);
+    }
+  }
+
   if (step.kind === "task_stage_visualize") {
     const task = tasks[step.taskIndex];
     if (!task) return null;
@@ -335,6 +402,19 @@ function StepContent({
           textAlign="right"
           multiline
         />
+        {/* ARCHI -- Extend Save-For-Later Beyond Linked Situations task,
+            requirement 2: an ALWAYS-visible way to save a case the
+            trainee struggled with for future ARC practice, never
+            requiring task.linkedArcGymSituationId -- the button right
+            below (unchanged) still only ever appears once a real
+            ArcGymSituation link exists; this one needs no such link at
+            all, going only through the ArcTrigger/ArcSavedExercise/
+            ArcSavedBodyOption chain, exactly like
+            live/NewArcLiveScreen.tsx's own handleSaveForLaterPractice --
+            never a fabricated ArcGymSituation/manifestId/behaviorId. */}
+        <Pressable style={styles.bypassLink} onPress={() => void onSaveCaseForLaterPractice(task)} disabled={savingCaseForLater}>
+          <Text style={styles.bypassLinkText}>{savedCaseForLater ? "נשמר לתרגול עתידי" : "שמור את הקושי הזה לתרגול עתידי"}</Text>
+        </Pressable>
         {!!task?.linkedArcGymSituationId && (
           <Pressable style={styles.bypassLink} onPress={() => router.push({ pathname: "/arc-gym/train/[id]", params: { id: task.linkedArcGymSituationId! } })}>
             <Text style={styles.bypassLinkText}>תרגול ARC על המצב הזה</Text>
