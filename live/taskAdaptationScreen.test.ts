@@ -19,11 +19,24 @@ function readSource(relativePath: string): string {
 const screen = readSource("live/TaskAdaptationScreen.tsx");
 const route = readSource("app/tasks/[id]/adapt.tsx");
 const layout = readSource("app/_layout.tsx");
+const activeTaskScreen = readSource("live/ActiveTaskScreen.tsx");
 
 test("the route is registered and wires taskId straight through", () => {
   assert.match(layout, /<Stack\.Screen name="tasks\/\[id\]\/adapt"/);
   assert.match(route, /from ["']\.\.\/\.\.\/\.\.\/live\/TaskAdaptationScreen\.tsx["']/);
   assert.ok(route.includes("TaskAdaptationScreen taskId={id}"));
+});
+
+/**
+ * ARCHI -- Extend Task-Not-Started Notification task, requirement 3:
+ * "קצר את המשימה" is reachable as a secondary option directly on Task
+ * LIVE (the not-yet-started idle button column), never as a 4th
+ * task-not-started notification button -- the Android action cap stays
+ * at 3 (support/start/give-up, data/taskNotStartedNotification.ts).
+ */
+test("Task LIVE's own idle button column offers 'קצר את המשימה', deep-linking to /tasks/[id]/adapt for the current task", () => {
+  assert.ok(activeTaskScreen.includes('router.push({ pathname: "/tasks/[id]/adapt", params: { id: task.id } })'));
+  assert.ok(activeTaskScreen.includes(">קצר את המשימה<"));
 });
 
 test("the suggested duration defaults to suggestHalvedDuration, editable before confirming", () => {
