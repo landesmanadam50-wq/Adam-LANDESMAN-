@@ -46,7 +46,7 @@ test("Today shows the ARC window as its own tappable row, computed from resolveA
 });
 
 test("Task LIVE's pre-start block offers the ARC-window button ONLY when the task has one set, and the plain 'התחלה' button is never gated behind it", () => {
-  const preStartIndex = activeTaskScreen.indexOf("{!showIdentityInsightPrompt && !timerRun && !restRun && !timerEnded && (");
+  const preStartIndex = activeTaskScreen.indexOf("{!showIdentityInsightPrompt && !timerRun && !restRun && !timerEnded && !continuationLoop && (");
   const preStartBlock = activeTaskScreen.slice(preStartIndex, preStartIndex + 3700);
   assert.ok(preStartBlock.includes("task.arcWindowMinutesBefore !== null && ("));
   assert.ok(preStartBlock.includes('pathname: "/tasks/[id]/arc-window"'));

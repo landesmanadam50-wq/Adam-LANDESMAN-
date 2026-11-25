@@ -487,79 +487,6 @@ export interface NewArcLiveSessionState {
   skipEmotionSelection: boolean;
 
   /**
-   * ARCHI -- Unified Final Specification task, section 2 ("Action
-   * Selection must occur immediately AFTER Regulation and BEFORE
-   * Encoding"): which of the four sources the "action_selection"/
-   * "mini_action_selection" step resolved, or null when that step was
-   * never reached (isActiveTaskLiveOrigin/arcGymSituationId -- see
-   * isStepReachable) or when the trainee reached it but entered a
-   * brand-new action with no suitable scheduled task available (the
-   * spec's own priority (5), which simply reuses the existing
-   * `firstAction` field exactly as every pre-existing session already
-   * does -- no new source value needed for it). "scheduledTask" covers
-   * both an explicitly-selected future/early-start task AND an
-   * explicitly-selected due task (the spec's own priorities (2) and
-   * (4) -- both are "an existing scheduled task," resolved identically
-   * by taskId); "temporaryAction" covers priority (3). Read by
-   * resolveEncodingMantra (arc/newArcLiveCopy.ts, via its own
-   * resolveActionText helper) and by returnToTask
-   * (live/NewArcLiveScreen.tsx) for post-ARC routing. Set exactly once,
-   * by setSelectedAction (arc/newArcLiveSteps.ts), never mutated again
-   * afterward. False/null for every session created before this field
-   * existed.
-   */
-  selectedActionSource: "scheduledTask" | "temporaryAction" | null;
-
-  /**
-   * The real task id of the explicitly-selected scheduled/due task,
-   * only when selectedActionSource === "scheduledTask" -- null
-   * otherwise. Used by returnToTask to navigate to that exact task's
-   * own Task LIVE/Details screen (never auto-starting it -- the
-   * trainee still taps Start themselves).
-   */
-  selectedActionTaskId: string | null;
-
-  /**
-   * The resolved display title for the selected action: the scheduled
-   * task's own title when selectedActionSource === "scheduledTask", or
-   * the trainee's own entered text when selectedActionSource ===
-   * "temporaryAction" -- null when selectedActionSource is null.
-   */
-  selectedActionTitle: string | null;
-
-  /**
-   * The selected scheduled task's own saved first action (Task.firstAction),
-   * only when selectedActionSource === "scheduledTask" and that task
-   * actually has one set -- null otherwise (including for
-   * "temporaryAction," which has no separate first-action field of its
-   * own, only its title). resolveEncodingMantra prefers this over
-   * selectedActionTitle when present, matching the existing priority
-   * the active-task-origin path already gives `firstAction` over
-   * `taskTitle`.
-   */
-  selectedActionFirstAction: string | null;
-
-  /**
-   * The clamped duration (minutes) chosen for a temporary action, only
-   * when selectedActionSource === "temporaryAction" -- null otherwise.
-   * Recalculated against the time remaining until the next scheduled
-   * task at the moment the temporary task is actually created (just
-   * before offering to start it), never capped at the original
-   * Action-Selection-time estimate -- see returnToTask.
-   *
-   * Smart To-Do List task, section 9: ALSO set (non-null) when
-   * selectedActionSource === "scheduledTask" and the selected task is a
-   * To-Do item accepted as a SPLIT suggestion (arc/todoList.ts's own
-   * TodoSuggestion, reason "split_suggested") -- the chosen split's own
-   * minute count, never the task's full remaining duration. Every
-   * ordinary (non-split) "scheduledTask" selection still leaves this
-   * null exactly as before. returnToTask (live/NewArcLiveScreen.tsx)
-   * reads it to start the timer for only the split's own duration,
-   * never the whole task.
-   */
-  selectedActionDurationMinutes: number | null;
-
-  /**
    * ARCHI -- Action-Readiness Check ("בדיקת מוכנות לפעולה") task: the
    * two 0-10 ratings captured together on the "action_readiness_check"
    * step (right after "emotion"/"mini_awareness", before
@@ -1084,11 +1011,6 @@ export function createNewArcLiveSessionState(
     sourcePlannedArcId,
     isActiveTaskLiveOrigin: false,
     skipEmotionSelection,
-    selectedActionSource: null,
-    selectedActionTaskId: null,
-    selectedActionTitle: null,
-    selectedActionFirstAction: null,
-    selectedActionDurationMinutes: null,
     unpleasantIntensityRating: null,
     actionReadinessRating: null,
     actionReadinessOutcome: null,

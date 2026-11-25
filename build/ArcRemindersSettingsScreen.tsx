@@ -7,6 +7,7 @@ import { loadArcTaskReminderSettings, saveArcTaskReminderSettings } from "../dat
 import type { ArcTaskReminderSettings } from "../arc/arcReminders.ts";
 import { topUpRemindersIfNeeded } from "../data/arcReminderScheduler.ts";
 import { recomputeTaskTransitionNotification } from "../data/taskTransitionNotification.ts";
+import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
 
 /**
  * build/ArcRemindersSettingsScreen.tsx (route /arc-reminders/settings)
@@ -49,6 +50,7 @@ export default function ArcRemindersSettingsScreen() {
     await saveArcTaskReminderSettings(next);
     await topUpRemindersIfNeeded();
     await recomputeTaskTransitionNotification();
+    await recomputeTaskNotStartedNotification();
   }
 
   if (!settings) {
@@ -104,6 +106,14 @@ export default function ArcRemindersSettingsScreen() {
           <View style={styles.labelColumn}>
             <Text style={styles.fieldLabel}>הסתרת תוכן במסך הנעילה</Text>
             <Text style={styles.fieldHint}>כאשר מופעל, תוכן התזכורות (מנטרות, שאלות, מעברים) לא יוצג על מסך הנעילה -- רק שההתראה הגיעה.</Text>
+          </View>
+        </View>
+
+        <View style={styles.switchRow}>
+          <Switch value={settings.taskNotStartedNotificationEnabled} onValueChange={(value) => update({ taskNotStartedNotificationEnabled: value })} />
+          <View style={styles.labelColumn}>
+            <Text style={styles.fieldLabel}>התראה על משימה שלא התחילה</Text>
+            <Text style={styles.fieldHint}>התראה מתמשכת כאשר הגיע זמן ההתחלה של משימה בלוח היומי הגמיש ושום דבר לא התחיל בפועל.</Text>
           </View>
         </View>
       </ScrollView>

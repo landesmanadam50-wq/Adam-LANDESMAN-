@@ -167,30 +167,17 @@ test("required test 19 continued: Shortened ARC GYM reuses the EXACT same SHORTE
   assert.ok(!setBody.includes('"stop_and_accept_urge"'));
   assert.ok(!setBody.includes('"reality_acceptance"'));
   assert.ok(!setBody.includes('"encoding"'));
-  // ARCHI -- Move Action Selection into the Existing Regulation Screen
-  // task: action_selection/mini_action_selection are now PERMANENTLY
-  // unreachable (their own functionality moved into
-  // regulation/mini_acceptance_transition) -- isStepReachable's own gate
-  // on them is unconditional now, so it no longer references
-  // arcGymSituationId at all (the prose above it may still mention the
-  // field historically). Acceptance/Regulation/Encoding's own
-  // reachability is untouched by that gate, so the original invariant
-  // here narrows to exactly that: no arcGymSituationId check anywhere in
-  // the function EXCEPT inside that one dedicated clause's own comment.
+  // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+  // section 1: action_selection/mini_action_selection are removed
+  // entirely from the step-order arrays (never merely gated unreachable
+  // any more), so isStepReachable no longer has any dedicated clause
+  // for them at all. Acceptance/Regulation/Encoding's own reachability
+  // must still never special-case arcGymSituationId anywhere in the
+  // function.
   const reachableFnIndex = newArcLiveSteps.indexOf("function isStepReachable(");
   const reachableFnBody = newArcLiveSteps.slice(reachableFnIndex, newArcLiveSteps.indexOf("\n}", reachableFnIndex));
-  // The gate's own comment block (not just its code line) is excluded from
-  // "before"/"after" -- it explains arcGymSituationId in prose, which is
-  // expected; what must never happen is arcGymSituationId driving a DIFFERENT
-  // reachability decision outside this one dedicated gate.
-  const gateCommentStart = reachableFnBody.indexOf("// ARCHI -- Move Action Selection into the Existing Regulation Screen");
-  const gateCodeIndex = reachableFnBody.indexOf('(step === "action_selection" || step === "mini_action_selection")');
-  assert.ok(gateCommentStart !== -1 && gateCodeIndex !== -1, "the dedicated action_selection/mini_action_selection gate must exist");
-  const afterGateEnd = reachableFnBody.indexOf("\n  }", gateCodeIndex);
-  const beforeGate = reachableFnBody.slice(0, gateCommentStart);
-  const afterGate = reachableFnBody.slice(afterGateEnd);
-  assert.ok(!beforeGate.includes("arcGymSituationId"), "no reachability check before the dedicated gate may special-case arcGymSituationId -- Acceptance/Regulation/Encoding's own reachability must stay untouched");
-  assert.ok(!afterGate.includes("arcGymSituationId"), "no reachability check after the dedicated gate may special-case arcGymSituationId either");
+  assert.ok(!reachableFnBody.includes('step === "action_selection"'), "the old dedicated action_selection/mini_action_selection gate no longer exists -- both ids are gone from the step-order arrays entirely");
+  assert.ok(!reachableFnBody.includes("arcGymSituationId"), "no reachability check anywhere in this function may special-case arcGymSituationId -- Acceptance/Regulation/Encoding's own reachability must stay untouched");
 });
 
 // --- required test 20 (Nine Functional Improvements task, Improvement 4: relocated) --

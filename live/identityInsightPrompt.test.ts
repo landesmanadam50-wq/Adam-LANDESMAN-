@@ -104,7 +104,7 @@ test("the normal bottom action row (Complete/Next/Skip) and the 'completed' labe
 //      whether the prompt was still genuinely warranted.
 
 test("regression 1/2 (no reflection before starting or during an active task): the pre-start Start/Postpone block excludes itself while the identity-insight prompt is showing, exactly like every other post-completion block already does", () => {
-  const index = activeTaskScreen.indexOf("{!showIdentityInsightPrompt && !timerRun && !restRun && !timerEnded && (");
+  const index = activeTaskScreen.indexOf("{!showIdentityInsightPrompt && !timerRun && !restRun && !timerEnded && !continuationLoop && (");
   assert.ok(index !== -1, "the Start/Postpone block must exclude itself when the identity-insight prompt is showing");
 });
 

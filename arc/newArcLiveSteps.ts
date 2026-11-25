@@ -117,14 +117,18 @@ export const NEW_ARC_MINI_STEP_ORDER: NewArcLiveStepId[] = [
   "action_readiness_check",
   "mini_presence",
   "mini_acceptance_transition",
-  // ARCHI -- Unified Final Specification task, section 2: Mini ARC's own
-  // equivalent insertion point -- "mini_acceptance_transition" is Mini
-  // ARC's own regulation-equivalent moment (no separate "regulation"
-  // step of its own), so this sits directly after it and before
-  // "mini_encoding," gated by the same isActiveTaskLiveOrigin/
-  // arcGymSituationId rule as "action_selection" in the Full ARC order
-  // below (see isStepReachable in this same file).
-  "mini_action_selection",
+  // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+  // section 1: "mini_action_selection" was Mini ARC's own regulation-
+  // equivalent action-picking step (no separate "regulation" step of
+  // its own) -- removed from this order array along with
+  // "action_selection" below, since the app already knows the task's
+  // own action from context, and the new feeling/action flow
+  // (arc/supportiveFeelings.ts) supersedes the "pick an action" purpose
+  // for the standalone-entry case. The step id and its own
+  // getStepContent case stay for historical-data safety
+  // (migrateLegacyNewArcLiveStep below) -- simply never reached by any
+  // session any more; setSelectedAction itself is deleted, since no
+  // reachable path ever calls it again.
   // ARCHI -- Unified 7-Part Update task, Part 5 ("ENCODING MUST LEAD
   // DIRECTLY TO ACTION"): "mini_action" (its own "get ready" screen)
   // and the shared "emotional_action"/"emotional_insight" pair are all
@@ -316,19 +320,18 @@ export const NEW_ARC_LIVE_STEP_ORDER: NewArcLiveStepId[] = [
   "supportive_area_select",
   "acceptance_part_two",
   "regulation",
-  // ARCHI -- Unified Final Specification task, section 2 ("Action
-  // Selection must occur immediately AFTER Regulation and BEFORE
-  // Encoding" -- exact sequence "Acceptance -> Regulation -> Action
-  // Selection -> Encoding -> Task Execution"): unreachable when
-  // isActiveTaskLiveOrigin ("reuse it without asking again") or
-  // arcGymSituationId (ARC GYM's own separate, later positive-action
-  // visualization) -- see isStepReachable above. Otherwise shows "מה
-  // תרצה לעשות כעת?", letting the trainee pick an existing scheduled
-  // task (even one planned hours later) or enter a temporary action;
-  // the result is stored on the session (setSelectedAction) so both
-  // Encoding (resolveEncodingMantra) and post-ARC routing
-  // (returnToTask) can read it back.
-  "action_selection",
+  // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+  // section 1: "action_selection" (the "מה תרצה לעשות כעת?" picker that
+  // used to sit here, immediately after Regulation) is removed from
+  // this order array -- when ARC is entered in the context of a real
+  // task, the app already knows the action (isActiveTaskLiveOrigin);
+  // when entered standalone, the new feeling/action flow
+  // (arc/supportiveFeelings.ts, entered separately from the
+  // "I need a supportive action" notification) supersedes forcing a
+  // pick at the end of ARC itself. The step id, its own getStepContent
+  // case, and setSelectedAction itself all stay for historical-data
+  // safety (migrateLegacyNewArcLiveStep below) -- simply never reached
+  // by any new session any more.
   "encoding",
   // Part 2B ("נקודת מיקוד") / Part 5 ("ENCODING MUST LEAD DIRECTLY TO
   // ACTION"): "focus_color" is removed from Presence (the point color
@@ -508,27 +511,24 @@ export function migrateLegacyNewArcLiveStep(state: NewArcLiveSessionState): NewA
   if (state.currentStep === "stop_and_accept_urge" && state.subIndex > 0) {
     return { ...state, subIndex: 0 };
   }
-  // ARCHI -- Move Action Selection into the Existing Regulation Screen
-  // task / ARCHI -- Show Action Selection ON the Regulation Screen task:
-  // "action_selection"/"mini_action_selection" are now permanently
-  // unreachable (isStepReachable above) -- their own functionality moved
-  // INTO "regulation" (now a single sub-screen -- the action-selection
-  // section renders together with the mantra/body exercise, never a
-  // separate subIndex) and "mini_acceptance_transition" (still its own
-  // subIndex 1, untouched by the Regulation-only change). A session
-  // saved mid-flight exactly on one of these two steps (meaning it had
-  // not yet selected an action -- selecting one always advances
-  // immediately via setSelectedAction's own advance() call, so it could
-  // never be saved here WITH a selection already made) restores
-  // directly to the step that now carries this functionality, never
-  // forcing the trainee to repeat the body-opening/acceptance-transition
-  // exercise that already got them here. No data is lost: nothing was
-  // ever written to selectedAction* while parked on these steps.
+  // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+  // section 1: "action_selection"/"mini_action_selection" are now
+  // permanently unreachable (isStepReachable above, direct-action fast
+  // lane exception removed) -- the whole "pick an action" purpose they
+  // once carried is gone, not just relocated. A session saved
+  // mid-flight exactly on one of these two steps (meaning it had not
+  // yet selected an action -- selecting one always advanced immediately
+  // via setSelectedAction's own advance() call, so it could never be
+  // saved here WITH a selection already made) restores to the step
+  // right after it in the order it predates, never forcing the trainee
+  // to repeat the body-opening/acceptance-transition exercise that
+  // already got them here. No data is lost: nothing was ever written to
+  // selectedAction* while parked on these steps.
   if (state.currentStep === "action_selection") {
-    return { ...state, currentStep: "regulation", subIndex: 0 };
+    return { ...state, currentStep: "encoding", subIndex: 0 };
   }
   if (state.currentStep === "mini_action_selection") {
-    return { ...state, currentStep: "mini_acceptance_transition", subIndex: 1 };
+    return { ...state, currentStep: "mini_encoding", subIndex: 0 };
   }
   // ARCHI -- Consolidated Implementation Request, Part 1.2: a shortened
   // session saved mid-flight exactly on "acceptance" predates its
@@ -648,17 +648,16 @@ export function stepSubCount(step: NewArcLiveStepId, state: NewArcLiveSessionSta
     case "mini_encoding":
     case "mini_action":
       return 1;
-    // ARCHI -- Move Action Selection into the Existing Regulation Screen
-    // task: "mini_acceptance_transition" is Mini ARC's own
+    // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+    // section 1: "mini_acceptance_transition" is Mini ARC's own
     // regulation-equivalent moment (see NEW_ARC_MINI_STEP_ORDER's own
-    // doc) -- same two-sub-screen treatment as "regulation" above.
-    // subIndex 0 is the UNCHANGED existing area/sensation/movement
-    // form; subIndex 1 is the integrated action-selection prompt,
-    // reusing the old "mini_action_selection" step's own content/UI.
-    // Same isActiveTaskLiveOrigin fix as "regulation" above -- see its
-    // comment for why this sub-screen must always be reachable now.
+    // doc) -- back to exactly ONE sub-screen (the area/sensation/
+    // movement form), now that the action-selection sub-screen it used
+    // to grow to at subIndex 1 is removed along with
+    // "mini_action_selection" itself (see this step's own case in
+    // live/NewArcLiveScreen.tsx).
     case "mini_acceptance_transition":
-      return !!state.arcGymSituationId ? 1 : 2;
+      return 1;
     default:
       return 1;
   }
@@ -857,26 +856,6 @@ const SHORT_DEPTH_SKIPPED_STEPS = new Set<NewArcLiveStepId>([
   "regulation",
 ]);
 
-/**
- * Whether the session already has a real, resolved action by the time
- * "action_readiness_check" is confirmed -- "להשתמש בפעולה שכבר נבחרה
- * אם קיימת" (use the already-selected action if one exists). Mirrors
- * the three cases every other "already have an action" reader in this
- * file treats as settled: an explicit prior selection
- * (selectedActionSource, from setSelectedAction), the active/paused
- * task's own first action (isActiveTaskLiveOrigin), or an ARC GYM
- * situation (arcGymSituationId, which has its own separate post-ARC
- * action-visualization flow regardless). action_readiness_check sits
- * BEFORE "regulation" (where Action Selection's own sub-screen
- * normally lives), so selectedActionSource is almost always still null
- * at this point -- the isActiveTaskLiveOrigin/arcGymSituationId cases
- * are what actually make Option A's "already selected" branch fire in
- * practice.
- */
-function hasResolvedAction(state: NewArcLiveSessionState): boolean {
-  return state.selectedActionSource !== null || state.isActiveTaskLiveOrigin || !!state.arcGymSituationId;
-}
-
 function isStepReachable(step: NewArcLiveStepId, state: NewArcLiveSessionState): boolean {
   // ARCHI -- Action-Readiness Check ("בדיקת מוכנות לפעולה") task,
   // Option A: checked FIRST, ahead of every other rule below, same
@@ -1011,29 +990,24 @@ function isStepReachable(step: NewArcLiveStepId, state: NewArcLiveSessionState):
   // the pre-filled sensation/movement) and every other step stay fully
   // reachable and unaffected.
   if ((state.arcSavingBodyOptionId || state.arcSavingExerciseId) && (step === "body_scan_contraction" || step === "body_scan_opening_region" || step === "supportive_area_select")) return false;
-  // ARCHI -- Move Action Selection into the Existing Regulation Screen
-  // task: "action_selection"/"mini_action_selection" are now PERMANENTLY
-  // unreachable, for every session -- their own functionality (pick an
-  // existing scheduled task, even one due hours later, or enter a
-  // temporary action) moved INTO "regulation"/"mini_acceptance_transition"
-  // as each one's own subIndex 1 (see stepSubCount above, gated by the
-  // exact same isActiveTaskLiveOrigin/arcGymSituationId condition this
-  // rule used to apply here). The step ids, their own getStepContent
-  // case, and setSelectedAction itself all stay fully intact (never
-  // deleted) -- simply never reached by any session any more; see
-  // migrateLegacyNewArcLiveStep below for the one-time forward
+  // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+  // section 1: "action_selection"/"mini_action_selection" no longer have
+  // a reachability rule here at all (not merely "permanently false") --
+  // both ids are removed from NEW_ARC_LIVE_STEP_ORDER/NEW_ARC_MINI_STEP_ORDER
+  // entirely, so resolveNextStep/resolvePreviousStep/resolveProgress
+  // (which all walk those arrays, never calling this function with an id
+  // that isn't in them) never ask about them any more -- this function
+  // simply falls through to its generic "true" default for any caller
+  // that still passes one of these two ids directly. This also retires
+  // the one exception that used to exist here for the Action-Readiness
+  // Check direct-action fast lane: with both ids gone from the order
+  // arrays, that lane now walks straight past them to "encoding"/
+  // "mini_encoding" (already in DIRECT_ACTION_SKIPPED_STEPS) and on to
+  // "complete," with zero other changes needed. The step ids, their own
+  // getStepContent case, and setSelectedAction itself all stay fully
+  // intact (never deleted) -- simply never reached by any session any
+  // more; see migrateLegacyNewArcLiveStep below for the one-time forward
   // migration a session saved mid-flight on either of them needs.
-  // ARCHI -- Action-Readiness Check task, Option A: the one exception
-  // to "permanently unreachable" above -- reachable exactly when the
-  // trainee was just routed here for direct-to-action AND no action is
-  // already resolved (hasResolvedAction), "otherwise allow choosing
-  // one." When an action IS already resolved, this stays false (same
-  // as ever) and DIRECT_ACTION_SKIPPED_STEPS/this outcome's own
-  // "encoding"/"mini_encoding" exclusion above send the trainee
-  // straight to "complete" instead.
-  if (step === "action_selection" || step === "mini_action_selection") {
-    return state.actionReadinessOutcome === "direct_action" && !hasResolvedAction(state);
-  }
   // ARCHI -- Universal ARC Routing, Emotion Identification & Android
   // Shortcuts task, requirement 2/6: the three cognitive CAPTURE
   // screens are reachable only when the trainee actually checked that
@@ -1942,70 +1916,6 @@ export function setSupportiveSensation(state: NewArcLiveSessionState, sensation:
 
 export function setPositiveMovement(state: NewArcLiveSessionState, movement: string, now: string): NewArcLiveSessionState {
   return advance({ ...state, positiveMovement: movement.trim() || null }, now);
-}
-
-/**
- * ARCHI -- Unified Final Specification task, section 2 ("Action
- * Selection must occur immediately AFTER Regulation and BEFORE
- * Encoding"): the "action_selection"/"mini_action_selection" step's one
- * action -- called once, with exactly one of the two option shapes
- * below, then advancing straight into Encoding.
- *
- * - `{ source: "scheduledTask", taskId, title, firstAction, splitDurationMinutes? }`
- *   for an explicitly-selected scheduled task, whether it is due now or
- *   being started early (both are "an existing scheduled task," resolved
- *   identically by taskId -- the spec's own priorities (2) and (4));
- *   `firstAction` is that task's own saved first action, or null when
- *   it has none. Smart To-Do List task, section 9: `splitDurationMinutes`
- *   is set (and stored into selectedActionDurationMinutes below) only
- *   when the selected task is a To-Do item accepted as a split
- *   suggestion -- every ordinary call omits it, and it is undefined/null
- *   there, exactly as before this field existed.
- * - `{ source: "temporaryAction", title, durationMinutes }` for a
- *   brand-new temporary action entered now (priority (3)); durationMinutes
- *   is the trainee's own requested length, already clamped by the
- *   caller against the time remaining until the next scheduled task
- *   (see live/NewArcLiveScreen.tsx) -- this setter itself does no
- *   clamping, since it is pure state, never an IO/clock lookup.
- *
- * Never called at all when the trainee instead types a brand-new action
- * with no suitable scheduled task available (priority (5)) -- that case
- * simply reuses the session's own pre-existing `firstAction` field
- * exactly as every session already does, leaving selectedActionSource
- * null and resolveActionText's own final fallback (arc/newArcLiveCopy.ts)
- * to read it back.
- */
-export function setSelectedAction(
-  state: NewArcLiveSessionState,
-  selection:
-    | { source: "scheduledTask"; taskId: string; title: string; firstAction: string | null; splitDurationMinutes?: number | null }
-    | { source: "temporaryAction"; title: string; durationMinutes: number },
-  now: string
-): NewArcLiveSessionState {
-  if (selection.source === "scheduledTask") {
-    return advance(
-      {
-        ...state,
-        selectedActionSource: "scheduledTask",
-        selectedActionTaskId: selection.taskId,
-        selectedActionTitle: selection.title,
-        selectedActionFirstAction: selection.firstAction,
-        selectedActionDurationMinutes: selection.splitDurationMinutes ?? null,
-      },
-      now
-    );
-  }
-  return advance(
-    {
-      ...state,
-      selectedActionSource: "temporaryAction",
-      selectedActionTaskId: null,
-      selectedActionTitle: selection.title,
-      selectedActionFirstAction: null,
-      selectedActionDurationMinutes: selection.durationMinutes,
-    },
-    now
-  );
 }
 
 /**

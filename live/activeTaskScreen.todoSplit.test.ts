@@ -57,7 +57,10 @@ test("required test 12 continued: when isTodoSplit, the TaskTimerRun is created 
 
 test("required test 8/9 (split session persisted at start): performStart saves a TodoSplitSession for this task/plannedMinutes pair ONLY when isTodoSplit -- an ordinary task start never creates one", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 8500);
+  // Window widened (8500 -> 9100): ARCHI task-not-started task's own
+  // recomputeTaskNotStartedNotification call/comment, inserted at the
+  // top of performStart, pushed every later line further from fnIndex.
+  const fnBody = screen.slice(fnIndex, fnIndex + 9100);
   assert.ok(fnBody.includes("if (isTodoSplit) await saveTodoSplitSession(createTodoSplitSession(task.id, splitMinutes));"));
   assert.match(screen, /import\s*\{[^}]*createTodoSplitSession[^}]*\}\s*from\s*["']\.\.\/arc\/todoSplitSession\.ts["']/);
   assert.match(screen, /import\s*\{[^}]*saveTodoSplitSession[^}]*\}\s*from\s*["']\.\.\/data\/storage\.ts["']/);

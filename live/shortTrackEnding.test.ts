@@ -53,15 +53,12 @@ test("resolveActionText also resolves correctly for the Active-Task-LIVE origin 
   assert.equal(resolveActionText(state), "לפתוח את המחשב");
 });
 
-test("action_selection stays reachable ONLY for the direct_action outcome (where time/depth are irrelevant) -- the engine rule never mentions arcPracticeDepth at all, so short depth can never resurrect an action-selector screen", () => {
+test("ARCHI -- Adaptive Task Execution & Emotional Persistence task: action_selection/mini_action_selection have no reachability rule at all any more -- both ids are removed from the step-order arrays entirely, so short depth (or any other mode) can never resurrect an action-selector screen", () => {
   const engine = readSource("arc/newArcLiveSteps.ts");
-  const ruleIndex = engine.indexOf('if (step === "action_selection" || step === "mini_action_selection")');
-  assert.ok(ruleIndex !== -1);
-  const ruleBody = engine.slice(ruleIndex, engine.indexOf("\n  }", ruleIndex));
-  assert.ok(ruleBody.includes('state.actionReadinessOutcome === "direct_action"'));
-  assert.ok(!ruleBody.includes("arcPracticeDepth"), "short depth's own continue/shortened outcomes never make this step reachable");
+  assert.ok(!engine.includes('if (step === "action_selection" || step === "mini_action_selection")'), "the old dedicated reachability branch for these two ids no longer exists");
+  assert.ok(!engine.includes("export function setSelectedAction"), "the setter itself is deleted, never resurrected");
 });
 
-test("supportive_area_select's own action-selection section is suppressed for short depth too, via the same arcGymSituationId-style exemption -- short depth never prompts for an action on that screen either", () => {
-  assert.match(screen, /session!\.arcGymSituationId \|\| session!\.arcPracticeDepth === "short" \? \(/);
+test("supportive_area_select's shortened branch ends with a plain, unconditional 'המשך' for every session (ARC GYM, short depth, and ordinary full-depth alike) -- no action-selection section of any kind any more", () => {
+  assert.ok(!screen.includes('session!.arcGymSituationId || session!.arcPracticeDepth === "short" ? ('), "the old arcGymSituationId/short-depth ternary that used to gate the action-selection section is gone");
 });

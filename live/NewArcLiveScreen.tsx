@@ -10,7 +10,7 @@ import { BODY_SCAN_CLOSEDNESS_INFO, BODY_SCAN_CONTRACTION_INFO, BODY_SCAN_HEAVIN
 import type { BodyScanRegion } from "../arc/bodyScanRegions.ts";
 import { canPromoteToSupportiveOpening, MAX_SUPPORTIVE_OPENING_SELECTIONS, resolveBodyScanContractionState, resolveBodyScanHeavinessState, resolveBodyScanOpeningRole, resolveNextOpeningRole } from "../arc/bodyScanSelection.ts";
 import type { BodyScanSide } from "../arc/bodyScanSelection.ts";
-import { getStepContent, resolveActionText, resolveEncodingMantra, resolveSelectedEmotionText } from "../arc/newArcLiveCopy.ts";
+import { getStepContent, resolveEncodingMantra, resolveSelectedEmotionText } from "../arc/newArcLiveCopy.ts";
 import { resolveFocusColorHex } from "../arc/focusColorPalette.ts";
 import { DEFAULT_ARC_APPEARANCE_SETTINGS } from "../arc/arcAppearanceSettings.ts";
 import type { ArcAppearanceSettings } from "../arc/arcAppearanceSettings.ts";
@@ -262,7 +262,6 @@ import {
   confirmTimeAvailableRating,
   cycleShortBodyMarking,
   resolveShortBodyMarkingPhase,
-  setSelectedAction,
   setSupportiveFeelingOverride,
   setCustomSupportiveFeelingOverride,
   resolveFinalSupportiveFeeling,
@@ -324,20 +323,12 @@ import {
   upsertArcGymMemoryEntry,
   upsertArcGymTrainingRecordEntry,
   upsertPlannedArc,
-  upsertTask,
-  loadArcDecisionInProgress,
-  saveArcDecisionInProgress,
-  clearArcDecisionInProgress,
-  recordArcDecisionHistory,
   loadArcPerspectiveInProgress,
   saveArcPerspectiveInProgress,
   loadArcSavedBodyOptions,
   loadArcSavedExercises,
   saveArcSavingPendingReview,
 } from "../data/storage.ts";
-import ArcDecisionFlow from "./components/ArcDecisionFlow.tsx";
-import { createArcDecisionSession, completeArcDecisionSession } from "../arc/arcDecision.ts";
-import type { ArcDecisionOption, ArcDecisionSession } from "../arc/arcDecision.ts";
 import { advanceArcPerspectiveFromMoodCheckIn } from "../arc/arcPerspective.ts";
 import { applyArcBodyProtocolSnapshotToSession, captureArcBodyProtocolSnapshot, findArcSavedBodyOptionById, findArcSavedExerciseById } from "../arc/arcSaving.ts";
 // ARCHI -- ARC Result: Automatic, Optional Suggestion Without Extra
@@ -345,24 +336,6 @@ import { applyArcBodyProtocolSnapshotToSession, captureArcBodyProtocolSnapshot, 
 // completion path uses before resolving its own destination -- never
 // a second, independently-filtered lookup.
 import { findPairedArcResultForSituation, hasLinkedArcResult } from "../arc/arcResult.ts";
-// ARCHI -- Unified Final Specification task, section 2: the SAME
-// "today's effective, auto-scheduled plan" pipeline the Flexible Daily
-// Screen/next-task display already use -- never a second "what's
-// scheduled today" engine.
-import { resolveTodaysScheduledPlan } from "../data/dailyPlan.ts";
-import { resolveFreeMinutesUntilNextTask } from "../arc/dailyPlan.ts";
-import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
-// Smart To-Do List task, section 9: the SAME "today's To-Do items" IO
-// wrapper build/FlexibleDailyScreen.tsx's own reload() uses (data/todoList.ts),
-// and the ONE wrapper that layers a To-Do suggestion on top of
-// resolveCurrentTaskState without changing it (arc/todoList.ts) -- never a
-// second, competing "what's next" mechanism.
-import { resolveTodaysTodoList } from "../data/todoList.ts";
-import { resolveCurrentTaskStateWithTodoSuggestion } from "../arc/todoList.ts";
-import type { TodoPlanEntry, TodoSuggestionReason } from "../arc/todoList.ts";
-import { createEmptyTask, generateTaskId } from "../arc/tasks.ts";
-import { reconcileTaskAlarms } from "../data/taskAlarm.ts";
-import { todayLocalDateString } from "../program/dateUtils.ts";
 import { createArcInsight, createLearnedBelief, generateArcBeliefId, generateArcInsightId } from "../arc/arcInsightBelief.ts";
 import type { ArcBelief } from "../arc/arcInsightBelief.ts";
 import { createPlannedArcFromSession, generatePlannedArcId, hasDraftForExercise, resolvePlannedArcPrefillFields } from "../arc/plannedArc.ts";
@@ -387,35 +360,6 @@ import type { PositiveMemory } from "../arc/positiveMemory.ts";
 import { recordPositiveMemorySelection } from "../arc/positiveMemorySelectionHistory.ts";
 
 const ACTION_ENDING_SUGGESTIONS = ["התחלתי את הצעד הראשון", "השלמתי את הפעולה", "פעלתי ברוגע", "נשארתי ממוקד"];
-
-/**
- * ARCHI -- Unified Final Specification task, section 4 ("TEMPORARY
- * ACTIONS BEFORE THE NEXT SCHEDULED TASK"): the time remaining until
- * the next real, not-yet-completed scheduled entry today -- null when
- * none exists at all ("if no upcoming task exists, allow choosing
- * duration without a schedule-based limit"), otherwise clamped to zero
- * (never negative) when that entry's own effective start has already
- * passed. A pure function over an already-resolved plan, exactly like
- * every other arc/dailyPlan.ts reader -- never re-derives "today" or
- * "effective" itself. `excludeTaskId` drops the ARC session's own
- * (possibly non-existent/standalone) taskId, same null-safe exclusion
- * arc/dailyPlan.ts's own resolveCurrentTaskState already takes.
- *
- * Weekly/Flexible-Daily/ARC-LIVE task-sync fix: reads through that one
- * central resolveCurrentTaskState instead of the superseded
- * resolveNextScheduledTaskAfter, so this never clamps against a task
- * whose own scheduled window has already passed.
- *
- * Smart To-Do List task: this is now a one-line delegating wrapper
- * around arc/dailyPlan.ts's own exported resolveFreeMinutesUntilNextTask
- * (promoted there so arc/todoList.ts's smart-fit engine can share the
- * exact same computation) -- kept here, under this exact name and
- * signature, only because several existing tests pin this literal
- * function declaration.
- */
-function resolveMinutesUntilNextTask(scheduled: ScheduledPlanEntry[], excludeTaskId: string, now: Date): number | null {
-  return resolveFreeMinutesUntilNextTask(scheduled, now, excludeTaskId);
-}
 
 /**
  * live/NewArcLiveScreen.tsx (route /tasks/[id]/arc)
@@ -515,49 +459,6 @@ export default function NewArcLiveScreen({
     savePersonalName(trimmed);
     setPersonalName(trimmed);
   }
-  /**
-   * ARC Decision task: an inline overlay, never a navigation away from
-   * this screen -- "אני לא יודע" (renderActionSelector() below) opens
-   * it, replacing only the action-selection sub-UI; canceling or
-   * finishing just clears this local state, so the ARC session itself
-   * (taskId/firstAction/taskTitle/timers) is never touched by any of
-   * it except the one, final setSelectedAction call on finish. Resumed
-   * on focus from the single in-progress slot, scoped to THIS exact ARC
-   * session (arcSessionId === taskId) so a stale decision left over
-   * from a different task's session is never restored here.
-   */
-  const [arcDecisionSession, setArcDecisionSession] = useState<ArcDecisionSession | null>(null);
-  useFocusEffect(
-    useCallback(() => {
-      loadArcDecisionInProgress().then((progress) => {
-        if (progress && progress.source === "arc" && progress.arcSessionId === taskId && !progress.completedAt) {
-          setArcDecisionSession(progress);
-        }
-      });
-    }, [taskId])
-  );
-  function startArcDecision() {
-    const created = createArcDecisionSession("arc", taskId, session!.isActiveTaskLiveOrigin ? taskId : null, now);
-    saveArcDecisionInProgress(created);
-    setArcDecisionSession(created);
-  }
-  function handleArcDecisionChange(next: ArcDecisionSession) {
-    saveArcDecisionInProgress(next);
-    setArcDecisionSession(next);
-  }
-  function handleArcDecisionCancel() {
-    clearArcDecisionInProgress();
-    setArcDecisionSession(null);
-  }
-  function handleArcDecisionFinish(decisionSession: ArcDecisionSession, chosenOption: ArcDecisionOption) {
-    const completed = completeArcDecisionSession(decisionSession, now);
-    recordArcDecisionHistory(completed);
-    clearArcDecisionInProgress();
-    setArcDecisionSession(null);
-    const availableMinutes = resolveMinutesUntilNextTask(dailyPlanEntries, taskId, new Date());
-    const clampedDuration = availableMinutes !== null ? Math.max(1, Math.min(10, availableMinutes)) : 10;
-    commit(setSelectedAction(session!, { source: "temporaryAction", title: chosenOption.text, durationMinutes: clampedDuration }, now));
-  }
   const [conflict, setConflict] = useState<ArcSessionConflict | null>(null);
   const [draftText, setDraftText] = useState("");
   // Unified awareness/urge/thought/interpretation update, section 3: a
@@ -592,27 +493,6 @@ export default function NewArcLiveScreen({
   // the standalone "time_available_check" screen -- never both at
   // once for a single session, so one draft is enough.
   const [timeAvailableDraft, setTimeAvailableDraft] = useState<number | null>(null);
-  /**
-   * ARCHI -- Allow Action Selection During Emotion Identification or
-   * Defer It to Regulation task: on the "emotion" screen, whether the
-   * trainee tapped "בחירת פעולה עכשיו" and so wants the existing
-   * action-selector UI (renderActionSelector) shown inline right
-   * there. "אבחר פעולה בשלב הוויסות" needs no state of its own --
-   * leaving this false (the default) and continuing normally already
-   * IS deferring, since selectedActionSource simply stays null until
-   * Regulation.
-   */
-  const [showActionSelectorOnEmotion, setShowActionSelectorOnEmotion] = useState(false);
-  /**
-   * Same screen-local toggle for Regulation's own action-selector
-   * sub-screen (subIndex 1): false shows a plain summary of an
-   * already-selected action (never re-asking); true reveals the same
-   * renderActionSelector() picker so the trainee can explicitly change
-   * it. Reset to false on every fresh entry (currentStep/subIndex both
-   * in the effect below's own dependency array), so returning to this
-   * sub-screen later always starts in "review," never stuck mid-edit.
-   */
-  const [showActionSelectorOnRegulation, setShowActionSelectorOnRegulation] = useState(false);
   const [showMoreMovements, setShowMoreMovements] = useState(false);
   const [showMoreAreas, setShowMoreAreas] = useState(false);
   /** ARC LIVE emotion-based body suggestions task, requirement 3: same "suggested first, reveal all on request" toggle as showMoreAreas above, kept separate since the two screens show different suggestion sets (unpleasant vs. supportive) and can be revealed independently of one another. */
@@ -696,32 +576,6 @@ export default function NewArcLiveScreen({
   const [miniThoughtDraft, setMiniThoughtDraft] = useState("");
   const [miniInterpretationDraft, setMiniInterpretationDraft] = useState("");
   const [miniUrgeDraft, setMiniUrgeDraft] = useState("");
-  /**
-   * ARCHI -- Unified Final Specification task, section 2 ("Action
-   * Selection... show 'מה תרצה לעשות כעת?' letting the user choose an
-   * existing scheduled task... or enter a different temporary
-   * action"): today's already-resolved, auto-scheduled plan -- loaded
-   * once in reload() via the SAME resolveTodaysScheduledPlan pipeline
-   * build/FlexibleDailyScreen.tsx/data/dailyPlan.ts already use, never
-   * a second "what's scheduled today" engine. Only actually consumed
-   * by the "action_selection"/"mini_action_selection" render case
-   * below (unreachable whenever isActiveTaskLiveOrigin/
-   * arcGymSituationId -- see isStepReachable), but loaded unconditionally
-   * since it's cheap and reload() already loads everything else in one
-   * Promise.all.
-   */
-  const [dailyPlanEntries, setDailyPlanEntries] = useState<ScheduledPlanEntry[]>([]);
-  /**
-   * Smart To-Do List task, section 9: today's own To-Do items, loaded
-   * alongside dailyPlanEntries in reload() -- renderActionSelector()
-   * reads both together, through resolveCurrentTaskStateWithTodoSuggestion
-   * (arc/todoList.ts), never resolveCurrentTaskState directly, so a due
-   * scheduled task still always wins and a To-Do suggestion only ever
-   * appears when there truly is no current scheduled task.
-   */
-  const [todoEntries, setTodoEntries] = useState<TodoPlanEntry[]>([]);
-  const [tempActionTitleDraft, setTempActionTitleDraft] = useState("");
-  const [tempActionDurationDraft, setTempActionDurationDraft] = useState("10");
   const dwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * Positive Memory, Success Recall & Quick Capture task, section 8
@@ -758,15 +612,11 @@ export default function NewArcLiveScreen({
       loadArcGymSituations(),
       loadInternalActionTimerRun(),
       loadTaskTimerRun(),
-      resolveTodaysScheduledPlan(nowDate),
-      resolveTodaysTodoList(nowDate),
       loadArcSavedBodyOptions(),
       loadArcSavedExercises(),
-    ]).then(([task, existing, items, beliefs, arcGymSituations, internalActionRun, taskTimerRun, scheduledPlan, todoList, arcSavedBodyOptions, arcSavedExercises]) => {
+    ]).then(([task, existing, items, beliefs, arcGymSituations, internalActionRun, taskTimerRun, arcSavedBodyOptions, arcSavedExercises]) => {
       if (!task) return;
       setInternalActionRun(internalActionRun);
-      setDailyPlanEntries(scheduledPlan);
-      setTodoEntries(todoList);
       const now = nowDate.toISOString();
       const plannedArcsById = new Map<string, PlannedArc>(items.map((item) => [item.id, item]));
       const beliefsById = new Map<string, ArcBelief>(beliefs.map((belief) => [belief.id, belief]));
@@ -1034,15 +884,6 @@ export default function NewArcLiveScreen({
     // mid-flight on a step that already carries a custom supportive
     // feeling shows the text box already filled, not blank.
     setCustomSupportiveFeelingDraft(session?.customSupportiveFeelingText ?? "");
-    // ARCHI -- Allow Action Selection During Emotion Identification or
-    // Defer It to Regulation task: both start collapsed on every fresh
-    // entry to their own step/sub-step (this effect's own dependency
-    // array below already includes subIndex, so re-entering Regulation's
-    // subIndex 1 after having left it also resets this) -- a trainee
-    // who already has a selection always sees the plain summary first,
-    // never stuck mid-edit from a previous visit.
-    setShowActionSelectorOnEmotion(false);
-    setShowActionSelectorOnRegulation(false);
     setShowMoreMovements(false);
     setShowMoreAreas(false);
     setShowMoreUnpleasantAreas(false);
@@ -1087,12 +928,6 @@ export default function NewArcLiveScreen({
     setUnpleasantIntensityDraft(session?.unpleasantIntensityRating ?? null);
     setActionReadinessDraft(session?.actionReadinessRating ?? null);
     setTimeAvailableDraft(session?.timeAvailableRating ?? null);
-    // ARCHI -- Unified Final Specification task, section 2: same "blank
-    // draft on every step change" convention as every other scratch
-    // field here -- the Action Selection screen's own temporary-action
-    // text/duration never leaks in from a previous, unrelated step.
-    setTempActionTitleDraft("");
-    setTempActionDurationDraft("10");
     // Closing any lingering info popup on step change is a UI-only
     // reset -- it never touches session, so the selections it was
     // opened over are already safe regardless (see infoModal's own
@@ -1469,35 +1304,6 @@ export default function NewArcLiveScreen({
       router.replace("/");
       return;
     }
-    // ARCHI -- Unified Final Specification task, section 6 ("POST-ARC
-    // ROUTING"): offer the SAME action selected right before Encoding
-    // -- never silently starting a future task, changing the selected
-    // task, or advancing to another one. Both "an explicitly selected
-    // scheduled task" and "a selected due task" resolve identically
-    // here (setSelectedAction's own doc), by navigating to that EXACT
-    // task's own Task LIVE/Details screen -- never with autoStart, so
-    // the trainee still taps Start themselves ("never start a task
-    // automatically without explicit user action").
-    if (session?.selectedActionSource === "scheduledTask" && session.selectedActionTaskId) {
-      // Smart To-Do List task, section 9: selectedActionDurationMinutes
-      // is non-null here ONLY for a To-Do item accepted as a split
-      // suggestion (setSelectedAction's own doc) -- every ordinary
-      // scheduled/due-task selection leaves it null, so this call's
-      // behavior for them is exactly as before this field existed.
-      await routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false, session.selectedActionDurationMinutes);
-      return;
-    }
-    // A temporary action is created now, at this exact moment -- never
-    // earlier -- so its own clamped duration reflects the CURRENT time
-    // remaining until the next scheduled task ("recalculate available
-    // time when the timer actually starts"), never the stale estimate
-    // Action Selection showed minutes/tens-of-minutes ago while the ARC
-    // exercise itself was still running.
-    if (session?.selectedActionSource === "temporaryAction" && session.selectedActionTitle) {
-      const newTaskId = await createTemporaryActionTask(session.selectedActionTitle, session.selectedActionDurationMinutes);
-      router.replace({ pathname: "/tasks/[id]", params: { id: newTaskId } });
-      return;
-    }
     // Part B.1 / Unified ARC & Productivity Update task, requirement 10
     // ("Standalone emotion-only -> safe originating screen"): a
     // standalone session has no task screen to return to. Home ("/")
@@ -1515,37 +1321,6 @@ export default function NewArcLiveScreen({
     await routeToTaskOrArcResultSuggestion(taskId, autoStart);
   }
 
-  /**
-   * ARCHI -- Unified Final Specification task, section 4 ("TEMPORARY
-   * ACTIONS BEFORE THE NEXT SCHEDULED TASK"): creates the ad-hoc Task
-   * now needed to actually start the trainee's chosen temporary action
-   * -- reusing the EXACT SAME creation recipe
-   * build/FlexibleDailyScreen.tsx's own handleAddDirect already uses
-   * for a direct task/break/ARC entry (createEmptyTask + upsertTask +
-   * reconcileTaskAlarms, scheduledDate: today, calendarEntryKind left
-   * null -- an ordinary task, never a special calendar-only entry),
-   * never a second task-creation mechanism. `recurrence: {kind:"once"}`
-   * is createEmptyTask's own default, so "never create recurring
-   * temporary tasks" holds automatically. The duration is clamped HERE,
-   * against the freshly re-resolved plan (never the stale
-   * Action-Selection-time estimate) -- "recalculate available time when
-   * the timer actually starts." Never auto-starts the task itself; the
-   * caller navigates to its own Task LIVE/Details screen, where the
-   * trainee taps Start, same as every other non-auto-start entry point.
-   */
-  async function createTemporaryActionTask(title: string, requestedDurationMinutes: number | null): Promise<string> {
-    const now = new Date();
-    const scheduled = await resolveTodaysScheduledPlan(now);
-    const availableMinutes = resolveMinutesUntilNextTask(scheduled, taskId, now);
-    const requested = requestedDurationMinutes && requestedDurationMinutes > 0 ? requestedDurationMinutes : 10;
-    const durationMinutes = availableMinutes !== null ? Math.max(1, Math.min(requested, availableMinutes)) : requested;
-    const id = generateTaskId();
-    const nowIso = now.toISOString();
-    const task = { ...createEmptyTask(id, title, title, nowIso), scheduledDate: todayLocalDateString(now), expectedDurationMinutes: durationMinutes };
-    await upsertTask(task);
-    await reconcileTaskAlarms();
-    return id;
-  }
 
   /**
    * ARCHI -- Unified 7-Part Update task, Part 5 ("ENCODING MUST LEAD
@@ -1789,214 +1564,6 @@ export default function NewArcLiveScreen({
   // own Continue/Skip buttons already cover that) stay hidden for this
   // one step, same convention as isBodyMantraStage above.
   const isFreeBreathingStage = session.currentStep === "free_breathing";
-
-  // ARCHI -- Move Action Selection into the Existing Regulation Screen
-  // task, section 6 ("reuse the current action-selection... logic
-  // rather than implementing a second version"): the ONE implementation
-  // of the "הפעולה הבאה"/"כתיבת פעולה" picker, used by "regulation" and
-  // "mini_acceptance_transition" at their own subIndex 1, and by the
-  // now-unreachable "action_selection"/"mini_action_selection" (kept
-  // for historical-data safety). Identical body to the old standalone
-  // step's own case -- lets the trainee pick an existing scheduled
-  // task for today (even one planned hours later -- due now shown
-  // first, never silently auto-chosen) or enter a temporary action
-  // with a duration, clamped live against the time remaining until the
-  // next scheduled task. Choosing either one calls the EXISTING
-  // setSelectedAction, which already both persists the choice AND
-  // advances in one call -- for "regulation"/"mini_acceptance_transition"
-  // this now correctly lands directly on "encoding"/"mini_encoding"
-  // (action_selection/mini_action_selection being permanently
-  // unreachable), never a separate screen.
-  function renderActionSelector() {
-    // ARC Decision task: an inline overlay, replacing only this
-    // sub-UI -- the trainee's active task/firstAction/session context
-    // above never changes while this is shown (see arcDecisionSession's
-    // own doc, near its useState declaration). Canceling or finishing
-    // both clear this overlay and fall back to the exact same picker
-    // below, never a navigation away from this screen.
-    if (arcDecisionSession) {
-      return (
-        <ArcDecisionFlow
-          session={arcDecisionSession}
-          onChange={handleArcDecisionChange}
-          onCancel={handleArcDecisionCancel}
-          finishLabel="המשך"
-          onFinish={handleArcDecisionFinish}
-        />
-      );
-    }
-    const nowDate = new Date();
-    // Weekly/Flexible-Daily/ARC-LIVE task-sync fix: the ONE central
-    // current/next decision (arc/dailyPlan.ts's resolveCurrentTaskState),
-    // never a second, competing lookup -- this is exactly what used to
-    // propose an already-elapsed task (e.g. an overnight "go to sleep"
-    // entry) at 6:40am, since the old resolveNextScheduledTaskAfter/
-    // isScheduledPlanEntryOverdue pair never checked whether the entry's
-    // own scheduled window had already passed.
-    // Smart To-Do List task, section 9: the wrapper that layers a To-Do
-    // suggestion on top of resolveCurrentTaskState WITHOUT changing it --
-    // a due scheduled task still always wins (todoSuggestion is null
-    // whenever currentEntry is non-null).
-    const {
-      current: currentEntry,
-      next: nextEntry,
-      todoSuggestion,
-    } = resolveCurrentTaskStateWithTodoSuggestion(dailyPlanEntries, todoEntries, nowDate, null, taskId);
-    const candidates = dailyPlanEntries.filter((entry) => entry.task.id !== taskId && !entry.isCompletedToday && entry.task.status !== "archived");
-    const shownEntryId = currentEntry?.task.id ?? nextEntry?.task.id ?? null;
-    const laterCandidates = shownEntryId ? candidates.filter((entry) => entry.task.id !== shownEntryId) : candidates;
-    const availableMinutes = resolveMinutesUntilNextTask(dailyPlanEntries, taskId, nowDate);
-    const parsedTempDuration = Number(tempActionDurationDraft);
-    const requestedTempDuration = Number.isFinite(parsedTempDuration) && parsedTempDuration > 0 ? parsedTempDuration : 10;
-    const clampedTempDuration = availableMinutes !== null ? Math.max(1, Math.min(requestedTempDuration, availableMinutes)) : requestedTempDuration;
-    // ARCHI -- BUG: Action Selection Is Missing from Regulation in All
-    // ARC Pathways task, Option A ("If a task is already active, offer
-    // its current/first action"): isActiveTaskLiveOrigin no longer
-    // skips this whole prompt (see stepSubCount, arc/newArcLiveSteps.ts),
-    // so when a task really is active this adds its own first/current
-    // action as a direct, one-tap option -- reusing the exact same
-    // "scheduledTask" shape/taskId every other option here already
-    // uses, so taskId/occurrence identity and returnToTask routing are
-    // preserved exactly as for any other scheduled-task selection.
-    const activeTaskActionLabel = session!.isActiveTaskLiveOrigin ? session!.firstAction?.trim() || session!.taskTitle?.trim() || null : null;
-
-    function chooseScheduledTask(entry: ScheduledPlanEntry) {
-      commit(setSelectedAction(session!, { source: "scheduledTask", taskId: entry.task.id, title: entry.task.title, firstAction: entry.task.firstAction?.trim() || null }, now));
-    }
-    function chooseActiveTaskAction() {
-      commit(setSelectedAction(session!, { source: "scheduledTask", taskId, title: session!.taskTitle, firstAction: session!.firstAction?.trim() || null }, now));
-    }
-    function chooseTemporaryAction() {
-      const title = tempActionTitleDraft.trim();
-      if (!title) return;
-      commit(setSelectedAction(session!, { source: "temporaryAction", title, durationMinutes: clampedTempDuration }, now));
-    }
-    // Smart To-Do List task, section 9: accepting the suggested To-Do
-    // item (ordinary fit or a split) is just another "scheduledTask"
-    // selection -- same shape every other option here already uses, so
-    // taskId identity and returnToTask routing stay exactly the same.
-    // splitDurationMinutes is only ever set when the suggestion is
-    // itself a split (isSplit), so the resulting timer runs for just
-    // that chosen split's duration, never the task's full remaining one.
-    function chooseTodoSuggestion() {
-      if (!todoSuggestion?.entry) return;
-      commit(
-        setSelectedAction(
-          session!,
-          {
-            source: "scheduledTask",
-            taskId: todoSuggestion.entry.task.id,
-            title: todoSuggestion.entry.task.title,
-            firstAction: todoSuggestion.entry.task.firstAction?.trim() || null,
-            splitDurationMinutes: todoSuggestion.isSplit ? todoSuggestion.suggestedDurationMinutes : null,
-          },
-          now
-        )
-      );
-    }
-    const todoSuggestionReasonText: Record<TodoSuggestionReason, string> = {
-      fits: "יש זמן פנוי מתאים עד המשימה המתוזמנת הבאה.",
-      split_suggested: "המשימה הזו ארוכה מהזמן הפנוי שנותר -- מוצע לבצע רק חלק ממנה כעת ולהשלים את השאר בהמשך.",
-      top_priority_does_not_fit: "אין מספיק זמן פנוי למשימת ה-To-Do בעלת העדיפות הגבוהה ביותר כעת, ואין משימת To-Do אחרת שמתאימה.",
-      none_available: "אין משימת To-Do שמתאימה כרגע.",
-      no_todo_items: "אין פריטי To-Do להיום.",
-    };
-
-    return (
-      <View>
-        {activeTaskActionLabel && (
-          <View style={styles.supportiveFeelingSection}>
-            <Text style={styles.supportiveFeelingLabel}>המשימה הפעילה כעת</Text>
-            <View style={styles.chipColumn}>
-              <Pressable style={styles.optionRow} onPress={chooseActiveTaskAction}>
-                <Text style={styles.optionText}>{activeTaskActionLabel}</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-        {currentEntry && (
-          <View style={styles.supportiveFeelingSection}>
-            <Text style={styles.supportiveFeelingLabel}>המשימה כרגע</Text>
-            <View style={styles.chipColumn}>
-              <Pressable style={styles.optionRow} onPress={() => chooseScheduledTask(currentEntry)}>
-                <Text style={styles.optionText}>{currentEntry.effectiveStartTime ? `${currentEntry.task.title} -- ${currentEntry.effectiveStartTime}` : currentEntry.task.title}</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-        {/*
-         * Smart To-Do List task, section 9: shown only while there is
-         * truly no currently-due scheduled task (a due scheduled task
-         * always wins -- see resolveCurrentTaskStateWithTodoSuggestion's
-         * own doc) AND the engine actually found a To-Do item to
-         * suggest. Displays the required 4 pieces of information
-         * together: the suggested task's title, its first action, the
-         * recommended duration, and the reason for the suggestion.
-         */}
-        {!currentEntry && todoSuggestion?.entry && (
-          <View style={styles.supportiveFeelingSection}>
-            <Text style={styles.supportiveFeelingLabel}>מוצע כעת (To-Do)</Text>
-            <View style={styles.chipColumn}>
-              <Pressable style={styles.optionRow} onPress={chooseTodoSuggestion}>
-                <Text style={styles.optionText}>{todoSuggestion.entry.task.title}</Text>
-              </Pressable>
-            </View>
-            {todoSuggestion.entry.task.firstAction && <Text style={styles.hint}>{`פעולה ראשונה: ${todoSuggestion.entry.task.firstAction}`}</Text>}
-            {todoSuggestion.suggestedDurationMinutes !== null && <Text style={styles.hint}>{`משך מוצע: ${todoSuggestion.suggestedDurationMinutes} דק'`}</Text>}
-            <Text style={styles.hint}>{todoSuggestionReasonText[todoSuggestion.reason]}</Text>
-          </View>
-        )}
-        {!currentEntry && nextEntry && (
-          <View style={styles.supportiveFeelingSection}>
-            <Text style={styles.supportiveFeelingLabel}>המשימה הקרובה</Text>
-            <View style={styles.chipColumn}>
-              <Pressable style={styles.optionRow} onPress={() => chooseScheduledTask(nextEntry)}>
-                <Text style={styles.optionText}>{nextEntry.effectiveStartTime ? `${nextEntry.task.title} -- ${nextEntry.effectiveStartTime}` : nextEntry.task.title}</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-        {!currentEntry && !nextEntry && (
-          <View style={styles.supportiveFeelingSection}>
-            <Text style={styles.hint}>אין משימות נוספות מתוכננות להיום.</Text>
-          </View>
-        )}
-        <View style={styles.supportiveFeelingSection}>
-          <Text style={styles.supportiveFeelingLabel}>משימות מתוזמנות להיום</Text>
-          {laterCandidates.length === 0 ? (
-            <Text style={styles.hint}>אין משימות נוספות מתוזמנות להיום.</Text>
-          ) : (
-            <View style={styles.chipColumn}>
-              {laterCandidates.map((entry) => (
-                <Pressable key={entry.task.id} style={styles.optionRow} onPress={() => chooseScheduledTask(entry)}>
-                  <Text style={styles.optionText}>{entry.effectiveStartTime ? `${entry.task.title} -- ${entry.effectiveStartTime}` : entry.task.title}</Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </View>
-        <View style={styles.supportiveFeelingSection}>
-          <Text style={styles.supportiveFeelingLabel}>או פעולה זמנית לבצע כעת</Text>
-          <TextInput style={styles.textInput} value={tempActionTitleDraft} onChangeText={setTempActionTitleDraft} textAlign="right" placeholder="מה תרצה לעשות?" />
-          <Text style={[styles.hint, { marginTop: 10 }]}>משך בדקות</Text>
-          <TextInput style={styles.textInput} value={tempActionDurationDraft} onChangeText={setTempActionDurationDraft} textAlign="right" keyboardType="numeric" />
-          {availableMinutes !== null && <Text style={styles.hint}>{`יש ${availableMinutes} דקות עד המשימה המתוזמנת הבאה -- המשך יוגבל לזמן הזה.`}</Text>}
-          <Pressable style={[styles.primaryButton, !tempActionTitleDraft.trim() && styles.disabledButton]} disabled={!tempActionTitleDraft.trim()} onPress={chooseTemporaryAction}>
-            <Text style={styles.primaryButtonText}>המשך עם הפעולה הזו</Text>
-          </Pressable>
-        </View>
-        {/*
-         * ARCHI -- ARC Decision task: "בלחיצה עליו, ייפתח ARC Decision"
-         * -- offered alongside the existing options above, never
-         * replacing them. Opens the shared flow inline (see the
-         * arcDecisionSession check at the top of this function).
-         */}
-        <Pressable style={styles.secondaryButton} onPress={startArcDecision}>
-          <Text style={styles.secondaryButtonText}>אני לא יודע</Text>
-        </Pressable>
-      </View>
-    );
-  }
 
   /**
    * Positive Memory, Success Recall & Quick Capture task, section 8:
@@ -2308,40 +1875,6 @@ export default function NewArcLiveScreen({
                 setCustomSupportiveFeelingDraft,
                 (text) => commit(setCustomSupportiveFeelingOverride(session!, text))
               )}
-            {/*
-             * ARCHI -- Allow Action Selection During Emotion
-             * Identification or Defer It to Regulation task: an
-             * additional, optional choice on this SAME screen --
-             * deliberately NOT gated on selectedEmotion !== null (bug
-             * fix: a trainee who plans to tap "המשך בלי רגש" -- a
-             * fully valid, pre-existing path that never requires
-             * identifying an emotion -- must still see and be able to
-             * use this choice; choosing an action never actually
-             * depends on having picked an emotion first). "אבחר פעולה
-             * בשלב הוויסות" needs no handler of its own (it's simply
-             * the existing "continue without selecting" default, since
-             * selectedActionSource stays null until Regulation);
-             * "בחירת פעולה עכשיו" reveals the exact same
-             * renderActionSelector() picker Regulation itself uses, so
-             * choosing here goes through the SAME setSelectedAction
-             * setter (which already advances the session normally --
-             * no new engine step, no duplicated logic).
-             */}
-            <View style={styles.supportiveFeelingSection}>
-              <Text style={styles.supportiveFeelingLabel}>מתי תרצה לבחור פעולה?</Text>
-              {session!.selectedActionSource !== null && !showActionSelectorOnEmotion && (
-                <Text style={styles.hint}>{`הפעולה שנבחרה כרגע: ${resolveActionText(session!) ?? ""}`}</Text>
-              )}
-              <View style={styles.chipColumn}>
-                <Pressable style={[styles.optionRow, showActionSelectorOnEmotion && styles.chipSelected]} onPress={() => setShowActionSelectorOnEmotion(true)}>
-                  <Text style={[styles.optionText, showActionSelectorOnEmotion && styles.chipTextSelected]}>בחירת פעולה עכשיו</Text>
-                </Pressable>
-                <Pressable style={[styles.optionRow, !showActionSelectorOnEmotion && styles.chipSelected]} onPress={() => setShowActionSelectorOnEmotion(false)}>
-                  <Text style={[styles.optionText, !showActionSelectorOnEmotion && styles.chipTextSelected]}>אבחר פעולה בשלב הוויסות</Text>
-                </Pressable>
-              </View>
-              {showActionSelectorOnEmotion && renderActionSelector()}
-            </View>
             {session!.selectedEmotion !== null && (
               <Pressable style={styles.primaryButton} onPress={() => commit(advance(session!, now))}>
                 <Text style={styles.primaryButtonText}>המשך</Text>
@@ -2921,23 +2454,14 @@ export default function NewArcLiveScreen({
           // exactly like every other supportive-feeling path, with no
           // further wiring needed.
           //
-          // ARCHI -- Choose the Action on the Same "סבבה" Screen task:
-          // the action-selection section now renders at the BOTTOM of
-          // this SAME screen, right under the body/supportive-feeling
-          // picker -- never on the Regulation screen reached after it.
-          // Reuses the exact same showActionSelectorOnRegulation local
-          // state and renderActionSelector()/summary pattern Regulation
-          // itself uses (that state resets to false on every step
-          // change, so reusing it here is safe); selecting/confirming
-          // an action here calls the SAME setSelectedAction, which
-          // already advances the session on its own -- straight past
-          // this screen into Regulation, with the action already
-          // decided. The plain, unconditional "המשך" this branch used
-          // to end with is gone: choosing an action is now this
-          // screen's own required exit, exactly like Regulation's own
-          // (no plain skip there either) -- body-area/supportive-
-          // feeling selection stays fully optional, unaffected.
-          const hasConfirmedAction = session!.selectedActionSource !== null && !showActionSelectorOnRegulation;
+          // ARCHI -- Adaptive Task Execution & Emotional Persistence
+          // task, section 1: the action-selection section that used to
+          // render at the bottom of this same screen is gone -- when
+          // ARC is entered in the context of a real task the app
+          // already knows the action, and when entered standalone
+          // nothing here forces a pick either, so this screen always
+          // ends with a plain, unconditional "המשך" once more, exactly
+          // like before the action-selection section existed.
           return (
             <View>
               <BodyMapMagnifier
@@ -2960,37 +2484,9 @@ export default function NewArcLiveScreen({
                 setCustomSupportiveFeelingDraft,
                 (text) => commit(setCustomSupportiveFeelingOverride(session!, text))
               )}
-              {session!.arcGymSituationId || session!.arcPracticeDepth === "short" ? (
-                // ARC GYM's own separate, later positive-action
-                // visualization has nothing to select here -- same
-                // exemption Regulation itself already carries. ARCHI --
-                // Remove Mini ARC / Add Time Rating & Short-Depth
-                // Tracks task: short depth never prompts for an action
-                // either -- it reuses the task's own already-known
-                // first action automatically at the end (returnToTask),
-                // same reasoning as "פחות טוב" short's own ending.
-                <Pressable style={styles.primaryButton} onPress={() => commit(advance(session!, now))}>
-                  <Text style={styles.primaryButtonText}>המשך</Text>
-                </Pressable>
-              ) : (
-                <View>
-                  <Text style={styles.title}>הפעולה הבאה</Text>
-                  <Text style={styles.primary}>איזו פעולה תרצה לעשות עכשיו?</Text>
-                  {hasConfirmedAction ? (
-                    <View>
-                      <Text style={styles.hint}>{`הפעולה שנבחרה: ${resolveActionText(session!) ?? ""}`}</Text>
-                      <Pressable style={styles.optionRow} onPress={() => setShowActionSelectorOnRegulation(true)}>
-                        <Text style={styles.optionText}>שנה פעולה</Text>
-                      </Pressable>
-                      <Pressable style={styles.primaryButton} onPress={() => commit(advance(session!, now))}>
-                        <Text style={styles.primaryButtonText}>המשך</Text>
-                      </Pressable>
-                    </View>
-                  ) : (
-                    renderActionSelector()
-                  )}
-                </View>
-              )}
+              <Pressable style={styles.primaryButton} onPress={() => commit(advance(session!, now))}>
+                <Text style={styles.primaryButtonText}>המשך</Text>
+              </Pressable>
             </View>
           );
         }
@@ -3310,41 +2806,16 @@ export default function NewArcLiveScreen({
           />
         );
 
-      // ARCHI -- Show Action Selection ON the Regulation Screen task:
-      // the trainee reported that the action-selection prompt appeared
-      // AFTER the Regulation circle/mantra (a separate sub-screen,
-      // subIndex 1, reached only by tapping past Regulation) -- they
-      // want it to appear ON the Regulation screen itself. "regulation"
-      // is now always exactly one sub-screen (stepSubCount above
-      // returns 1 unconditionally): the SAME unchanged circle/mantra
-      // renders first, and (unless this is an ARC GYM situation, which
-      // has nothing to select) the action-selection section renders
-      // immediately below it, as a plain sibling -- same convention the
-      // movement-instructions block under ArcBodyMantraCircle already
-      // uses elsewhere, entirely outside the circle's own full-screen
-      // tap surface, so there is no touch conflict between the two.
-      //
-      // The circle itself no longer advances the step on tap here --
-      // advancing out of Regulation now happens only through an
-      // explicit action in the section below (choosing/confirming an
-      // action, which setSelectedAction already advances internally,
-      // or the "המשך" button once a selection already exists) -- so a
-      // trainee can never tap past Regulation without actually seeing
-      // the action choice, exactly as before, just on one screen
-      // instead of two. ARC GYM keeps its own prior tap-to-advance
-      // behavior unchanged, since it has no action section at all.
       case "regulation": {
-        // ARCHI -- Allow Action Selection During Emotion Identification
-        // or Defer It to Regulation task: a selection already made
-        // (whether on the earlier "emotion" screen or anywhere else)
-        // is PRESERVED and DISPLAYED here, never silently re-asked --
-        // "do not force the user to choose the same action again."
-        // Only when the trainee explicitly taps "שנה פעולה" does the
-        // existing picker (renderActionSelector) reappear. A deferred
-        // selection (selectedActionSource still null) falls through to
-        // that same existing picker exactly as before -- fully
-        // unchanged for that case.
-        const hasConfirmedAction = session!.selectedActionSource !== null && !showActionSelectorOnRegulation;
+        // ARCHI -- Adaptive Task Execution & Emotional Persistence
+        // task, section 1: the action-selection prompt that used to
+        // render below this circle is gone -- when ARC is entered in
+        // the context of a real task the app already knows the action
+        // (isActiveTaskLiveOrigin), and when entered standalone nothing
+        // here forces a pick either; the new feeling/action flow
+        // (arc/supportiveFeelings.ts) supersedes that purpose. A plain
+        // "המשך" advances for every non-ARC-GYM session (ARC GYM's own
+        // circle tap already advances via onAdvance above).
         return (
           <View>
             <ArcBodyMantraCircle
@@ -3360,46 +2831,13 @@ export default function NewArcLiveScreen({
               }}
             />
             {!session!.arcGymSituationId && (
-              <View>
-                {/* The action-selection prompt text itself -- previously
-                    shown via the generic title/primary header, now
-                    inline since isBodyMantraStage hides that header for
-                    the whole "regulation" step. */}
-                <Text style={styles.title}>הפעולה הבאה</Text>
-                <Text style={styles.primary}>איזו פעולה תרצה לעשות עכשיו?</Text>
-                {hasConfirmedAction ? (
-                  <View>
-                    <Text style={styles.hint}>{`הפעולה שנבחרה: ${resolveActionText(session!) ?? ""}`}</Text>
-                    <Pressable style={styles.optionRow} onPress={() => setShowActionSelectorOnRegulation(true)}>
-                      <Text style={styles.optionText}>שנה פעולה</Text>
-                    </Pressable>
-                    <Pressable style={styles.primaryButton} onPress={() => commit(advance(session!, now))}>
-                      <Text style={styles.primaryButtonText}>המשך</Text>
-                    </Pressable>
-                  </View>
-                ) : (
-                  renderActionSelector()
-                )}
-              </View>
+              <Pressable style={styles.primaryButton} onPress={() => commit(advance(session!, now))}>
+                <Text style={styles.primaryButtonText}>המשך</Text>
+              </Pressable>
             )}
           </View>
         );
       }
-
-      // ARCHI -- Unified Final Specification task, section 2 ("Action
-      // Selection must occur immediately AFTER Regulation and BEFORE
-      // Encoding") / ARCHI -- Move Action Selection into the Existing
-      // Regulation Screen task: these two step ids are now permanently
-      // unreachable (isStepReachable, arc/newArcLiveSteps.ts) -- their
-      // functionality moved into "regulation"/"mini_acceptance_transition"
-      // at subIndex 1 (see renderActionSelector() below, now the ONE
-      // shared implementation for all four call sites). This case stays
-      // only for migrateLegacyNewArcLiveStep's own historical-data
-      // safety (a session can briefly carry this currentStep in memory
-      // for one render before that migration runs on load).
-      case "action_selection":
-      case "mini_action_selection":
-        return renderActionSelector();
 
       // "Save the personalized encoding mantra with the selected
       // feeling and action context": tapping the circle here persists
@@ -3619,15 +3057,6 @@ export default function NewArcLiveScreen({
           />
         );
 
-      // ARCHI -- Move Action Selection into the Existing Regulation
-      // Screen task: subIndex 0 is the UNCHANGED existing area/
-      // sensation/movement form -- its own Continue still just calls
-      // setMiniAcceptanceTransition, which (via stepSubCount
-      // ("mini_acceptance_transition") now returning 2 whenever action
-      // selection applies) moves to subIndex 1 WITHOUT leaving this
-      // step, instead of leaving to the old standalone
-      // "mini_action_selection" screen. subIndex 1 renders the
-      // SAME integrated action-selector "regulation" uses above.
       // ARCHI -- Consolidated Implementation Request, Part 6 ("Presence:
       // Expanding Field of View"): "mini_presence" now renders through
       // the SAME ArcBodyMantraCircle every Full ARC Presence page
@@ -3654,7 +3083,12 @@ export default function NewArcLiveScreen({
         );
 
       case "mini_acceptance_transition":
-        if (session!.subIndex === 1) return renderActionSelector();
+        // ARCHI -- Adaptive Task Execution & Emotional Persistence
+        // task, section 1: this step is now back to exactly ONE
+        // sub-screen (stepSubCount in arc/newArcLiveSteps.ts) -- the
+        // action-selection sub-screen that used to live at subIndex 1
+        // is gone, for the same reason "regulation" above lost its own
+        // action-selection prompt.
         return (
           <View>
             {/* ARCHI -- Fix Mini ARC Interactive Body Selection and
@@ -3829,42 +3263,32 @@ export default function NewArcLiveScreen({
 
         {renderBody()}
 
-        {/*
-         * ARC Decision task: while the inline overlay is showing, its
-         * OWN back/cancel controls (live/components/ArcDecisionFlow.tsx)
-         * are the only navigation on screen -- the generic ARC step
-         * back/skip below must stay hidden, since "חזרה" here would
-         * otherwise step the underlying ARC session itself backward
-         * (goBack), which is never what the overlay's own "חזרה" means.
-         */}
-        {!arcDecisionSession && (
-          <View style={styles.navRow}>
-            {previous && (
-              <Pressable
-                onPress={() => {
-                  // Nine Functional Improvements task, Improvement 3:
-                  // going back from the timer phase (subIndex 1) to
-                  // re-pick the action (subIndex 0) discards any
-                  // in-flight internal-action timer -- it belonged to the
-                  // action being abandoned, never silently resumed
-                  // against whatever gets picked next.
-                  if (session!.currentStep === "emotional_action" && session!.subIndex === 1) {
-                    clearInternalActionTimerRun();
-                    setInternalActionRun(null);
-                  }
-                  commit(goBack(session, now));
-                }}
-              >
-                <Text style={styles.linkText}>חזרה</Text>
-              </Pressable>
-            )}
-            {skippable && (
-              <Pressable onPress={() => commit(advanceWithSkip(session, now))}>
-                <Text style={styles.linkText}>דלג</Text>
-              </Pressable>
-            )}
-          </View>
-        )}
+        <View style={styles.navRow}>
+          {previous && (
+            <Pressable
+              onPress={() => {
+                // Nine Functional Improvements task, Improvement 3:
+                // going back from the timer phase (subIndex 1) to
+                // re-pick the action (subIndex 0) discards any
+                // in-flight internal-action timer -- it belonged to the
+                // action being abandoned, never silently resumed
+                // against whatever gets picked next.
+                if (session!.currentStep === "emotional_action" && session!.subIndex === 1) {
+                  clearInternalActionTimerRun();
+                  setInternalActionRun(null);
+                }
+                commit(goBack(session, now));
+              }}
+            >
+              <Text style={styles.linkText}>חזרה</Text>
+            </Pressable>
+          )}
+          {skippable && (
+            <Pressable onPress={() => commit(advanceWithSkip(session, now))}>
+              <Text style={styles.linkText}>דלג</Text>
+            </Pressable>
+          )}
+        </View>
       </ScrollView>
 
       {/*

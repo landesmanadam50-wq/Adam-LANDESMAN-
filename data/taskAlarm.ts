@@ -112,6 +112,7 @@ import { routeTappedReminder } from "./reminders.ts";
 import { handleDailyVisualizationAlarmEvent } from "./dailyVisualizationAlarm.ts";
 import { handleEmotionalCheckInNotificationEvent } from "./emotionalCheckInNotification.ts";
 import { handleTaskTransitionNotificationEvent } from "./taskTransitionNotification.ts";
+import { handleTaskNotStartedNotificationEvent, recomputeTaskNotStartedNotification } from "./taskNotStartedNotification.ts";
 import { handleMorningAlarmAction, turnOffMorningAlarm } from "./morningAlarm.ts";
 import { resolveLatestReflectionForTask, resolveTaskAlarmNotificationContent } from "../arc/taskReflection.ts";
 
@@ -302,6 +303,15 @@ export function registerTaskAlarmForegroundService(): void {
         const isSuppressibleReminder = isGenericReminder && reminderKind !== null && isInterruptiveReminderKind(reminderKind);
         const isDailyVisualizationAlarm = notification.data?.kind === "dailyVisualizationAlarm";
 
+        // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+        // section 2: this silent placeholder is Android's own
+        // startForeground() requirement, exactly like every other
+        // busy-state-gated kind above -- the REAL decision (is this
+        // task's own start time still due with nothing started) is
+        // entirely data/taskNotStartedNotification.ts's own
+        // recomputeTaskNotStartedNotification, never duplicated here.
+        const isTaskNotStartedArm = notification.data?.kind === "taskNotStartedArm";
+
         const stop = () => {
           if (notificationId) pendingForegroundServiceStops.delete(notificationId);
           resolve();
@@ -326,6 +336,14 @@ export function registerTaskAlarmForegroundService(): void {
                 await redisplayReminderLoud(notificationId, title, body, data, redisplayOptions);
               }
             }
+            stop();
+          });
+          return;
+        }
+
+        if (isTaskNotStartedArm) {
+          recomputeTaskNotStartedNotification(new Date()).then(async () => {
+            if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});
             stop();
           });
           return;
@@ -1545,6 +1563,17 @@ export async function handleTaskAlarmEvent(event: Event): Promise<void> {
   // onBackgroundEvent/onForegroundEvent registration.
   if (data.kind === "taskTransition") {
     await handleTaskTransitionNotificationEvent(event);
+    return;
+  }
+
+  // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+  // section 2: the one "task not started" notification's own three
+  // actions (support/start/finish-or-give-up) and body-tap -- routes
+  // through the shared handleTaskNotStartedNotificationEvent
+  // (data/taskNotStartedNotification.ts), never a second
+  // onBackgroundEvent/onForegroundEvent registration.
+  if (data.kind === "taskNotStarted") {
+    await handleTaskNotStartedNotificationEvent(event);
     return;
   }
 

@@ -339,7 +339,8 @@ export interface CurrentTaskState {
   next: ScheduledPlanEntry | null;
 }
 
-function hasScheduledPlanEntryStarted(entry: ScheduledPlanEntry, nowMinutes: number): boolean {
+/** Exported for arc/taskNotStartedAlert.ts's own "start time arrived" detection -- the exact same clock-time check resolveCurrentTaskState already uses internally, never a second/duplicate one. */
+export function hasScheduledPlanEntryStarted(entry: ScheduledPlanEntry, nowMinutes: number): boolean {
   if (entry.effectiveStartTime === null) return false;
   const startMinutes = parseClockTimeToMinutes(entry.effectiveStartTime);
   return startMinutes !== null && startMinutes <= nowMinutes;

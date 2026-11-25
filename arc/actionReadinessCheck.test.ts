@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { advance, confirmActionReadinessCheck, resolveNextStep, setSelectedAction } from "./newArcLiveSteps.ts";
+import { advance, confirmActionReadinessCheck, resolveNextStep } from "./newArcLiveSteps.ts";
 import { createNewArcLiveSessionState } from "./newArcLiveTypes.ts";
 import type { NewArcLiveSessionState } from "./newArcLiveTypes.ts";
 
@@ -26,26 +26,19 @@ function freshMini(): NewArcLiveSessionState {
 
 // --- Option A: direct to action (unpleasant < 5 AND readiness > 5) ---
 
-test("Full ARC, direct_action: unpleasant=4/readiness=6, no action yet resolved -- lands on action_selection so one can be chosen", () => {
-  let state = confirmActionReadinessCheck(freshFull(), 4, 6, 8, NOW);
+test("Full ARC, direct_action: unpleasant=4/readiness=6 -- the fast lane now walks straight to 'complete', since action_selection was removed entirely (the app already knows the task's own action from context)", () => {
+  const state = confirmActionReadinessCheck(freshFull(), 4, 6, 8, NOW);
   assert.equal(state.actionReadinessOutcome, "direct_action");
   assert.equal(state.unpleasantIntensityRating, 4);
   assert.equal(state.actionReadinessRating, 6);
   assert.equal(state.arcInvocationMode, "plannedFull", "direct_action never touches arcInvocationMode");
-  assert.equal(state.currentStep, "action_selection", "no action already resolved -- the trainee picks one, skipping every other ARC step");
-  state = setSelectedAction(state, { source: "temporaryAction", title: "ללכת לטייל", durationMinutes: 10 }, NOW);
-  assert.equal(state.currentStep, "complete", "once an action is picked, Encoding and every other remaining ARC step are skipped entirely");
+  assert.equal(state.currentStep, "complete", "every remaining ARC step, including the now-removed action-selection step, is skipped entirely");
 });
 
-test("Full ARC, direct_action: isActiveTaskLiveOrigin already gives a resolved action -- skips straight to complete, no picker shown", () => {
+test("Full ARC, direct_action: isActiveTaskLiveOrigin skips straight to complete, same as every other direct_action session now", () => {
   const state = confirmActionReadinessCheck({ ...freshFull(), isActiveTaskLiveOrigin: true }, 2, 9, 8, NOW);
   assert.equal(state.actionReadinessOutcome, "direct_action");
   assert.equal(state.currentStep, "complete", "the active task's own first action is already the resolved action -- use it, never ask again");
-});
-
-test("Full ARC, direct_action: a prior explicit selectedActionSource also counts as already resolved", () => {
-  const state = confirmActionReadinessCheck({ ...freshFull(), selectedActionSource: "temporaryAction", selectedActionTitle: "לנשום" }, 1, 10, 8, NOW);
-  assert.equal(state.currentStep, "complete");
 });
 
 test("Full ARC, direct_action: an ARC GYM situation also counts as already resolved (its own separate action-visualization flow)", () => {
@@ -112,15 +105,13 @@ test("Full ARC, continue: resuming the ordinary walk afterward reaches the full 
 
 // --- Mini ARC: all three outcomes, same thresholds ---
 
-test("Mini ARC, direct_action: unpleasant=3/readiness=8, no action resolved -- lands on mini_action_selection", () => {
-  let state = confirmActionReadinessCheck(freshMini(), 3, 8, 8, NOW);
+test("Mini ARC, direct_action: unpleasant=3/readiness=8 -- the fast lane walks straight to 'complete', since mini_action_selection was removed entirely", () => {
+  const state = confirmActionReadinessCheck(freshMini(), 3, 8, 8, NOW);
   assert.equal(state.actionReadinessOutcome, "direct_action");
-  assert.equal(state.currentStep, "mini_action_selection");
-  state = setSelectedAction(state, { source: "temporaryAction", title: "לסדר את השולחן", durationMinutes: 5 }, NOW);
-  assert.equal(state.currentStep, "complete", "mini_encoding is skipped entirely for the direct-to-action outcome");
+  assert.equal(state.currentStep, "complete", "mini_encoding and the now-removed mini_action_selection step are both skipped entirely for the direct-to-action outcome");
 });
 
-test("Mini ARC, direct_action: an already-resolved action (isActiveTaskLiveOrigin) skips mini_action_selection too", () => {
+test("Mini ARC, direct_action: an already-resolved action (isActiveTaskLiveOrigin) also lands on complete", () => {
   const state = confirmActionReadinessCheck({ ...freshMini(), isActiveTaskLiveOrigin: true }, 1, 9, 8, NOW);
   assert.equal(state.currentStep, "complete");
 });

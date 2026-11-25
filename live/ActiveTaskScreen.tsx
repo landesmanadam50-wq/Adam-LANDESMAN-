@@ -78,18 +78,40 @@ import { findLatestOutcomeForTask, recordStartedOriginalTaskAfter } from "../arc
 import { loadPostponementObstacleOutcomes, upsertPostponementObstacleOutcome } from "../data/storage.ts";
 import { resolveContinuousRoutineOutcome } from "../data/dailyRoutine.ts";
 import { formatMinutesToClockTime, parseClockTimeToMinutes } from "../arc/dailyRoutine.ts";
-import { resolveMostUrgentScheduledTask, resolveNextScheduledTaskDisplay } from "../data/dailyPlan.ts";
+import { resolveMostUrgentScheduledTask, resolveNextScheduledTaskDisplay, resolveTodaysScheduledPlan } from "../data/dailyPlan.ts";
 import type { NextScheduledTaskDisplay } from "../data/dailyPlan.ts";
+import {
+  enterArc,
+  enterBreak,
+  endTaskContinuationLoop,
+  exitArcBackToLoop,
+  exitBreak,
+  recordSegmentEnd,
+  resolveLoopHardStopMinutes,
+  startNextSegment,
+  startTaskContinuationLoop,
+} from "../arc/taskContinuationLoop.ts";
+import type { TaskContinuationLoopState } from "../arc/taskContinuationLoop.ts";
+import { suggestNextSegmentMinutes } from "../arc/taskContinuationSuggestion.ts";
+import { buildAdaptedTaskDraft, suggestHalvedDuration } from "../arc/taskAdaptation.ts";
+import {
+  appendTaskContinuationLoopHistoryEntry,
+  clearTaskContinuationLoop,
+  loadSupportiveActionFlowPending,
+  loadTaskContinuationLoop,
+  saveTaskContinuationLoop,
+} from "../data/storage.ts";
 import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
 import { loadArcTaskReminderSettings } from "../data/storage.ts";
 import { recomputeTaskTransitionNotification } from "../data/taskTransitionNotification.ts";
+import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
 import { createArcFocusSession, generateArcFocusPracticeId } from "../arc/arcFocusSession.ts";
 import { loadArcFocusSettings, saveArcFocusSession } from "../data/storage.ts";
 import { addPendingContinuousRoutineSmiles, takePendingContinuousRoutineSmiles } from "../data/continuousRoutineGroup.ts";
 import { hasConfiguredActionStages, resolveFirstActionStage, resolveNextActionStage, sumActionStageDurations } from "../arc/taskStage.ts";
 import { advanceStageProgress, createTaskStageProgress, isStageCompleted, markStageCompleted, resolveCompletedDurationMinutes } from "../arc/taskStageProgress.ts";
 import type { TaskStageProgress } from "../arc/taskStageProgress.ts";
-import { openFullArc, openShortenedArc } from "../data/emotionalCheckInRouting.ts";
+import { openFullArc, openShortenedArc, openUrgeArc } from "../data/emotionalCheckInRouting.ts";
 import { loadArcGoals, loadArcGymGoals, loadPurposeManifests } from "../data/storage.ts";
 import { loadArcBookChapters } from "../data/storage.ts";
 import type { ArcGoal } from "../arc/types.ts";
@@ -227,6 +249,29 @@ export default function ActiveTaskScreen({
   const [splitProgress, setSplitProgress] = useState<TaskSplitProgress | null>(null);
   /** Guards the segment-advance effect below against firing twice for the SAME ended run (a re-render before the next segment's own fresh TaskTimerRun is visible in state) -- the exact same per-runId guard pattern already used for the completion-sound effect. */
   const segmentAdvancedForRunId = useRef<string | null>(null);
+  /**
+   * ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+   * sections 6-10: Task LIVE's own continuation loop -- null whenever
+   * no loop is in progress for this task (every pre-existing behavior
+   * on this screen is completely unaffected). Scoped deliberately to
+   * the ORDINARY case only: a split To-Do segment or a configured-
+   * stages task already has its own, separately-tested adaptive
+   * continuation (advanceToNextSplitSegment/handleCompleteStage above)
+   * -- this loop is a different, additive mechanism for the general
+   * case the spec describes, never a replacement for either, so both
+   * are explicitly excluded from entering it (see the natural-end
+   * effect below).
+   */
+  const [continuationLoop, setContinuationLoop] = useState<TaskContinuationLoopState | null>(null);
+  const continuationHandledForRunId = useRef<string | null>(null);
+  const loopBreakExitedForRunId = useRef<string | null>(null);
+  const loopHardStopHandledRef = useRef(false);
+  const supportiveActionRedirectChecked = useRef(false);
+  const [showContinuationDurationInput, setShowContinuationDurationInput] = useState(false);
+  const [continuationDurationDraft, setContinuationDurationDraft] = useState("");
+  const [showContinuationShrink, setShowContinuationShrink] = useState(false);
+  const [continuationShrinkMinutesDraft, setContinuationShrinkMinutesDraft] = useState("");
+  const [continuationShrinkTextDraft, setContinuationShrinkTextDraft] = useState("");
   /** Guards handleCompleteStage against a rapid double-tap (or the overlay's own deep-link racing a manual tap) within the same render -- the PURE markStageCompleted/advanceStageProgress functions are already idempotent once state has caught up, but this closes the window between two calls firing before a re-render. */
   const [completingStage, setCompletingStage] = useState(false);
   /**
@@ -407,9 +452,55 @@ export default function ActiveTaskScreen({
       }
     });
     refreshNextScheduledTask();
+    // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+    // sections 9+11: loaded alongside everything else on every
+    // focus/reload, matching the "full synchronization... loop state
+    // must survive app close/reopen" requirement -- a task reached with
+    // no pending loop at all sees `continuationLoop` stay null, exactly
+    // as every pre-existing task already does. `activeTaskId` is
+    // checked too (not just `taskId`), so the loop still resumes on the
+    // SHRUNK child task's own screen after "No -> להקטין" navigates
+    // there (see handleContinuationShrinkConfirm below).
+    loadTaskContinuationLoop().then((loop) => {
+      if (!loop || loop.phase === "ended" || (loop.taskId !== taskId && loop.activeTaskId !== taskId)) {
+        setContinuationLoop(null);
+        return;
+      }
+      if (loop.phase === "arc") {
+        // ARC-context-passing fallback: returning from the existing
+        // Full/Shortened ARC route always lands back on THIS screen
+        // (/tasks/[id]) -- exitArcBackToLoop's own no-op-if-not-"arc"
+        // guard makes this safe even if this effect somehow ran twice.
+        const exited = exitArcBackToLoop(loop, new Date().toISOString());
+        saveTaskContinuationLoop(exited).then(() => setContinuationLoop(exited));
+        return;
+      }
+      setContinuationLoop(loop);
+    });
   }, [taskId, refreshNextScheduledTask]);
 
   useFocusEffect(reload);
+
+  // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+  // section 4: live/SupportiveActionFlowScreen.tsx's own ARC-return
+  // fallback -- that screen persists `awaitingArcReturn: true` right
+  // before navigating to the existing Full/Shortened ARC route, since
+  // ARC's own return path always lands here (/tasks/[id]), never back
+  // on that screen directly (this task must not touch
+  // live/NewArcLiveScreen.tsx's own returnToTask() to make it do
+  // otherwise). This is the one place that notices the flag and routes
+  // straight back -- an ordinary visit to this task with no pending
+  // flow (the overwhelming majority of visits) is completely
+  // unaffected, since the flag is false/absent for every one of them.
+  useEffect(() => {
+    if (supportiveActionRedirectChecked.current || !task) return;
+    supportiveActionRedirectChecked.current = true;
+    loadSupportiveActionFlowPending().then((pending) => {
+      if (pending && pending.taskId === task.id && pending.awaitingArcReturn) {
+        router.replace({ pathname: "/tasks/[id]/supportive-action", params: { id: task.id } });
+      }
+    });
+  }, [task]);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -482,11 +573,222 @@ export default function ActiveTaskScreen({
     }
     const statusNow = getTaskTimerStatus(timerRun, Date.now());
     const ended = timerRun.completedAt !== null || statusNow.complete === true;
-    if (ended && autoCompletedForRunId.current !== timerRun.runId) {
-      autoCompletedForRunId.current = timerRun.runId;
-      handleComplete();
+    if (!ended || autoCompletedForRunId.current === timerRun.runId) return;
+    // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+    // section 7 ("behavior reversal"): a configured-stages task or a
+    // mid-split To-Do segment keeps its own already-tested adaptive
+    // continuation (handleCompleteStage/advanceToNextSplitSegment) --
+    // every OTHER task's natural timer end now enters the continuation
+    // loop instead of auto-completing, exactly as the spec requires.
+    const stageActive = !!(stageProgress && task && stageProgress.taskId === task.id);
+    const splitActive = !!(task && task.isTodoItem && splitProgress && splitProgress.taskId === task.id);
+    if (task && !stageActive && !splitActive && continuationHandledForRunId.current !== timerRun.runId) {
+      continuationHandledForRunId.current = timerRun.runId;
+      void handleTimerNaturalEndForContinuationLoop(statusNow.elapsedSeconds);
+      return;
     }
-  }, [task, splitProgress, timerRun, restRun, now]);
+    autoCompletedForRunId.current = timerRun.runId;
+    handleComplete();
+  }, [task, splitProgress, stageProgress, timerRun, restRun, now]);
+
+  /**
+   * ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+   * section 7: records the just-ended segment's REAL elapsed seconds
+   * (never lost, per section 12's own "never lose already-completed
+   * work time") into the persisted loop -- starting a fresh one via
+   * startTaskContinuationLoop if this is the first segment, or closing
+   * the loop's own already-open segment (opened by startNextSegment
+   * when this segment began) otherwise. Plays the completion sound via
+   * the SAME gated effect every other run already uses (unchanged
+   * above) -- this only stops the auto-handleComplete() that used to
+   * follow it, replacing it with the continuation menu below.
+   */
+  async function handleTimerNaturalEndForContinuationLoop(elapsedSeconds: number) {
+    if (!task) return;
+    const nowIso = new Date().toISOString();
+    const existing = await loadTaskContinuationLoop();
+    const base =
+      existing && existing.phase !== "ended" && (existing.taskId === task.id || existing.activeTaskId === task.id) ? existing : startTaskContinuationLoop(task.id, nowIso);
+    const loop = recordSegmentEnd(base, elapsedSeconds, nowIso);
+    await saveTaskContinuationLoop(loop);
+    setContinuationLoop(loop);
+    await clearEndedTimer();
+  }
+
+  /** Clamps a requested segment length against the real free time before the next scheduled task -- the SAME resolveFreeMinutesUntilNextTask-backed computation (via resolveLoopHardStopMinutes) every other adaptive-duration screen in this codebase already shares, never a second one. null (nothing else scheduled today) means no clamp. */
+  async function resolveContinuationFreeMinutes(loop: TaskContinuationLoopState): Promise<number | null> {
+    const scheduled = await resolveTodaysScheduledPlan(new Date());
+    return resolveLoopHardStopMinutes(loop, scheduled, new Date());
+  }
+
+  function lastLoopSegmentMinutes(loop: TaskContinuationLoopState): number {
+    const last = loop.segments[loop.segments.length - 1];
+    if (last && last.minutes > 0) return Math.max(1, Math.round(last.minutes));
+    return task?.expectedDurationMinutes ?? 10;
+  }
+
+  /** Every "yes" continuation option (continue-same/suggested-shorter/custom-duration/another-segment) funnels into this one call -- differing only in the requested minutes -- so there is exactly one place that starts the next real TaskTimerRun for the loop's own `activeTaskId` (the original task, or the shrunk child once "No -> להקטין" has run). */
+  async function startLoopSegment(requestedMinutes: number) {
+    if (!task || !continuationLoop) return;
+    const freeMinutes = await resolveContinuationFreeMinutes(continuationLoop);
+    const clamped = freeMinutes !== null ? Math.max(1, Math.min(requestedMinutes, freeMinutes)) : Math.max(1, requestedMinutes);
+    const nowIso = new Date().toISOString();
+    const advanced = startNextSegment(continuationLoop, continuationLoop.activeTaskId, nowIso);
+    await saveTaskContinuationLoop(advanced);
+    setContinuationLoop(advanced);
+    const run = createTaskTimerRun(continuationLoop.activeTaskId, generateTaskTimerRunId(), clamped, nowIso);
+    const notificationId = await scheduleTaskTimerNotification(run, task);
+    const runWithNotification = { ...run, notificationId };
+    await saveTaskTimerRun(runWithNotification);
+    setTimerRun(runWithNotification);
+    await updateFloatingTimerOverlay(runWithNotification, task, null, nextScheduledTaskForOverlay);
+  }
+
+  async function handleContinuationContinueSame() {
+    if (!continuationLoop) return;
+    await startLoopSegment(lastLoopSegmentMinutes(continuationLoop));
+  }
+
+  async function handleContinuationSuggestedShorter() {
+    if (!continuationLoop) return;
+    await startLoopSegment(suggestNextSegmentMinutes(lastLoopSegmentMinutes(continuationLoop)));
+  }
+
+  async function handleContinuationAnotherSegment() {
+    if (!continuationLoop) return;
+    await startLoopSegment(lastLoopSegmentMinutes(continuationLoop));
+  }
+
+  async function handleContinuationCustomDuration() {
+    const minutes = Number(continuationDurationDraft);
+    if (!continuationLoop || !minutes || minutes <= 0) return;
+    setShowContinuationDurationInput(false);
+    setContinuationDurationDraft("");
+    await startLoopSegment(minutes);
+  }
+
+  /** "No -> הפסקה": the loop's own `enterBreak`, plus a real "rest"-kind TaskTimerRun -- the exact same createTaskTimerRun(..., "rest")/playBreakStartSound pair every other "I need rest" entry point in this screen already uses. */
+  async function handleContinuationBreak(restMinutes: number) {
+    if (!task || !continuationLoop) return;
+    const nowIso = new Date().toISOString();
+    const entered = enterBreak(continuationLoop, nowIso);
+    await saveTaskContinuationLoop(entered);
+    setContinuationLoop(entered);
+    const run = createTaskTimerRun(continuationLoop.activeTaskId, generateTaskTimerRunId(), restMinutes, nowIso, "rest");
+    const notificationId = await scheduleRestTimerNotification(run, task);
+    const runWithNotification = { ...run, notificationId };
+    await saveTaskTimerRun(runWithNotification);
+    setRestRun(runWithNotification);
+    await playBreakStartSound(await loadBreakSoundEnabled());
+    await updateFloatingTimerOverlay(runWithNotification, task, null, nextScheduledTaskForOverlay);
+  }
+
+  /** Reached either by a manual tap on the break timer's own end button (clearEndedTimer already ran by the time either JSX branch calls this) or automatically once the rest run ends naturally (the effect below) -- either way, `exitBreak` always returns to the SAME menu, never losing the loop's own context, per the spec's own "in-loop breaks... never losing task context." */
+  async function handleExitLoopBreak() {
+    await clearEndedTimer();
+    if (!continuationLoop) return;
+    const nowIso = new Date().toISOString();
+    const exited = exitBreak(continuationLoop, nowIso);
+    await saveTaskContinuationLoop(exited);
+    setContinuationLoop(exited);
+  }
+
+  /** "No -> ARC": `enterArc`'s own no-op-if-already-"arc" guard (arc/taskContinuationLoop.ts) makes this safe to call even if something fires it twice. "urge" reuses the existing openUrgeArc entry point (the floating cube's own "מחשבה/דחף" shortcut) while still recording the SAME "full" track the ordinary "😟 פחות טוב" button already does, since ArcTrackChosen only models full/shortened/none and the urge entry is the Full-ARC engine in its spontaneous+skipEmotionSelection mode -- documented in the final report as the closest-fit mapping. */
+  async function handleContinuationArc(track: "full" | "shortened" | "urge") {
+    if (!continuationLoop) return;
+    const nowIso = new Date().toISOString();
+    const entered = enterArc(continuationLoop, track === "urge" ? "full" : track, nowIso);
+    await saveTaskContinuationLoop(entered);
+    setContinuationLoop(entered);
+    if (track === "full") await openFullArc(continuationLoop.activeTaskId);
+    else if (track === "urge") await openUrgeArc(continuationLoop.activeTaskId);
+    else await openShortenedArc(continuationLoop.activeTaskId);
+  }
+
+  /** "No -> להקטין": mirrors live/TaskAdaptationScreen.tsx's own buildAdaptedTaskDraft+clamp+upsertTask idiom inline (never navigating away mid-loop, so no already-accumulated segment/worked-time context is ever at risk of being lost in a round trip) -- the ORIGINAL task (continuationLoop.taskId) is never mutated; `activeTaskId` becomes the new shrunk child's id, and this screen navigates to ITS OWN route for that child id (autoStart=1) so every existing reader that keys off `task.id`/the single-slot TaskTimerRun's own `taskId` (the floating overlay, the alarm-conflict checks, isActiveTaskStillCurrent) stays internally consistent -- never a timer whose `taskId` disagrees with the mounted screen's own `task.id`, the exact class of bug already fixed once in this codebase (see arc/taskTimer.ts's own isAnotherTaskActive doc). */
+  async function handleContinuationShrinkConfirm() {
+    if (!task || !continuationLoop) return;
+    const requested = Number(continuationShrinkMinutesDraft) || suggestHalvedDuration(task.expectedDurationMinutes ?? 10);
+    const freeMinutes = await resolveContinuationFreeMinutes(continuationLoop);
+    const clamped = freeMinutes !== null ? Math.max(5, Math.min(requested, freeMinutes)) : Math.max(5, requested);
+    const nowIso = new Date().toISOString();
+    const draft = buildAdaptedTaskDraft(task, clamped, continuationShrinkTextDraft.trim() || task.firstAction, nowIso);
+    await upsertTask(draft);
+    const advanced = startNextSegment(continuationLoop, draft.id, nowIso);
+    await saveTaskContinuationLoop(advanced);
+    setShowContinuationShrink(false);
+    setContinuationShrinkMinutesDraft("");
+    setContinuationShrinkTextDraft("");
+    router.replace({ pathname: "/tasks/[id]", params: { id: draft.id, autoStart: "1" } });
+  }
+
+  /** "סיום": the REAL handleComplete() -- the loop ends with reason "completed" (section 12's tri-state: fully-completed), archived to history BEFORE the single live slot is cleared so its real segments/worked-time are never deleted, only ever the live loop. */
+  async function handleContinuationFinish() {
+    if (!continuationLoop) return;
+    const nowIso = new Date().toISOString();
+    const ended = endTaskContinuationLoop(continuationLoop, "completed", nowIso);
+    await appendTaskContinuationLoopHistoryEntry(ended);
+    await clearTaskContinuationLoop();
+    setContinuationLoop(null);
+    await handleComplete();
+  }
+
+  /** The no-next-task case's own explicit manual end -- reason "user_stopped" (tri-state: user-stopped, never read as failure), same archive-before-clear discipline as handleContinuationFinish above. Never calls handleComplete: the trainee explicitly stopped without finishing. */
+  async function handleContinuationUserStop() {
+    if (!task || !continuationLoop) return;
+    const nowIso = new Date().toISOString();
+    const ended = endTaskContinuationLoop(continuationLoop, "user_stopped", nowIso);
+    await appendTaskContinuationLoopHistoryEntry(ended);
+    await clearTaskContinuationLoop();
+    setContinuationLoop(null);
+    router.replace("/tasks");
+  }
+
+  /** The hard stop (section 10): "the moment the next scheduled task's time arrives... hands off to the existing next-task mechanism" -- reason "next_task_boundary" (tri-state: partial, never failure), the SAME navigateToNextOrTasksList this screen's own "המשימה הבאה" button already uses. Every "yes" segment is already clamped against this exact free-time computation at the moment it starts (startLoopSegment above), so an active segment is never itself running past this boundary -- this check only ever needs to fire while the menu is idle (phase "choosing_action"), which is where the effect below calls it. */
+  async function handleContinuationHardStop() {
+    if (!continuationLoop) return;
+    const nowIso = new Date().toISOString();
+    const ended = endTaskContinuationLoop(continuationLoop, "next_task_boundary", nowIso);
+    await appendTaskContinuationLoopHistoryEntry(ended);
+    await clearTaskContinuationLoop();
+    const activeTaskId = continuationLoop.activeTaskId;
+    setContinuationLoop(null);
+    await navigateToNextOrTasksList(activeTaskId);
+  }
+
+  // Auto-exits an in-loop break the moment the rest timer ends
+  // naturally, returning to the SAME continuation menu with no tap
+  // required -- a manual tap on the rest block's own end button below
+  // calls the exact same handleExitLoopBreak directly.
+  useEffect(() => {
+    if (!restRun || !continuationLoop || continuationLoop.phase !== "break") return;
+    const statusNow = getTaskTimerStatus(restRun, Date.now());
+    const ended = restRun.completedAt !== null || statusNow.complete === true;
+    if (ended && loopBreakExitedForRunId.current !== restRun.runId) {
+      loopBreakExitedForRunId.current = restRun.runId;
+      void handleExitLoopBreak();
+    }
+  }, [restRun, continuationLoop, now]);
+
+  // The hard stop itself -- checked only while the continuation menu is
+  // idle (see handleContinuationHardStop's own doc for why that is
+  // enough), via the exact same resolveLoopHardStopMinutes computation
+  // every segment-start already clamps against.
+  useEffect(() => {
+    if (!continuationLoop || continuationLoop.phase !== "choosing_action") return;
+    if (loopHardStopHandledRef.current) return;
+    let cancelled = false;
+    resolveContinuationFreeMinutes(continuationLoop).then((freeMinutes) => {
+      if (cancelled || loopHardStopHandledRef.current) return;
+      if (freeMinutes !== null && freeMinutes <= 0) {
+        loopHardStopHandledRef.current = true;
+        void handleContinuationHardStop();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [continuationLoop, now]);
 
   // ARCHI -- To-Do Bank + Duration/Split Selection + Home/Entry "Cubes"
   // task, section 4: mirrors the completion-sound effect directly above
@@ -735,6 +1037,14 @@ export default function ActiveTaskScreen({
   async function performStart() {
     if (!task) return;
     await markOriginalTaskStartedIfPending(task.id, new Date().toISOString());
+    // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+    // section 2: starting a task through ANY path here (this normal
+    // button, the alarm's own "Start Task" action, or autoStart=1)
+    // must immediately retire the "task not started" notification/
+    // alarm for it, same "update/remove itself the instant the user
+    // starts another way" guarantee recomputeTaskNotStartedNotification
+    // already encodes -- never a second, separate cancel call here.
+    void recomputeTaskNotStartedNotification();
     // Productivity & Personal Development upgrade task, requirement 6: a
     // "manifest"-kind task has no work timer at all -- "starting" it
     // always opens its own guided run (visualize -> ARC -> identity
@@ -1249,6 +1559,7 @@ export default function ActiveTaskScreen({
       if (settings.completionSoundEnabled) await playTimerCompletionSound();
     }
     await recomputeTaskTransitionNotification(task.id);
+    await recomputeTaskNotStartedNotification();
   }
 
   /**
@@ -1282,6 +1593,7 @@ export default function ActiveTaskScreen({
     // alone is enough for this screen's own render to now show the
     // "המשימה הושלמה" state in place.
     await recomputeTaskTransitionNotification(task.id);
+    await recomputeTaskNotStartedNotification();
   }
 
   /**
@@ -1660,6 +1972,16 @@ export default function ActiveTaskScreen({
               <Pressable
                 style={styles.primaryButton}
                 onPress={async () => {
+                  // ARCHI -- Adaptive Task Execution & Emotional
+                  // Persistence task, section 8: an in-loop break always
+                  // returns to the SAME continuation menu -- checked
+                  // first, before the pre-existing postponement-rest
+                  // redirect below, which only ever applies to an
+                  // ordinary (non-loop) rest.
+                  if (continuationLoop && continuationLoop.phase === "break") {
+                    await handleExitLoopBreak();
+                    return;
+                  }
                   await clearEndedTimer();
                   // Smart Postponement Flow, requirement 5: a rest
                   // started from the postponement flow (an unresolved
@@ -1685,10 +2007,111 @@ export default function ActiveTaskScreen({
                   const finished = { ...finishTaskTimerRunEarly(restRun, new Date().toISOString()), notificationId: null };
                   await saveTaskTimerRun(finished);
                   setRestRun(finished);
+                  if (continuationLoop && continuationLoop.phase === "break") {
+                    await handleExitLoopBreak();
+                    return;
+                  }
                   await updateFloatingTimerOverlay(finished, task, null, nextScheduledTaskForOverlay);
                 }}
               >
                 <Text style={styles.primaryButtonText}>סיום מוקדם</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        {/* ARCHI -- Adaptive Task Execution & Emotional Persistence
+            task, sections 7-10: the continuation menu -- shown once a
+            plain task's natural timer end entered the loop instead of
+            auto-completing (handleTimerNaturalEndForContinuationLoop
+            above). Never shown during an in-loop break (the rest block
+            above already covers that) or an in-loop ARC session
+            (navigated away entirely while that lasts). */}
+        {continuationLoop && continuationLoop.phase === "choosing_action" && !restRun && (
+          <View style={styles.timerBlock}>
+            <Text style={styles.question}>הקטע הסתיים -- מה הלאה?</Text>
+            <Text style={styles.hint}>להמשיך במשימה?</Text>
+            <View style={styles.chipRow}>
+              <Pressable style={styles.chip} onPress={handleContinuationContinueSame}>
+                <Text style={styles.chipText}>להמשיך באותו משך</Text>
+              </Pressable>
+              <Pressable style={styles.chip} onPress={handleContinuationSuggestedShorter}>
+                <Text style={styles.chipText}>המשך קצר יותר (מוצע)</Text>
+              </Pressable>
+              <Pressable style={styles.chip} onPress={() => setShowContinuationDurationInput(true)}>
+                <Text style={styles.chipText}>לקבוע משך אחר</Text>
+              </Pressable>
+              <Pressable style={styles.chip} onPress={handleContinuationAnotherSegment}>
+                <Text style={styles.chipText}>קטע עבודה נוסף</Text>
+              </Pressable>
+            </View>
+            {showContinuationDurationInput && (
+              <View style={styles.addRow}>
+                <Pressable style={styles.addButton} onPress={handleContinuationCustomDuration}>
+                  <Text style={styles.addButtonText}>התחלה</Text>
+                </Pressable>
+                <TextInput
+                  style={[styles.textInput, styles.flexInput]}
+                  value={continuationDurationDraft}
+                  onChangeText={setContinuationDurationDraft}
+                  keyboardType="number-pad"
+                  textAlign="right"
+                  placeholder="דקות"
+                />
+              </View>
+            )}
+
+            <Text style={styles.hint}>לא כרגע?</Text>
+            <View style={styles.chipRow}>
+              {[5, 10, 15].map((minutes) => (
+                <Pressable key={minutes} style={styles.chip} onPress={() => handleContinuationBreak(minutes)}>
+                  <Text style={styles.chipText}>{`הפסקה ${minutes} דק'`}</Text>
+                </Pressable>
+              ))}
+              <Pressable style={styles.chip} onPress={() => setShowContinuationShrink(true)}>
+                <Text style={styles.chipText}>להקטין את המשימה</Text>
+              </Pressable>
+              <Pressable style={styles.chip} onPress={() => handleContinuationArc("full")}>
+                <Text style={styles.chipText}>ARC פחות טוב</Text>
+              </Pressable>
+              <Pressable style={styles.chip} onPress={() => handleContinuationArc("shortened")}>
+                <Text style={styles.chipText}>ARC סבבה</Text>
+              </Pressable>
+              <Pressable style={styles.chip} onPress={() => handleContinuationArc("urge")}>
+                <Text style={styles.chipText}>מחשבה / דחף</Text>
+              </Pressable>
+              <Pressable style={styles.chip} onPress={handleContinuationFinish}>
+                <Text style={styles.chipText}>סיום המשימה</Text>
+              </Pressable>
+            </View>
+
+            {showContinuationShrink && (
+              <View style={styles.adjustSectionBlock}>
+                <TextInput
+                  style={styles.textInput}
+                  value={continuationShrinkMinutesDraft}
+                  onChangeText={setContinuationShrinkMinutesDraft}
+                  keyboardType="number-pad"
+                  textAlign="right"
+                  placeholder={`דקות (מוצע: ${suggestHalvedDuration(task.expectedDurationMinutes ?? 10)})`}
+                />
+                <TextInput
+                  style={styles.textInput}
+                  value={continuationShrinkTextDraft}
+                  onChangeText={setContinuationShrinkTextDraft}
+                  textAlign="right"
+                  placeholder="מה בדיוק יבוצע?"
+                />
+                <Pressable style={styles.primaryButton} onPress={handleContinuationShrinkConfirm}>
+                  <Text style={styles.primaryButtonText}>יצירה והתחלה</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {/* The no-next-task case's own explicit manual end (section 10) -- only shown when there is genuinely nothing else scheduled today. */}
+            {!nextScheduledTask && (
+              <Pressable style={styles.secondaryButton} onPress={handleContinuationUserStop}>
+                <Text style={styles.secondaryButtonText}>סיום ההפעלה</Text>
               </Pressable>
             )}
           </View>
@@ -1857,7 +2280,7 @@ export default function ActiveTaskScreen({
             prompt below both rendered at once -- a fresh Start/Postpone
             row ABOVE the very reflection questions for the task that
             was just finished. */}
-        {!showIdentityInsightPrompt && !timerRun && !restRun && !timerEnded && (
+        {!showIdentityInsightPrompt && !timerRun && !restRun && !timerEnded && !continuationLoop && (
           <View style={styles.buttonColumn}>
             {secondsUntilStart !== null && secondsUntilStart > 0 && (
               <Text style={styles.hint}>{`מתחיל בעוד ${formatTimeUntilStart(secondsUntilStart)}`}</Text>
@@ -2107,6 +2530,10 @@ const styles = StyleSheet.create({
   identityInsightBlock: { marginVertical: 16, gap: 8 },
   adjustSectionBlock: { backgroundColor: "#fff7e6", borderRadius: 10, padding: 14, marginTop: 16, gap: 8, width: "100%" },
   textInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16 },
+  flexInput: { flex: 1 },
+  addRow: { flexDirection: "row", gap: 8, width: "100%" },
+  addButton: { backgroundColor: "#0a7ea4", borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14, justifyContent: "center" },
+  addButtonText: { color: "#fff", fontWeight: "600" },
   multilineInput: { minHeight: 70, textAlignVertical: "top" },
   disabledButton: { opacity: 0.5 },
   linkedInsightsBlock: { marginVertical: 12, gap: 8 },

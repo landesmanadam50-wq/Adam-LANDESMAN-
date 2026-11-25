@@ -67,12 +67,14 @@ test("createDefaultArcTaskReminderSettings enables everything except lock-screen
   assert.equal(defaults.mantraRemindersEnabled, true);
   assert.equal(defaults.activeRecallRemindersEnabled, true);
   assert.equal(defaults.hideContentOnLockScreen, false);
+  assert.equal(defaults.taskNotStartedNotificationEnabled, true);
 
   const legacy = { transitionNotificationEnabled: false } as any;
   const normalized = normalizeArcTaskReminderSettings(legacy, NOW);
   assert.equal(normalized.transitionNotificationEnabled, false);
   assert.equal(normalized.completionSoundEnabled, true);
   assert.equal(normalized.mantraRemindersEnabled, true);
+  assert.equal(normalized.taskNotStartedNotificationEnabled, true, "a record saved before this field existed must default it to enabled, never silently disabled");
 
   assert.deepEqual(normalizeArcTaskReminderSettings(null, NOW), createDefaultArcTaskReminderSettings(NOW));
 });

@@ -79,22 +79,22 @@ test("app/_layout.tsx registers every new ARC Result route (ARC GYM management +
 // combined "מחשבה / דחף" pathway -- all FOUR share the exact same
 // live/NewArcLiveScreen.tsx engine and the exact same single
 // completion effect (completeConsumedRef) that calls returnToTask(),
-// so one shared gate, wired into returnToTask's own two real-task
-// branches, covers every one of them -- never four separate checks
-// that could silently drift apart. ---------------------------------
+// so one shared gate, wired into returnToTask's own single real-task
+// branch, covers every one of them -- never four separate checks
+// that could silently drift apart. ARCHI -- Adaptive Task Execution &
+// Emotional Persistence task, section 1: returnToTask's own former
+// explicitly-selected scheduled/due task branch is gone along with the
+// rest of the action-selection UI -- only the final fallback branch
+// (the session's own linked task) remains. ---------------------------
 
-test("required tests 4-7 (suggested after Full ARC, Mini ARC, Shortened ARC, and the combined 'מחשבה / דחף' pathway): returnToTask's own two real-task destinations both route through the shared routeToTaskOrArcResultSuggestion helper -- never a direct, unconditional '/tasks/[id]' navigation that would skip the check", () => {
+test("required tests 4-7 (suggested after Full ARC, Mini ARC, Shortened ARC, and the combined 'מחשבה / דחף' pathway): returnToTask's own real-task destination routes through the shared routeToTaskOrArcResultSuggestion helper -- never a direct, unconditional '/tasks/[id]' navigation that would skip the check", () => {
   // Smart To-Do List task, section 9: this helper gained an optional
   // third splitMinutes param (default null) -- every pre-existing call
   // site is unaffected, so this is still the one shared helper.
   assert.ok(
     newArcLiveScreen.includes("async function routeToTaskOrArcResultSuggestion(targetTaskId: string, autoStart: boolean, splitMinutes: number | null = null)")
   );
-  assert.ok(
-    newArcLiveScreen.includes("await routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false, session.selectedActionDurationMinutes);"),
-    "the explicitly-selected scheduled/due task branch"
-  );
-  assert.ok(newArcLiveScreen.includes("await routeToTaskOrArcResultSuggestion(taskId, autoStart);"), "the final fallback branch -- the session's own linked task, reached by every ARC mode (full/mini/shortened/combined) that doesn't hit a more specific branch above it");
+  assert.ok(newArcLiveScreen.includes("await routeToTaskOrArcResultSuggestion(taskId, autoStart);"), "the one real-task branch -- the session's own linked task, reached by every ARC mode (full/mini/shortened/combined) that doesn't hit a more specific non-task branch above it");
 });
 
 test("required tests 4-7 continued: Full ARC, Shortened ARC and the combined 'מחשבה / דחף' pathway are all the SAME engine/screen (spontaneous=1, shortened=1, skipEmotionSelection=1 respectively -- see data/emotionalCheckInRouting.ts), and Mini ARC runs through the SAME completion effect too -- so there is only ever ONE returnToTask to wire, never four separate completion paths", () => {

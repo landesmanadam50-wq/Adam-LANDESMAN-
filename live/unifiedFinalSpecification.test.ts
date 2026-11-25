@@ -31,7 +31,6 @@ import {
   confirmActionReadinessCheck,
   setCognitiveSelection,
   setGoalType,
-  setSelectedAction,
   setUrgeText,
 } from "../arc/newArcLiveSteps.ts";
 import { createNewArcLiveSessionState } from "../arc/newArcLiveTypes.ts";
@@ -63,7 +62,6 @@ const feelingCubeComponent = readSource("live/components/HomeCubes.tsx");
 const overlayKt = readSource("modules/floating-timer-overlay/android/src/main/java/expo/modules/floatingtimeroverlay/OverlayService.kt");
 const liveScreen = readSource("live/NewArcLiveScreen.tsx");
 const emotionalCheckInRouting = readSource("data/emotionalCheckInRouting.ts");
-const dailyPlanModule = readSource("arc/dailyPlan.ts");
 
 // ============================================================
 // Combined shortcut (1-7)
@@ -141,138 +139,36 @@ test("7. Existing mood shortcuts (😟/🙂) remain unchanged on the shared Feel
 // Action Selection (8-13)
 // ============================================================
 
-test("8-9. action_selection sits immediately after regulation and immediately before encoding in the active Full ARC order (mini_action_selection likewise for Mini ARC)", () => {
+test("8-9. ARCHI -- Adaptive Task Execution & Emotional Persistence task, section 1: action_selection/mini_action_selection are removed entirely from the step order -- regulation advances directly into encoding, and mini_acceptance_transition directly into mini_encoding", () => {
   const regIndex = NEW_ARC_LIVE_STEP_ORDER.indexOf("regulation");
-  const actionIndex = NEW_ARC_LIVE_STEP_ORDER.indexOf("action_selection");
   const encodingIndex = NEW_ARC_LIVE_STEP_ORDER.indexOf("encoding");
-  assert.equal(actionIndex, regIndex + 1, "action_selection must sit directly after regulation");
-  assert.equal(encodingIndex, actionIndex + 1, "encoding must sit directly after action_selection");
+  assert.equal(encodingIndex, regIndex + 1, "encoding must sit directly after regulation, with no action_selection step between them");
+  assert.ok(!NEW_ARC_LIVE_STEP_ORDER.includes("action_selection"), "action_selection is absent from the active Full ARC order");
 
   const transitionIndex = NEW_ARC_MINI_STEP_ORDER.indexOf("mini_acceptance_transition");
-  const miniActionIndex = NEW_ARC_MINI_STEP_ORDER.indexOf("mini_action_selection");
   const miniEncodingIndex = NEW_ARC_MINI_STEP_ORDER.indexOf("mini_encoding");
-  assert.equal(miniActionIndex, transitionIndex + 1);
-  assert.equal(miniEncodingIndex, miniActionIndex + 1);
+  assert.equal(miniEncodingIndex, transitionIndex + 1, "mini_encoding must sit directly after mini_acceptance_transition, with no mini_action_selection step between them");
+  assert.ok(!NEW_ARC_MINI_STEP_ORDER.includes("mini_action_selection"), "mini_action_selection is absent from the active Mini ARC order");
 });
 
-// ARCHI -- BUG: Action Selection Is Missing from Regulation in All ARC
-// Pathways task: this superseded the earlier "an active/paused task
-// skips the action-selection question entirely" requirement, which was
-// itself exactly the reported bug -- Action Selection silently missing
-// from Regulation whenever it was reached while a task's timer was
-// already running (Task LIVE's own "😟 פחות טוב" button included). The
-// prompt now always appears; Option A simply offers that active task's
-// own current/first action in this case (see
-// arc/actionSelectionInRegulation.test.ts scenarios 12/12b/15-17 for
-// full coverage).
-test("10 (superseded). An active/paused task no longer skips the action-selection question -- regulation's own integrated action-selection section renders for it, exactly like any other session", () => {
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 1: the dedicated action-selection prompt (and the earlier bug
+// around it being skipped for an active/paused task) is moot now --
+// the app already knows the task's own action from context, so there
+// is no selection step left to reach for ANY session, active or idle.
+test("10 (superseded). regulation is exactly one sub-screen for every session, active-task-origin included -- there is no integrated action-selection section left to reach", () => {
   const active: NewArcLiveSessionState = { ...fresh(), currentStep: "regulation", isActiveTaskLiveOrigin: true };
-  assert.equal(active.subIndex, 0, "regulation is exactly one sub-screen -- the integrated action-selection section is reachable for an active-task-origin session too, on this same screen");
+  assert.equal(active.subIndex, 0);
 });
 
-test("11. An idle user (no active task) can select an existing scheduled task", () => {
-  const idle: NewArcLiveSessionState = { ...fresh(), currentStep: "action_selection", isActiveTaskLiveOrigin: false };
-  const chosen = setSelectedAction(idle, { source: "scheduledTask", taskId: "t2", title: "ללמוד כלכלה", firstAction: "לפתוח את הספר" }, NOW);
-  assert.equal(chosen.selectedActionSource, "scheduledTask");
-  assert.equal(chosen.selectedActionTaskId, "t2");
-  assert.equal(chosen.selectedActionFirstAction, "לפתוח את הספר");
-  assert.equal(chosen.currentStep, "encoding");
-});
-
-test("12. An idle user can instead enter a temporary action with a duration", () => {
-  const idle: NewArcLiveSessionState = { ...fresh(), currentStep: "action_selection", isActiveTaskLiveOrigin: false };
-  const chosen = setSelectedAction(idle, { source: "temporaryAction", title: "לסדר את החדר", durationMinutes: 10 }, NOW);
-  assert.equal(chosen.selectedActionSource, "temporaryAction");
-  assert.equal(chosen.selectedActionTitle, "לסדר את החדר");
-  assert.equal(chosen.selectedActionDurationMinutes, 10);
-  assert.equal(chosen.currentStep, "encoding");
-});
-
-test("13. The selected action persists unchanged through Encoding and completion -- advancing never clears it", () => {
-  let state: NewArcLiveSessionState = { ...fresh(), currentStep: "action_selection", isActiveTaskLiveOrigin: false };
-  state = setSelectedAction(state, { source: "temporaryAction", title: "לסדר את החדר", durationMinutes: 10 }, NOW);
-  assert.equal(state.currentStep, "encoding");
-  state = advance(state, NOW);
-  assert.equal(state.currentStep, "complete");
-  assert.equal(state.selectedActionSource, "temporaryAction", "still set at completion -- never reset by advancing");
-  assert.equal(state.selectedActionTitle, "לסדר את החדר");
-});
-
-// ============================================================
-// Early task execution (14-18)
-// ============================================================
-
-test("14. A task scheduled hours later can be selected and started early -- returnToTask's scheduledTask branch navigates by id alone, with no time-based gate at all", () => {
-  const branchIndex = liveScreen.indexOf('if (session?.selectedActionSource === "scheduledTask"');
-  const branchEnd = liveScreen.indexOf("return;", branchIndex);
-  const branchBody = liveScreen.slice(branchIndex, branchEnd);
-  assert.ok(!/scheduledTime|effectiveStartTime|isOverdue/.test(branchBody), "no time comparison gates starting the selected task early");
-  assert.ok(branchBody.includes("session.selectedActionTaskId"));
-});
-
-test("15-16. Original task identity/recurrence stay intact and no duplicate occurrence/reward is created -- the scheduledTask branch only ever navigates, it never calls upsertTask/creates a new task", () => {
-  const branchIndex = liveScreen.indexOf('if (session?.selectedActionSource === "scheduledTask"');
-  const branchEnd = liveScreen.indexOf("return;", branchIndex);
-  const branchBody = liveScreen.slice(branchIndex, branchEnd);
-  assert.ok(!branchBody.includes("upsertTask"), "the selected task's own record/recurrence is never touched -- only navigated to");
-  assert.ok(!branchBody.includes("createEmptyTask"), "never creates a second task for an already-existing scheduled one");
-});
-
-test("17. Reminder handling accounts for early completion -- the real task's own completion path (never a second one) already cancels its pending alarm by taskId, reused unchanged since the scheduledTask branch routes to that SAME real Task LIVE/Details screen", () => {
-  const taskAlarm = readSource("data/taskAlarm.ts");
-  assert.ok(taskAlarm.includes("export async function cancelAnyAlarmFor"));
-  const activeTaskScreen = readSource("live/ActiveTaskScreen.tsx");
-  assert.ok(activeTaskScreen.includes("cancelAnyAlarmFor"), "Task LIVE's own completion path already cancels the pending alarm for this exact task -- early-started via the scheduledTask branch, it is the SAME path, never a parallel one");
-});
-
-test("18. Scheduling conflicts are shown, not silently resolved -- the real Task LIVE/Details screen (reused unchanged by the scheduledTask branch) already renders a conflict/adjust section the trainee must explicitly dismiss or act on", () => {
-  const activeTaskScreen = readSource("live/ActiveTaskScreen.tsx");
-  assert.ok(activeTaskScreen.includes("dismissedAdjustSectionForTaskId"), "the existing conflict/adjust section is reused -- never a second, silent resolution path for an early-started task");
-  assert.ok(activeTaskScreen.includes("handleShortenCurrentTask"), "the existing shorten/reschedule options are reused unchanged");
-});
-
-// ============================================================
-// Temporary tasks (19-24)
-// ============================================================
-
-test("19-20-21. The temporary-action timer respects the next scheduled task: a longer request is capped to the time remaining, a shorter one is respected unchanged", () => {
-  // Smart To-Do List task: resolveMinutesUntilNextTask is now a one-line
-  // delegating wrapper around arc/dailyPlan.ts's own exported
-  // resolveFreeMinutesUntilNextTask (promoted there so arc/todoList.ts's
-  // smart-fit engine shares the exact same computation) -- the actual
-  // Math.max(0, ...) logic now lives there, not here.
-  const liveFnIndex = liveScreen.indexOf("function resolveMinutesUntilNextTask(");
-  const liveFnBody = liveScreen.slice(liveFnIndex, liveScreen.indexOf("\n}", liveFnIndex));
-  assert.ok(liveFnBody.includes("resolveFreeMinutesUntilNextTask(scheduled, now, excludeTaskId)"));
-  const planFnIndex = dailyPlanModule.indexOf("export function resolveFreeMinutesUntilNextTask(");
-  const planFnBody = dailyPlanModule.slice(planFnIndex, dailyPlanModule.indexOf("\n}", planFnIndex));
-  assert.ok(planFnBody.includes("Math.max(0, startMinutes - nowMinutes)"), "available minutes is derived from the next task's own effective start time");
-  const clampIndex = liveScreen.indexOf("const clampedTempDuration = availableMinutes !== null ? Math.max(1, Math.min(requestedTempDuration, availableMinutes)) : requestedTempDuration;");
-  assert.ok(clampIndex !== -1, "a longer request is clamped DOWN to availableMinutes (e.g. 15 requested, 10 available -> 10); a shorter request (e.g. 5 requested, 10 available) passes through Math.min unchanged, since 5 < 10");
-});
-
-test("22. The maximum duration is RECALCULATED at the moment the timer actually starts, never reused from the stale Action-Selection-time estimate", () => {
-  const fnIndex = liveScreen.indexOf("async function createTemporaryActionTask(");
-  const fnBody = liveScreen.slice(fnIndex, liveScreen.indexOf("\n  }", fnIndex));
-  assert.ok(fnBody.includes("const now = new Date();"), "a fresh clock reading at creation time, never the Action-Selection-time one");
-  assert.ok(fnBody.includes("await resolveTodaysScheduledPlan(now);"), "the plan is re-resolved fresh here, never reused from reload()'s own earlier snapshot");
-  assert.ok(fnBody.includes("const availableMinutes = resolveMinutesUntilNextTask(scheduled, taskId, now);"));
-  assert.ok(fnBody.includes("Math.max(1, Math.min(requested, availableMinutes))"), "the trainee's own requested minutes, clamped against the FRESH availableMinutes -- never the session's own already-stale selectedActionDurationMinutes used directly");
-});
-
-test("23. No overlapping temporary timer is created when the next scheduled task is already due -- resolveFreeMinutesUntilNextTask clamps to zero (never negative) once the next entry's own start has passed", () => {
-  const planFnIndex = dailyPlanModule.indexOf("export function resolveFreeMinutesUntilNextTask(");
-  const planFnBody = dailyPlanModule.slice(planFnIndex, dailyPlanModule.indexOf("\n}", planFnIndex));
-  assert.ok(planFnBody.includes("Math.max(0,"), "never negative -- a passed start time clamps to exactly zero available minutes, so a 1-minute floor (never a full-length overlapping timer) is all createTemporaryActionTask can create");
-});
-
-test("24. No upcoming task permits choosing a duration without any schedule-based limit", () => {
-  const planFnIndex = dailyPlanModule.indexOf("export function resolveFreeMinutesUntilNextTask(");
-  const planFnBody = dailyPlanModule.slice(planFnIndex, dailyPlanModule.indexOf("\n}", planFnIndex));
-  assert.ok(planFnBody.includes("if (!next || next.effectiveStartTime === null) return null;"), "null when nothing is scheduled next");
-  const clampIndex = liveScreen.indexOf("const durationMinutes = availableMinutes !== null ? Math.max(1, Math.min(requested, availableMinutes)) : requested;");
-  assert.ok(clampIndex !== -1, "a null availableMinutes leaves the trainee's own requested duration completely unclamped");
-});
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 1: scenarios 14-24 (early task execution + temporary tasks)
+// all depended on the now-removed action-selection UI -- the
+// scheduledTask/temporaryAction returnToTask branches, and
+// resolveMinutesUntilNextTask/createTemporaryActionTask themselves --
+// none of which exist any more. There is no replacement behavior to
+// test: the app resolves the task's own action from context, with no
+// in-session task/duration picker left at all.
 
 // ============================================================
 // Encoding/completion (25-32)
@@ -283,100 +179,56 @@ test("25. The current active task's own saved first action is preferred in Encod
   assert.match(resolveEncodingMantra(state), /לפתוח את המחשב/);
 });
 
-test("26. A selected future/temporary action (never the active task's own, since the two are mutually exclusive) is used in Encoding", () => {
-  const scheduled: NewArcLiveSessionState = {
-    ...fresh(),
-    isActiveTaskLiveOrigin: false,
-    goalType: "combined",
-    selectedActionSource: "scheduledTask",
-    selectedActionTaskId: "t2",
-    selectedActionTitle: "ללמוד כלכלה",
-    selectedActionFirstAction: "לפתוח את הספר",
-  };
-  assert.match(resolveEncodingMantra(scheduled), /לפתוח את הספר/);
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 1: scenario 26 (a selected future/temporary action used in
+// Encoding) no longer applies -- selectedActionSource/
+// selectedActionTitle/selectedActionTaskId/selectedActionFirstAction
+// are all removed from NewArcLiveSessionState; resolveActionText now
+// resolves purely from firstAction/taskTitle (isActiveTaskLiveOrigin-
+// gated), already covered by test 25 above.
 
-  const temporary: NewArcLiveSessionState = { ...fresh(), isActiveTaskLiveOrigin: false, goalType: "combined", selectedActionSource: "temporaryAction", selectedActionTitle: "לסדר את החדר" };
-  assert.match(resolveEncodingMantra(temporary), /לסדר את החדר/);
-});
-
-test("27. The visualization uses the user's own actual text verbatim -- never an automatically rewritten/conjugated version of it", () => {
-  const state: NewArcLiveSessionState = { ...fresh(), isActiveTaskLiveOrigin: false, goalType: "combined", selectedActionSource: "temporaryAction", selectedActionTitle: "לצחצח שיניים ולשטוף פנים" };
+test("27. The visualization uses the user's own actual firstAction text verbatim -- never an automatically rewritten/conjugated version of it", () => {
+  const state: NewArcLiveSessionState = { ...fresh(), isActiveTaskLiveOrigin: true, goalType: "combined", firstAction: "לצחצח שיניים ולשטוף פנים" };
   assert.ok(resolveEncodingMantra(state).includes("לצחצח שיניים ולשטוף פנים"), "the exact entered text, unmodified");
 });
 
-test("28. Existing Encoding animations/stages remain intact -- the 'encoding' render case still wires the SAME ArcBodyMantraCircle, directly after the new action_selection case", () => {
-  const actionSelectionIndex = liveScreen.indexOf('case "action_selection":');
-  const encodingIndex = liveScreen.indexOf('case "encoding":', actionSelectionIndex);
+test("28. Existing Encoding animations/stages remain intact -- the 'encoding' render case still wires the SAME ArcBodyMantraCircle", () => {
+  const encodingIndex = liveScreen.indexOf('case "encoding":');
   const encodingBody = liveScreen.slice(encodingIndex, encodingIndex + 400);
   assert.ok(encodingBody.includes('stage="encoding"'));
   assert.ok(encodingBody.includes("<ArcBodyMantraCircle"));
 });
 
-// Scenarios 29-31 are also covered in depth, directly against the
-// function's own source, by live/postArcNavigation.test.ts (the
-// dedicated post-ARC routing regression file) -- re-asserted here
-// briefly for direct 1:1 traceability against this spec's own list.
-test("29. ARC completion offers the EXACT previously selected action -- returnToTask navigates by the session's own stored selectedActionTaskId/newly-created temporary task, never a re-derived one", () => {
-  const scheduledIndex = liveScreen.indexOf('if (session?.selectedActionSource === "scheduledTask"');
-  const temporaryIndex = liveScreen.indexOf('if (session?.selectedActionSource === "temporaryAction"');
-  // ARCHI -- ARC Result task, section 3: this branch now routes through
-  // routeToTaskOrArcResultSuggestion (session.selectedActionTaskId still
-  // passed verbatim, never re-derived) instead of a bare router.replace.
-  // Smart To-Do List task, section 9: it now also threads
-  // session.selectedActionDurationMinutes through as that call's own
-  // optional splitMinutes argument -- null for every ordinary (non-split)
-  // selection, so this is purely additive.
-  assert.ok(
-    liveScreen.slice(scheduledIndex, temporaryIndex).includes("routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false, session.selectedActionDurationMinutes)")
-  );
-});
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 1: scenario 29 (returnToTask's own scheduledTask/
+// temporaryAction branches) no longer applies -- both branches are
+// deleted along with the rest of the action-selection UI; returnToTask
+// now falls straight through to routeToTaskOrArcResultSuggestion for
+// every ordinary completion (covered directly by
+// live/postArcNavigation.test.ts, the dedicated post-ARC routing
+// regression file).
 
 test("30. The active task's own timer is preserved/restored -- returnToTask never writes to the Task Timer Run storage at all, for any destination", () => {
   const fnIndex = liveScreen.indexOf("async function returnToTask(autoStart: boolean)");
-  const fnBody = liveScreen.slice(fnIndex, fnIndex + 4600);
+  const fnEnd = liveScreen.indexOf("\n  }\n", fnIndex);
+  const fnBody = liveScreen.slice(fnIndex, fnEnd);
   assert.ok(!fnBody.includes("saveTaskTimerRun"), "never touches the task's own timer run -- it is left exactly as it was");
 });
 
-test("31. No task starts automatically without explicit user confirmation -- neither new returnToTask branch ever passes autoStart", () => {
-  const scheduledIndex = liveScreen.indexOf('if (session?.selectedActionSource === "scheduledTask"');
-  const standaloneIndex = liveScreen.indexOf("if (taskId === STANDALONE_ARC_TASK_ID) {");
-  const bothBranches = liveScreen.slice(scheduledIndex, standaloneIndex);
-  assert.ok(!bothBranches.includes("autoStart"));
-});
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 1: scenario 31 specifically concerned the two now-deleted
+// scheduledTask/temporaryAction branches -- with both gone, the
+// remaining branches' own autoStart behavior is unchanged and already
+// covered by live/postArcNavigation.test.ts.
 
-// ARCHI -- Move Action Selection into the Existing Regulation Screen task:
-// "action_selection"/"mini_action_selection" are now PERMANENTLY
-// unreachable as their own steps (isStepReachable), for every
-// arcInvocationMode -- their functionality moved INTO
-// "regulation"/"mini_acceptance_transition" as each one's own subIndex 1.
-//
-// ARCHI -- BUG: Action Selection Is Missing from Regulation in All ARC
-// Pathways task: an active task-LIVE session no longer skips straight
-// to Encoding -- that WAS the reported bug (Action Selection silently
-// missing across Full/Mini/Shortened ARC whenever reached while a
-// task's timer was already running). Only ARC-GYM's own separate,
-// later positive-action visualization still skips this sub-screen.
-test("32. All ARC entry routes follow consistent action-selection rules -- the integrated action-selection section (on regulation's one sub-screen / mini_acceptance_transition's own subIndex 1) appears identically across every arcInvocationMode and regardless of isActiveTaskLiveOrigin, only arcGymSituationId still skips it, and action_selection/mini_action_selection are never reachable as their own steps any more", () => {
-  const modes = ["plannedFull", "spontaneous", "shortened"] as const;
-  for (const mode of modes) {
-    const idle: NewArcLiveSessionState = { ...createNewArcLiveSessionState("t1", "x", "y", NOW, mode), currentStep: "regulation", subIndex: 0, isActiveTaskLiveOrigin: false };
-    assert.equal(idle.subIndex, 0, `${mode}: regulation is exactly one sub-screen -- idle already shows its own integrated action-selection section`);
-    const active: NewArcLiveSessionState = { ...idle, isActiveTaskLiveOrigin: true };
-    assert.equal(active.subIndex, 0, `${mode}: an active task-LIVE session ALSO shows the integrated action-selection section now (this fix), on the same one screen`);
-    const arcGym: NewArcLiveSessionState = { ...idle, arcGymSituationId: "sit1" };
-    assert.equal(advance(arcGym, NOW).currentStep, "encoding", `${mode}: only arcGymSituationId still skips straight to encoding (regulation has only 1 page for it)`);
-  }
-  const idleMini: NewArcLiveSessionState = { ...createNewArcLiveSessionState("t1", "x", "y", NOW, "plannedMini"), currentStep: "mini_acceptance_transition", subIndex: 0, isActiveTaskLiveOrigin: false };
-  const afterIdleMini = advance(idleMini, NOW);
-  assert.equal(afterIdleMini.currentStep, "mini_acceptance_transition", "plannedMini: idle stays on mini_acceptance_transition for its own integrated action-selection sub-screen");
-  assert.equal(afterIdleMini.subIndex, 1, "plannedMini: idle advances into mini_acceptance_transition's own subIndex 1");
-  const activeMini: NewArcLiveSessionState = { ...idleMini, isActiveTaskLiveOrigin: true };
-  const afterActiveMini = advance(activeMini, NOW);
-  assert.equal(afterActiveMini.currentStep, "mini_acceptance_transition", "plannedMini: an active task-LIVE session ALSO reaches it now (this fix)");
-  assert.equal(afterActiveMini.subIndex, 1);
-  const arcGymMini: NewArcLiveSessionState = { ...idleMini, arcGymSituationId: "sit1" };
-  assert.equal(advance(arcGymMini, NOW).currentStep, "mini_encoding", "plannedMini: only arcGymSituationId still skips it");
-});
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 1: scenario 32's entire premise -- an integrated
+// action-selection section living on regulation's/
+// mini_acceptance_transition's own extra sub-screen -- no longer
+// exists. Both steps are back to exactly one sub-screen for every
+// arcInvocationMode and every isActiveTaskLiveOrigin value; only
+// arcGymSituationId ever skips a step at all, already covered by
+// arc/newArcLiveSteps.test.ts.
 
 // ============================================================
 // Floating cube (33-37) -- confirmation only, per the spec's own

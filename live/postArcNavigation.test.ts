@@ -81,27 +81,24 @@ function returnToTaskBody(): string {
 // mean "the generic, non-overridden destination."
 const GENERIC_DESTINATION_NEEDLE = "await routeToTaskOrArcResultSuggestion(taskId, autoStart);";
 
-test("requirement 10 (extended): the six early-return branches (ARC GYM, morning check-in, selected scheduled task, selected temporary action, standalone) are checked in this exact order, each returning before the generic task-linked destination below them -- so each one genuinely OVERRIDES that default, never merely supplementing it", () => {
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 1: the former "selected scheduled task"/"selected temporary
+// action" early-return branches are gone along with the rest of the
+// action-selection UI -- ARC GYM, morning check-in, and standalone are
+// now the only early-return branches before the generic destination.
+test("requirement 10 (extended): the early-return branches (ARC GYM, morning check-in, standalone) are checked in this exact order, each returning before the generic task-linked destination below them -- so each one genuinely OVERRIDES that default, never merely supplementing it", () => {
   const body = returnToTaskBody();
   const arcGymIndex = body.indexOf("if (session?.arcGymSituationId) {");
   const morningFlowIndex = body.indexOf("if (morningFlowCheckIn) {");
-  const scheduledActionIndex = body.indexOf('if (session?.selectedActionSource === "scheduledTask"');
-  const temporaryActionIndex = body.indexOf('if (session?.selectedActionSource === "temporaryAction"');
   const standaloneIndex = body.indexOf("if (taskId === STANDALONE_ARC_TASK_ID) {");
   const genericIndex = body.indexOf(GENERIC_DESTINATION_NEEDLE);
-  assert.ok(
-    arcGymIndex !== -1 && morningFlowIndex !== -1 && scheduledActionIndex !== -1 && temporaryActionIndex !== -1 && standaloneIndex !== -1 && genericIndex !== -1
-  );
+  assert.ok(arcGymIndex !== -1 && morningFlowIndex !== -1 && standaloneIndex !== -1 && genericIndex !== -1);
   assert.ok(arcGymIndex < morningFlowIndex, "ARC GYM must be checked before morning check-in");
-  assert.ok(morningFlowIndex < scheduledActionIndex, "morning check-in must be checked before the selected-scheduled-task branch");
-  assert.ok(scheduledActionIndex < temporaryActionIndex, "the selected-scheduled-task branch must be checked before the selected-temporary-action branch");
-  assert.ok(temporaryActionIndex < standaloneIndex, "the selected-temporary-action branch must be checked before standalone");
+  assert.ok(morningFlowIndex < standaloneIndex, "morning check-in must be checked before standalone");
   assert.ok(standaloneIndex < genericIndex, "standalone must be checked before the generic task-linked default");
   for (const [branchStart, branchEnd, label] of [
     [arcGymIndex, morningFlowIndex, "ARC GYM"],
-    [morningFlowIndex, scheduledActionIndex, "morning check-in"],
-    [scheduledActionIndex, temporaryActionIndex, "selected scheduled task"],
-    [temporaryActionIndex, standaloneIndex, "selected temporary action"],
+    [morningFlowIndex, standaloneIndex, "morning check-in"],
     [standaloneIndex, genericIndex, "standalone"],
   ] as const) {
     const branchBody = body.slice(branchStart, branchEnd);
@@ -114,32 +111,13 @@ test("requirement 10, 'Active Task LIVE -> return to the same task': the generic
   assert.ok(body.includes(GENERIC_DESTINATION_NEEDLE));
 });
 
-// ARCHI -- Unified Final Specification task, section 6: the two new
-// branches -- never autoStart (the trainee still taps Start
-// themselves), never re-deriving which task/action was selected
-// (reused verbatim from the session, set once by Action Selection).
-test("requirement 10 (extended), 'selected scheduled/due task -> that exact task, never auto-started': navigates to the selected task's own id with no autoStart param at all", () => {
-  const body = returnToTaskBody();
-  const scheduledActionIndex = body.indexOf('if (session?.selectedActionSource === "scheduledTask"');
-  const temporaryActionIndex = body.indexOf('if (session?.selectedActionSource === "temporaryAction"');
-  const branchBody = body.slice(scheduledActionIndex, temporaryActionIndex);
-  // Smart To-Do List task, section 9: the third argument
-  // (session.selectedActionDurationMinutes) is non-null ONLY for a
-  // To-Do split suggestion -- every ordinary selection still leaves it
-  // null, so this call's own behavior for them is unchanged.
-  assert.ok(branchBody.includes("await routeToTaskOrArcResultSuggestion(session.selectedActionTaskId, false, session.selectedActionDurationMinutes);"));
-  assert.ok(!branchBody.includes("autoStart"), "never auto-started -- the trainee taps Start themselves on the task's own screen");
-});
-
-test("requirement 10 (extended), 'selected temporary action -> create it now, then navigate to it, never auto-started': the ad-hoc task is created at THIS exact moment (never earlier), and navigation never passes autoStart", () => {
-  const body = returnToTaskBody();
-  const temporaryActionIndex = body.indexOf('if (session?.selectedActionSource === "temporaryAction"');
-  const standaloneIndex = body.indexOf("if (taskId === STANDALONE_ARC_TASK_ID) {");
-  const branchBody = body.slice(temporaryActionIndex, standaloneIndex);
-  assert.ok(branchBody.includes("await createTemporaryActionTask(session.selectedActionTitle, session.selectedActionDurationMinutes);"));
-  assert.ok(branchBody.includes('router.replace({ pathname: "/tasks/[id]", params: { id: newTaskId } });'));
-  assert.ok(!branchBody.includes("autoStart"), "never auto-started -- the trainee taps Start themselves on the new task's own screen");
-});
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 1: scenarios about the former "selected scheduled/due task"
+// and "selected temporary action" branches no longer apply -- the app
+// already knows the task's own action from context, so there is no
+// selection step (and no separate navigation branch for it) left at
+// all; every real-task destination now goes through the one generic
+// branch asserted above.
 
 test("requirement 10, 'Scheduled action -> next actionable scheduled task': since requirement 2's own auto-derived context already ties a scheduled-action session to that exact task's id AT CREATION, returnToTask needs no second, separate 'what's next' recomputation -- it reuses the SAME taskId constant the generic branch above already returns to", () => {
   const body = returnToTaskBody();

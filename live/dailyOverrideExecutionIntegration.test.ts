@@ -41,7 +41,10 @@ test("requirement 2/3: the merged effectiveTask carries the OVERRIDE's scheduled
     )
   );
   const performStartIndex = screen.indexOf("async function performStart()");
-  const performStartBody = screen.slice(performStartIndex, performStartIndex + 7700);
+  // Window widened (7700 -> 8300): ARCHI task-not-started task's own
+  // recomputeTaskNotStartedNotification call/comment, inserted at the
+  // top of performStart, pushed every later line further from the anchor.
+  const performStartBody = screen.slice(performStartIndex, performStartIndex + 8300);
   // Smart To-Do List task, section 6, and ARCHI -- To-Do Bank +
   // Duration/Split Selection task, section 3/4: the duration
   // calculation also checks pendingSplitSegment/isTodoSplit now, but

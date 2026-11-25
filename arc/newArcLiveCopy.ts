@@ -1194,58 +1194,20 @@ export function resolveEncodingMantra(state: NewArcLiveSessionState): string {
 }
 
 /**
- * ARCHI -- Unified Final Specification task, section 5 ("PERSONALIZED
- * ACTION VISUALIZATION DURING ENCODING"): the exact priority order the
- * spec names -- (1) an explicitly selected scheduled task (including
- * an early-start one), (2) an explicitly selected temporary action,
- * (3) the current active/paused task's own saved first action, (4) a
- * newly entered action when no suitable scheduled task exists.
- * Priority (1) also covers a selected DUE task (both are "an existing
- * scheduled task," identified purely by which task got selected, never
- * by why -- see setSelectedAction's own doc in arc/newArcLiveSteps.ts).
- * Priority (4) needs no separate branch either -- it is simply the
- * existing `firstAction` fallback at the bottom, exactly as every
- * pre-existing session (with no Action Selection step at all) already
- * resolves.
- *
- * ARCHI -- BUG: Action Selection Is Missing from Regulation in All ARC
- * Pathways task: isActiveTaskLiveOrigin now checked AFTER
- * selectedActionSource, not before. Action Selection is reachable for
- * an active-task-origin session too now (stepSubCount,
- * arc/newArcLiveSteps.ts), so the trainee can explicitly pick a
- * DIFFERENT action (a manual/temporary one, or even a different
- * scheduled task) than the one they're currently mid-task on --
- * checking isActiveTaskLiveOrigin first would silently overrule that
- * explicit choice and show the original task's action regardless, the
- * exact bug this fix corrects. The isActiveTaskLiveOrigin branch still
- * exists as a fallback for the two cases where no explicit selection
- * is ever made: an ARC GYM session (arcGymSituationId still skips
- * Action Selection entirely) and a session created/persisted by the
- * EARLIER code, already parked on "encoding" with isActiveTaskLiveOrigin
- * true and no selection recorded -- never breaking that still-valid
- * historical data. isActiveTaskLiveOrigin's own `firstAction` is read
- * first before `taskTitle`, matching the SAME "prefer the first
- * action, fall back to the task title" precedent
+ * ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+ * section 1: the action-selection fields (selectedActionSource and
+ * friends) that used to be checked first here are removed along with
+ * the whole action-selection step -- the app already knows the task's
+ * own action from context (isActiveTaskLiveOrigin), never from an
+ * explicit in-ARC pick any more. isActiveTaskLiveOrigin's own
+ * `firstAction` is read before `taskTitle`, matching the SAME "prefer
+ * the first action, fall back to the task title" precedent
  * createNewArcLiveSessionState itself already applies when deriving a
- * fresh session's own firstAction.
- */
-/**
- * ARCHI -- Allow Action Selection During Emotion Identification or
- * Defer It to Regulation task: exported so live/NewArcLiveScreen.tsx
- * can show the SAME resolved action text as a plain summary label --
- * on the "emotion" screen (reviewing/changing an early selection) and
- * on Regulation's own action-selector sub-screen (showing what was
- * already chosen, instead of asking again) -- reusing this exact
- * priority chain rather than re-deriving a second, possibly
- * inconsistent one.
+ * fresh session's own firstAction. Falls back to the session's own
+ * `firstAction` field otherwise, exactly as every pre-existing session
+ * (with no Action Selection step at all) already resolved.
  */
 export function resolveActionText(state: NewArcLiveSessionState): string | null {
-  if (state.selectedActionSource === "scheduledTask") {
-    return state.selectedActionFirstAction?.trim() || state.selectedActionTitle?.trim() || null;
-  }
-  if (state.selectedActionSource === "temporaryAction") {
-    return state.selectedActionTitle?.trim() || null;
-  }
   if (state.isActiveTaskLiveOrigin) {
     return state.firstAction?.trim() || state.taskTitle?.trim() || null;
   }

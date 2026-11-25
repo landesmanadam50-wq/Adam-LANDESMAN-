@@ -16,7 +16,25 @@ import {
 } from "../arc/taskDraft.ts";
 import type { TaskDraft } from "../arc/taskDraft.ts";
 import { archiveTask, generateTaskId, type Task } from "../arc/tasks.ts";
-import { getTask, loadArcBuilds, loadArcGoals, loadStateProfiles, loadTaskOccurrenceOverrides, upsertTask, upsertTaskOccurrenceOverrideEntry } from "../data/storage.ts";
+import {
+  getTask,
+  loadArcBuilds,
+  loadArcGoals,
+  loadFeelingActionLinks,
+  loadInternalActions,
+  loadStateProfiles,
+  loadSupportiveFeelings,
+  loadTaskFeelingLinks,
+  loadTaskOccurrenceOverrides,
+  linkInternalActionToFeeling,
+  linkSupportiveFeelingToTask,
+  unlinkInternalActionFromFeeling,
+  unlinkSupportiveFeelingFromTask,
+  upsertInternalActionEntry,
+  upsertSupportiveFeelingEntry,
+  upsertTask,
+  upsertTaskOccurrenceOverrideEntry,
+} from "../data/storage.ts";
 import { cancelScheduledNotification } from "../data/notifications.ts";
 import { cancelAnyAlarmFor, reconcilePlannedArcAlarms, scheduleTaskAlarm } from "../data/taskAlarm.ts";
 import type { ArcBuild } from "../arc/types.ts";
@@ -24,6 +42,15 @@ import type { ArcGoal } from "../arc/types.ts";
 import { PREPARATION_STATE_IDS, PREPARATION_STATE_LABELS } from "../arc/preparationStates.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
 import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride, resolveEffectiveOccurrence } from "../arc/taskOccurrenceOverride.ts";
+import {
+  createInternalAction,
+  createSupportiveFeeling,
+  findInternalActionByText,
+  findSupportiveFeelingByLabel,
+  resolveActionsForFeeling,
+  resolveFeelingsForTask,
+} from "../arc/supportiveFeelings.ts";
+import type { FeelingActionLink, InternalAction, SupportiveFeeling, TaskFeelingLink } from "../arc/supportiveFeelings.ts";
 import MonthlyCalendar from "../live/components/MonthlyCalendar.tsx";
 
 const RECURRENCE_DAY_LABELS = ["יום א׳", "יום ב׳", "יום ג׳", "יום ד׳", "יום ה׳", "יום ו׳", "שבת"];
@@ -102,6 +129,27 @@ export default function TaskEditorScreen({
    * below stays as a manual-entry fallback; this just gives a picker on
    * top of it, writing to the exact same draft.scheduledDate field. */
   const [showDateCalendar, setShowDateCalendar] = useState(false);
+  /**
+   * ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+   * section 3: this task's own pre-defined "supportive feelings," each
+   * with its own list of "internal actions" -- three distinct, always-
+   * OPTIONAL concepts (task / supportive feeling / internal action),
+   * never confused with the pre-existing `defaultSupportiveStateId`
+   * field right above (that one picks a single PREPARATION state shown
+   * BEFORE the task even starts; this section is the live/
+   * SupportiveActionFlowScreen.tsx's own real-time "I need a supportive
+   * action" bank for WHILE the task is in progress). Only ever shown
+   * for an already-saved task -- linking requires a real taskId, the
+   * same `!isNew` gate this screen's own "העברה לארכיון" button already
+   * uses.
+   */
+  const [allFeelings, setAllFeelings] = useState<SupportiveFeeling[]>([]);
+  const [allActions, setAllActions] = useState<InternalAction[]>([]);
+  const [taskFeelingLinks, setTaskFeelingLinks] = useState<TaskFeelingLink[]>([]);
+  const [feelingActionLinks, setFeelingActionLinks] = useState<FeelingActionLink[]>([]);
+  const [expandedFeelingIds, setExpandedFeelingIds] = useState<Set<string>>(new Set());
+  const [newFeelingDraft, setNewFeelingDraft] = useState("");
+  const [newActionDraftByFeeling, setNewActionDraftByFeeling] = useState<Record<string, string>>({});
 
   const reload = useCallback(() => {
     Promise.all([
@@ -110,10 +158,18 @@ export default function TaskEditorScreen({
       loadArcBuilds(),
       loadStateProfiles(),
       occurrenceDate ? loadTaskOccurrenceOverrides() : Promise.resolve([]),
-    ]).then(([task, goals, builds, profiles, overrides]) => {
+      loadSupportiveFeelings(),
+      loadInternalActions(),
+      loadTaskFeelingLinks(),
+      loadFeelingActionLinks(),
+    ]).then(([task, goals, builds, profiles, overrides, feelings, actions, feelingLinks, actionLinks]) => {
       setArcGoals(goals);
       setArcBuilds(builds);
       setStateProfiles(profiles);
+      setAllFeelings(feelings);
+      setAllActions(actions);
+      setTaskFeelingLinks(feelingLinks);
+      setFeelingActionLinks(actionLinks);
       if (task) {
         setExistingTask(task);
         setDraft(taskDraftFromTask(task));
@@ -126,6 +182,56 @@ export default function TaskEditorScreen({
       setLoaded(true);
     });
   }, [id, isNew, occurrenceDate]);
+
+  async function handleAddTaskFeeling() {
+    const label = newFeelingDraft.trim();
+    if (!label || !existingTask) return;
+    const now = new Date().toISOString();
+    const existingFeeling = findSupportiveFeelingByLabel(allFeelings, label);
+    const feeling = existingFeeling ?? createSupportiveFeeling(label, now);
+    if (!existingFeeling) {
+      await upsertSupportiveFeelingEntry(feeling);
+      setAllFeelings((prev) => [...prev, feeling]);
+    }
+    await linkSupportiveFeelingToTask(existingTask.id, feeling.id, now);
+    setNewFeelingDraft("");
+    reload();
+  }
+
+  async function handleRemoveTaskFeeling(feelingId: string) {
+    if (!existingTask) return;
+    await unlinkSupportiveFeelingFromTask(existingTask.id, feelingId);
+    reload();
+  }
+
+  async function handleAddInternalAction(feelingId: string) {
+    const text = (newActionDraftByFeeling[feelingId] ?? "").trim();
+    if (!text) return;
+    const now = new Date().toISOString();
+    const existingAction = findInternalActionByText(allActions, feelingId, text);
+    const action = existingAction ?? createInternalAction(feelingId, text, now);
+    if (!existingAction) {
+      await upsertInternalActionEntry(action);
+      setAllActions((prev) => [...prev, action]);
+    }
+    await linkInternalActionToFeeling(feelingId, action.id, now);
+    setNewActionDraftByFeeling((prev) => ({ ...prev, [feelingId]: "" }));
+    reload();
+  }
+
+  async function handleRemoveInternalAction(feelingId: string, actionId: string) {
+    await unlinkInternalActionFromFeeling(feelingId, actionId);
+    reload();
+  }
+
+  function toggleFeelingExpanded(feelingId: string) {
+    setExpandedFeelingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(feelingId)) next.delete(feelingId);
+      else next.add(feelingId);
+      return next;
+    });
+  }
 
   useFocusEffect(reload);
 
@@ -676,6 +782,65 @@ export default function TaskEditorScreen({
           </View>
         </Field>
 
+        {/* ARCHI -- Adaptive Task Execution & Emotional Persistence
+            task, section 3: visually separate from the preparation-state
+            field right above -- a per-task bank of "supportive
+            feelings," each expandable to its own "internal actions."
+            Always optional; never required to save; only available once
+            the task has a real id (see this screen's own `!isNew` gate
+            on "העברה לארכיון" above for the same reason). */}
+        {!isNew && (
+          <Field label="רגשות תומכים ופעולות פנימיות למשימה זו (רשות)">
+            <Text style={styles.hint}>אפשר להגדיר כמה רגשות תומכים, ולכל רגש כמה פעולות פנימיות -- ישמשו את "אני צריך פעולה תומכת" בזמן אמת.</Text>
+            {resolveFeelingsForTask(id, taskFeelingLinks, allFeelings).map((feeling) => {
+              const isExpanded = expandedFeelingIds.has(feeling.id);
+              const feelingActions = resolveActionsForFeeling(feeling.id, feelingActionLinks, allActions);
+              return (
+                <View key={feeling.id} style={styles.feelingCard}>
+                  <View style={styles.feelingCardHeader}>
+                    <Pressable onPress={() => handleRemoveTaskFeeling(feeling.id)}>
+                      <Text style={styles.removeLink}>הסרה</Text>
+                    </Pressable>
+                    <Pressable style={styles.flexOne} onPress={() => toggleFeelingExpanded(feeling.id)}>
+                      <Text style={styles.feelingCardTitle}>{feeling.label}</Text>
+                    </Pressable>
+                  </View>
+                  {isExpanded && (
+                    <View>
+                      {feelingActions.map((action) => (
+                        <View key={action.id} style={styles.subtaskRow}>
+                          <Pressable onPress={() => handleRemoveInternalAction(feeling.id, action.id)}>
+                            <Text style={styles.removeLink}>הסרה</Text>
+                          </Pressable>
+                          <Text style={styles.subtaskRowText}>{action.text}</Text>
+                        </View>
+                      ))}
+                      <View style={styles.addRow}>
+                        <Pressable style={styles.addButton} onPress={() => handleAddInternalAction(feeling.id)}>
+                          <Text style={styles.addButtonText}>+ פעולה</Text>
+                        </Pressable>
+                        <TextInput
+                          style={[styles.textInput, styles.flexInput]}
+                          value={newActionDraftByFeeling[feeling.id] ?? ""}
+                          onChangeText={(text) => setNewActionDraftByFeeling((prev) => ({ ...prev, [feeling.id]: text }))}
+                          textAlign="right"
+                          placeholder="פעולה פנימית חדשה"
+                        />
+                      </View>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+            <View style={styles.addRow}>
+              <Pressable style={styles.addButton} onPress={handleAddTaskFeeling}>
+                <Text style={styles.addButtonText}>+ רגש</Text>
+              </Pressable>
+              <TextInput style={[styles.textInput, styles.flexInput]} value={newFeelingDraft} onChangeText={setNewFeelingDraft} textAlign="right" placeholder="רגש תומך חדש" />
+            </View>
+          </Field>
+        )}
+
         <Field label="מטרת ARC Goal מקושרת (רשות)">
           <View style={styles.chipRow}>
             <Pressable
@@ -786,6 +951,10 @@ const styles = StyleSheet.create({
   chip: { backgroundColor: "#E6F4FE", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
   chipSelected: { backgroundColor: "#0a7ea4" },
   chipText: { color: "#0a7ea4", fontSize: 13 },
+  feelingCard: { backgroundColor: "#F5FAFD", borderRadius: 10, padding: 10, marginBottom: 8 },
+  feelingCardHeader: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 8 },
+  feelingCardTitle: { fontSize: 15, fontWeight: "600", textAlign: "right" },
+  flexOne: { flex: 1 },
   subtaskRow: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 8, marginBottom: 6 },
   subtaskRowText: { fontSize: 15, textAlign: "right" },
   removeLink: { color: "#b00020", fontSize: 13 },

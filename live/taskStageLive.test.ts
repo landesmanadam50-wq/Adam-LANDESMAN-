@@ -24,7 +24,10 @@ const screen = readSource("live/ActiveTaskScreen.tsx");
 
 test("performStart starts the FIRST configured stage's own duration (never the whole task's total at once) and creates a fresh TaskStageProgress for it -- a legacy (no stages) task falls back to task.expectedDurationMinutes exactly as before", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 8500);
+  // Window widened (8500 -> 9100): ARCHI task-not-started task's own
+  // recomputeTaskNotStartedNotification call/comment, inserted at the
+  // top of performStart, pushed every later line further from the anchor.
+  const fnBody = screen.slice(fnIndex, fnIndex + 9100);
   assert.ok(fnBody.includes("const staged = hasConfiguredActionStages(task.actionStages);"));
   assert.ok(fnBody.includes("const firstStage = staged ? resolveFirstActionStage(task.actionStages!) : null;"));
   // Smart To-Do List task, section 6, and ARCHI -- To-Do Bank +

@@ -6,24 +6,28 @@ import { fileURLToPath } from "node:url";
 /**
  * live/arcDecisionIntegration.test.ts
  *
- * ARC Decision -- "קבלת החלטות": source-text regression guard for both
- * entry points' own wiring -- the pure engine (arc/arcDecision.ts) and
- * shared UI (live/components/ArcDecisionFlow.tsx) already have their
- * own direct tests; this file guards that both entry points actually
- * reuse them (never a second, parallel implementation), that the "אני
- * לא יודע" button sits at the existing action-selection point without
- * disturbing the generic ARC step back/skip controls, that canceling
- * never touches the underlying ARC session, that finishing routes
- * through the EXISTING setSelectedAction (never a new selection
- * mechanism), and that the ARC Gym entry point's task-creation hookup
- * never auto-creates a Task.
+ * ARC Decision -- "קבלת החלטות": source-text regression guard for the
+ * standalone ARC Gym entry point's own wiring -- the pure engine
+ * (arc/arcDecision.ts) and shared UI (live/components/ArcDecisionFlow.tsx)
+ * already have their own direct tests; this file guards that
+ * build/ArcGymDecisionScreen.tsx actually reuses them (never a second,
+ * parallel implementation), resumes any existing in-progress "arc_gym"
+ * session rather than starting a duplicate, never auto-creates a Task on
+ * finish, and that its "הפוך את ההחלטה למשימה" action opens the existing
+ * task editor rather than a second task-creation mechanism.
+ *
+ * ARCHI -- Adaptive Task Execution & Emotional Persistence task, section 1:
+ * the "arc"-source entry point (live/NewArcLiveScreen.tsx's own "אני לא
+ * יודע" button inside the now-removed action-selection step) is retired --
+ * its purpose is superseded by the new feeling/action flow
+ * (arc/supportiveFeelings.ts). This file no longer asserts on
+ * NewArcLiveScreen.tsx at all; only the arc_gym-source half below survives.
  */
 function readSource(relativePath: string): string {
   const path = fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
   return readFileSync(path, "utf8");
 }
 
-const liveScreen = readSource("live/NewArcLiveScreen.tsx");
 const gymScreen = readSource("build/ArcGymDecisionScreen.tsx");
 const gymListScreen = readSource("build/ArcGymScreen.tsx");
 const layout = readSource("app/_layout.tsx");
@@ -31,63 +35,6 @@ const taskEditor = readSource("build/TaskEditorScreen.tsx");
 const taskEditRoute = readSource("app/tasks/[id]/edit.tsx");
 const storageModule = readSource("data/storage.ts");
 const decisionRoute = readSource("app/arc-gym/decision.tsx");
-
-test("NewArcLiveScreen imports the shared ArcDecisionFlow component and arc/arcDecision.ts -- never a second, duplicated implementation", () => {
-  assert.match(liveScreen, /import ArcDecisionFlow from "\.\/components\/ArcDecisionFlow\.tsx";/);
-  assert.match(liveScreen, /from "\.\.\/arc\/arcDecision\.ts";/);
-});
-
-test("renderActionSelector() renders ArcDecisionFlow INSTEAD of the normal picker whenever an ARC Decision overlay is active, and offers the 'אני לא יודע' button alongside the existing options otherwise", () => {
-  const fnIndex = liveScreen.indexOf("function renderActionSelector() {");
-  assert.ok(fnIndex !== -1);
-  const fnBody = liveScreen.slice(fnIndex, fnIndex + 12000);
-  const overlayIndex = fnBody.indexOf("if (arcDecisionSession) {");
-  assert.ok(overlayIndex !== -1);
-  const buttonIndex = fnBody.indexOf("אני לא יודע");
-  assert.ok(buttonIndex !== -1 && buttonIndex > overlayIndex, "the button must be part of the normal (non-overlay) picker, after the early overlay return");
-  assert.ok(fnBody.includes("onPress={startArcDecision}"));
-});
-
-test("startArcDecision creates a session via createArcDecisionSession('arc', taskId, ...) and persists it to the single in-progress slot before showing it -- never silently in-memory only", () => {
-  const fnIndex = liveScreen.indexOf("function startArcDecision() {");
-  const fnBody = liveScreen.slice(fnIndex, fnIndex + 300);
-  assert.ok(fnBody.includes('createArcDecisionSession("arc", taskId,'));
-  assert.ok(fnBody.includes("saveArcDecisionInProgress(created)"));
-  assert.ok(fnBody.includes("setArcDecisionSession(created)"));
-});
-
-test("a resumable ARC Decision is only ever restored when it belongs to THIS exact ARC session (source 'arc' and arcSessionId === taskId) and is not already completed -- never a stale or foreign one", () => {
-  const fnIndex = liveScreen.indexOf("loadArcDecisionInProgress().then((progress) => {");
-  const fnBody = liveScreen.slice(fnIndex, fnIndex + 300);
-  assert.ok(fnBody.includes('progress.source === "arc"'));
-  assert.ok(fnBody.includes("progress.arcSessionId === taskId"));
-  assert.ok(fnBody.includes("!progress.completedAt"));
-});
-
-test("canceling ARC Decision only clears the overlay/in-progress slot -- it never calls commit/advance/goBack, so the underlying ARC session is left completely untouched", () => {
-  const fnIndex = liveScreen.indexOf("function handleArcDecisionCancel() {");
-  const fnBody = liveScreen.slice(fnIndex, fnIndex + 200);
-  assert.ok(fnBody.includes("clearArcDecisionInProgress()"));
-  assert.ok(fnBody.includes("setArcDecisionSession(null)"));
-  assert.ok(!fnBody.includes("commit("));
-});
-
-test("finishing ARC Decision routes the chosen option through the EXISTING setSelectedAction as a temporaryAction (never a new selection mechanism), clamped against the same available-minutes rule the normal picker already uses, and records history before clearing the in-progress slot", () => {
-  const fnIndex = liveScreen.indexOf("function handleArcDecisionFinish(");
-  const fnBody = liveScreen.slice(fnIndex, fnIndex + 700);
-  assert.ok(fnBody.includes("recordArcDecisionHistory(completed)"));
-  assert.ok(fnBody.includes("clearArcDecisionInProgress()"));
-  assert.ok(fnBody.includes("resolveMinutesUntilNextTask(dailyPlanEntries, taskId, new Date())"));
-  assert.ok(fnBody.includes('commit(setSelectedAction(session!, { source: "temporaryAction", title: chosenOption.text, durationMinutes: clampedDuration }, now))'));
-});
-
-test("the generic ARC step back/skip row is hidden whenever the ARC Decision overlay is showing, so its own 'חזרה' can never step the underlying ARC session backward by mistake", () => {
-  const navRowIndex = liveScreen.indexOf("{!arcDecisionSession && (");
-  assert.ok(navRowIndex !== -1);
-  const navRowBody = liveScreen.slice(navRowIndex, navRowIndex + 900);
-  assert.ok(navRowBody.includes("styles.navRow"));
-  assert.ok(navRowBody.includes("commit(goBack(session, now))"));
-});
 
 test("ArcGymDecisionScreen (the standalone ARC Gym exercise) reuses the exact same ArcDecisionFlow + arc/arcDecision.ts engine, resumes any existing in-progress 'arc_gym' session rather than starting a duplicate, and never auto-creates a Task on finish", () => {
   assert.match(gymScreen, /import ArcDecisionFlow from "\.\.\/live\/components\/ArcDecisionFlow\.tsx";/);

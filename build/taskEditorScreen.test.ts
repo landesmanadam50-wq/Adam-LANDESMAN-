@@ -129,7 +129,7 @@ test("the weekday chips (and the select-all chip) only render while this task is
 
 test("reopening an existing recurring task's editor shows its already-saved weekdays -- taskDraftFromTask (loaded by reload()) is the only source of the initial selection, never a blank/reset one", () => {
   const reloadIndex = editorScreen.indexOf("const reload = useCallback");
-  const reloadBody = editorScreen.slice(reloadIndex, reloadIndex + 700);
+  const reloadBody = editorScreen.slice(reloadIndex, reloadIndex + 1000);
   assert.ok(reloadBody.includes("setDraft(taskDraftFromTask(task))"));
 });
 

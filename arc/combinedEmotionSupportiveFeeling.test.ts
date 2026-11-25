@@ -14,7 +14,6 @@ import {
   setEmotionSelection,
   setGoalType,
   setMiniAwareness,
-  setSelectedAction,
   setSupportiveFeelingOverride,
   toggleOpeningBodyScanRegion,
 } from "./newArcLiveSteps.ts";
@@ -132,8 +131,7 @@ test("scenario 7/9: Shortened ARC does not require emotion selection and can com
   state = toggleOpeningBodyScanRegion(state, "palms", "left");
   state = advance(state, NOW); // acceptance
   state = advance(state, NOW); // regulation
-  state = advance(state, NOW); // action_selection
-  state = setSelectedAction(state, { source: "temporaryAction", title: "לסדר את החדר", durationMinutes: 10 }, NOW); // encoding
+  state = advance(state, NOW); // encoding
   assert.equal(state.selectedEmotion, null, "no emotion was ever asked or chosen");
   assert.match(resolveEncodingMantra(state), /אני מאפשר לגוף שלי להיפתח/, "the body-based mantra applies when no emotion was ever selected");
   state = advance(state, NOW);

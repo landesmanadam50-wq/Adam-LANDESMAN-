@@ -9,7 +9,6 @@ import {
   cycleShortBodyMarking,
   resolveStepOrder,
   setGoalType,
-  setSelectedAction,
   toggleOpeningBodyScanRegion,
 } from "./newArcLiveSteps.ts";
 import { createNewArcLiveSessionState } from "./newArcLiveTypes.ts";
@@ -123,7 +122,7 @@ test("'סבבה' full depth: free_breathing -> time_available_check(full) -> nat
   state = toggleOpeningBodyScanRegion(state, "palms", "left");
   state = advance(state, NOW); // regulation (acceptance permanently skipped for shortened)
   assert.equal(state.currentStep, "regulation");
-  state = setSelectedAction(state, { source: "temporaryAction", title: "לסדר את החדר", durationMinutes: 10 }, NOW);
+  state = advance(state, NOW); // encoding (action-selection step removed entirely)
   assert.equal(state.currentStep, "encoding");
   state = advance(state, NOW);
   assert.equal(state.currentStep, "complete");

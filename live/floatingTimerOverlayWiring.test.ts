@@ -102,7 +102,7 @@ test("starting a rest period updates the overlay to the new rest run, and finish
   assert.ok(screen.slice(restStartIndex, restStartIndex + 550).includes("await updateFloatingTimerOverlay(restWithNotification, task, null, nextScheduledTaskForOverlay);"));
 
   const restFinishIndex = screen.indexOf("await cancelTaskTimerEndAlarm(restRun.notificationId);");
-  assert.ok(screen.slice(restFinishIndex, restFinishIndex + 400).includes("await updateFloatingTimerOverlay(finished, task, null, nextScheduledTaskForOverlay);"));
+  assert.ok(screen.slice(restFinishIndex, restFinishIndex + 550).includes("await updateFloatingTimerOverlay(finished, task, null, nextScheduledTaskForOverlay);"));
 });
 
 test("requirement 7: reload() (every focus, including after ARCHI itself was reopened) re-shows the overlay for whichever run (task or rest) is actually persisted -- never a fresh independent count, always the one loaded TaskTimerRun", () => {

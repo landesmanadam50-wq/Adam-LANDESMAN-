@@ -174,7 +174,11 @@ test("a suppressible reminder is isGenericReminder AND isInterruptiveReminderKin
 
 test("Daily Visualization shares the EXACT same quiet/loud redisplay gate as a generic reminder (isDailyVisualizationAlarm, folded into the same condition) -- never a second, separate redisplay implementation of its own", () => {
   const fnIndex = taskAlarmModule.indexOf("export function registerTaskAlarmForegroundService");
-  const fnBody = taskAlarmModule.slice(fnIndex, fnIndex + 3700);
+  // Window widened (3700 -> 4600): ARCHI task-not-started task's own
+  // isTaskNotStartedArm declaration/comment, inserted earlier in the
+  // function, pushed this branch further from fnIndex than before --
+  // same function, same content, just at a later offset.
+  const fnBody = taskAlarmModule.slice(fnIndex, fnIndex + 4600);
   assert.ok(fnBody.includes('const isDailyVisualizationAlarm = notification.data?.kind === "dailyVisualizationAlarm";'));
   assert.ok(fnBody.includes("if (isSuppressibleReminder || isDailyVisualizationAlarm) {"));
 });

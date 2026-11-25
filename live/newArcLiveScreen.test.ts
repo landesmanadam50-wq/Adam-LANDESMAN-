@@ -286,17 +286,12 @@ test("return-to-task: reaching 'complete' automatically completes the session, c
   const effectBody = screen.slice(effectIndex, effectIndex + 2400);
   assert.ok(effectBody.includes("returnToTask(autoStartAfter || session.arcPracticeDepth === \"short\");"));
   const returnToTaskIndex = screen.indexOf("async function returnToTask(autoStart: boolean)");
-  // ARCHI -- Unified Final Specification task, section 6: widened from
-  // 3100 to fit the two new selectedActionSource branches this
-  // function grew. ARC Focus task: widened again (4700 -> 5300) to fit
-  // the new arcFocusPracticeId branch. ARC Gym + ARC Goal Integration
-  // task: widened again (5300 -> 6500) to fit the new
-  // arcGymMemoryExerciseId branch, then again (6500 -> 7700) to fit
-  // the combined Behaviour+Success scheduled-practice branching, then
-  // again (7700 -> 8400) to fit the new arcPerspectiveId branch. ARC
-  // Saving, Trigger Management & Quick-Action Buttons task: widened
-  // again (8400 -> 10700) to fit the new
-  // arcSavingBodyOptionId/arcSavingExerciseId/arcSavingTriggerIdForNewOption branch.
+  // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+  // section 1: the two selectedActionSource branches this function
+  // once grew (Unified Final Specification task, section 6) are gone
+  // along with the rest of the action-selection UI -- the window is
+  // kept wide (10700) since it only needs to be large enough to
+  // contain the function body, never exactly sized to it.
   const returnToTaskBody = screen.slice(returnToTaskIndex, returnToTaskIndex + 10700);
   assert.ok(returnToTaskBody.includes("clearNewArcLiveSession()"));
   // ARCHI -- ARC Result task, section 3: the final fallback destination
@@ -873,7 +868,7 @@ test("checkpoint (never a separate 'internal action' concept, never duplicate ti
 });
 
 test("checkpoint (going back discards the abandoned action's own timer): the shared 'חזרה' button clears the persisted internal-action run before calling goBack whenever it is leaving emotional_action's own subIndex 1", () => {
-  const backIndex = screen.indexOf('onPress={() => {\n                  // Nine Functional Improvements task, Improvement 3:');
+  const backIndex = screen.indexOf('onPress={() => {\n                // Nine Functional Improvements task, Improvement 3:');
   assert.ok(backIndex >= 0);
   const backBody = screen.slice(backIndex, backIndex + 700);
   assert.ok(backBody.includes('session!.currentStep === "emotional_action" && session!.subIndex === 1'));

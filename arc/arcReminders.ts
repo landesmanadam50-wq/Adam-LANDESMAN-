@@ -147,6 +147,14 @@ export interface ArcTaskReminderSettings {
   mantraRemindersEnabled: boolean;
   activeRecallRemindersEnabled: boolean;
   hideContentOnLockScreen: boolean;
+  /**
+   * ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+   * section 2: the persistent "task not started" notification
+   * (data/taskNotStartedNotification.ts) -- an independent toggle, same
+   * "each one gates exactly one thing" convention as every other field
+   * here.
+   */
+  taskNotStartedNotificationEnabled: boolean;
   updatedAt: string;
 }
 
@@ -157,6 +165,7 @@ export function createDefaultArcTaskReminderSettings(now: string): ArcTaskRemind
     mantraRemindersEnabled: true,
     activeRecallRemindersEnabled: true,
     hideContentOnLockScreen: false,
+    taskNotStartedNotificationEnabled: true,
     updatedAt: now,
   };
 }
@@ -171,6 +180,7 @@ export function normalizeArcTaskReminderSettings(settings: Partial<ArcTaskRemind
     mantraRemindersEnabled: settings.mantraRemindersEnabled ?? defaults.mantraRemindersEnabled,
     activeRecallRemindersEnabled: settings.activeRecallRemindersEnabled ?? defaults.activeRecallRemindersEnabled,
     hideContentOnLockScreen: settings.hideContentOnLockScreen ?? defaults.hideContentOnLockScreen,
+    taskNotStartedNotificationEnabled: settings.taskNotStartedNotificationEnabled ?? defaults.taskNotStartedNotificationEnabled,
     updatedAt: settings.updatedAt ?? now,
   };
 }

@@ -373,6 +373,15 @@ export default function RootLayout() {
         <Stack.Screen name="tasks/[id]/postpone-rest" options={{ title: "מנוחה" }} />
         <Stack.Screen name="tasks/[id]/postpone-smaller" options={{ title: "הקטנת המשימה" }} />
         <Stack.Screen name="tasks/[id]/postpone-return" options={{ title: "מוכנים להתחיל?" }} />
+        {/* ARCHI -- Adaptive Task Execution & Emotional Persistence task:
+            "אני צריך פעולה תומכת" -- reached from the task-not-started
+            notification (data/taskNotStartedNotification.ts) and from
+            Task LIVE's own continuation loop. */}
+        <Stack.Screen name="tasks/[id]/supportive-action" options={{ title: "פעולה תומכת" }} />
+        {/* Same task, section 6: shrinking the current/original task into a
+            smaller, linked version -- reached from the supportive-action
+            flow above and from the continuation loop's own "No" menu. */}
+        <Stack.Screen name="tasks/[id]/adapt" options={{ title: "הקטנת המשימה" }} />
         <Stack.Screen name="tasks/[id]/reflect" options={{ title: "רפלקציה קצרה" }} />
         {/* Task Reflection Memory task: review/edit/delete this task's own saved "מה למדתי" history. */}
         <Stack.Screen name="tasks/[id]/reflections" options={{ title: "מה שלמדתי" }} />

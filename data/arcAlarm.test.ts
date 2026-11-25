@@ -152,10 +152,12 @@ test("handlePlannedArcAlarmAction's snooze/close branches call snoozePlannedArcA
 
 test("the foreground-service handler gives the ARC alarm the SAME 2-minute ring cap as the task alarm (not a different/shorter one), and its automatic cutoff turns off via turnOffPlannedArcAlarmById -- the exact same path the trainee's own 'סגור' button uses", () => {
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (4100 -> 4600): the Regression Audit's suppressible-alarm
-  // doc comment, inserted earlier in the function, pushed this branch's own
-  // offset further from fnIndex than before -- same function, same content.
-  const fnBody = module_.slice(fnIndex, fnIndex + 7100);
+  // Window widened (4600 -> 8300): the Regression Audit's suppressible-alarm
+  // doc comment, plus ARCHI task-not-started's own isTaskNotStartedArm
+  // declaration/comment and early-return branch, all inserted earlier in
+  // the function, pushed this branch's own offset further from fnIndex
+  // than before -- same function, same content.
+  const fnBody = module_.slice(fnIndex, fnIndex + 8300);
   assert.ok(fnBody.includes('const isArcAlarm = notification.data?.kind === "arcAlarm";'));
   assert.ok(fnBody.includes("if (isArcAlarm) {"));
   const branchIndex = fnBody.indexOf("if (isArcAlarm) {", fnBody.indexOf("setTimeout(async () => {"));

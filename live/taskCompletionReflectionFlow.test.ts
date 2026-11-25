@@ -233,10 +233,15 @@ test("scenario 6 (superseded by ARC Reminders requirement 5/8): the three timer-
   assert.ok(!screen.includes("const [endChoice, setEndChoice]"));
 });
 
-test("scenario 6 (superseded by ARC Reminders requirement 5/8): the auto-trigger effect that replaces the old choice UI calls handleComplete() itself exactly once per ended run, guarded by autoCompletedForRunId -- never a separate, non-finalizing path", () => {
-  const effectIndex = screen.indexOf("if (ended && autoCompletedForRunId.current !== timerRun.runId) {");
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 7: superseded again -- a plain task's natural timer end now
+// enters the continuation loop instead of calling handleComplete()
+// directly; only a configured-stages/split task still falls through to
+// it, guarded by the SAME autoCompletedForRunId ref.
+test("scenario 6 (superseded by ARC Reminders requirement 5/8, then by the Adaptive Task Execution task's continuation loop): the auto-trigger effect calls handleComplete() exactly once per ended run for a configured-stages/split task, guarded by autoCompletedForRunId -- never a separate, non-finalizing path", () => {
+  const effectIndex = screen.indexOf("if (!ended || autoCompletedForRunId.current === timerRun.runId) return;");
   assert.ok(effectIndex !== -1);
-  const effectBody = screen.slice(effectIndex, effectIndex + 150);
+  const effectBody = screen.slice(effectIndex, effectIndex + 1100);
   assert.ok(effectBody.includes("autoCompletedForRunId.current = timerRun.runId;"));
   assert.ok(effectBody.includes("handleComplete();"));
 });

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { advance, completeFreeBreathingIntro, confirmTimeAvailableRating, resolveStepOrder, setGoalType, setSelectedAction, toggleOpeningBodyScanRegion } from "./newArcLiveSteps.ts";
+import { advance, completeFreeBreathingIntro, confirmTimeAvailableRating, resolveStepOrder, setGoalType, toggleOpeningBodyScanRegion } from "./newArcLiveSteps.ts";
 import { createNewArcLiveSessionState, describeArcSessionConfig, resolveSupportiveSensationLabel } from "./newArcLiveTypes.ts";
 import type { NewArcLiveSessionState } from "./newArcLiveTypes.ts";
 
@@ -86,14 +86,13 @@ test("required test: Regulation/Encoding are still reachable for a shortened ses
   // straight on "regulation," never passing through "acceptance" at
   // all (Full ARC/Mini ARC are unaffected, see arc/newArcLiveSteps.test.ts).
   state = advance(state, NOW);
-  // ARCHI -- Show Action Selection ON the Regulation Screen task: the
-  // integrated action-selection section renders together with the
-  // Regulation circle/mantra on this SAME, single sub-screen, never a
-  // separate "action_selection" step or sub-screen -- applies to
-  // Shortened ARC exactly like every other mode that includes Regulation.
+  // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+  // section 1: the action-selection section that used to render
+  // together with the Regulation circle/mantra is removed entirely --
+  // applies to Shortened ARC exactly like every other mode.
   assert.equal(state.currentStep, "regulation");
   assert.equal(state.subIndex, 0);
-  state = setSelectedAction(state, { source: "temporaryAction", title: "לסדר את החדר", durationMinutes: 10 }, NOW);
+  state = advance(state, NOW);
   assert.equal(state.currentStep, "encoding");
   state = advance(state, NOW);
   assert.equal(state.currentStep, "complete", "Part 5: Encoding leads directly to completion -- transition/emotional_action/emotional_insight are all permanently unreachable now");
@@ -124,8 +123,7 @@ test("required test: a shortened, EMOTION-ONLY session also reaches 'complete' d
   state = toggleOpeningBodyScanRegion(state, "palms", "left");
   state = advance(state, NOW); // acceptance
   state = advance(state, NOW); // regulation (1 fixed-mantra page)
-  state = advance(state, NOW); // action_selection
-  state = setSelectedAction(state, { source: "temporaryAction", title: "לסדר את החדר", durationMinutes: 10 }, NOW); // encoding (1 fixed-mantra page)
+  state = advance(state, NOW); // encoding (1 fixed-mantra page; action-selection step removed entirely)
   state = advance(state, NOW); // complete
   assert.equal(state.currentStep, "complete", "Encoding leads directly to completion for emotion_only too");
 });

@@ -8,7 +8,6 @@ import {
   confirmTimeAvailableRating,
   setBodyScanHeavinessRegion,
   setGoalType,
-  setSelectedAction,
   toggleBodyScanContractionRegion,
   toggleOpeningBodyScanRegion,
 } from "./newArcLiveSteps.ts";
@@ -158,8 +157,6 @@ test("7. contraction is never selectable or reachable anywhere in the Shortened 
     if (cursor.currentStep === "supportive_area_select") {
       cursor = toggleOpeningBodyScanRegion(cursor, "palms", "left");
       cursor = advance(cursor, NOW);
-    } else if (cursor.currentStep === "action_selection") {
-      cursor = setSelectedAction(cursor, { source: "temporaryAction", title: "לסדר את החדר", durationMinutes: 10 }, NOW);
     } else {
       cursor = advance(cursor, NOW);
     }

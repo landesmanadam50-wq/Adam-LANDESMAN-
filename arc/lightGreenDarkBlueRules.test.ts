@@ -13,7 +13,6 @@ import {
   advance,
   confirmBodyScanClosedness,
   setBodyScanHeavinessRegion,
-  setSelectedAction,
   toggleBodyScanContractionRegion,
   toggleOpeningBodyScanRegion,
 } from "./newArcLiveSteps.ts";
@@ -269,8 +268,8 @@ test("14. Shortened ARC retains its no-Acceptance, no-contraction design -- 'acc
   assert.equal(cursor.currentStep, "regulation", "Regulation follows Body Selection directly -- Acceptance stays permanently skipped for Shortened ARC");
 });
 
-// 15. Existing ARC sessions, task context and action selection are preserved.
-test("15. existing ARC sessions, task context, and the already-integrated Action Selection (Regulation subIndex 1) are completely unaffected by this task's own changes", () => {
+// 15. Existing ARC sessions and task context are preserved.
+test("15. existing ARC sessions and task context are completely unaffected by this task's own changes", () => {
   let state: NewArcLiveSessionState = { ...fresh(), currentStep: "acceptance" };
   const before = { taskId: state.taskId, taskTitle: state.taskTitle, firstAction: state.firstAction, arcInvocationMode: state.arcInvocationMode };
   state = toggleBodyScanContractionRegion(state, "scanShoulders", "left");
@@ -287,11 +286,9 @@ test("15. existing ARC sessions, task context, and the already-integrated Action
   assert.equal(state.currentStep, "acceptance_part_two");
   state = advance(state, NOW); // acceptance_part_two -> regulation
   assert.equal(state.currentStep, "regulation");
-  assert.equal(state.subIndex, 0, "regulation is exactly one sub-screen now -- the already-integrated Action Selection section renders on it directly, completely untouched by this task");
-  state = setSelectedAction(state, { source: "temporaryAction", title: "לסדר את החדר", durationMinutes: 10 }, NOW);
+  assert.equal(state.subIndex, 0, "regulation is exactly one sub-screen now");
+  state = advance(state, NOW); // regulation -> encoding (action-selection step removed entirely)
   assert.equal(state.currentStep, "encoding");
-  assert.equal(state.selectedActionSource, "temporaryAction");
-  assert.equal(state.selectedActionTitle, "לסדר את החדר");
   assert.equal(state.taskId, before.taskId);
   assert.equal(state.taskTitle, before.taskTitle);
   assert.equal(state.firstAction, before.firstAction);

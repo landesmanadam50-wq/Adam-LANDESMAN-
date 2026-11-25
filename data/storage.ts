@@ -130,6 +130,21 @@ import {
 } from "../arc/arcReminders.ts";
 import type { ArcFocusExercise } from "../arc/arcFocusExercise.ts";
 import { upsertArcFocusExerciseInList } from "../arc/arcFocusExercise.ts";
+import type { FeelingActionLink, InternalAction, SupportiveFeeling, TaskFeelingLink } from "../arc/supportiveFeelings.ts";
+import {
+  addFeelingActionLink,
+  addTaskFeelingLink,
+  deleteFeelingActionLinksForAction,
+  deleteInternalActionFromList,
+  deleteSupportiveFeelingFromList,
+  deleteTaskFeelingLinksForFeeling,
+  removeFeelingActionLink,
+  removeTaskFeelingLink,
+  upsertInternalActionInList,
+  upsertSupportiveFeelingInList,
+} from "../arc/supportiveFeelings.ts";
+import type { ArcTrackChosen, InternalActionUsage, InternalState } from "../arc/internalActionRating.ts";
+import type { TaskContinuationLoopState } from "../arc/taskContinuationLoop.ts";
 import type { ArcGymMemoryCheckInProgress } from "../arc/arcGymMemoryCheckInProgress.ts";
 import type { ArcDecisionSession } from "../arc/arcDecision.ts";
 import type { ArcPerspectiveEvent, ArcPerspectiveSession } from "../arc/arcPerspective.ts";
@@ -2568,16 +2583,6 @@ export async function loadNewArcLiveSession(): Promise<NewArcLiveSessionState | 
     // this same codebase that no persisted session under that old name
     // needs a migration path here -- a plain rename, not a shim.)
     skipEmotionSelection: parsed.skipEmotionSelection ?? false,
-    // ARCHI -- Unified Final Specification task, section 2: a session
-    // saved before Action Selection existed, or one that never reached
-    // that step (isActiveTaskLiveOrigin/arcGymSituationId), simply has
-    // no selected action of its own -- Encoding/returnToTask both fall
-    // back to the existing firstAction-based behavior in that case.
-    selectedActionSource: parsed.selectedActionSource ?? null,
-    selectedActionTaskId: parsed.selectedActionTaskId ?? null,
-    selectedActionTitle: parsed.selectedActionTitle ?? null,
-    selectedActionFirstAction: parsed.selectedActionFirstAction ?? null,
-    selectedActionDurationMinutes: parsed.selectedActionDurationMinutes ?? null,
     // ARCHI -- Action-Readiness Check ("בדיקת מוכנות לפעולה") task: a
     // session saved before this step existed, or one that never
     // reached it (e.g. "shortened," which never does), simply has no
@@ -4725,4 +4730,311 @@ export async function saveArcReminderScheduledTriggers(reminderId: string, trigg
 /** Called when a reminder is deleted -- clears its own scheduled-triggers record so a later reminder id can never accidentally read stale leftovers (ids are randomly generated, but this is a cheap, correct guarantee regardless). */
 export async function clearArcReminderScheduledTriggers(reminderId: string): Promise<void> {
   await AsyncStorage.removeItem(`${ARC_REMINDER_SCHEDULED_TRIGGERS_KEY_PREFIX}${reminderId}`);
+}
+
+/**
+ * ARCHI -- Adaptive Task Execution & Emotional Persistence task, section
+ * 3: the supportive-feeling/internal-action bank and its two link
+ * collections, same flat-list-CRUD convention as ARC_MANTRA_REMINDERS_KEY
+ * above. Four separate keys (never one combined blob) so editing one
+ * collection never requires reading/rewriting the others.
+ */
+const SUPPORTIVE_FEELINGS_KEY = "archi.supportiveFeelings.v1";
+
+export async function loadSupportiveFeelings(): Promise<SupportiveFeeling[]> {
+  const raw = await AsyncStorage.getItem(SUPPORTIVE_FEELINGS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as SupportiveFeeling[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored SupportiveFeelings are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveSupportiveFeelings(feelings: SupportiveFeeling[]): Promise<void> {
+  await AsyncStorage.setItem(SUPPORTIVE_FEELINGS_KEY, JSON.stringify(feelings));
+}
+
+export async function upsertSupportiveFeelingEntry(feeling: SupportiveFeeling): Promise<void> {
+  const feelings = await loadSupportiveFeelings();
+  await saveSupportiveFeelings(upsertSupportiveFeelingInList(feelings, feeling));
+}
+
+/** Also clears every TaskFeelingLink pointing at this feeling -- its InternalActions and historical InternalActionUsage rows are deliberately left untouched (see arc/supportiveFeelings.ts's own module doc on why usage history must survive a deleted bank entry). */
+export async function deleteSupportiveFeelingEntry(id: string): Promise<void> {
+  const feelings = await loadSupportiveFeelings();
+  await saveSupportiveFeelings(deleteSupportiveFeelingFromList(feelings, id));
+  const links = await loadTaskFeelingLinks();
+  await saveTaskFeelingLinks(deleteTaskFeelingLinksForFeeling(links, id));
+}
+
+const INTERNAL_ACTIONS_KEY = "archi.internalActions.v1";
+
+export async function loadInternalActions(): Promise<InternalAction[]> {
+  const raw = await AsyncStorage.getItem(INTERNAL_ACTIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as InternalAction[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored InternalActions are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveInternalActions(actions: InternalAction[]): Promise<void> {
+  await AsyncStorage.setItem(INTERNAL_ACTIONS_KEY, JSON.stringify(actions));
+}
+
+export async function upsertInternalActionEntry(action: InternalAction): Promise<void> {
+  const actions = await loadInternalActions();
+  await saveInternalActions(upsertInternalActionInList(actions, action));
+}
+
+/** Also clears every FeelingActionLink pointing at this action -- historical InternalActionUsage rows are left untouched, same reasoning as deleteSupportiveFeelingEntry above. */
+export async function deleteInternalActionEntry(id: string): Promise<void> {
+  const actions = await loadInternalActions();
+  await saveInternalActions(deleteInternalActionFromList(actions, id));
+  const links = await loadFeelingActionLinks();
+  await saveFeelingActionLinks(deleteFeelingActionLinksForAction(links, id));
+}
+
+const TASK_FEELING_LINKS_KEY = "archi.taskFeelingLinks.v1";
+
+export async function loadTaskFeelingLinks(): Promise<TaskFeelingLink[]> {
+  const raw = await AsyncStorage.getItem(TASK_FEELING_LINKS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as TaskFeelingLink[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored TaskFeelingLinks are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveTaskFeelingLinks(links: TaskFeelingLink[]): Promise<void> {
+  await AsyncStorage.setItem(TASK_FEELING_LINKS_KEY, JSON.stringify(links));
+}
+
+export async function linkSupportiveFeelingToTask(taskId: string, feelingId: string, now: string): Promise<void> {
+  const links = await loadTaskFeelingLinks();
+  await saveTaskFeelingLinks(addTaskFeelingLink(links, taskId, feelingId, now));
+}
+
+export async function unlinkSupportiveFeelingFromTask(taskId: string, feelingId: string): Promise<void> {
+  const links = await loadTaskFeelingLinks();
+  await saveTaskFeelingLinks(removeTaskFeelingLink(links, taskId, feelingId));
+}
+
+const FEELING_ACTION_LINKS_KEY = "archi.feelingActionLinks.v1";
+
+export async function loadFeelingActionLinks(): Promise<FeelingActionLink[]> {
+  const raw = await AsyncStorage.getItem(FEELING_ACTION_LINKS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as FeelingActionLink[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored FeelingActionLinks are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveFeelingActionLinks(links: FeelingActionLink[]): Promise<void> {
+  await AsyncStorage.setItem(FEELING_ACTION_LINKS_KEY, JSON.stringify(links));
+}
+
+export async function linkInternalActionToFeeling(feelingId: string, actionId: string, now: string): Promise<void> {
+  const links = await loadFeelingActionLinks();
+  await saveFeelingActionLinks(addFeelingActionLink(links, feelingId, actionId, now));
+}
+
+export async function unlinkInternalActionFromFeeling(feelingId: string, actionId: string): Promise<void> {
+  const links = await loadFeelingActionLinks();
+  await saveFeelingActionLinks(removeFeelingActionLink(links, feelingId, actionId));
+}
+
+/**
+ * ARCHI -- Adaptive Task Execution & Emotional Persistence task, section
+ * 5: the flat, append-only effectiveness-rating history behind the
+ * personal internal-action ranking (arc/internalActionRating.ts's own
+ * computeInternalActionRanking). Never pruned, never aggregated at
+ * write time -- every consumer recomputes its own ranking/aggregate on
+ * demand from the full history, same convention as arc/factorRating.ts's
+ * own FactorRating[].
+ */
+const INTERNAL_ACTION_USAGES_KEY = "archi.internalActionUsages.v1";
+
+export async function loadInternalActionUsages(): Promise<InternalActionUsage[]> {
+  const raw = await AsyncStorage.getItem(INTERNAL_ACTION_USAGES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as InternalActionUsage[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    console.warn("[storage] Stored InternalActionUsages are not valid JSON -- returning an empty list rather than crashing.");
+    return [];
+  }
+}
+
+async function saveInternalActionUsages(usages: InternalActionUsage[]): Promise<void> {
+  await AsyncStorage.setItem(INTERNAL_ACTION_USAGES_KEY, JSON.stringify(usages));
+}
+
+export async function appendInternalActionUsageEntry(usage: InternalActionUsage): Promise<void> {
+  const usages = await loadInternalActionUsages();
+  await saveInternalActionUsages([...usages, usage]);
+}
+
+/** Finds and replaces one usage by id (used when a usage transitions from "started, unrated" to "rated") -- never appends a second row for the same use. */
+export async function updateInternalActionUsageEntry(usage: InternalActionUsage): Promise<void> {
+  const usages = await loadInternalActionUsages();
+  const index = usages.findIndex((existing) => existing.id === usage.id);
+  if (index === -1) return;
+  const next = [...usages];
+  next[index] = usage;
+  await saveInternalActionUsages(next);
+}
+
+/**
+ * ARCHI -- Adaptive Task Execution & Emotional Persistence task, sections
+ * 7-10: single-slot store for the ONE in-progress Task LIVE continuation
+ * loop (arc/taskContinuationLoop.ts) -- same singleton convention as
+ * TASK_TIMER_RUN_KEY (a trainee runs one continuation loop at a time,
+ * for whichever task is currently active). Survives app close/reopen by
+ * construction, same as every other single-slot session record in this
+ * file.
+ */
+const TASK_CONTINUATION_LOOP_KEY = "archi.taskContinuationLoop.v1";
+
+export async function loadTaskContinuationLoop(): Promise<TaskContinuationLoopState | null> {
+  const raw = await AsyncStorage.getItem(TASK_CONTINUATION_LOOP_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as TaskContinuationLoopState;
+  } catch (error) {
+    console.warn("[storage] Stored TaskContinuationLoopState is not valid JSON -- treating as unset rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveTaskContinuationLoop(state: TaskContinuationLoopState): Promise<void> {
+  await AsyncStorage.setItem(TASK_CONTINUATION_LOOP_KEY, JSON.stringify(state));
+}
+
+export async function clearTaskContinuationLoop(): Promise<void> {
+  await AsyncStorage.removeItem(TASK_CONTINUATION_LOOP_KEY);
+}
+
+/**
+ * ARCHI -- Adaptive Task Execution & Emotional Persistence task, section
+ * 12: a loop's own segments/totalWorkedSeconds/lastArcTrack/endReason
+ * already capture everything the spec asks to "store separately" --
+ * this is simply where that record survives PAST the single-slot
+ * TaskContinuationLoop above being cleared when the loop ends, so a
+ * "user_stopped"/"next_task_boundary" (partial) loop's real worked time
+ * and choices are never deleted, same append-only precedent as
+ * appendTaskOccurrenceCompletion above. The caller appends the loop's
+ * own final state (after endTaskContinuationLoop) right before clearing
+ * the live slot -- never pruned, never aggregated away.
+ */
+const TASK_CONTINUATION_LOOP_HISTORY_KEY = "archi.taskContinuationLoopHistory.v1";
+
+export async function loadTaskContinuationLoopHistory(): Promise<TaskContinuationLoopState[]> {
+  const raw = await AsyncStorage.getItem(TASK_CONTINUATION_LOOP_HISTORY_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as TaskContinuationLoopState[];
+  } catch (error) {
+    console.warn("[storage] Stored TaskContinuationLoopState history is not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function appendTaskContinuationLoopHistoryEntry(entry: TaskContinuationLoopState): Promise<void> {
+  const existing = await loadTaskContinuationLoopHistory();
+  await AsyncStorage.setItem(TASK_CONTINUATION_LOOP_HISTORY_KEY, JSON.stringify([...existing, entry]));
+}
+
+/**
+ * ARCHI -- Adaptive Task Execution & Emotional Persistence task, section
+ * 4: live/SupportiveActionFlowScreen.tsx's own in-progress state --
+ * single-slot, same convention as every other session record in this
+ * file. Exists ONLY so the flow survives navigating away to the
+ * existing Full/Shortened ARC route (never NewArcLiveScreen.tsx's own
+ * internals, which this task must not touch) and back: `awaitingArcReturn`
+ * is set right before that navigation and is the ONE signal
+ * live/ActiveTaskScreen.tsx's own small redirect effect acts on, so an
+ * ordinary visit to a task with no pending flow is never affected.
+ */
+export interface SupportiveActionFlowPendingState {
+  taskId: string;
+  feelingId: string;
+  actionId: string;
+  internalStateAtStart: InternalState;
+  arcTrackChosen: ArcTrackChosen;
+  usageId: string;
+  step: "perform" | "rating";
+  awaitingArcReturn: boolean;
+}
+
+const SUPPORTIVE_ACTION_FLOW_PENDING_KEY = "archi.supportiveActionFlowPending.v1";
+
+export async function loadSupportiveActionFlowPending(): Promise<SupportiveActionFlowPendingState | null> {
+  const raw = await AsyncStorage.getItem(SUPPORTIVE_ACTION_FLOW_PENDING_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as SupportiveActionFlowPendingState;
+  } catch (error) {
+    console.warn("[storage] Stored SupportiveActionFlowPendingState is not valid JSON -- treating as unset rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveSupportiveActionFlowPending(state: SupportiveActionFlowPendingState): Promise<void> {
+  await AsyncStorage.setItem(SUPPORTIVE_ACTION_FLOW_PENDING_KEY, JSON.stringify(state));
+}
+
+export async function clearSupportiveActionFlowPending(): Promise<void> {
+  await AsyncStorage.removeItem(SUPPORTIVE_ACTION_FLOW_PENDING_KEY);
+}
+
+/**
+ * ARCHI -- Adaptive Task Execution & Emotional Persistence task, section
+ * 2: the ONE "task not started" notification's own persisted state --
+ * its stable notificationId plus which task it was last shown for, so
+ * recomputeTaskNotStartedNotification (data/taskNotStartedNotification.ts)
+ * always updates the SAME displayed notification in place (never a
+ * duplicate) and can tell, on redisplay for the exact same task, that no
+ * new alert sound should play. Mirrors TaskTransitionNotificationState's
+ * own shape and purpose exactly.
+ */
+export interface TaskNotStartedNotificationState {
+  notificationId: string;
+  alertedTaskId: string | null;
+  alertedAt: string;
+}
+
+const TASK_NOT_STARTED_NOTIFICATION_STATE_KEY = "archi.taskNotStartedNotificationState.v1";
+
+export async function loadTaskNotStartedNotificationState(): Promise<TaskNotStartedNotificationState | null> {
+  const raw = await AsyncStorage.getItem(TASK_NOT_STARTED_NOTIFICATION_STATE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as TaskNotStartedNotificationState;
+  } catch (error) {
+    console.warn("[storage] Stored TaskNotStartedNotificationState is not valid JSON -- treating as unset rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveTaskNotStartedNotificationState(state: TaskNotStartedNotificationState): Promise<void> {
+  await AsyncStorage.setItem(TASK_NOT_STARTED_NOTIFICATION_STATE_KEY, JSON.stringify(state));
+}
+
+export async function clearTaskNotStartedNotificationState(): Promise<void> {
+  await AsyncStorage.removeItem(TASK_NOT_STARTED_NOTIFICATION_STATE_KEY);
 }

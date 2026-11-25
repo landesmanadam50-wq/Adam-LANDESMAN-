@@ -41,7 +41,6 @@ import {
   setMiniThought,
   setPositiveMovement,
   setPrimaryOpeningBodyScanRegion,
-  setSelectedAction,
   setSupportiveArea,
   setSupportiveSensation,
   setThought,
@@ -470,10 +469,10 @@ test("openingBodyScanRegions, once the trainee taps a previously-Red region gree
 
   state = advance(state, NOW); // acceptance_part_two is exactly one page
   assert.equal(state.currentStep, "regulation");
-  assert.equal(state.subIndex, 0, "regulation is exactly one sub-screen (ARCHI -- Show Action Selection ON the Regulation Screen task) -- the integrated action-selection section renders on it directly, never a separate step or sub-screen");
+  assert.equal(state.subIndex, 0, "regulation is exactly one sub-screen -- the action-selection step that used to follow it is removed entirely");
   assert.deepEqual(state.openingBodyScanRegions, [{ region: "scanShoulders", side: "left", role: "opening" }], "...and still unchanged at regulation");
 
-  state = setSelectedAction(state, { source: "temporaryAction", title: "לסדר את החדר", durationMinutes: 10 }, NOW);
+  state = advance(state, NOW);
   assert.equal(state.currentStep, "encoding");
   assert.deepEqual(state.openingBodyScanRegions, [{ region: "scanShoulders", side: "left", role: "opening" }], "...and still unchanged at encoding -- never re-asked, never replaced");
 });
@@ -673,15 +672,13 @@ test("resolveStepOrder picks NEW_ARC_MINI_STEP_ORDER only for 'plannedMini', and
   assert.deepEqual(resolveStepOrder("spontaneous"), NEW_ARC_LIVE_STEP_ORDER);
 });
 
-// ARCHI -- Unified Final Specification task, section 2: "mini_action_selection"
-// is a new Mini-specific step (between mini_acceptance_transition and
-// mini_encoding) -- eight Mini-specific steps remain, one more than
-// after the Unified 7-Part Update task's own removal of "mini_action"
-// from the active order (that id stays permanently unreachable, never
-// deleted).
-test("NEW_ARC_MINI_STEP_ORDER has exactly eight Mini-specific steps -- genuinely short, not a subset renamed", () => {
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 1: "mini_action_selection" is removed entirely from the step
+// order (the app already knows the task's own action from context) --
+// seven Mini-specific steps remain.
+test("NEW_ARC_MINI_STEP_ORDER has exactly seven Mini-specific steps -- genuinely short, not a subset renamed", () => {
   const miniOnly = NEW_ARC_MINI_STEP_ORDER.filter((step) => step.startsWith("mini_"));
-  assert.equal(miniOnly.length, 8);
+  assert.equal(miniOnly.length, 7);
   assert.ok(!NEW_ARC_LIVE_STEP_ORDER.some((step) => step.startsWith("mini_")), "the Full ARC sequence must never include any Mini-only step");
 });
 
@@ -706,11 +703,11 @@ test("requirement 11: stop_and_accept_urge/reality_acceptance (Full ARC) and min
 // ARCHI -- Unified 7-Part Update task, Part 5: "mini_action" is now
 // permanently unreachable too (its own step id/copy/setters stay
 // intact, never deleted) -- mini_encoding now advances straight to
-// "complete", for every goalType. ARCHI -- Unified Final Specification
-// task, section 2: "mini_action_selection" now sits between
-// mini_acceptance_transition and mini_encoding -- reachable here since
-// isActiveTaskLiveOrigin is false and arcGymSituationId is null.
-test("a Mini ARC session walks goal_select -> free_breathing -> mini_thought -> mini_awareness -> mini_presence -> mini_acceptance_transition (own subIndex 1 for the integrated action-selection) -> mini_encoding -> complete, skipping every Full-ARC-only step and the now-removed mini_action/emotional_action/emotional_insight trio", () => {
+// "complete", for every goalType. ARCHI -- Adaptive Task Execution &
+// Emotional Persistence task, section 1: "mini_action_selection" is
+// removed entirely -- mini_acceptance_transition is back to exactly
+// one sub-screen, advancing straight to mini_encoding.
+test("a Mini ARC session walks goal_select -> free_breathing -> mini_thought -> mini_awareness -> mini_presence -> mini_acceptance_transition -> mini_encoding -> complete, skipping every Full-ARC-only step and the now-removed mini_action/emotional_action/emotional_insight trio", () => {
   let state: NewArcLiveSessionState = { ...fresh(), arcInvocationMode: "plannedMini" };
   state = setGoalType(state, "action", NOW);
   assert.equal(state.currentStep, "self_observation_choice", "self-observation task: this is Mini ARC's own genuine first screen now, right before free_breathing");
@@ -737,12 +734,10 @@ test("a Mini ARC session walks goal_select -> free_breathing -> mini_thought -> 
   state = advance(state, NOW);
   assert.equal(state.currentStep, "mini_acceptance_transition");
   state = setMiniAcceptanceTransition(state, "chest", "רוגע", "יישור הגב", NOW);
-  // ARCHI -- Move Action Selection into the Existing Regulation Screen task:
-  // the integrated action-selection prompt is now this SAME step's own
-  // subIndex 1, never a separate "mini_action_selection" step.
-  assert.equal(state.currentStep, "mini_acceptance_transition");
-  assert.equal(state.subIndex, 1);
-  state = setSelectedAction(state, { source: "temporaryAction", title: "לסדר את החדר", durationMinutes: 10 }, NOW);
+  // ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+  // section 1: mini_acceptance_transition is back to a single
+  // sub-screen (no integrated action-selection prompt), so this one
+  // advance() call lands straight on mini_encoding.
   assert.equal(state.currentStep, "mini_encoding");
   state = setMiniEncoding(state, "", "", NOW);
   assert.equal(state.currentStep, "complete", "mini_action/emotional_action/emotional_insight are all gone -- Encoding leads directly to completion, for every goalType");
@@ -784,13 +779,17 @@ test("a Mini ARC session (Emotional/Combined track) reaches 'complete' directly 
   }
 });
 
-test("every Mini ARC step has exactly one sub-screen -- the brevity requirement itself (mini_thought included); mini_acceptance_transition is the one deliberate exception (its own integrated action-selection sub-screen, see the Move Action Selection test above) -- reachable regardless of isActiveTaskLiveOrigin (ARCHI BUG fix: Action Selection Is Missing from Regulation in All ARC Pathways), only arcGymSituationId still collapses it to one page", () => {
+// ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+// section 1: mini_acceptance_transition's own former integrated
+// action-selection sub-screen (subIndex 1) is removed -- it is back
+// to exactly one sub-screen for every Mini ARC session, regardless of
+// isActiveTaskLiveOrigin or arcGymSituationId.
+test("every Mini ARC step has exactly one sub-screen -- the brevity requirement itself (mini_thought and mini_acceptance_transition included), reachable regardless of isActiveTaskLiveOrigin or arcGymSituationId", () => {
   const state: NewArcLiveSessionState = { ...fresh(), arcInvocationMode: "plannedMini" };
-  for (const step of ["mini_awareness", "mini_thought", "mini_presence", "mini_encoding", "mini_action"] as const) {
+  for (const step of ["mini_awareness", "mini_thought", "mini_presence", "mini_encoding", "mini_action", "mini_acceptance_transition"] as const) {
     assert.equal(stepSubCount(step, state), 1);
   }
-  assert.equal(stepSubCount("mini_acceptance_transition", state), 2);
-  assert.equal(stepSubCount("mini_acceptance_transition", { ...state, isActiveTaskLiveOrigin: true }), 2);
+  assert.equal(stepSubCount("mini_acceptance_transition", { ...state, isActiveTaskLiveOrigin: true }), 1);
   assert.equal(stepSubCount("mini_acceptance_transition", { ...state, arcGymSituationId: "sit1" }), 1);
 });
 
@@ -1606,27 +1605,4 @@ test("arcSavingBodyOptionId/arcSavingExerciseId default to null for every pre-ex
   assert.equal(state.arcSavingBodyOptionId, null);
   assert.equal(state.arcSavingExerciseId, null);
   assert.equal(state.arcSavingTriggerIdForNewOption, null);
-});
-
-// --- Smart To-Do List task, section 9: setSelectedAction's new optional splitDurationMinutes ---
-
-test("setSelectedAction stores splitDurationMinutes into selectedActionDurationMinutes for a scheduledTask selection that is a To-Do split suggestion", () => {
-  const state = setSelectedAction(
-    fresh(),
-    { source: "scheduledTask", taskId: "todo-1", title: "ללמוד כלכלה", firstAction: "לפתוח את הספר", splitDurationMinutes: 30 },
-    NOW
-  );
-  assert.equal(state.selectedActionSource, "scheduledTask");
-  assert.equal(state.selectedActionTaskId, "todo-1");
-  assert.equal(state.selectedActionDurationMinutes, 30, "the chosen split's own minute count, never the task's full remaining duration");
-});
-
-test("every ordinary (non-split) scheduledTask selection still leaves selectedActionDurationMinutes null -- omitting splitDurationMinutes changes nothing from before this field existed", () => {
-  const state = setSelectedAction(fresh(), { source: "scheduledTask", taskId: "task-1", title: "לקנות חלב", firstAction: "לצאת מהבית" }, NOW);
-  assert.equal(state.selectedActionDurationMinutes, null);
-});
-
-test("an explicit splitDurationMinutes of null behaves exactly like omitting it", () => {
-  const state = setSelectedAction(fresh(), { source: "scheduledTask", taskId: "task-1", title: "לקנות חלב", firstAction: null, splitDurationMinutes: null }, NOW);
-  assert.equal(state.selectedActionDurationMinutes, null);
 });

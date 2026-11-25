@@ -163,6 +163,32 @@ export async function ensureTaskTransitionChannelAsync(): Promise<void> {
 }
 
 /**
+ * ARCHI -- Adaptive Task Execution & Emotional Persistence task,
+ * section 2: the one "task not started" notification's own channel
+ * (data/taskNotStartedNotification.ts) -- HIGH importance (a heads-up
+ * pop-up, same as TASK_TRANSITION_CHANNEL_ID, since "the scheduled
+ * start time has arrived and nothing was started" is time-sensitive),
+ * but never bypassDnd -- this is an ordinary, swipe-dismissible
+ * notification, never an alarm. Its own separate channel so muting
+ * this specific notification kind from the OS's own channel settings
+ * never also silences the real task-start alarm or the unrelated
+ * task-transition notification.
+ */
+export const TASK_NOT_STARTED_CHANNEL_ID = "archi-task-not-started-v1";
+
+let taskNotStartedChannelEnsured = false;
+
+export async function ensureTaskNotStartedChannelAsync(): Promise<void> {
+  if (taskNotStartedChannelEnsured) return;
+  taskNotStartedChannelEnsured = true;
+  await notifee.createChannel({
+    id: TASK_NOT_STARTED_CHANNEL_ID,
+    name: "משימה שלא התחילה",
+    importance: AndroidImportance.HIGH,
+  });
+}
+
+/**
  * ARCHI -- Final Critical Check: Prevent Sound Before Busy-State
  * Evaluation task. CONFIRMED by decompiling notifee's own
  * app.notifee.core.ForegroundService.class (bytecode, not guessed):

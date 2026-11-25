@@ -134,25 +134,31 @@ test("starting a task opens Task LIVE -- Today's card 'start' action and the tim
   assert.match(layout, /<Stack\.Screen name="tasks\/\[id\]"/);
 });
 
-// ARC Reminders task, requirement 5/8: superseded -- per the user's own
-// clarification, BOTH completion paths (the manual "השלמת משימה" button
-// AND the natural timer-reaching-0 case) now converge on one automatic,
-// non-navigating completion. So "ending the timer never completes the
-// task" is no longer the invariant -- the opposite is now intentional:
-// reaching timerEnded DOES auto-trigger the exact same handleComplete()
-// the manual button calls, exactly once per run (guarded by
-// autoCompletedForRunId), per the brand-new live/activeTaskScreen.test.ts
-// coverage of that effect.
-test("the timer reaching 0 now auto-triggers the same handleComplete() the manual button calls, exactly once per run, rather than leaving a non-completing end-of-timer prompt", () => {
+// ARC Reminders task, requirement 5/8, superseded again by ARCHI --
+// Adaptive Task Execution & Emotional Persistence task, section 7
+// ("behavior reversal"): a plain task's natural timer-reaching-0 no
+// longer auto-triggers handleComplete() directly -- it now enters the
+// Task LIVE continuation loop instead (handleTimerNaturalEndForContinuationLoop),
+// per the user's own explicit spec. A configured-stages task or a
+// mid-split To-Do segment keeps its own separate, already-tested
+// adaptive continuation and still falls through to handleComplete() on
+// its own last/final step, guarded by the same autoCompletedForRunId
+// ref. See live/activeTaskScreen.test.ts and
+// live/taskContinuationLoopScreen.test.ts for the full coverage of
+// both branches.
+test("the timer reaching 0 enters the continuation loop for a plain task, and still falls through to handleComplete() for a configured-stages/split task, exactly once per run", () => {
   const run = createTaskTimerRun("t1", "r1", 25, "2026-01-01T00:00:00.000Z");
   const halfway = getTaskTimerStatus(run, new Date("2026-01-01T00:12:30.000Z").getTime());
   assert.ok(!halfway.complete && halfway.remainingSeconds > 0, "timer must be live mid-run");
   const ended = getTaskTimerStatus(run, new Date("2026-01-01T00:25:01.000Z").getTime());
   assert.ok(ended.complete, "timer must report complete once the duration elapses");
 
-  const effectIndex = activeTaskScreen.indexOf("if (ended && autoCompletedForRunId.current !== timerRun.runId) {");
-  assert.ok(effectIndex !== -1, "the auto-complete effect must exist");
-  const effectBody = activeTaskScreen.slice(effectIndex, effectIndex + 150);
+  const effectIndex = activeTaskScreen.indexOf("if (!ended || autoCompletedForRunId.current === timerRun.runId) return;");
+  assert.ok(effectIndex !== -1, "the auto-complete/continuation effect must exist");
+  const effectBody = activeTaskScreen.slice(effectIndex, effectIndex + 1100);
+  assert.ok(effectBody.includes("continuationHandledForRunId.current = timerRun.runId;"));
+  assert.ok(effectBody.includes("handleTimerNaturalEndForContinuationLoop(statusNow.elapsedSeconds)"));
+  assert.ok(effectBody.includes("autoCompletedForRunId.current = timerRun.runId;"));
   assert.ok(effectBody.includes("handleComplete();"));
 });
 

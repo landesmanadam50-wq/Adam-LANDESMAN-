@@ -48,7 +48,7 @@ test("requirement 2: reload() refreshes the next-scheduled-task on every focus, 
 });
 
 test("test 4 (Task LIVE) + test 5 (Task Details): the next-task line is rendered on BOTH the pre-start block and the active-timer block, each showing the title + effective start time, or the empty-state 'אין משימה נוספת מתוכננת' when none exists -- never modifies the schedule merely by displaying it", () => {
-  const preStartIndex = screen.indexOf("{!showIdentityInsightPrompt && !timerRun && !restRun && !timerEnded && (");
+  const preStartIndex = screen.indexOf("{!showIdentityInsightPrompt && !timerRun && !restRun && !timerEnded && !continuationLoop && (");
   const preStartBlock = screen.slice(preStartIndex, preStartIndex + 1200);
   assert.ok(preStartBlock.includes("nextScheduledTask ? ("));
   assert.ok(preStartBlock.includes("המשימה הבאה: ${nextScheduledTask.task.title}"));
