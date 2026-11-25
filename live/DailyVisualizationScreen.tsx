@@ -309,6 +309,20 @@ function StepContent({
   }
 
   if (step.kind === "task_body_scan") {
+    // ARCHI -- Body-Sensation Discovery & Four-Component Learning task,
+    // section 10: lets the trainee proactively rehearse a situation
+    // they've already defined as an ARC Behaviour trigger (task.
+    // linkedArcGymSituationId), rather than only discovering a
+    // supportive body sensation reactively, in the moment. Deliberately
+    // narrower than creating a brand-new ArcGymSituation from a bare
+    // task here would be: ArcGymSituation requires a real manifestId/
+    // behaviorId from an actual Manifest behavior the trainee defined,
+    // which a plain task has no legitimate source for -- fabricating
+    // one would invent a behavior the trainee never actually set. The
+    // button is simply absent (never a dead/disabled one) whenever no
+    // such link exists yet; this free-text note stays completely
+    // unchanged either way.
+    const task = tasks[step.taskIndex];
     return (
       <View style={styles.stepBlock}>
         <Text style={styles.instruction}>כעת בצע סריקת גוף מהירה.</Text>
@@ -321,6 +335,11 @@ function StepContent({
           textAlign="right"
           multiline
         />
+        {!!task?.linkedArcGymSituationId && (
+          <Pressable style={styles.bypassLink} onPress={() => router.push({ pathname: "/arc-gym/train/[id]", params: { id: task.linkedArcGymSituationId! } })}>
+            <Text style={styles.bypassLinkText}>תרגול ARC על המצב הזה</Text>
+          </Pressable>
+        )}
       </View>
     );
   }

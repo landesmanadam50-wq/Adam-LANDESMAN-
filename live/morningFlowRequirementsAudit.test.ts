@@ -62,7 +62,7 @@ test("requirement 2: a body scan occurs IMMEDIATELY after each task's own visual
 test("requirement 2: an optional per-task body-scan note is rendered on the task_body_scan step, pre-filled from (and saved back to) THIS task's own saved note -- 'preserve separate body-scan results per task and date'", () => {
   const stepContentIndex = visualizationScreen.indexOf("function StepContent(");
   const stepIndex = visualizationScreen.indexOf('if (step.kind === "task_body_scan") {', stepContentIndex);
-  const stepBody = visualizationScreen.slice(stepIndex, stepIndex + 500);
+  const stepBody = visualizationScreen.slice(stepIndex, stepIndex + 1400);
   assert.ok(stepBody.includes("value={bodyScanNoteDraft}"));
   assert.ok(stepBody.includes("onChangeText={setBodyScanNoteDraft}"));
 
