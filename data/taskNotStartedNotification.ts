@@ -56,11 +56,15 @@ import { router } from "expo-router";
 
 import { resolveCurrentTaskState } from "../arc/dailyPlan.ts";
 import type { ScheduledPlanEntry } from "../arc/dailyPlan.ts";
+import { formatMinutesToClockTime } from "../arc/dailyRoutine.ts";
+import { resolveFreeTimeWindowKey, resolveFreeTimeWindows, resolveFreeTimeWindowsAfter } from "../arc/freeTimeWindow.ts";
+import type { FreeTimeWindow } from "../arc/freeTimeWindow.ts";
 import { selectPositiveMemoryForTaskSuccess } from "../arc/positiveMemorySelection.ts";
 import { recordPositiveMemorySelection } from "../arc/positiveMemorySelectionHistory.ts";
 import { resolveTaskNotStartedAlert } from "../arc/taskNotStartedAlert.ts";
 import { markTaskOccurrenceRemoved } from "../arc/taskOccurrenceOverride.ts";
 import type { TaskTimerRun } from "../arc/taskTimer.ts";
+import { todayLocalDateString } from "../program/dateUtils.ts";
 import { resolveTodaysScheduledPlan } from "./dailyPlan.ts";
 import { ALARM_FOREGROUND_SERVICE_TYPES, ensureNotifeePermissionAsync, ensureTaskNotStartedChannelAsync, SILENT_DELIVERY_CHANNEL_ID, TASK_NOT_STARTED_CHANNEL_ID } from "./alarmChannel.ts";
 import {
@@ -68,6 +72,7 @@ import {
   loadArcTaskReminderSettings,
   loadPositiveMemories,
   loadPositiveMemorySelectionHistory,
+  loadTaskNotStartedNotificationState,
   loadTaskOccurrenceOverrides,
   loadTaskTimerRun,
   saveTaskNotStartedNotificationState,
@@ -168,12 +173,32 @@ async function resolveTaskNotStartedSuccessMomentText(taskId: string, now: Date)
   return memory.successDescription?.trim() || memory.title.trim() || memory.whatWasSpecial.trim() || null;
 }
 
-async function displayTaskNotStartedNotification(entry: ScheduledPlanEntry, now: Date): Promise<void> {
+/**
+ * ARCHI -- Dynamic Time Planning & Free-Window Utilization task,
+ * section 2: "יש לך חלון זמן פנוי בשעה HH:MM. להעביר את המשימה לשם?" --
+ * a THIRD optional body block, appended after the existing two
+ * (TASK_NOT_STARTED_BODY, then the success-moment block), never a 4th
+ * notification button (Android's 3-action cap, and the user's own
+ * explicit instruction). `moveWindow` is null whenever no later-today
+ * window qualifies -- the body is then byte-identical to before this
+ * task.
+ */
+function resolveMoveSuggestionBodyLine(moveWindow: FreeTimeWindow | null): string | null {
+  if (!moveWindow) return null;
+  return `יש לך חלון זמן פנוי בשעה ${formatMinutesToClockTime(moveWindow.startMinutes)}. להעביר את המשימה לשם?`;
+}
+
+async function displayTaskNotStartedNotification(entry: ScheduledPlanEntry, moveWindow: FreeTimeWindow | null, now: Date): Promise<void> {
   try {
     await ensureNotifeePermissionAsync();
     await ensureTaskNotStartedChannelAsync();
     const successMomentText = await resolveTaskNotStartedSuccessMomentText(entry.task.id, now);
-    const body = successMomentText ? `${TASK_NOT_STARTED_BODY}\n\n${SUCCESS_MOMENT_HEADING}\n${successMomentText}` : TASK_NOT_STARTED_BODY;
+    const bodyParts = [TASK_NOT_STARTED_BODY];
+    if (successMomentText) bodyParts.push(`${SUCCESS_MOMENT_HEADING}\n${successMomentText}`);
+    const moveSuggestionLine = resolveMoveSuggestionBodyLine(moveWindow);
+    if (moveSuggestionLine) bodyParts.push(moveSuggestionLine);
+    const body = bodyParts.join("\n\n");
+    const moveSuggestionWindowKey = moveWindow ? resolveFreeTimeWindowKey(todayLocalDateString(now), moveWindow) : null;
     await notifee.displayNotification({
       id: TASK_NOT_STARTED_NOTIFICATION_ID,
       title: entry.task.title,
@@ -195,6 +220,7 @@ async function displayTaskNotStartedNotification(entry: ScheduledPlanEntry, now:
       notificationId: TASK_NOT_STARTED_NOTIFICATION_ID,
       alertedTaskId: entry.task.id,
       alertedAt: now.toISOString(),
+      moveSuggestionWindowKey,
     });
   } catch (error) {
     console.error("displayTaskNotStartedNotification failed", entry.task.id, error);
@@ -236,7 +262,18 @@ export async function recomputeTaskNotStartedNotification(now: Date = new Date()
     await cancelTaskNotStartedNotification();
     return;
   }
-  await displayTaskNotStartedNotification(due, now);
+
+  // ARCHI -- Dynamic Time Planning & Free-Window Utilization task,
+  // section 2: a later-today window to move this overdue task into --
+  // excludeTaskId=due.task.id so the windows are computed as if the
+  // overdue task weren't still sitting in its own original slot (it's
+  // the thing being moved FROM there), and minDurationMinutes is the
+  // task's own expected duration (0 when unknown -- "assume it fits",
+  // same convention arc/todoList.ts's own fit check uses).
+  const windows = resolveFreeTimeWindows(scheduled, due.task.id);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const moveWindow = resolveFreeTimeWindowsAfter(windows, nowMinutes, due.task.expectedDurationMinutes ?? 0)[0] ?? null;
+  await displayTaskNotStartedNotification(due, moveWindow, now);
 }
 
 /**
@@ -326,8 +363,18 @@ export async function handleTaskNotStartedNotificationEvent(event: Event): Promi
     return;
   }
 
-  // EventType.PRESS: a bare tap on the notification body -- opens the
-  // task itself, same "never auto-start just from a body tap" rule
-  // every other alarm/reminder kind here already follows.
+  // EventType.PRESS: a bare tap on the notification body. ARCHI --
+  // Dynamic Time Planning task, section 2: when a move suggestion was
+  // offered for THIS exact alert (alertedTaskId matches), the tap
+  // opens the confirm-move screen instead of the plain task screen --
+  // never auto-applies the move itself, same "never auto-start/apply
+  // just from a body tap" rule every other alarm/reminder kind here
+  // already follows. Otherwise, the original bare-task-open behavior
+  // is completely unchanged.
+  const state = await loadTaskNotStartedNotificationState();
+  if (state && state.alertedTaskId === taskId && state.moveSuggestionWindowKey) {
+    router.push({ pathname: "/tasks/[id]/move-confirm", params: { id: taskId } });
+    return;
+  }
   router.push({ pathname: "/tasks/[id]", params: { id: taskId } });
 }

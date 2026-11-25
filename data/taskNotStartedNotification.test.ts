@@ -86,12 +86,63 @@ test("the success moment is resolved via selectPositiveMemoryForTaskSuccess -- t
   assert.ok(fnBody.includes("if (!memory) return null;"), "never fabricates a success when nothing documented matches");
 });
 
-test("the resolved success moment is shown under the exact heading 'זוכר שהצלחת?', and the notification body falls back to the original text alone when no memory is found", () => {
+test("the resolved success moment is shown under the exact heading 'זוכר שהצלחת?', and the notification body falls back to the original text alone when no memory is found (and no move suggestion was offered)", () => {
   assert.match(module_, /const SUCCESS_MOMENT_HEADING = "זוכר שהצלחת\?";/);
   const fnIndex = module_.indexOf("async function displayTaskNotStartedNotification");
   const fnBody = module_.slice(fnIndex, module_.indexOf("export async function cancelTaskNotStartedNotification"));
   assert.ok(fnBody.includes("const successMomentText = await resolveTaskNotStartedSuccessMomentText(entry.task.id, now);"));
-  assert.ok(fnBody.includes("successMomentText ? `${TASK_NOT_STARTED_BODY}\\n\\n${SUCCESS_MOMENT_HEADING}\\n${successMomentText}` : TASK_NOT_STARTED_BODY"));
+  // ARCHI -- Dynamic Time Planning task, section 2: the body is now built
+  // from an array of optional parts (success-moment block, then the
+  // move-suggestion block), joined with the SAME "\n\n" separator the
+  // original ternary used -- byte-identical when both are absent.
+  assert.ok(fnBody.includes("const bodyParts = [TASK_NOT_STARTED_BODY];"));
+  assert.ok(fnBody.includes('if (successMomentText) bodyParts.push(`${SUCCESS_MOMENT_HEADING}\\n${successMomentText}`);'));
+  assert.ok(fnBody.includes('const body = bodyParts.join("\\n\\n");'));
+});
+
+/**
+ * ARCHI -- Dynamic Time Planning & Free-Window Utilization task,
+ * section 2: a later-today window to move an overdue, not-started task
+ * into -- rides in this SAME notification's body text only, never a
+ * 4th button.
+ */
+test("a later-today free window is searched via resolveFreeTimeWindows/resolveFreeTimeWindowsAfter, excluding the overdue task's own slot, with its own expected duration as the minimum qualifying size", () => {
+  assert.match(module_, /import \{ resolveFreeTimeWindowKey, resolveFreeTimeWindows, resolveFreeTimeWindowsAfter \} from "\.\.\/arc\/freeTimeWindow\.ts";/);
+  const fnIndex = module_.indexOf("export async function recomputeTaskNotStartedNotification");
+  const fnBody = module_.slice(fnIndex, module_.indexOf("async function finishOrGiveUpTask"));
+  assert.ok(fnBody.includes("const windows = resolveFreeTimeWindows(scheduled, due.task.id);"));
+  assert.ok(fnBody.includes("resolveFreeTimeWindowsAfter(windows, nowMinutes, due.task.expectedDurationMinutes ?? 0)[0] ?? null"));
+  assert.ok(fnBody.includes("await displayTaskNotStartedNotification(due, moveWindow, now);"));
+});
+
+test("the move-suggestion body line names the window's own start time and is appended ONLY when a qualifying window exists -- byte-identical body otherwise, and never a 4th notifee action", () => {
+  const fnIndex = module_.indexOf("function resolveMoveSuggestionBodyLine");
+  const fnBody = module_.slice(fnIndex, module_.indexOf("async function displayTaskNotStartedNotification"));
+  assert.ok(fnBody.includes("if (!moveWindow) return null;"));
+  assert.ok(fnBody.includes("formatMinutesToClockTime(moveWindow.startMinutes)"));
+  const displayFnIndex = module_.indexOf("async function displayTaskNotStartedNotification");
+  const displayFnBody = module_.slice(displayFnIndex, module_.indexOf("export async function cancelTaskNotStartedNotification"));
+  const actionsIndex = displayFnBody.indexOf("actions: [");
+  const actionsBlock = displayFnBody.slice(actionsIndex, displayFnBody.indexOf("],", actionsIndex));
+  assert.equal(actionsBlock.split("pressAction:").length - 1, 3, "still never exceeds the 3-action Android cap");
+});
+
+test("the move-suggestion window key is persisted onto TaskNotStartedNotificationState (null when no window qualified)", () => {
+  const fnIndex = module_.indexOf("async function displayTaskNotStartedNotification");
+  const fnBody = module_.slice(fnIndex, module_.indexOf("export async function cancelTaskNotStartedNotification"));
+  assert.ok(fnBody.includes("const moveSuggestionWindowKey = moveWindow ? resolveFreeTimeWindowKey(todayLocalDateString(now), moveWindow) : null;"));
+  assert.ok(fnBody.includes("moveSuggestionWindowKey,"));
+});
+
+test("a bare body tap routes to the move-confirm screen only when THIS exact alert offered a move suggestion (alertedTaskId matches, moveSuggestionWindowKey set) -- otherwise the original bare-task-open behavior is unchanged", () => {
+  const fnIndex = module_.indexOf("export async function handleTaskNotStartedNotificationEvent");
+  const fnBody = module_.slice(fnIndex);
+  const pressIndex = fnBody.indexOf("const state = await loadTaskNotStartedNotificationState();");
+  assert.ok(pressIndex !== -1);
+  const pressBody = fnBody.slice(pressIndex, pressIndex + 400);
+  assert.ok(pressBody.includes("if (state && state.alertedTaskId === taskId && state.moveSuggestionWindowKey) {"));
+  assert.ok(pressBody.includes('router.push({ pathname: "/tasks/[id]/move-confirm", params: { id: taskId } });'));
+  assert.ok(pressBody.includes('router.push({ pathname: "/tasks/[id]", params: { id: taskId } });'), "falls through to the original bare push");
 });
 
 test("checkpoint ('קצר את המשימה' reuses the EXISTING task-shrink screen, never a second shrink mechanism): deep-links to /tasks/[id]/adapt for the exact alerted task, and cancels the notification first", () => {

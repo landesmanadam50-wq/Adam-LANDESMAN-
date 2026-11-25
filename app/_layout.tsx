@@ -382,6 +382,12 @@ export default function RootLayout() {
             smaller, linked version -- reached from the supportive-action
             flow above and from the continuation loop's own "No" menu. */}
         <Stack.Screen name="tasks/[id]/adapt" options={{ title: "הקטנת המשימה" }} />
+        {/* ARCHI -- Dynamic Time Planning & Free-Window Utilization task,
+            section 2/3: confirming (or picking a different) later-today
+            free window to move an overdue, not-started task into --
+            reached by tapping the task-not-started notification's own
+            body when it offered a move suggestion. */}
+        <Stack.Screen name="tasks/[id]/move-confirm" options={{ title: "העברת המשימה" }} />
         <Stack.Screen name="tasks/[id]/reflect" options={{ title: "רפלקציה קצרה" }} />
         {/* Task Reflection Memory task: review/edit/delete this task's own saved "מה למדתי" history. */}
         <Stack.Screen name="tasks/[id]/reflections" options={{ title: "מה שלמדתי" }} />

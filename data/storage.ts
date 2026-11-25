@@ -5109,6 +5109,8 @@ export interface TaskNotStartedNotificationState {
   notificationId: string;
   alertedTaskId: string | null;
   alertedAt: string;
+  /** ARCHI -- Dynamic Time Planning & Free-Window Utilization task, section 2: the resolveFreeTimeWindowKey of the later-today window the move-suggestion body line was offered against, so a body tap knows whether to route to the move-confirm screen; null when no later window qualified (backfilled to null for pre-existing records). */
+  moveSuggestionWindowKey: string | null;
 }
 
 const TASK_NOT_STARTED_NOTIFICATION_STATE_KEY = "archi.taskNotStartedNotificationState.v1";
@@ -5117,7 +5119,8 @@ export async function loadTaskNotStartedNotificationState(): Promise<TaskNotStar
   const raw = await AsyncStorage.getItem(TASK_NOT_STARTED_NOTIFICATION_STATE_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as TaskNotStartedNotificationState;
+    const parsed = JSON.parse(raw) as TaskNotStartedNotificationState;
+    return { ...parsed, moveSuggestionWindowKey: parsed.moveSuggestionWindowKey ?? null };
   } catch (error) {
     console.warn("[storage] Stored TaskNotStartedNotificationState is not valid JSON -- treating as unset rather than crashing.", error);
     return null;
