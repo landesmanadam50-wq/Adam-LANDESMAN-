@@ -113,6 +113,7 @@ import { handleDailyVisualizationAlarmEvent } from "./dailyVisualizationAlarm.ts
 import { handleEmotionalCheckInNotificationEvent } from "./emotionalCheckInNotification.ts";
 import { handleTaskTransitionNotificationEvent } from "./taskTransitionNotification.ts";
 import { handleTaskNotStartedNotificationEvent, recomputeTaskNotStartedNotification } from "./taskNotStartedNotification.ts";
+import { handleFreeTimeWindowNotificationEvent, recomputeFreeTimeWindowNotification } from "./freeTimeWindowNotification.ts";
 import { handleMorningAlarmAction, turnOffMorningAlarm } from "./morningAlarm.ts";
 import { resolveLatestReflectionForTask, resolveTaskAlarmNotificationContent } from "../arc/taskReflection.ts";
 
@@ -312,6 +313,16 @@ export function registerTaskAlarmForegroundService(): void {
         // recomputeTaskNotStartedNotification, never duplicated here.
         const isTaskNotStartedArm = notification.data?.kind === "taskNotStartedArm";
 
+        // ARCHI -- Dynamic Time Planning & Free-Window Utilization task,
+        // section 1: the free-time-window notification's own silent arm
+        // placeholder -- exactly the isTaskNotStartedArm pattern above.
+        // The real decision (is this window still genuinely free, with
+        // nothing busy) is entirely
+        // data/freeTimeWindowNotification.ts's own
+        // recomputeFreeTimeWindowNotification, re-derived fresh at this
+        // exact fire moment, never duplicated here.
+        const isFreeTimeWindowArm = notification.data?.kind === "freeTimeWindowArm";
+
         const stop = () => {
           if (notificationId) pendingForegroundServiceStops.delete(notificationId);
           resolve();
@@ -343,6 +354,14 @@ export function registerTaskAlarmForegroundService(): void {
 
         if (isTaskNotStartedArm) {
           recomputeTaskNotStartedNotification(new Date()).then(async () => {
+            if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});
+            stop();
+          });
+          return;
+        }
+
+        if (isFreeTimeWindowArm) {
+          recomputeFreeTimeWindowNotification(new Date()).then(async () => {
             if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});
             stop();
           });
@@ -1574,6 +1593,17 @@ export async function handleTaskAlarmEvent(event: Event): Promise<void> {
   // onBackgroundEvent/onForegroundEvent registration.
   if (data.kind === "taskNotStarted") {
     await handleTaskNotStartedNotificationEvent(event);
+    return;
+  }
+
+  // ARCHI -- Dynamic Time Planning & Free-Window Utilization task,
+  // section 1: the free-time-window notification's own three actions
+  // (start/different suggestion/not free) and body-tap -- routes
+  // through the shared handleFreeTimeWindowNotificationEvent
+  // (data/freeTimeWindowNotification.ts), never a second
+  // onBackgroundEvent/onForegroundEvent registration.
+  if (data.kind === "freeTimeWindow") {
+    await handleFreeTimeWindowNotificationEvent(event);
     return;
   }
 

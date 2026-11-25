@@ -261,6 +261,8 @@ async function finishOrGiveUpTask(taskId: string, now: Date): Promise<void> {
   const { reconcileTaskAlarms } = await import("./taskAlarm.ts");
   await reconcileTaskAlarms(now);
   await recomputeTaskNotStartedNotification(now);
+  const { recomputeFreeTimeWindowNotification } = await import("./freeTimeWindowNotification.ts");
+  await recomputeFreeTimeWindowNotification(now);
   // ARCHI -- Body-Sensation Discovery & Four-Component Learning task,
   // section 7: this is the genuine "given up / not started" outcome --
   // never the "mark done" path (which never reaches this function) --

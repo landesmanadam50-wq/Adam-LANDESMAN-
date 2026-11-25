@@ -102,13 +102,13 @@ test("requirement 8 (ring through Do Not Disturb -- the trainee's own explicit c
 test("the 2-minute ring cap is a named constant (2 * 60 * 1000 ms), and the foreground-service handler both starts the ring AND schedules the automatic turn-off at that cap", () => {
   assert.ok(module_.includes("const TASK_ALARM_RING_TIMEOUT_MS = 2 * 60 * 1000;"));
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (4700 -> 8600): ARCHI task-not-started task's own
-  // isTaskNotStartedArm declaration/comment and its early-return branch,
-  // both inserted earlier in the function, pushed proceed()'s own body
+  // Window widened (8600 -> 9100): ARCHI Dynamic Time Planning task's own
+  // isFreeTimeWindowArm declaration/comment and early-return branch, both
+  // inserted earlier in the function, pushed proceed()'s own body
   // (where TASK_ALARM_RING_TIMEOUT_MS/turnOffTaskAlarm actually live)
   // further from fnIndex than before -- same function, same content, just
   // at a later offset.
-  const fnBody = module_.slice(fnIndex, fnIndex + 8600);
+  const fnBody = module_.slice(fnIndex, fnIndex + 9100);
   assert.ok(fnBody.includes("startRinging(preferences.soundEnabled, preferences.vibrationEnabled)"));
   assert.ok(fnBody.includes("TASK_ALARM_RING_TIMEOUT_MS"));
   assert.ok(fnBody.includes("turnOffTaskAlarm(task, new Date())"), "the automatic 2-minute cutoff must go through the exact same turnOffTaskAlarm as the trainee's own 'כבה' button, never a separate cleanup path");
@@ -272,8 +272,8 @@ test("the one second minute test alarm fires exactly 60 seconds out, scheduled t
 
 test("requirement ('לזהות אם השעון הופעל בפועל'): the foreground-service handler records firedAt for the test alarm the INSTANT ringing actually starts -- the one objective, not-just-scheduled signal", () => {
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (3300 -> 7200): same offset shift as the ring-cap test above.
-  const fnBody = module_.slice(fnIndex, fnIndex + 7200);
+  // Window widened (7200 -> 7500): same offset shift as the ring-cap test above.
+  const fnBody = module_.slice(fnIndex, fnIndex + 7500);
   assert.ok(fnBody.includes('const isTestAlarm = notification.data?.kind === "taskAlarmTest";'));
   assert.ok(fnBody.includes("if (isTestAlarm) recordTestAlarmFired(new Date().toISOString());"));
 });
@@ -334,8 +334,8 @@ test("refreshRealTaskAlarmTestStatus re-checks OS registration without re-arming
 
 test("the foreground-service handler records firedAt for a REAL task's alarm too (not just the isolated test one), gated to only the currently-tracked real-task-test id -- never touching an unrelated task's own alarm", () => {
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (3500 -> 7400): same offset shift as the ring-cap test above.
-  const fnBody = module_.slice(fnIndex, fnIndex + 7400);
+  // Window widened (7400 -> 7800): same offset shift as the ring-cap test above.
+  const fnBody = module_.slice(fnIndex, fnIndex + 7800);
   // ARC alarm task: this line also gained "&& !isArcAlarm" -- an ARC-alarm firing must never be mistaken for a real TASK alarm's own diagnostics.
   // ARC alarm diagnostics task: isArcAlarm now has its own earlier branch entirely, so this one no longer needs its own "&& !isArcAlarm" guard.
   assert.ok(fnBody.includes("else if (taskId && !isTimerEndAlarm) recordRealTaskAlarmFiredIfTracked(taskId, new Date().toISOString());"));
@@ -376,8 +376,8 @@ test("cancelTaskTimerEndAlarm is a safe no-op for null, and otherwise stops the 
 
 test("the foreground-service handler gives the end-of-timer ring its own much-shorter timeout branch, cancelling via cancelTaskTimerEndAlarm -- never turnOffTaskAlarm, which is specific to the START alarm's own task-status semantics", () => {
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (4200 -> 8200): same offset shift as the ring-cap test above.
-  const fnBody = module_.slice(fnIndex, fnIndex + 8200);
+  // Window widened (8200 -> 8500): same offset shift as the ring-cap test above.
+  const fnBody = module_.slice(fnIndex, fnIndex + 8500);
   assert.ok(fnBody.includes('const isTimerEndAlarm = notification.data?.kind === "taskTimerEnd";'));
   assert.ok(fnBody.includes("if (isTimerEndAlarm) {"));
   const branchIndex = fnBody.indexOf("if (isTimerEndAlarm) {");

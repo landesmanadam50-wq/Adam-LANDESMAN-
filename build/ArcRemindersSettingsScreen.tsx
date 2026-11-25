@@ -8,6 +8,7 @@ import type { ArcTaskReminderSettings } from "../arc/arcReminders.ts";
 import { topUpRemindersIfNeeded } from "../data/arcReminderScheduler.ts";
 import { recomputeTaskTransitionNotification } from "../data/taskTransitionNotification.ts";
 import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
+import { recomputeFreeTimeWindowNotification } from "../data/freeTimeWindowNotification.ts";
 
 /**
  * build/ArcRemindersSettingsScreen.tsx (route /arc-reminders/settings)
@@ -51,6 +52,7 @@ export default function ArcRemindersSettingsScreen() {
     await topUpRemindersIfNeeded();
     await recomputeTaskTransitionNotification();
     await recomputeTaskNotStartedNotification();
+    await recomputeFreeTimeWindowNotification();
   }
 
   if (!settings) {

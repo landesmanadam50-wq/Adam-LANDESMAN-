@@ -181,6 +181,7 @@ import { finalizePositiveMemoryDraft, normalizePositiveMemoryDraft, upsertPositi
 import type { TodoBankItem } from "../arc/todoBank.ts";
 import { normalizeTodoBankItem, upsertTodoBankItemInList } from "../arc/todoBank.ts";
 import type { PositiveMemorySelectionHistoryEntry } from "../arc/positiveMemorySelectionHistory.ts";
+import type { FreeTimeWindowDismissal } from "../arc/freeTimeWindowDismissal.ts";
 import { upsertLastEncodingFeeling } from "../arc/lastEncodingFeeling.ts";
 import type { LastEncodingFeelingRecord } from "../arc/lastEncodingFeeling.ts";
 import type { DailyVisualizationDailyProgress, DailyVisualizationProfile } from "../arc/dailyVisualization.ts";
@@ -4338,6 +4339,24 @@ export async function savePositiveMemorySelectionHistory(history: PositiveMemory
   await AsyncStorage.setItem(POSITIVE_MEMORY_SELECTION_HISTORY_KEY, JSON.stringify(history));
 }
 
+const FREE_TIME_WINDOW_DISMISSALS_KEY = "archi.freeTimeWindowDismissals.v1";
+
+export async function loadFreeTimeWindowDismissals(): Promise<FreeTimeWindowDismissal[]> {
+  const raw = await AsyncStorage.getItem(FREE_TIME_WINDOW_DISMISSALS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as FreeTimeWindowDismissal[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored FreeTimeWindowDismissal list is not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function saveFreeTimeWindowDismissals(dismissals: FreeTimeWindowDismissal[]): Promise<void> {
+  await AsyncStorage.setItem(FREE_TIME_WINDOW_DISMISSALS_KEY, JSON.stringify(dismissals));
+}
+
 const LAST_ENCODING_FEELING_KEY = "archi.lastEncodingFeelingByTask.v1";
 
 async function loadLastEncodingFeelings(): Promise<LastEncodingFeelingRecord[]> {
@@ -5111,4 +5130,44 @@ export async function saveTaskNotStartedNotificationState(state: TaskNotStartedN
 
 export async function clearTaskNotStartedNotificationState(): Promise<void> {
   await AsyncStorage.removeItem(TASK_NOT_STARTED_NOTIFICATION_STATE_KEY);
+}
+
+/**
+ * ARCHI -- Dynamic Time Planning & Free-Window Utilization task: own
+ * persisted state for the free-time-window notification
+ * (data/freeTimeWindowNotification.ts), mirroring TaskNotStartedNotificationState's
+ * shape/purpose exactly but never merged into it -- this codebase's
+ * convention is one storage key per notification kind. `windowKey` is
+ * resolveFreeTimeWindowKey's own identity string, so a redisplay/cancel can
+ * tell whether the currently-shown notification is still for the same
+ * window. `shownTaskIds` is what makes "הצע משימה אחרת" work with the app
+ * fully closed: each tap re-displays excluding every id already shown for
+ * this exact window.
+ */
+export interface FreeTimeWindowNotificationState {
+  notificationId: string;
+  windowKey: string;
+  shownTaskIds: string[];
+  displayedAt: string;
+}
+
+const FREE_TIME_WINDOW_NOTIFICATION_STATE_KEY = "archi.freeTimeWindowNotificationState.v1";
+
+export async function loadFreeTimeWindowNotificationState(): Promise<FreeTimeWindowNotificationState | null> {
+  const raw = await AsyncStorage.getItem(FREE_TIME_WINDOW_NOTIFICATION_STATE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as FreeTimeWindowNotificationState;
+  } catch (error) {
+    console.warn("[storage] Stored FreeTimeWindowNotificationState is not valid JSON -- treating as unset rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveFreeTimeWindowNotificationState(state: FreeTimeWindowNotificationState): Promise<void> {
+  await AsyncStorage.setItem(FREE_TIME_WINDOW_NOTIFICATION_STATE_KEY, JSON.stringify(state));
+}
+
+export async function clearFreeTimeWindowNotificationState(): Promise<void> {
+  await AsyncStorage.removeItem(FREE_TIME_WINDOW_NOTIFICATION_STATE_KEY);
 }

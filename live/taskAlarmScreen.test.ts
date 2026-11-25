@@ -52,10 +52,10 @@ test("opening the alarm screen itself never starts the task, completes it, or to
 // expo-notifications' own reminders.
 test("ActiveTaskScreen's performStart (reached via handleStart's required-before-tasks gate) also silences any notifee-based task alarm, in addition to the pre-existing expo-notifications cancellation", () => {
   const fnIndex = activeTaskScreen.indexOf("async function performStart()");
-  // Window widened (6400 -> 6900): the BodySensation task's own
-  // markSupportiveBodySensationUsagesTaskOutcome call/comment, inserted
-  // near the top of performStart, pushed this line further from the anchor.
-  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 6900);
+  // Window widened (6900 -> 7100): ARCHI Dynamic Time Planning task's own
+  // recomputeFreeTimeWindowNotification call/comment, inserted near the
+  // top of performStart, pushed this line further from the anchor.
+  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 7100);
   assert.ok(fnBody.includes("await cancelScheduledNotification(task.notificationId);"));
   assert.ok(fnBody.includes("await cancelAnyAlarmFor(task.id);"));
 });

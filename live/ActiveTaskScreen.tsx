@@ -105,6 +105,7 @@ import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
 import { loadArcTaskReminderSettings } from "../data/storage.ts";
 import { recomputeTaskTransitionNotification } from "../data/taskTransitionNotification.ts";
 import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
+import { recomputeFreeTimeWindowNotification } from "../data/freeTimeWindowNotification.ts";
 import { markSupportiveBodySensationUsagesTaskOutcome } from "../data/storage.ts";
 import { resolveBodySensationContextKeys } from "../arc/supportiveBodySensation.ts";
 import { createArcFocusSession, generateArcFocusPracticeId } from "../arc/arcFocusSession.ts";
@@ -1047,6 +1048,12 @@ export default function ActiveTaskScreen({
     // starts another way" guarantee recomputeTaskNotStartedNotification
     // already encodes -- never a second, separate cancel call here.
     void recomputeTaskNotStartedNotification();
+    // ARCHI -- Dynamic Time Planning & Free-Window Utilization task,
+    // section 1/4: starting a task through ANY path here also closes
+    // off whatever free window it was just started into -- recomputed
+    // fresh, never left armed/displayed for a slot that's no longer
+    // actually free.
+    void recomputeFreeTimeWindowNotification();
     // Resolves "was the task actually started" the moment a real start happens.
     void markSupportiveBodySensationUsagesTaskOutcome(
       resolveBodySensationContextKeys({ taskId: task.id, arcGymSituationId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcFocusPracticeId: null }, task.linkedArcGymSituationId ?? null),
@@ -1568,6 +1575,7 @@ export default function ActiveTaskScreen({
     }
     await recomputeTaskTransitionNotification(task.id);
     await recomputeTaskNotStartedNotification();
+    await recomputeFreeTimeWindowNotification();
   }
 
   /**
@@ -1602,6 +1610,7 @@ export default function ActiveTaskScreen({
     // "המשימה הושלמה" state in place.
     await recomputeTaskTransitionNotification(task.id);
     await recomputeTaskNotStartedNotification();
+    await recomputeFreeTimeWindowNotification();
   }
 
   /**
