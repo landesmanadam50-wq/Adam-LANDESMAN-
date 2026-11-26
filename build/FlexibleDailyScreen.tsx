@@ -492,7 +492,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
       const [task, stageProgress, nextScheduled] = await Promise.all([
         getTask(activeRun.taskId),
         loadTaskStageProgress(),
-        resolveNextScheduledTaskDisplay(activeRun.taskId, new Date()),
+        resolveNextScheduledTaskDisplay(activeRun.taskId, new Date(), activeRun),
       ]);
       if (task) {
         const relevantStageProgress = stageProgress && stageProgress.taskId === activeRun.taskId ? stageProgress : null;

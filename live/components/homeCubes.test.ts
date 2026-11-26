@@ -57,7 +57,7 @@ test("required: resolveTaskCubeData is built from pre-existing pieces (resolveTo
 });
 
 test("required: the cube's 'המשימה הבאה' row is resolved through the EXACT SAME resolveNextScheduledTaskDisplay(current.task.id, now) pipeline Task LIVE's own 'הבאה' row and the floating-timer overlay already use -- so a To-Do item woven into the free gap right after `current` (never only the next FIXED entry) surfaces here too, and the three can never disagree. null only when `current` itself is null (nothing fixed remains today at all, so a second To-Do suggestion for 'next' would only duplicate `todoSuggestion`)", () => {
-  assert.ok(taskCubeData.includes("const next = current ? await resolveNextScheduledTaskDisplay(current.task.id, now) : null;"));
+  assert.ok(taskCubeData.includes("const next = current ? await resolveNextScheduledTaskDisplay(current.task.id, now, activeRun) : null;"));
   const fnIndex = taskCubeData.indexOf("export async function resolveTaskCubeData");
   const fnBody = taskCubeData.slice(fnIndex, taskCubeData.indexOf("\n}", fnIndex));
   assert.ok(!fnBody.includes("next: state.next,"), "must never fall back to the plain next-FIXED-entry calculation once `current` is non-null");

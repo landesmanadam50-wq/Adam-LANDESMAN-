@@ -37,20 +37,21 @@ test("resolveNextScheduledTaskDisplay imports resolveCurrentTaskStateWithTodoSug
   assert.match(source, /import \{[^}]*\bresolveTodoList\b[^}]*\} from "\.\.\/arc\/todoList\.ts";/);
 });
 
-test("resolveNextScheduledTaskDisplay keeps its exact exported name and signature (activeTaskId, now) so every existing call site -- live/ActiveTaskScreen.tsx, build/FlexibleDailyScreen.tsx -- needed zero edits", () => {
+test("resolveNextScheduledTaskDisplay keeps its exact exported name, and takes a 3rd activeRun parameter (default null) so every existing call site -- live/ActiveTaskScreen.tsx, build/FlexibleDailyScreen.tsx, data/taskCubeData.ts -- can thread through the real TaskTimerRun", () => {
   assert.match(
     source,
-    /export async function resolveNextScheduledTaskDisplay\(activeTaskId: string \| null, now: Date = new Date\(\)\): Promise<NextScheduledTaskDisplay \| null>/
+    /export async function resolveNextScheduledTaskDisplay\(\s*activeTaskId: string \| null,\s*now: Date = new Date\(\),\s*activeRun: TaskTimerRun \| null = null\s*\): Promise<NextScheduledTaskDisplay \| null>/
   );
 });
 
-test("resolveNextScheduledTaskDisplay builds today's To-Do list and layers it onto the scheduled plan via resolveCurrentTaskStateWithTodoSuggestion, passing activeTaskId through so a task never reports itself as its own next/current task", () => {
+test("resolveNextScheduledTaskDisplay builds today's To-Do list and layers it onto the scheduled plan via resolveCurrentTaskStateWithTodoSuggestion, passing BOTH the real activeRun and activeTaskId through so a task never reports itself as its own next/current task, and a DIFFERENT task's stale status field can never hijack this slot either", () => {
   const fnMatch = source.match(/export async function resolveNextScheduledTaskDisplay[\s\S]*?\n}\n/);
   assert.ok(fnMatch, "resolveNextScheduledTaskDisplay function body not found");
   const fnBody = fnMatch[0];
   assert.ok(fnBody.includes("const todoEntries = resolveTodoList(tasks, dateLocal);"));
   assert.ok(
-    fnBody.includes("const withSuggestion = resolveCurrentTaskStateWithTodoSuggestion(scheduled, todoEntries, now, null, activeTaskId);")
+    fnBody.includes("const withSuggestion = resolveCurrentTaskStateWithTodoSuggestion(scheduled, todoEntries, now, activeRun, activeTaskId);"),
+    "must thread the real activeRun parameter through -- never a hardcoded null, which would let a stale status==='active' field on a different task win this slot regardless of its own scheduled time (the exact reported floating-timer/Task-LIVE/next-task desync bug)"
   );
 });
 
@@ -84,16 +85,31 @@ test("resolveNextScheduledTaskDisplay falls back to the next fixed task itself w
   assert.ok(fnBody.includes("return null;"));
 });
 
-test("resolveCurrentAndNextTaskForTransition returns a (current, next) pair through the exact same priority chain as resolveNextScheduledTaskDisplay, with `next` always the next FIXED task regardless of where `current` came from", () => {
+test("resolveCurrentAndNextTaskForTransition returns a (current, next) pair through the exact same priority chain as resolveNextScheduledTaskDisplay, with `next` always the next FIXED task regardless of where `current` came from, and takes the same 3rd activeRun parameter (default null) threaded straight into resolveCurrentTaskStateWithTodoSuggestion", () => {
   const fnMatch = source.match(/export async function resolveCurrentAndNextTaskForTransition[\s\S]*?\n}\n/);
   assert.ok(fnMatch, "resolveCurrentAndNextTaskForTransition function body not found");
   const fnBody = fnMatch[0];
+  assert.match(
+    source,
+    /export async function resolveCurrentAndNextTaskForTransition\(\s*excludeTaskId: string \| null,\s*now: Date = new Date\(\),\s*activeRun: TaskTimerRun \| null = null\s*\): Promise<\{ current: Task \| null; next: Task \| null \}>/
+  );
+  assert.ok(
+    fnBody.includes("const withSuggestion = resolveCurrentTaskStateWithTodoSuggestion(scheduled, todoEntries, now, activeRun, excludeTaskId);"),
+    "must thread the real activeRun parameter through -- never a hardcoded null"
+  );
   assert.ok(fnBody.includes("const next = withSuggestion.next?.task ?? null;"));
   assert.ok(fnBody.includes("if (withSuggestion.current) return { current: withSuggestion.current.task, next };"));
   assert.ok(fnBody.includes("if (overdue) return { current: overdue.task, next };"));
   assert.ok(fnBody.includes("return { current: suggestion.entry.task, next };"));
   assert.ok(fnBody.includes("if (withSuggestion.next) return { current: withSuggestion.next.task, next: null };"));
   assert.ok(fnBody.includes("return { current: null, next: null };"));
+});
+
+test("every data/dailyPlan.ts call site that reaches resolveCurrentTaskStateWithTodoSuggestion threads a real, caller-resolved activeRun -- never a bare hardcoded `null` literal in that call's 4th argument position, which was the exact root cause of the floating-timer/Task-LIVE/next-task desync bug (a stale status==='active' field on an unrelated, hours-away task silently winning the 'next' slot)", () => {
+  assert.ok(
+    !/resolveCurrentTaskStateWithTodoSuggestion\(scheduled, todoEntries, now, null,/.test(source),
+    "no call site in this file may hardcode a null activeRun into resolveCurrentTaskStateWithTodoSuggestion"
+  );
 });
 
 test("resolveMostUrgentScheduledTask (the Task LIVE / To-Do / Flexible Day 'jump to or auto-start now' lookup) is untouched by this broadening -- still composed from resolveTodaysScheduledPlan + arc/dailyPlan.ts's own resolveCurrentTaskState/resolveMostUrgentScheduledEntry, with a real caller-supplied activeRun, never hardcoded null", () => {

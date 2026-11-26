@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { createEmptyTask } from "./tasks.ts";
 import type { Task } from "./tasks.ts";
 import { createTaskOccurrenceCompletion } from "./taskOccurrence.ts";
+import { createTaskTimerRun } from "./taskTimer.ts";
+import type { TaskTimerRun } from "./taskTimer.ts";
 import { buildTaskOccurrenceOverride, markTaskOccurrenceRemoved } from "./taskOccurrenceOverride.ts";
 import {
   applyScheduleMode,
@@ -448,4 +450,36 @@ test("resolveCurrentTaskState excludes the given excludeTaskId from every bucket
   const state = resolveCurrentTaskState(scheduled, new Date("2026-01-05T06:30:00"), null, "t1");
   assert.equal(state.current, null);
   assert.equal(state.next, null);
+});
+
+// Reported bug repro ("floating timer shows task A, Task LIVE shows task
+// B, 'next' shows task A 2h15m away"): task B carries a stale leftover
+// status==='active' field (an earlier start whose run was later cleared
+// without the status being reset), while task A has the real,
+// currently-running TaskTimerRun. isActiveTaskStillCurrent's own cross-
+// task invalidation (arc/todaySchedule.ts, already covered in isolation
+// by arc/todaySchedule.test.ts) only protects resolveCurrentTaskState
+// when its CALLER actually threads the real activeRun through -- every
+// data/dailyPlan.ts caller that instead hardcoded `null` defeated that
+// protection entirely, letting task B's stale flag win `current`
+// regardless of its own scheduled time, and relegating the genuinely
+// running task A to the `next` slot instead. This test exercises
+// resolveCurrentTaskState itself (the shared engine every caller in
+// data/dailyPlan.ts composes), proving the fix (passing the real
+// activeRun) is both necessary and sufficient.
+test("resolveCurrentTaskState (reported sync bug): a DIFFERENT task's stale leftover status==='active' field never wins `current` over the task a real TaskTimerRun is actually running for, once that real run is threaded through -- and DOES win it (reproducing the bug) when activeRun is hardcoded to null", () => {
+  const staleEntry = fixedEntry("taskB", "09:00", 30);
+  const stale = { ...staleEntry, task: { ...staleEntry.task, status: "active" as const } };
+  const runningEntry = fixedEntry("taskA", "10:15", 30);
+  const running = { ...runningEntry, task: { ...runningEntry.task, status: "active" as const } };
+  const scheduled = applyScheduleMode([stale, running], { mode: "continuous" });
+  const now = new Date("2026-01-05T08:00:00");
+  const run: TaskTimerRun = createTaskTimerRun("taskA", "run1", 120, "2026-01-05T07:50:00", "task");
+
+  const fixed = resolveCurrentTaskState(scheduled, now, run, null);
+  assert.equal(fixed.current?.task.id, "taskA", "the real, currently-running task must win `current`, never the stale leftover");
+  assert.equal(fixed.next?.task.id, "taskB", "the stale task falls back to its own ordinary clock-window classification once its status is correctly distrusted");
+
+  const buggy = resolveCurrentTaskState(scheduled, now, null, null);
+  assert.equal(buggy.current?.task.id, "taskB", "demonstrates the exact mechanism of the reported bug: with no real run threaded through, a stale status==='active' field is trusted unconditionally regardless of its own scheduled time");
 });

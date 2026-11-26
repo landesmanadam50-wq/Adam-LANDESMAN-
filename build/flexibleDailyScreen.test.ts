@@ -493,6 +493,12 @@ test("resyncFloatingOverlayToCurrentState reconstructs the ACTIVE task's own ove
   assert.ok(fnBody.includes("await showIdleFloatingOverlayPanel("));
 });
 
+test("SyncFix2 (next-task desync bug): the ACTIVE branch's own 'next scheduled task' lookup threads the real, just-loaded activeRun through -- never a hardcoded null -- so a different task's stale leftover status==='active' field can never hijack this slot while this exact task is genuinely running", () => {
+  const fnIndex = screen.indexOf("async function resyncFloatingOverlayToCurrentState()");
+  const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes("resolveNextScheduledTaskDisplay(activeRun.taskId, new Date(), activeRun),"));
+});
+
 test("prevents duplicate overlay instances: the activation button never calls any native 'add overlay' primitive directly -- it only ever goes through the SAME showFloatingTimerOverlay/showIdleFloatingOverlayPanel bridge functions every other screen uses, whose own native-side ensureOverlayAdded already refuses to add a second view while one exists", () => {
   const fnIndex = screen.indexOf("async function handleToggleFloatingOverlay()");
   const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));

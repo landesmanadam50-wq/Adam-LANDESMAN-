@@ -56,12 +56,19 @@ test("lock-screen content hiding is its own independent toggle: visibility is PR
   assert.ok(fnBody.includes("visibility: settings.hideContentOnLockScreen ? AndroidVisibility.PRIVATE : AndroidVisibility.PUBLIC,"));
 });
 
+test("SyncFix2 (next-task desync bug): loadRealActiveRunForTransition loads the real, persisted TaskTimerRun and excludes a rest/break run (which has no task-identity cross-check role here), threading the result into BOTH recomputeTaskTransitionNotification and the tap handler -- never a hardcoded null, which would let a different task's stale leftover status==='active' field hijack the 'current' slot this notification's own mantra names", () => {
+  const helperIndex = module_.indexOf("async function loadRealActiveRunForTransition()");
+  const helperBody = module_.slice(helperIndex, module_.indexOf("\n}", helperIndex));
+  assert.ok(helperBody.includes("const run = await loadTaskTimerRun();"));
+  assert.ok(helperBody.includes('return run && run.kind !== "rest" ? run : null;'));
+});
+
 test("content comes from the ONE shared (current, next) resolver -- never a second, re-derived 'what's current/next' computation -- and the body is rendered by the ONE shared mantra function", () => {
   assert.match(module_, /import \{ resolveCurrentAndNextTaskForTransition \} from "\.\/dailyPlan\.ts";/);
   assert.match(module_, /import \{ ALL_DONE_TRANSITION_MANTRA, resolveTransitionMantra \} from "\.\.\/arc\/taskTransitionMantra\.ts";/);
   const fnIndex = module_.indexOf("export async function recomputeTaskTransitionNotification");
   const fnBody = module_.slice(fnIndex, module_.indexOf("export async function cancelTaskTransitionNotification"));
-  assert.ok(fnBody.includes("const { current, next } = await resolveCurrentAndNextTaskForTransition(null, now);"));
+  assert.ok(fnBody.includes("const { current, next } = await resolveCurrentAndNextTaskForTransition(null, now, await loadRealActiveRunForTransition());"));
   assert.ok(fnBody.includes("const body = resolveTransitionMantra(current, next);"));
   assert.ok(dailyPlanModule.includes("export async function resolveCurrentAndNextTaskForTransition"));
 });
@@ -117,7 +124,7 @@ test("never throws: a failed native display call is caught, never crashing the c
 test("checkpoint (never trust the original payload): the tap handler re-resolves current/next FRESH via resolveCurrentAndNextTaskForTransition at tap time -- it never reads currentTaskId/nextTaskId off the notifee event's own data payload, so a flexible-day change between send and tap is always reflected", () => {
   const fnIndex = module_.indexOf("export async function handleTaskTransitionNotificationEvent");
   const fnBody = module_.slice(fnIndex);
-  assert.ok(fnBody.includes("const { current } = await resolveCurrentAndNextTaskForTransition(null);"));
+  assert.ok(fnBody.includes("const { current } = await resolveCurrentAndNextTaskForTransition(null, new Date(), await loadRealActiveRunForTransition());"));
   assert.ok(!fnBody.includes("data.currentTaskId"), "must never trust an id baked into the original notification payload");
 });
 

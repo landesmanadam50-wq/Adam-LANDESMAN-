@@ -45,7 +45,13 @@ import { resolveCurrentAndNextTaskForTransition } from "./dailyPlan.ts";
 import { handleEmotionalCheckInChoice } from "./emotionalCheckInRouting.ts";
 import type { EmotionalCheckInChoice } from "./emotionalCheckInRouting.ts";
 import { ALL_DONE_TRANSITION_MANTRA, resolveTransitionMantra } from "../arc/taskTransitionMantra.ts";
-import { loadArcTaskReminderSettings, loadTaskTransitionNotificationState, saveTaskTransitionNotificationState } from "./storage.ts";
+import { loadArcTaskReminderSettings, loadTaskTimerRun, loadTaskTransitionNotificationState, saveTaskTransitionNotificationState } from "./storage.ts";
+
+/** Task sync fix: the real, globally active run (excluding a rest/break run, which has no task-identity cross-check role here) -- threaded into resolveCurrentAndNextTaskForTransition below so a different task's leftover stale `status === "active"` field can never win the "current" slot this notification's own mantra names. */
+async function loadRealActiveRunForTransition() {
+  const run = await loadTaskTimerRun();
+  return run && run.kind !== "rest" ? run : null;
+}
 
 const TASK_TRANSITION_NOTIFICATION_ID = "archi-task-transition-notification";
 const TASK_TRANSITION_TITLE = "ARCHI — מעבר למשימה הבאה";
@@ -74,7 +80,7 @@ export async function recomputeTaskTransitionNotification(fromTaskId: string | n
     await cancelTaskTransitionNotification();
     return;
   }
-  const { current, next } = await resolveCurrentAndNextTaskForTransition(null, now);
+  const { current, next } = await resolveCurrentAndNextTaskForTransition(null, now, await loadRealActiveRunForTransition());
   const body = resolveTransitionMantra(current, next);
   const allDone = current === null;
 
@@ -139,7 +145,7 @@ export async function cancelTaskTransitionNotification(): Promise<void> {
  */
 export async function handleTaskTransitionNotificationEvent(event: Event): Promise<void> {
   if (event.type !== EventType.ACTION_PRESS && event.type !== EventType.PRESS) return;
-  const { current } = await resolveCurrentAndNextTaskForTransition(null);
+  const { current } = await resolveCurrentAndNextTaskForTransition(null, new Date(), await loadRealActiveRunForTransition());
 
   if (event.type === EventType.ACTION_PRESS) {
     const actionId = event.detail.pressAction?.id;

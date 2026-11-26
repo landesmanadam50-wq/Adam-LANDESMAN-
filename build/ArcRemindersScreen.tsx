@@ -15,6 +15,7 @@ import {
   loadArcLearningInsights,
   loadArcMantraReminders,
   loadArcRecallReminders,
+  loadTaskTimerRun,
 } from "../data/storage.ts";
 import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
 import type { ArcGymMemoryExercise } from "../arc/arcGym.ts";
@@ -110,6 +111,11 @@ export default function ArcRemindersScreen({
 
   const reload = useCallback(() => {
     (async () => {
+      // Task sync fix: the real active run (if any), so this preview can
+      // never disagree with the actual transition notification's own
+      // resolveCurrentAndNextTaskForTransition call.
+      const run = await loadTaskTimerRun();
+      const activeRun = run && run.kind !== "rest" ? run : null;
       const [mantraReminders, recallReminders, loadedGoals, loadedMemories, loadedInsights, loadedRelationships, loadedLearning, transition] = await Promise.all([
         loadArcMantraReminders(),
         loadArcRecallReminders(),
@@ -118,7 +124,7 @@ export default function ArcRemindersScreen({
         loadArcInsights(),
         loadArcInsightRelationships(),
         loadArcLearningInsights(),
-        resolveCurrentAndNextTaskForTransition(null),
+        resolveCurrentAndNextTaskForTransition(null, new Date(), activeRun),
       ]);
       setGoals(loadedGoals);
       setMemories(loadedMemories);

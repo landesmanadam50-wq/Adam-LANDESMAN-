@@ -33,9 +33,16 @@ test("imports the one shared next-scheduled-task resolver (data/dailyPlan.ts) an
 
 test("requirement 2: refreshNextScheduledTask resolves via resolveNextScheduledTaskDisplay, excluding THIS task's own id -- never showing itself as its own next task", () => {
   const fnIndex = screen.indexOf("const refreshNextScheduledTask = useCallback");
-  const fnBody = screen.slice(fnIndex, fnIndex + 250);
-  assert.ok(fnBody.includes("const next = await resolveNextScheduledTaskDisplay(taskId, new Date());"));
+  const fnBody = screen.slice(fnIndex, fnIndex + 1000);
+  assert.ok(fnBody.includes("const next = await resolveNextScheduledTaskDisplay(taskId, new Date(), activeRun);"));
   assert.ok(fnBody.includes("setNextScheduledTask(next);"));
+});
+
+test("SyncFix2 (next-task desync bug): refreshNextScheduledTask also threads the real, globally active TaskTimerRun through -- whichever task it belongs to, not necessarily this screen's own taskId -- so a DIFFERENT task's stale leftover status==='active' field can never hijack the 'next' slot regardless of its own scheduled time", () => {
+  const fnIndex = screen.indexOf("const refreshNextScheduledTask = useCallback");
+  const fnBody = screen.slice(fnIndex, fnIndex + 1000);
+  assert.ok(fnBody.includes("const run = await loadTaskTimerRun();"));
+  assert.ok(fnBody.includes('const activeRun = run && run.kind !== "rest" ? run : null;'));
 });
 
 test("requirement 2: reload() refreshes the next-scheduled-task on every focus, never only once at mount", () => {

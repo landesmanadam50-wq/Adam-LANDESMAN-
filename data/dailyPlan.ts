@@ -91,6 +91,23 @@ export async function resolveTodaysScheduledPlan(now: Date = new Date()): Promis
  * overdue fixed entry; both a due-now/upcoming fixed task and a To-Do
  * suggestion (which has no fixed clock window to be late against) are
  * never overdue.
+ *
+ * Task sync fix (floating-timer/next-task desync): `activeRun` is real,
+ * caller-supplied state (never hardcoded null) -- the exact same
+ * requirement resolveMostUrgentScheduledTask below already has.
+ * Without it, resolveCurrentTaskState's own `isActiveTaskStillCurrent`
+ * check has nothing to cross-reference, so a DIFFERENT task's leftover
+ * stale `status === "active"` field (an earlier start whose
+ * TaskTimerRun was later cleared without the status being reset) wins
+ * the `current` slot regardless of its own clock window, and gets
+ * returned here under THIS function's own "next task" contract --
+ * exactly the bug where the floating overlay's "next" line, the home
+ * cube's "next" row, and the transition notification all showed an
+ * identical, genuinely-irrelevant task scheduled hours in the future,
+ * while Task LIVE's own primary title (read directly from the real run)
+ * stayed correct. Passing the real run lets isActiveTaskStillCurrent
+ * defer that stale task to the ordinary clock-window check instead,
+ * same as every other candidate.
  */
 export interface NextScheduledTaskDisplay {
   task: Task;
@@ -98,11 +115,15 @@ export interface NextScheduledTaskDisplay {
   isOverdue: boolean;
 }
 
-export async function resolveNextScheduledTaskDisplay(activeTaskId: string | null, now: Date = new Date()): Promise<NextScheduledTaskDisplay | null> {
+export async function resolveNextScheduledTaskDisplay(
+  activeTaskId: string | null,
+  now: Date = new Date(),
+  activeRun: TaskTimerRun | null = null
+): Promise<NextScheduledTaskDisplay | null> {
   const [scheduled, tasks] = await Promise.all([resolveTodaysScheduledPlan(now), loadTasks()]);
   const dateLocal = todayLocalDateString(now);
   const todoEntries = resolveTodoList(tasks, dateLocal);
-  const withSuggestion = resolveCurrentTaskStateWithTodoSuggestion(scheduled, todoEntries, now, null, activeTaskId);
+  const withSuggestion = resolveCurrentTaskStateWithTodoSuggestion(scheduled, todoEntries, now, activeRun, activeTaskId);
   if (withSuggestion.current) {
     return { task: withSuggestion.current.task, effectiveStartTime: withSuggestion.current.effectiveStartTime, isOverdue: false };
   }
@@ -132,12 +153,20 @@ export async function resolveNextScheduledTaskDisplay(activeTaskId: string | nul
  * suggestion -- there is no well-defined "second To-Do item" concept
  * here, and the fixed task after a To-Do item is still the right
  * "and after that" answer for the transition mantra.
+ *
+ * Task sync fix: `activeRun` is real, caller-supplied state (never
+ * hardcoded null) -- same reasoning as resolveNextScheduledTaskDisplay
+ * above.
  */
-export async function resolveCurrentAndNextTaskForTransition(excludeTaskId: string | null, now: Date = new Date()): Promise<{ current: Task | null; next: Task | null }> {
+export async function resolveCurrentAndNextTaskForTransition(
+  excludeTaskId: string | null,
+  now: Date = new Date(),
+  activeRun: TaskTimerRun | null = null
+): Promise<{ current: Task | null; next: Task | null }> {
   const [scheduled, tasks] = await Promise.all([resolveTodaysScheduledPlan(now), loadTasks()]);
   const dateLocal = todayLocalDateString(now);
   const todoEntries = resolveTodoList(tasks, dateLocal);
-  const withSuggestion = resolveCurrentTaskStateWithTodoSuggestion(scheduled, todoEntries, now, null, excludeTaskId);
+  const withSuggestion = resolveCurrentTaskStateWithTodoSuggestion(scheduled, todoEntries, now, activeRun, excludeTaskId);
   const next = withSuggestion.next?.task ?? null;
   if (withSuggestion.current) return { current: withSuggestion.current.task, next };
   const overdue = withSuggestion.overdue[0] ?? null;

@@ -65,7 +65,7 @@ export async function resolveTaskCubeData(now: Date = new Date()): Promise<TaskC
   const withSuggestion = resolveCurrentTaskStateWithTodoSuggestion(scheduled, todoEntries, now, activeRun, null);
   const state = resolveCurrentTaskState(scheduled, now, activeRun, null);
   const current = resolveMostUrgentScheduledEntry(state);
-  const next = current ? await resolveNextScheduledTaskDisplay(current.task.id, now) : null;
+  const next = current ? await resolveNextScheduledTaskDisplay(current.task.id, now, activeRun) : null;
 
   return {
     current,

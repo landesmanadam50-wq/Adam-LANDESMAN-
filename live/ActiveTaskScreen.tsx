@@ -348,7 +348,18 @@ export default function ActiveTaskScreen({
   const [purposeArcGoals, setPurposeArcGoals] = useState<ArcGoal[]>([]);
 
   const refreshNextScheduledTask = useCallback(async () => {
-    const next = await resolveNextScheduledTaskDisplay(taskId, new Date());
+    // Task sync fix (floating-timer/next-task desync): the real,
+    // globally active run (whichever task it belongs to -- NOT
+    // necessarily this screen's own taskId, e.g. when manually viewing
+    // a different/future task while another one is genuinely running)
+    // is threaded through so resolveCurrentTaskState's own
+    // isActiveTaskStillCurrent check can correctly defer ANY other
+    // task's leftover stale `status === "active"` field to its ordinary
+    // clock-window check, instead of letting it silently win the
+    // "next" slot regardless of its own scheduled time.
+    const run = await loadTaskTimerRun();
+    const activeRun = run && run.kind !== "rest" ? run : null;
+    const next = await resolveNextScheduledTaskDisplay(taskId, new Date(), activeRun);
     setNextScheduledTask(next);
   }, [taskId]);
 
