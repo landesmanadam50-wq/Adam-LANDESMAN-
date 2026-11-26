@@ -17,15 +17,23 @@
  * own explicit decision: the 3 real buttons are 😟 פחות טוב / 🙂 סבבה /
  * 🧠 מחשבה-דחף; "😄 מעולה" is demoted to the notification's own BODY
  * TAP, with the body text explicitly telling the trainee what tapping
- * it does. The body tap, in turn, only re-foregrounds Task LIVE for
- * the same active task (handleEmotionalCheckInChoice's own "next_task"
- * branch, verified to ignore taskId and just resolve whatever task is
- * currently active -- which, mid-task, is this exact task, and
- * route `/tasks/[id]` IS Task LIVE itself, with no autoStart, so the
- * timer is never touched) when `task.taskIsOnPhone` is false. When
- * it's true, the trainee is deliberately using the phone for something
- * else as part of doing the task -- the body tap then only cancels the
- * notification, never forcing the app to the foreground.
+ * it does. The body tap dismisses the notification and re-foregrounds
+ * Task LIVE for the same active task (handleEmotionalCheckInChoice's
+ * own "next_task" branch, verified to ignore taskId and just resolve
+ * whatever task is currently active -- which, mid-task, is this exact
+ * task, and route `/tasks/[id]` IS Task LIVE itself, with no autoStart,
+ * so the timer and remaining duration are never touched, and the task
+ * is never completed, restarted, or switched) -- unconditionally; the
+ * other three options (😟/🙂/🧠 מחשבה-דחף) are unaffected by any of this.
+ *
+ * `task.taskIsOnPhone` (per the user's own explicit clarification) is
+ * checked ONCE, inside displayProactiveSupportNotification below --
+ * never at tap time. While it's true, this notification is never sent
+ * in the first place, for EITHER trigger (the explicit pause included --
+ * this supersedes the task's own earlier draft wording, which only
+ * exempted the app-exit trigger). The body-tap handler can therefore
+ * assume unconditionally that a notification which exists was sent
+ * while taskIsOnPhone was false, and never re-checks it.
  *
  * Reuses EMOTIONAL_CHECKIN_CHANNEL_ID (same quiet, LOW-importance,
  * lock-screen-visible tier as the generic check-in) -- no new channel.
@@ -65,12 +73,16 @@ export function resetProactiveSupportDebounceForTests(): void {
 }
 
 /**
- * The one exported entry point both trigger sites call (an explicit
- * pause always calls this unconditionally; the app-exit listener calls
- * it only after its own taskIsOnPhone/screen-lock checks pass -- this
- * function itself makes no such decision, it only displays).
+ * The one exported entry point both trigger sites call unconditionally
+ * (the explicit pause button and the app-exit listener alike) -- this
+ * is the SINGLE place that decides whether to actually send anything.
+ * taskIsOnPhone is checked FIRST, before the debounce window is even
+ * touched, so a suppressed call never consumes/resets it.
  */
 export async function displayProactiveSupportNotification(taskId: string, now: Date): Promise<void> {
+  const task = await getTask(taskId);
+  if (task?.taskIsOnPhone) return;
+
   const nowMs = now.getTime();
   if (nowMs - lastDisplayedAtMs < DUPLICATE_SUPPRESSION_WINDOW_MS) return;
   lastDisplayedAtMs = nowMs;
@@ -137,12 +149,13 @@ export async function handleProactiveSupportNotificationEvent(event: Event): Pro
   }
 
   // EventType.PRESS: a bare tap on the notification body -- the
-  // demoted-to-body-tap "😄 מעולה". See this file's own doc above for
-  // why taskIsOnPhone is the one thing that changes this branch's
-  // behavior: it never forces the app to the foreground while the
-  // trainee is deliberately using the phone for something else.
+  // demoted-to-body-tap "😄 מעולה". Unconditional: taskIsOnPhone is
+  // checked once, at SEND time (displayProactiveSupportNotification
+  // above) -- a notification that exists was, by construction, sent
+  // while taskIsOnPhone was false, so this branch never re-checks it.
+  // Dismisses and re-foregrounds Task LIVE for the same active task,
+  // never completing, restarting, or switching it, and never touching
+  // the timer or its remaining duration (see this file's own doc).
   await cancelProactiveSupportNotification();
-  const task = await getTask(taskId);
-  if (task?.taskIsOnPhone) return;
   await handleEmotionalCheckInChoice("next_task", taskId);
 }

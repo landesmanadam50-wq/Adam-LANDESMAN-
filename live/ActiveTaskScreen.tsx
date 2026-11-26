@@ -837,22 +837,23 @@ export default function ActiveTaskScreen({
    * (home button, app switcher, an incoming call, the phone being
    * locked) reaches this listener in the first place.
    *
-   * Two more section-4 exemptions are checked here, in order, before
-   * ever displaying anything: taskIsOnPhone (section 3 -- the trainee
-   * is deliberately using the phone for something else as part of
-   * doing this exact task) and the native screen-lock/off query
-   * (section 2's own explicit carve-out -- "אם המשתמש מכבה או נועל את
-   * מסך הטלפון, אין לשלוח את ההתראה"). Neither check, nor this effect
-   * itself, ever reads or writes TaskTimerRun -- backgrounding stays
-   * completely irrelevant to the timer's own correctness, unchanged.
+   * The native screen-lock/off query (section 2's own explicit
+   * carve-out -- "אם המשתמש מכבה או נועל את מסך הטלפון, אין לשלוח את
+   * ההתראה") is checked here, before ever displaying anything.
+   * taskIsOnPhone (section 3) is NOT checked here -- per the user's
+   * own explicit clarification, that gate lives entirely inside
+   * displayProactiveSupportNotification itself (data/proactiveSupportNotification.ts),
+   * the ONE place that decides whether a notification is sent for
+   * EITHER trigger, so it is never duplicated/drifted across call
+   * sites. Neither check, nor this effect itself, ever reads or writes
+   * TaskTimerRun -- backgrounding stays completely irrelevant to the
+   * timer's own correctness, unchanged.
    */
   useEffect(() => {
     if (!timerRun || restRun || !task) return;
     const activeTaskId = task.id;
-    const activeTaskIsOnPhone = task.taskIsOnPhone;
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (nextState !== "background" && nextState !== "inactive") return;
-      if (activeTaskIsOnPhone) return;
       isScreenLockedOrOffAsync().then((lockedOrOff) => {
         if (lockedOrOff) return;
         void displayProactiveSupportNotification(activeTaskId, new Date());
@@ -1342,8 +1343,11 @@ export default function ActiveTaskScreen({
    * by the 😟/🙂 mood buttons below and by the continuation-loop's own
    * pause-before-transition calls -- none of those are the trainee
    * pressing "pause," so none of them should also pop this notification).
-   * Always fires regardless of taskIsOnPhone or screen state -- an
-   * explicit pause always fires it, per the spec.
+   * Never gated by screen state here (the exit listener's own concern,
+   * not an explicit pause's). taskIsOnPhone IS still checked -- but
+   * centrally, inside displayProactiveSupportNotification itself, per
+   * the user's own explicit clarification that it must suppress the
+   * notification for every trigger, this one included.
    */
   async function handlePauseButtonPress() {
     await handlePause();

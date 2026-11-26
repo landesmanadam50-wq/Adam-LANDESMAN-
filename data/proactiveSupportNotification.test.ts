@@ -73,19 +73,31 @@ test("the 3 actions route through the SAME shared handleEmotionalCheckInChoice d
   assert.ok(handlerBody.includes('if (actionId === ACTION_URGE) {\n      await handleEmotionalCheckInChoice("urge", taskId);'));
 });
 
-test("body tap (EventType.PRESS): when taskIsOnPhone is true, only cancels -- never navigates/foregrounds; otherwise reuses handleEmotionalCheckInChoice('next_task', taskId) as-is", () => {
+test("body tap (EventType.PRESS): unconditionally cancels, then reuses handleEmotionalCheckInChoice('next_task', taskId) as-is -- taskIsOnPhone is never re-checked here, per the user's clarification that it gates SENDING only", () => {
   const handlerIndex = module_.indexOf("export async function handleProactiveSupportNotificationEvent");
-  const handlerBody = module_.slice(handlerIndex, handlerIndex + 1400);
-  assert.ok(handlerBody.includes("const task = await getTask(taskId);"));
-  assert.ok(handlerBody.includes("if (task?.taskIsOnPhone) return;"));
-  assert.ok(handlerBody.includes('await handleEmotionalCheckInChoice("next_task", taskId);'));
-  // The early return must come BEFORE the next_task call, in source order.
-  assert.ok(handlerBody.indexOf("if (task?.taskIsOnPhone) return;") < handlerBody.indexOf('await handleEmotionalCheckInChoice("next_task", taskId);'));
+  const handlerBody = module_.slice(handlerIndex, handlerIndex + 1500);
+  const pressBranch = handlerBody.slice(handlerBody.indexOf("// EventType.PRESS"));
+  assert.ok(!pressBranch.includes("getTask"), "the body-tap branch must not re-load the task or re-check taskIsOnPhone");
+  assert.ok(!pressBranch.includes("task?.taskIsOnPhone"), "the body-tap branch must not re-check taskIsOnPhone in code (the comment explaining why is fine)");
+  assert.ok(pressBranch.includes("await cancelProactiveSupportNotification();"));
+  assert.ok(pressBranch.includes('await handleEmotionalCheckInChoice("next_task", taskId);'));
+  // cancel must come BEFORE the next_task call, in source order.
+  assert.ok(pressBranch.indexOf("await cancelProactiveSupportNotification();") < pressBranch.indexOf('await handleEmotionalCheckInChoice("next_task", taskId);'));
+});
+
+test("displayProactiveSupportNotification is the ONE place that checks taskIsOnPhone -- checked first, before the debounce window is even touched, so a suppressed call never consumes it", () => {
+  const fnIndex = module_.indexOf("export async function displayProactiveSupportNotification");
+  const fnBody = module_.slice(fnIndex, fnIndex + 400);
+  assert.ok(fnBody.includes("const task = await getTask(taskId);"));
+  assert.ok(fnBody.includes("if (task?.taskIsOnPhone) return;"));
+  const taskCheckIndex = fnBody.indexOf("if (task?.taskIsOnPhone) return;");
+  const debounceCheckIndex = fnBody.indexOf("if (nowMs - lastDisplayedAtMs < DUPLICATE_SUPPRESSION_WINDOW_MS) return;");
+  assert.ok(taskCheckIndex >= 0 && debounceCheckIndex >= 0 && taskCheckIndex < debounceCheckIndex, "taskIsOnPhone must be checked before the debounce window");
 });
 
 test("every branch cancels the notification first (autoCancel discipline) -- both action presses and the body tap", () => {
   const handlerIndex = module_.indexOf("export async function handleProactiveSupportNotificationEvent");
-  const handlerBody = module_.slice(handlerIndex, handlerIndex + 1400);
+  const handlerBody = module_.slice(handlerIndex, handlerIndex + 1700);
   const cancelCount = handlerBody.split("await cancelProactiveSupportNotification();").length - 1;
   assert.strictEqual(cancelCount, 2, "one cancel for the ACTION_PRESS branch, one for the PRESS (body tap) branch");
 });
@@ -150,12 +162,14 @@ test("the live toggle in Task LIVE flips taskIsOnPhone via the same persistTask(
   );
 });
 
-test("the explicit pause button (handlePauseButtonPress) always calls displayProactiveSupportNotification -- never gated by taskIsOnPhone or screen state, unlike the exit listener", () => {
+test("the explicit pause button (handlePauseButtonPress) always calls displayProactiveSupportNotification at its own call site -- it never re-checks taskIsOnPhone itself (that gate is centralized), and is never gated by screen state (the exit listener's own concern)", () => {
   assert.ok(activeTaskScreenModule.includes('import { displayProactiveSupportNotification } from "../data/proactiveSupportNotification.ts";'));
   const fnIndex = activeTaskScreenModule.indexOf("async function handlePauseButtonPress");
   const fnBody = activeTaskScreenModule.slice(fnIndex, fnIndex + 300);
   assert.ok(fnBody.includes("await handlePause();"));
   assert.ok(fnBody.includes("if (task) await displayProactiveSupportNotification(task.id, new Date());"));
+  assert.ok(!fnBody.includes("taskIsOnPhone"), "handlePauseButtonPress itself must not re-check taskIsOnPhone -- the central gate owns that");
+  assert.ok(!fnBody.includes("isScreenLockedOrOffAsync"));
   assert.ok(activeTaskScreenModule.includes("onPress={handlePauseButtonPress}"));
 });
 
@@ -166,7 +180,7 @@ test("the mood buttons (😟/🙂) and the pause button both call handlePause() 
   assert.ok(!moodRowBody.includes("displayProactiveSupportNotification"), "the mood row's own onPress handlers must not call this directly");
 });
 
-test("the AppState exit listener is active only while timerRun && !restRun -- the same gate the live moodButtonRow uses -- and checks taskIsOnPhone then the native screen-lock query, in that order, before displaying", () => {
+test("the AppState exit listener is active only while timerRun && !restRun -- the same gate the live moodButtonRow uses -- and checks the native screen-lock query before displaying; it does NOT re-check taskIsOnPhone itself (that gate is centralized in displayProactiveSupportNotification)", () => {
   assert.ok(activeTaskScreenModule.includes('import { Alert, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";'));
   assert.ok(activeTaskScreenModule.includes('import { isScreenLockedOrOffAsync, showFloatingTimerOverlay, showIdleFloatingOverlayPanel, updateFloatingTimerOverlay } from "../data/floatingTimerOverlay.ts";'));
   const effectIndex = activeTaskScreenModule.indexOf('AppState.addEventListener("change"');
@@ -174,10 +188,8 @@ test("the AppState exit listener is active only while timerRun && !restRun -- th
   const effectBody = activeTaskScreenModule.slice(effectIndex - 400, effectIndex + 600);
   assert.ok(effectBody.includes("if (!timerRun || restRun || !task) return;"));
   assert.ok(effectBody.includes('if (nextState !== "background" && nextState !== "inactive") return;'));
-  assert.ok(effectBody.includes("if (activeTaskIsOnPhone) return;"));
-  const taskIsOnPhoneCheckIndex = effectBody.indexOf("if (activeTaskIsOnPhone) return;");
-  const screenLockCheckIndex = effectBody.indexOf("isScreenLockedOrOffAsync()");
-  assert.ok(taskIsOnPhoneCheckIndex >= 0 && screenLockCheckIndex >= 0 && taskIsOnPhoneCheckIndex < screenLockCheckIndex, "taskIsOnPhone must be checked before the native screen-lock query");
+  assert.ok(!effectBody.includes("activeTaskIsOnPhone"), "the effect itself must not re-check taskIsOnPhone -- the central gate owns that");
+  assert.ok(effectBody.includes("isScreenLockedOrOffAsync()"));
   assert.ok(effectBody.includes("if (lockedOrOff) return;"));
   assert.ok(effectBody.includes("void displayProactiveSupportNotification(activeTaskId, new Date());"));
 });
