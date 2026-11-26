@@ -308,6 +308,14 @@ export default function RootLayout() {
         <Stack.Screen name="insights/index" options={{ title: "אוסף תובנות" }} />
         <Stack.Screen name="insights/[id]" options={{ title: "תובנה" }} />
         <Stack.Screen name="insights/[id]/link-topics" options={{ title: "קישור ל-ARC Learning" }} />
+        {/* ARC Questions task: open/answered questions, write/research, same returnToTaskId convention as /insights/new. */}
+        <Stack.Screen name="questions/index" options={{ title: "ARC Questions" }} />
+        <Stack.Screen name="questions/new" options={{ title: "שאלה חדשה" }} />
+        <Stack.Screen name="questions/[id]" options={{ title: "ARC Questions" }} />
+        {/* ARC Diary task: list by date, free-write, same returnToTaskId convention as /insights/new and /questions/new. */}
+        <Stack.Screen name="diary/index" options={{ title: "ARC Diary" }} />
+        <Stack.Screen name="diary/new" options={{ title: "ARC Diary" }} />
+        <Stack.Screen name="diary/[id]" options={{ title: "ARC Diary" }} />
         <Stack.Screen name="positive-memories/index" options={{ title: "אירועים חיוביים" }} />
         <Stack.Screen name="positive-memories/new" options={{ title: "הוסף אירוע חיובי" }} />
         <Stack.Screen name="positive-memories/[id]" options={{ title: "אירוע חיובי" }} />

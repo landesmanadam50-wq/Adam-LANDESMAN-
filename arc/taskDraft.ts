@@ -19,6 +19,7 @@ import type { ManifestProfile, Task, TaskKind, TaskSubtask } from "./tasks.ts";
 import { createTaskActionStage, findActionStageByKind, sumActionStageDurations } from "./taskStage.ts";
 import type { TaskActionStage } from "./taskStage.ts";
 import { isValidCalendarDateString, todayLocalDateString } from "../program/dateUtils.ts";
+import type { TaskLinkedAction } from "./taskLinkedAction.ts";
 
 const SCHEDULED_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -91,6 +92,10 @@ export interface TaskDraft {
   todoIsSplittable: boolean;
   /** Proactive Support During Task LIVE task: see Task.taskIsOnPhone's own doc -- editable here regardless of isTodoItem/recurrence, carried straight through by buildTaskFromDraft. */
   taskIsOnPhone: boolean;
+  /** Action-Based Tasks task: see Task.linkedAction's own doc -- editable here regardless of isTodoItem (requirement 3's "both fixed tasks and To-Do items"), carried straight through by buildTaskFromDraft. */
+  linkedAction: TaskLinkedAction | null;
+  /** Action-Based Tasks task: see Task.linkedArcGymMemoryExerciseIds's own doc. */
+  linkedArcGymMemoryExerciseIds: string[];
 }
 
 export function createEmptyTaskDraft(): TaskDraft {
@@ -135,6 +140,8 @@ export function createEmptyTaskDraft(): TaskDraft {
     todoImportance: "5",
     todoIsSplittable: true,
     taskIsOnPhone: false,
+    linkedAction: null,
+    linkedArcGymMemoryExerciseIds: [],
   };
 }
 
@@ -168,6 +175,8 @@ export function taskDraftFromTask(task: Task): TaskDraft {
     todoImportance: String(task.todoImportance),
     todoIsSplittable: task.todoIsSplittable,
     taskIsOnPhone: task.taskIsOnPhone,
+    linkedAction: task.linkedAction,
+    linkedArcGymMemoryExerciseIds: task.linkedArcGymMemoryExerciseIds,
   };
 }
 
@@ -431,6 +440,8 @@ export function buildTaskFromDraft(draft: TaskDraft, base: Task, now: string): T
     todoIsSplittable: draft.isTodoItem ? draft.todoIsSplittable : base.todoIsSplittable,
     todoCompletedMinutes: base.todoCompletedMinutes,
     taskIsOnPhone: draft.taskIsOnPhone,
+    linkedAction: draft.linkedAction,
+    linkedArcGymMemoryExerciseIds: draft.linkedArcGymMemoryExerciseIds,
     updatedAt: now,
   };
 }

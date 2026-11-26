@@ -5,6 +5,7 @@ import { router, useFocusEffect } from "expo-router";
 
 import {
   addArcLearningInsightMentalImage,
+  appendArcLearningWhyChainEntry,
   createArcLearningInsight,
   generateArcLearningInsightId,
   removeArcLearningInsightMentalImage,
@@ -13,17 +14,22 @@ import {
   setArcLearningInsightTopic,
   setArcLearningInsightWantsToLearn,
   skipArcLearningInsightExplanation,
+  updateArcLearningWhyChainEntry,
 } from "../arc/arcLearningInsight.ts";
-import type { ArcLearningExplanationKind, ArcLearningInsight } from "../arc/arcLearningInsight.ts";
+import type { ArcLearningExplanationKind, ArcLearningInsight, ArcLearningWhyChainEntry } from "../arc/arcLearningInsight.ts";
 import { createArcLearningTopic, generateArcLearningTopicId } from "../arc/arcLearningTopic.ts";
 import type { ArcLearningTopic } from "../arc/arcLearningTopic.ts";
 import { createArcLearningRecallSessionProgress } from "../arc/arcLearningReview.ts";
+import { createArcInsight, generateArcInsightId } from "../arc/arcInsightBelief.ts";
+import { createArcQuestion, generateArcQuestionId } from "../arc/arcQuestions.ts";
 import {
+  appendArcInsight,
   loadArcLearningInsights,
   loadArcLearningTopics,
   saveArcLearningRecallSessionProgress,
   upsertArcLearningInsightEntry,
   upsertArcLearningTopicEntry,
+  upsertArcQuestionEntry,
 } from "../data/storage.ts";
 
 /**
@@ -235,14 +241,16 @@ export default function ArcLearningInsightWizardScreen({ id }: { id: string }) {
           <>
             <Text style={styles.question}>שאלות הבנה (אפשר לדלג ולהשלים בהמשך)</Text>
             {EXPLANATION_STEPS.map(({ kind, question, helper }) => (
-              <ExplanationField
-                key={kind}
-                question={question}
-                helper={helper}
-                value={insight[kind === "meaning" ? "meaningAnswer" : kind === "reason" ? "reasonAnswer" : "mechanismAnswer"]}
-                onAnswer={(text) => answerExplanation(kind, text)}
-                onSkip={() => skipExplanation(kind)}
-              />
+              <View key={kind}>
+                <ExplanationField
+                  question={question}
+                  helper={helper}
+                  value={insight[kind === "meaning" ? "meaningAnswer" : kind === "reason" ? "reasonAnswer" : "mechanismAnswer"]}
+                  onAnswer={(text) => answerExplanation(kind, text)}
+                  onSkip={() => skipExplanation(kind)}
+                />
+                {kind === "reason" && <WhyChainSection insight={insight} persist={persist} />}
+              </View>
             ))}
             <Pressable style={styles.primaryButton} onPress={() => setStep(4)}>
               <Text style={styles.primaryButtonText}>הבא</Text>
@@ -321,6 +329,110 @@ function ExplanationField({
   );
 }
 
+/**
+ * ARC Learning Deep Dive task: an optional, unbounded chain of follow-up
+ * "למה?" questions built on top of the "למה?" explanatory step right
+ * above it -- entirely additive, never gating "הבא" (which proceeds
+ * regardless of chain length, per the spec's "אין לחייב"). Only shown
+ * once the base reasonAnswer has been answered (nothing to deepen
+ * otherwise). The first "+ למה?" tap seeds whyChain[0] from that
+ * existing answer so the chain reads as one continuous "למה?" sequence
+ * (matching the spec's own worked example), then opens a composer for
+ * the next, deeper answer; every later tap just opens one more.
+ */
+function WhyChainSection({ insight, persist }: { insight: ArcLearningInsight; persist: (next: ArcLearningInsight) => Promise<ArcLearningInsight> }) {
+  const [composing, setComposing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [newInsightDraft, setNewInsightDraft] = useState("");
+  const [savedAsQuestion, setSavedAsQuestion] = useState(false);
+
+  if (insight.reasonAnswer === null) return null;
+
+  async function ensureSeeded(): Promise<ArcLearningInsight> {
+    if (insight.whyChain.length > 0) return insight;
+    return persist(appendArcLearningWhyChainEntry(insight, "למה?", insight.reasonAnswer ?? "", new Date().toISOString()));
+  }
+
+  async function handleOpenComposer() {
+    await ensureSeeded();
+    setComposing(true);
+    setSavedAsQuestion(false);
+  }
+
+  async function handleEditEntry(entryId: string, newAnswer: string) {
+    await persist(updateArcLearningWhyChainEntry(insight, entryId, newAnswer, new Date().toISOString()));
+  }
+
+  async function handleSubmitWhy() {
+    if (!draft.trim()) return;
+    await persist(appendArcLearningWhyChainEntry(insight, "למה?", draft, new Date().toISOString()));
+    setDraft("");
+    setComposing(false);
+  }
+
+  /** "אם המשתמש מגיע לשאלה שאין לו תשובה עליה, יש לאפשר לשמור אותה ישירות ב-ARC Questions" -- links back to the chain's own last entry (seeded above if the chain was still empty), never a disconnected question. */
+  async function handleSaveAsQuestion() {
+    const seeded = await ensureSeeded();
+    const lastEntry = seeded.whyChain[seeded.whyChain.length - 1];
+    if (!lastEntry) return;
+    const now = new Date().toISOString();
+    await upsertArcQuestionEntry(createArcQuestion(generateArcQuestionId(), "למה?", now, { kind: "arc_learning_why_chain", insightId: seeded.id, whyChainEntryId: lastEntry.id }));
+    setComposing(false);
+    setSavedAsQuestion(true);
+  }
+
+  /** "להוסיף תובנה חדשה שהתגלתה במהלך ההעמקה לאוסף התובנות" -- the SAME appendArcInsight call every other insight source uses, sourceExerciseId referencing this ArcLearningInsight. */
+  async function handleAddNewInsight() {
+    const trimmed = newInsightDraft.trim();
+    if (!trimmed) return;
+    const now = new Date().toISOString();
+    await appendArcInsight(createArcInsight({ id: generateArcInsightId(), sourceExerciseId: insight.id, taskId: null, beliefKind: "general", text: trimmed, occurredAt: now, createdAt: now }));
+    setNewInsightDraft("");
+  }
+
+  return (
+    <View style={styles.whyChainBlock}>
+      {insight.whyChain.map((entry) => (
+        <WhyChainEntryRow key={entry.id} entry={entry} onSave={(text) => handleEditEntry(entry.id, text)} />
+      ))}
+      {composing && (
+        <View style={styles.explanationBlock}>
+          <Text style={styles.explanationQuestion}>למה?</Text>
+          <TextInput style={[styles.textInput, styles.multilineInput]} value={draft} onChangeText={setDraft} textAlign="right" multiline autoFocus />
+          <Pressable style={styles.primaryButton} onPress={handleSubmitWhy}>
+            <Text style={styles.primaryButtonText}>שמירה</Text>
+          </Pressable>
+          <Pressable onPress={handleSaveAsQuestion}>
+            <Text style={styles.skipText}>אין לי תשובה -- שמור כשאלה ב-ARC Questions</Text>
+          </Pressable>
+        </View>
+      )}
+      {savedAsQuestion && <Text style={styles.subLabel}>השאלה נשמרה ב-ARC Questions.</Text>}
+      {!composing && (
+        <Pressable style={styles.secondaryButton} onPress={handleOpenComposer}>
+          <Text style={styles.secondaryButtonText}>+ למה?</Text>
+        </Pressable>
+      )}
+      <View style={styles.inlineRow}>
+        <TextInput style={[styles.textInput, styles.inlineInput]} value={newInsightDraft} onChangeText={setNewInsightDraft} textAlign="right" placeholder="תובנה חדשה שהתגלתה..." />
+        <Pressable style={styles.inlineButton} onPress={handleAddNewInsight}>
+          <Text style={styles.inlineButtonText}>+ תובנה</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function WhyChainEntryRow({ entry, onSave }: { entry: ArcLearningWhyChainEntry; onSave: (text: string) => void }) {
+  const [text, setText] = useState(entry.answer);
+  return (
+    <View style={styles.explanationBlock}>
+      <Text style={styles.explanationQuestion}>{entry.question}</Text>
+      <TextInput style={[styles.textInput, styles.multilineInput]} value={text} onChangeText={setText} textAlign="right" multiline onBlur={() => onSave(text)} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
   content: { flexGrow: 1, padding: 20, gap: 12 },
@@ -351,4 +463,5 @@ const styles = StyleSheet.create({
   imageRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", borderWidth: 1, borderColor: "#eee", borderRadius: 8, padding: 10 },
   imageText: { fontSize: 14, textAlign: "right", color: "#333", flex: 1 },
   removeText: { color: "#b00020", fontSize: 13 },
+  whyChainBlock: { gap: 8, marginRight: 16, marginBottom: 8 },
 });

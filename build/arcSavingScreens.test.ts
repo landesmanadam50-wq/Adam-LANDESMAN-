@@ -181,10 +181,15 @@ test("Home shows the active triggers as tappable chips under 'הטריגרים �
 
 // --- scenario 15/16: native cube (OverlayService.kt) restyle + 2 new buttons ---
 
-test("OverlayService.kt restyles all 4 quick-action rows with ONE shared, fully-opaque (never translucent) solid green background color constant", () => {
+test("OverlayService.kt restyles all quick-action rows with ONE shared, fully-opaque (never translucent) solid green background color constant", () => {
   assert.ok(overlayKt.includes('QUICK_ACTION_BACKGROUND = "#FF2E7D32"'));
   const occurrences = [...overlayKt.matchAll(/Color\.parseColor\(QUICK_ACTION_BACKGROUND\)/g)].length;
-  assert.equal(occurrences, 4, "all four quick-action buttons (insight/ARC-save-sibling/positive-event/add-task/arc-save) must share the SAME color constant");
+  // Action-Based Tasks task, Phase 2: the new "+ שאלה" button mirrors
+  // insightTextView's own styling exactly, so it reuses this SAME
+  // constant too -- 5 quick-action buttons share it now (insight/
+  // ARC-save-sibling/positive-event/add-task/arc-save/question), never
+  // a 6th, separate color.
+  assert.equal(occurrences, 5, "every quick-action button (insight/ARC-save-sibling/positive-event/add-task/arc-save/question) must share the SAME color constant");
 });
 
 test("OverlayService.kt has the two new addTaskView/arcSavingView fields, dispatch hit-testing, and their own debounced open functions dispatching to the exact URIs the widget already proves out", () => {

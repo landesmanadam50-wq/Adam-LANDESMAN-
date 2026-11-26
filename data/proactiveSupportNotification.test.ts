@@ -139,7 +139,7 @@ test("Task.taskIsOnPhone exists, defaults to false, backfilled on load -- same c
 
 test("TaskDraft carries taskIsOnPhone through createEmptyTaskDraft/taskDraftFromTask/buildTaskFromDraft -- editable regardless of isTodoItem", () => {
   assert.match(taskDraftModule, /taskIsOnPhone: boolean;/);
-  assert.ok(taskDraftModule.includes("taskIsOnPhone: false,\n  };\n}"));
+  assert.ok(taskDraftModule.includes("taskIsOnPhone: false,\n    linkedAction: null,"));
   assert.ok(taskDraftModule.includes("taskIsOnPhone: task.taskIsOnPhone,"));
   assert.ok(taskDraftModule.includes("taskIsOnPhone: draft.taskIsOnPhone,"));
 });

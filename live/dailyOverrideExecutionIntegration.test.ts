@@ -41,10 +41,10 @@ test("requirement 2/3: the merged effectiveTask carries the OVERRIDE's scheduled
     )
   );
   const performStartIndex = screen.indexOf("async function performStart()");
-  // Window widened (8800 -> 9000): ARCHI Dynamic Time Planning task's own
-  // recomputeFreeTimeWindowNotification call/comment, inserted near the
-  // top of performStart, pushed every later line further from the anchor.
-  const performStartBody = screen.slice(performStartIndex, performStartIndex + 9000);
+  // Window widened (9000 -> 9800): Action-Based Tasks task's own
+  // recomputeTaskMemoryReminderNotification call/comment, inserted near
+  // the top of performStart, pushed every later line further from the anchor.
+  const performStartBody = screen.slice(performStartIndex, performStartIndex + 9800);
   // Smart To-Do List task, section 6, and ARCHI -- To-Do Bank +
   // Duration/Split Selection task, section 3/4: the duration
   // calculation also checks pendingSplitSegment/isTodoSplit now, but

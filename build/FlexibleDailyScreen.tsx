@@ -39,6 +39,7 @@ import { deleteContinuousRoutineGroup, loadContinuousRoutineGroupsForDate, saveN
 import { isConsecutiveSelection, type ContinuousRoutineGroup } from "../arc/continuousRoutineGroup.ts";
 import { reconcileTaskAlarms } from "../data/taskAlarm.ts";
 import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
+import { recomputeTaskMemoryReminderNotification } from "../data/taskMemoryReminderNotification.ts";
 import { recomputeFreeTimeWindowNotification } from "../data/freeTimeWindowNotification.ts";
 import { isDailyVisualizationCompletedNow } from "../data/dailyVisualization.ts";
 import { isValidCalendarDateString, parseCalendarDate, todayLocalDateString } from "../program/dateUtils.ts";
@@ -249,6 +250,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
       void topUpRemindersIfNeeded();
       void recomputeTaskNotStartedNotification();
       void recomputeFreeTimeWindowNotification();
+      void recomputeTaskMemoryReminderNotification();
     }
   }, [dateLocal, weekday, isTodayMode]);
 

@@ -47,6 +47,7 @@
 
 import type { TaskActionStage } from "./taskStage.ts";
 import { normalizeTaskActionStage } from "./taskStage.ts";
+import type { TaskLinkedAction } from "./taskLinkedAction.ts";
 
 export type TaskStatus = "planned" | "active" | "paused" | "postponed" | "completed" | "archived";
 
@@ -269,6 +270,28 @@ export interface Task {
   /** Same as arcWritingTextId above, but pointing at an ArcBookChapter instead of a standalone text. */
   arcWritingChapterId: string | null;
   /**
+   * Action-Based Tasks task, section 9: the ONE central, extensible
+   * "starting this task opens an internal ARCHI action directly"
+   * mechanism (arc/taskLinkedAction.ts) -- entirely separate from, and
+   * never set alongside, the pre-existing bespoke per-kind mechanism
+   * above (taskKind/calendarEntryKind + their own id fields). null (or
+   * kind "none") for every pre-existing task and every task that
+   * doesn't opt in -- performStart() only ever branches on this AFTER
+   * every existing taskKind/calendarEntryKind branch, so this field is
+   * a pure no-op addition for anything that doesn't set it.
+   */
+  linkedAction: TaskLinkedAction | null;
+  /**
+   * Action-Based Tasks task, section 4: zero or more ArcGymMemoryExercise
+   * (arc/arcGym.ts) trigger/action pairs linked to this task -- 5 minutes
+   * before its resolved start time (or immediately at start, for a
+   * To-Do item with no scheduled time), each linked exercise's own
+   * situationText/actionText fires as a real OS reminder notification
+   * (data/taskMemoryReminderNotification.ts). Empty array (every
+   * pre-existing task, and the default for a new one) means no reminder.
+   */
+  linkedArcGymMemoryExerciseIds: string[];
+  /**
    * Proactive Support During Task LIVE task: true means this task is
    * expected to involve leaving ARCHI for other apps on the phone as
    * part of actually doing it (e.g. looking something up, messaging,
@@ -414,6 +437,8 @@ export function createEmptyTask(id: string, title: string, firstAction: string, 
     arcLearningReviewTopicId: null,
     arcWritingTextId: null,
     arcWritingChapterId: null,
+    linkedAction: null,
+    linkedArcGymMemoryExerciseIds: [],
     taskIsOnPhone: false,
     isTodoItem: false,
     todoUrgency: 5,
@@ -481,6 +506,8 @@ export function normalizeTask(task: Task): Task {
     arcLearningReviewTopicId: task.arcLearningReviewTopicId ?? null,
     arcWritingTextId: task.arcWritingTextId ?? null,
     arcWritingChapterId: task.arcWritingChapterId ?? null,
+    linkedAction: task.linkedAction ?? null,
+    linkedArcGymMemoryExerciseIds: task.linkedArcGymMemoryExerciseIds ?? [],
     taskIsOnPhone: task.taskIsOnPhone ?? false,
     isTodoItem: task.isTodoItem ?? false,
     todoUrgency: task.todoUrgency ?? 5,

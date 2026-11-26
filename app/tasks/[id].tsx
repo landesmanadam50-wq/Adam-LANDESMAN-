@@ -2,7 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import ActiveTaskScreen from "../../live/ActiveTaskScreen.tsx";
 
 export default function TaskDetail() {
-  const { id, autoStart, openPostpone, needArc, completeStage, nextTask, addInsight, addPositiveEvent, splitMinutes } = useLocalSearchParams<{
+  const { id, autoStart, openPostpone, needArc, completeStage, nextTask, addInsight, addQuestion, addPositiveEvent, splitMinutes } = useLocalSearchParams<{
     id: string;
     autoStart?: string;
     openPostpone?: string;
@@ -10,6 +10,7 @@ export default function TaskDetail() {
     completeStage?: string;
     nextTask?: string;
     addInsight?: string;
+    addQuestion?: string;
     addPositiveEvent?: string;
     // Smart To-Do List task, section 6: set ONLY when ARC LIVE's
     // returnToTask (or the Time Planning popup) navigates here after
@@ -27,6 +28,7 @@ export default function TaskDetail() {
       completeStage={completeStage === "1"}
       nextTask={nextTask === "1"}
       addInsight={addInsight === "1"}
+      addQuestion={addQuestion === "1"}
       addPositiveEvent={addPositiveEvent === "1"}
       splitMinutes={splitMinutes ? Number(splitMinutes) : null}
     />

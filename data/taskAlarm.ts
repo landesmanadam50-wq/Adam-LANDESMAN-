@@ -115,6 +115,7 @@ import { handleTaskTransitionNotificationEvent } from "./taskTransitionNotificat
 import { handleTaskNotStartedNotificationEvent, recomputeTaskNotStartedNotification } from "./taskNotStartedNotification.ts";
 import { handleFreeTimeWindowNotificationEvent, recomputeFreeTimeWindowNotification } from "./freeTimeWindowNotification.ts";
 import { handleProactiveSupportNotificationEvent } from "./proactiveSupportNotification.ts";
+import { handleTaskMemoryReminderAlarmFired, handleTaskMemoryReminderNotificationEvent } from "./taskMemoryReminderNotification.ts";
 import { handleMorningAlarmAction, turnOffMorningAlarm } from "./morningAlarm.ts";
 import { resolveLatestReflectionForTask, resolveTaskAlarmNotificationContent } from "../arc/taskReflection.ts";
 
@@ -314,6 +315,16 @@ export function registerTaskAlarmForegroundService(): void {
         // recomputeTaskNotStartedNotification, never duplicated here.
         const isTaskNotStartedArm = notification.data?.kind === "taskNotStartedArm";
 
+        // Action-Based Tasks task, section 4: the ARC-Memory 5-minutes-
+        // before reminder's own silent arm placeholder -- exactly the
+        // isTaskNotStartedArm pattern above, except the exact taskId to
+        // display for is carried on this notification's own data
+        // (never re-resolved against "what's current/next now", since
+        // this reminder is about one specific task, not whichever one
+        // happens to be active 5 minutes later).
+        const isTaskMemoryReminderArm = notification.data?.kind === "taskMemoryReminderArm";
+        const taskMemoryReminderTaskId = typeof notification.data?.taskId === "string" ? notification.data.taskId : null;
+
         // ARCHI -- Dynamic Time Planning & Free-Window Utilization task,
         // section 1: the free-time-window notification's own silent arm
         // placeholder -- exactly the isTaskNotStartedArm pattern above.
@@ -355,6 +366,14 @@ export function registerTaskAlarmForegroundService(): void {
 
         if (isTaskNotStartedArm) {
           recomputeTaskNotStartedNotification(new Date()).then(async () => {
+            if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});
+            stop();
+          });
+          return;
+        }
+
+        if (isTaskMemoryReminderArm && taskMemoryReminderTaskId) {
+          handleTaskMemoryReminderAlarmFired(taskMemoryReminderTaskId, new Date()).then(async () => {
             if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});
             stop();
           });
@@ -1616,6 +1635,16 @@ export async function handleTaskAlarmEvent(event: Event): Promise<void> {
   // onBackgroundEvent/onForegroundEvent registration.
   if (data.kind === "proactiveSupport") {
     await handleProactiveSupportNotificationEvent(event);
+    return;
+  }
+
+  // Action-Based Tasks task, section 4: the ARC-Memory 5-minutes-before
+  // reminder's own real, displayed notification -- a bare tap opens the
+  // task, routed through the shared handleTaskMemoryReminderNotificationEvent
+  // (data/taskMemoryReminderNotification.ts), never a second
+  // onBackgroundEvent/onForegroundEvent registration.
+  if (data.kind === "taskMemoryReminder") {
+    await handleTaskMemoryReminderNotificationEvent(event);
     return;
   }
 

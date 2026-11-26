@@ -102,13 +102,13 @@ test("requirement 8 (ring through Do Not Disturb -- the trainee's own explicit c
 test("the 2-minute ring cap is a named constant (2 * 60 * 1000 ms), and the foreground-service handler both starts the ring AND schedules the automatic turn-off at that cap", () => {
   assert.ok(module_.includes("const TASK_ALARM_RING_TIMEOUT_MS = 2 * 60 * 1000;"));
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (8600 -> 9100): ARCHI Dynamic Time Planning task's own
-  // isFreeTimeWindowArm declaration/comment and early-return branch, both
-  // inserted earlier in the function, pushed proceed()'s own body
+  // Window widened (9100 -> 10100): Action-Based Tasks task's own
+  // isTaskMemoryReminderArm declaration/comment and early-return branch,
+  // both inserted earlier in the function, pushed proceed()'s own body
   // (where TASK_ALARM_RING_TIMEOUT_MS/turnOffTaskAlarm actually live)
   // further from fnIndex than before -- same function, same content, just
   // at a later offset.
-  const fnBody = module_.slice(fnIndex, fnIndex + 9100);
+  const fnBody = module_.slice(fnIndex, fnIndex + 10100);
   assert.ok(fnBody.includes("startRinging(preferences.soundEnabled, preferences.vibrationEnabled)"));
   assert.ok(fnBody.includes("TASK_ALARM_RING_TIMEOUT_MS"));
   assert.ok(fnBody.includes("turnOffTaskAlarm(task, new Date())"), "the automatic 2-minute cutoff must go through the exact same turnOffTaskAlarm as the trainee's own 'כבה' button, never a separate cleanup path");
@@ -272,8 +272,8 @@ test("the one second minute test alarm fires exactly 60 seconds out, scheduled t
 
 test("requirement ('לזהות אם השעון הופעל בפועל'): the foreground-service handler records firedAt for the test alarm the INSTANT ringing actually starts -- the one objective, not-just-scheduled signal", () => {
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (7200 -> 7500): same offset shift as the ring-cap test above.
-  const fnBody = module_.slice(fnIndex, fnIndex + 7500);
+  // Window widened (7500 -> 8700): same offset shift as the ring-cap test above.
+  const fnBody = module_.slice(fnIndex, fnIndex + 8700);
   assert.ok(fnBody.includes('const isTestAlarm = notification.data?.kind === "taskAlarmTest";'));
   assert.ok(fnBody.includes("if (isTestAlarm) recordTestAlarmFired(new Date().toISOString());"));
 });
@@ -334,8 +334,8 @@ test("refreshRealTaskAlarmTestStatus re-checks OS registration without re-arming
 
 test("the foreground-service handler records firedAt for a REAL task's alarm too (not just the isolated test one), gated to only the currently-tracked real-task-test id -- never touching an unrelated task's own alarm", () => {
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (7400 -> 7800): same offset shift as the ring-cap test above.
-  const fnBody = module_.slice(fnIndex, fnIndex + 7800);
+  // Window widened (7800 -> 8900): same offset shift as the ring-cap test above.
+  const fnBody = module_.slice(fnIndex, fnIndex + 8900);
   // ARC alarm task: this line also gained "&& !isArcAlarm" -- an ARC-alarm firing must never be mistaken for a real TASK alarm's own diagnostics.
   // ARC alarm diagnostics task: isArcAlarm now has its own earlier branch entirely, so this one no longer needs its own "&& !isArcAlarm" guard.
   assert.ok(fnBody.includes("else if (taskId && !isTimerEndAlarm) recordRealTaskAlarmFiredIfTracked(taskId, new Date().toISOString());"));
@@ -376,8 +376,8 @@ test("cancelTaskTimerEndAlarm is a safe no-op for null, and otherwise stops the 
 
 test("the foreground-service handler gives the end-of-timer ring its own much-shorter timeout branch, cancelling via cancelTaskTimerEndAlarm -- never turnOffTaskAlarm, which is specific to the START alarm's own task-status semantics", () => {
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (8200 -> 8500): same offset shift as the ring-cap test above.
-  const fnBody = module_.slice(fnIndex, fnIndex + 8500);
+  // Window widened (8500 -> 9700): same offset shift as the ring-cap test above.
+  const fnBody = module_.slice(fnIndex, fnIndex + 9700);
   assert.ok(fnBody.includes('const isTimerEndAlarm = notification.data?.kind === "taskTimerEnd";'));
   assert.ok(fnBody.includes("if (isTimerEndAlarm) {"));
   const branchIndex = fnBody.indexOf("if (isTimerEndAlarm) {");
@@ -401,7 +401,10 @@ test("handleTaskAlarmEvent gives the end-of-timer ring's own single 'עצור' a
   // ARCHI -- Proactive Support During Task LIVE task: widened again
   // (5000 -> 5600) for the new "proactiveSupport" dispatch branch,
   // inserted right after "freeTimeWindow", above this one.
-  const fnBody = module_.slice(fnIndex, fnIndex + 5600);
+  // Action-Based Tasks task: widened again (5600 -> 6000) for the new
+  // "taskMemoryReminder" dispatch branch, inserted right after
+  // "proactiveSupport", above this one.
+  const fnBody = module_.slice(fnIndex, fnIndex + 6000);
   const branchIndex = fnBody.indexOf('if (data.kind === "taskTimerEnd") {');
   assert.ok(branchIndex !== -1);
   const branchBody = fnBody.slice(branchIndex, branchIndex + 400);
@@ -511,11 +514,11 @@ test("bug fix, required scenario coverage: hasActiveTaskConflict is a pure read 
 
 test("requirement 3 (delivery boundary), extended by the Regression Audit to cover ARC/morning alarms too: a task-START alarm, a Planned ARC alarm, OR the morning alarm (never the timer-end/test kinds) checks hasActiveTaskConflict BEFORE ever calling startRinging -- a genuine conflict cancels the notification outright and ends the foreground service, never ringing/vibrating/showing full-screen", () => {
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (11000 -> 12200): ARCHI task-not-started task's own
-  // isTaskNotStartedArm declaration/comment and early-return branch,
+  // Window widened (12200 -> 13500): Action-Based Tasks task's own
+  // isTaskMemoryReminderArm declaration/comment and early-return branch,
   // both inserted earlier in the function, pushed proceed()/the
   // isSuppressibleAlarm guard further from fnIndex than before.
-  const fnBody = module_.slice(fnIndex, fnIndex + 12200);
+  const fnBody = module_.slice(fnIndex, fnIndex + 13500);
   assert.ok(fnBody.includes("const isTaskStartAlarm = taskId !== null && !isTimerEndAlarm;"));
   assert.ok(fnBody.includes("const isSuppressibleAlarm = isTaskStartAlarm || isArcAlarm || isMorningAlarm;"), "a Planned ARC alarm and the morning alarm must be suppressible on the exact same busy check as a task-start alarm -- neither carries a taskId of its own, so they must never be silently excluded from isSuppressibleAlarm");
   const guardIndex = fnBody.indexOf("if (isSuppressibleAlarm) {");

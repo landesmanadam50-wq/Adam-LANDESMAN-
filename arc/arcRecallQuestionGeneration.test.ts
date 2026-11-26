@@ -47,6 +47,8 @@ function learningInsight(overrides: Partial<ArcLearningInsight> = {}): ArcLearni
     mechanismAnswer: null,
     mentalImages: [],
     derivedFromConnectionId: null,
+    sourceArcInsightId: null,
+    whyChain: [],
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,

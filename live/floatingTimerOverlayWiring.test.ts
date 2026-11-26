@@ -34,7 +34,10 @@ test("requirements 1+6: performStart (reached via handleStart's required-before-
   // ARCHI -- To-Do Bank + Duration/Split Selection task, section 3/4:
   // widened to also cover the new pendingSplitSegment branch this
   // function now checks before computing durationMinutes.
-  const fnBody = screen.slice(fnIndex, fnIndex + 10500);
+  // Action-Based Tasks task: widened again (10500 -> 11000) for the new
+  // recomputeTaskMemoryReminderNotification call/comment near the top
+  // of performStart.
+  const fnBody = screen.slice(fnIndex, fnIndex + 11000);
   assert.ok(fnBody.includes("await showFloatingTimerOverlay(runWithNotification, task, freshStageProgress, nextScheduledTaskForOverlay);"));
 });
 

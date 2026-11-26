@@ -161,6 +161,10 @@ import {
   upsertArcVideoRecordingInList,
   normalizeArcWritingText,
 } from "../arc/arcWriting.ts";
+import type { ArcQuestion } from "../arc/arcQuestions.ts";
+import { normalizeArcQuestion, upsertArcQuestionInList } from "../arc/arcQuestions.ts";
+import type { ArcDiaryEntry } from "../arc/arcDiary.ts";
+import { upsertArcDiaryEntryInList } from "../arc/arcDiary.ts";
 import type { ArcLearningTopic } from "../arc/arcLearningTopic.ts";
 import { normalizeArcLearningTopic, upsertArcLearningTopicInList } from "../arc/arcLearningTopic.ts";
 import type { ArcLearningInsight } from "../arc/arcLearningInsight.ts";
@@ -4442,6 +4446,54 @@ export async function upsertArcWritingTextEntry(text: ArcWritingText): Promise<v
 export async function deleteArcWritingTextEntry(id: string): Promise<void> {
   const texts = await loadArcWritingTexts();
   await AsyncStorage.setItem(ARC_WRITING_TEXTS_KEY, JSON.stringify(texts.filter((text) => text.id !== id)));
+}
+
+const ARC_QUESTIONS_KEY = "archi.arcQuestions.v1";
+
+export async function loadArcQuestions(): Promise<ArcQuestion[]> {
+  const raw = await AsyncStorage.getItem(ARC_QUESTIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcQuestion[];
+    return Array.isArray(parsed) ? parsed.map(normalizeArcQuestion) : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcQuestions are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcQuestionEntry(question: ArcQuestion): Promise<void> {
+  const questions = await loadArcQuestions();
+  await AsyncStorage.setItem(ARC_QUESTIONS_KEY, JSON.stringify(upsertArcQuestionInList(questions, question)));
+}
+
+export async function deleteArcQuestionEntry(id: string): Promise<void> {
+  const questions = await loadArcQuestions();
+  await AsyncStorage.setItem(ARC_QUESTIONS_KEY, JSON.stringify(questions.filter((question) => question.id !== id)));
+}
+
+const ARC_DIARY_ENTRIES_KEY = "archi.arcDiaryEntries.v1";
+
+export async function loadArcDiaryEntries(): Promise<ArcDiaryEntry[]> {
+  const raw = await AsyncStorage.getItem(ARC_DIARY_ENTRIES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ArcDiaryEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn("[storage] Stored ArcDiaryEntries are not valid JSON -- returning an empty list rather than crashing.", error);
+    return [];
+  }
+}
+
+export async function upsertArcDiaryEntryEntry(entry: ArcDiaryEntry): Promise<void> {
+  const entries = await loadArcDiaryEntries();
+  await AsyncStorage.setItem(ARC_DIARY_ENTRIES_KEY, JSON.stringify(upsertArcDiaryEntryInList(entries, entry)));
+}
+
+export async function deleteArcDiaryEntryEntry(id: string): Promise<void> {
+  const entries = await loadArcDiaryEntries();
+  await AsyncStorage.setItem(ARC_DIARY_ENTRIES_KEY, JSON.stringify(entries.filter((entry) => entry.id !== id)));
 }
 
 const ARC_BOOKS_KEY = "archi.arcBooks.v1";

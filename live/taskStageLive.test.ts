@@ -24,10 +24,10 @@ const screen = readSource("live/ActiveTaskScreen.tsx");
 
 test("performStart starts the FIRST configured stage's own duration (never the whole task's total at once) and creates a fresh TaskStageProgress for it -- a legacy (no stages) task falls back to task.expectedDurationMinutes exactly as before", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  // Window widened (9600 -> 9900): ARCHI Dynamic Time Planning task's own
-  // recomputeFreeTimeWindowNotification call/comment, inserted near the
-  // top of performStart, pushed every later line further from the anchor.
-  const fnBody = screen.slice(fnIndex, fnIndex + 9900);
+  // Window widened (9900 -> 10700): Action-Based Tasks task's own
+  // recomputeTaskMemoryReminderNotification call/comment, inserted near
+  // the top of performStart, pushed every later line further from the anchor.
+  const fnBody = screen.slice(fnIndex, fnIndex + 10700);
   assert.ok(fnBody.includes("const staged = hasConfiguredActionStages(task.actionStages);"));
   assert.ok(fnBody.includes("const firstStage = staged ? resolveFirstActionStage(task.actionStages!) : null;"));
   // Smart To-Do List task, section 6, and ARCHI -- To-Do Bank +
@@ -103,7 +103,7 @@ test("a ✓ button is rendered in the active-timer block, calling handleComplete
 
 test("the floating overlay's own ✓ button deep-links here with completeStage=1, consumed by the SAME auto-action effect that already handles needArc=1 and autoStart -- checked before the generic 'timer already running' early-return, since this action is only meaningful while a timer IS running", () => {
   const effectIndex = screen.indexOf("if (autoActionConsumed.current) return;");
-  const effectBody = screen.slice(effectIndex, effectIndex + 3850);
+  const effectBody = screen.slice(effectIndex, effectIndex + 4400);
   const completeStageIndex = effectBody.indexOf("if (completeStage) {");
   const timerRunningIndex = effectBody.indexOf("if (timerRun || restRun) {");
   assert.ok(completeStageIndex !== -1 && timerRunningIndex !== -1 && completeStageIndex < timerRunningIndex);

@@ -152,11 +152,11 @@ test("handlePlannedArcAlarmAction's snooze/close branches call snoozePlannedArcA
 
 test("the foreground-service handler gives the ARC alarm the SAME 2-minute ring cap as the task alarm (not a different/shorter one), and its automatic cutoff turns off via turnOffPlannedArcAlarmById -- the exact same path the trainee's own 'סגור' button uses", () => {
   const fnIndex = module_.indexOf("export function registerTaskAlarmForegroundService");
-  // Window widened (8300 -> 8700): ARCHI Dynamic Time Planning's own
-  // isFreeTimeWindowArm declaration/comment and early-return branch,
+  // Window widened (8700 -> 9900): Action-Based Tasks task's own
+  // isTaskMemoryReminderArm declaration/comment and early-return branch,
   // inserted earlier in the function, pushed this branch's own offset
   // further from fnIndex than before -- same function, same content.
-  const fnBody = module_.slice(fnIndex, fnIndex + 8700);
+  const fnBody = module_.slice(fnIndex, fnIndex + 9900);
   assert.ok(fnBody.includes('const isArcAlarm = notification.data?.kind === "arcAlarm";'));
   assert.ok(fnBody.includes("if (isArcAlarm) {"));
   const branchIndex = fnBody.indexOf("if (isArcAlarm) {", fnBody.indexOf("setTimeout(async () => {"));

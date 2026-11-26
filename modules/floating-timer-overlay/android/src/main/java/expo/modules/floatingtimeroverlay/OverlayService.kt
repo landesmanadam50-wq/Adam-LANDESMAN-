@@ -156,6 +156,10 @@ class OverlayService : Service() {
     private const val MOOD_TAP_DEBOUNCE_MS = 1500L
     private const val NEXT_TASK_TAP_DEBOUNCE_MS = 1500L
     private const val ADD_INSIGHT_TAP_DEBOUNCE_MS = 1500L
+    // ARC Questions task, section 2: the SAME source-level debounce
+    // discipline as ADD_INSIGHT_TAP_DEBOUNCE_MS right above, for the
+    // new "+ שאלה" shortcut.
+    private const val ADD_QUESTION_TAP_DEBOUNCE_MS = 1500L
     // ARCHI -- Add Direct ARC Gym Access from Home and the Floating
     // Timer task: the SAME source-level debounce discipline as every
     // other tappable region above, for the new "🏋️ ARC Gym" shortcut.
@@ -245,6 +249,7 @@ class OverlayService : Service() {
   private var lastMoodTapAtMs: Long = 0L
   private var lastNextTaskTapAtMs: Long = 0L
   private var lastInsightTapAtMs: Long = 0L
+  private var lastQuestionTapAtMs: Long = 0L
   private var lastArcGymOpenAtMs: Long = 0L
   private var lastPositiveEventTapAtMs: Long = 0L
   private var lastAddTaskTapAtMs: Long = 0L
@@ -818,6 +823,17 @@ class OverlayService : Service() {
         setBackgroundColor(Color.parseColor(QUICK_ACTION_BACKGROUND))
       }
 
+      // --- ARC Questions task, section 2: "+ שאלה" -- the exact same
+      // row style and always-available-idle-or-active/paused precedent
+      // as insightTextView right above.
+      val questionTextView = TextView(this).apply {
+        text = "+ שאלה"
+        setTextColor(Color.WHITE)
+        textSize = 12f
+        setPadding(14, 10, 14, 10)
+        setBackgroundColor(Color.parseColor(QUICK_ACTION_BACKGROUND))
+      }
+
       // --- Add Direct ARC Gym Access from Home and the Floating Timer
       // task, section 2: a single, always-available "🏋️ ARC Gym"
       // shortcut -- same row style as insightTextView above, but its
@@ -902,6 +918,7 @@ class OverlayService : Service() {
         addView(currentTaskRow)
         addView(nextTaskSection)
         addView(insightTextView)
+        addView(questionTextView)
         addView(addTaskTextView)
         addView(positiveEventTextView)
         addView(arcSavingTextView)
@@ -979,6 +996,7 @@ class OverlayService : Service() {
         moodDirectTextView,
         nextTaskActionTextView,
         insightTextView,
+        questionTextView,
         arcGymTextView,
         positiveEventTextView,
         collapseButtonTextView,
@@ -1103,6 +1121,7 @@ class OverlayService : Service() {
     moodDirectView: View,
     nextTaskActionView: View,
     insightView: View,
+    questionView: View,
     arcGymView: View,
     positiveEventView: View,
     collapseButtonView: View,
@@ -1122,6 +1141,7 @@ class OverlayService : Service() {
     var downOnMoodDirect = false
     var downOnNextTaskAction = false
     var downOnInsight = false
+    var downOnQuestion = false
     var downOnArcGym = false
     var downOnPositiveEvent = false
     var downOnCollapseButton = false
@@ -1144,6 +1164,7 @@ class OverlayService : Service() {
           downOnMoodDirect = isPointInsideView(view, moodDirectView, event.x, event.y)
           downOnNextTaskAction = isPointInsideView(view, nextTaskActionView, event.x, event.y)
           downOnInsight = isPointInsideView(view, insightView, event.x, event.y)
+          downOnQuestion = isPointInsideView(view, questionView, event.x, event.y)
           downOnArcGym = isPointInsideView(view, arcGymView, event.x, event.y)
           downOnPositiveEvent = isPointInsideView(view, positiveEventView, event.x, event.y)
           downOnCollapseButton = isPointInsideView(view, collapseButtonView, event.x, event.y)
@@ -1201,6 +1222,8 @@ class OverlayService : Service() {
             openNextTask()
           } else if (downOnInsight) {
             openAddInsight()
+          } else if (downOnQuestion) {
+            openAddQuestion()
           } else if (downOnArcGym) {
             openArcGym()
           } else if (downOnPositiveEvent) {
@@ -1412,6 +1435,32 @@ class OverlayService : Service() {
     if (now - lastInsightTapAtMs < ADD_INSIGHT_TAP_DEBOUNCE_MS) return
     lastInsightTapAtMs = now
     val uri = if (taskId.isEmpty()) "archi://insights/new" else "archi://tasks/$taskId?addInsight=1"
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+      setPackage(packageName)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+      startActivity(intent)
+    } catch (_: Exception) {
+      // No matching activity to resolve to -- nothing more this side can do.
+    }
+  }
+
+  /**
+   * ARC Questions task, section 2: "+ שאלה" -- the EXACT same
+   * destination convention as openAddInsight() right above: while a
+   * task is active/paused, deep-links into Task LIVE with
+   * addQuestion=1 so live/ActiveTaskScreen.tsx can open the ARC
+   * Questions composer WITH this task's own id as its return context
+   * (never finishing, canceling, resetting or restarting the active
+   * task/timer); while idle, opens the composer directly with no task
+   * context to return to.
+   */
+  private fun openAddQuestion() {
+    val now = System.currentTimeMillis()
+    if (now - lastQuestionTapAtMs < ADD_QUESTION_TAP_DEBOUNCE_MS) return
+    lastQuestionTapAtMs = now
+    val uri = if (taskId.isEmpty()) "archi://questions/new" else "archi://tasks/$taskId?addQuestion=1"
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
       setPackage(packageName)
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

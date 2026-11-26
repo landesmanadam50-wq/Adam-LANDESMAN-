@@ -24,8 +24,18 @@ import { loadArcInsights, loadArcLearningTopics, upsertArcInsight } from "../dat
  * [id]/edit, id="new") rather than a second topic-creation mechanism --
  * the brand-new topic simply appears in this same list on return,
  * unlinked, ready to be tapped like any other.
+ *
+ * Central Insight Collection x ARC Learning task, section 6:
+ * `nextIds`, when given (from InsightsCollectionScreen's own "בחירה
+ * מרובה" multi-select), is the remaining batch of insight ids still
+ * waiting to be organized -- "סיום" here re-navigates to this SAME
+ * screen for the next one instead of going back, so picking several
+ * insights at once walks through each one's own existing one-insight-
+ * at-a-time linking screen in turn, never a parallel bulk-linking
+ * mechanism. Empty/absent for the normal single-insight entry point
+ * (from InsightDetailScreen), where "סיום" behaves exactly as before.
  */
-export default function InsightArcLearningTopicLinkScreen({ id }: { id: string }) {
+export default function InsightArcLearningTopicLinkScreen({ id, nextIds = [] }: { id: string; nextIds?: string[] }) {
   const [insight, setInsight] = useState<ArcInsight | null | undefined>(undefined);
   const [topics, setTopics] = useState<ArcLearningTopic[]>([]);
 
@@ -93,8 +103,18 @@ export default function InsightArcLearningTopicLinkScreen({ id }: { id: string }
       <Pressable style={styles.secondaryButton} onPress={() => router.push({ pathname: "/arc-learning/topics/[id]/edit", params: { id: "new" } })}>
         <Text style={styles.secondaryButtonText}>+ נושא חדש</Text>
       </Pressable>
-      <Pressable style={styles.primaryButton} onPress={() => router.back()}>
-        <Text style={styles.primaryButtonText}>סיום</Text>
+      <Pressable
+        style={styles.primaryButton}
+        onPress={() => {
+          const [next, ...rest] = nextIds;
+          if (next) {
+            router.replace({ pathname: "/insights/[id]/link-topics", params: { id: next, ...(rest.length ? { nextIds: rest.join(",") } : {}) } });
+          } else {
+            router.back();
+          }
+        }}
+      >
+        <Text style={styles.primaryButtonText}>{nextIds.length > 0 ? `הבא (${nextIds.length} נותרו)` : "סיום"}</Text>
       </Pressable>
     </SafeAreaView>
   );

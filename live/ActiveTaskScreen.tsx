@@ -111,6 +111,9 @@ import { markSupportiveBodySensationUsagesTaskOutcome } from "../data/storage.ts
 import { resolveBodySensationContextKeys } from "../arc/supportiveBodySensation.ts";
 import { createArcFocusSession, generateArcFocusPracticeId } from "../arc/arcFocusSession.ts";
 import { loadArcFocusSettings, saveArcFocusSession } from "../data/storage.ts";
+import type { TaskLinkedAction } from "../arc/taskLinkedAction.ts";
+import { resolveLinkedActionStaticRoute } from "../arc/taskLinkedAction.ts";
+import { displayTaskMemoryReminderForTask, recomputeTaskMemoryReminderNotification } from "../data/taskMemoryReminderNotification.ts";
 import { addPendingContinuousRoutineSmiles, takePendingContinuousRoutineSmiles } from "../data/continuousRoutineGroup.ts";
 import { hasConfiguredActionStages, resolveFirstActionStage, resolveNextActionStage, sumActionStageDurations } from "../arc/taskStage.ts";
 import { advanceStageProgress, createTaskStageProgress, isStageCompleted, markStageCompleted, resolveCompletedDurationMinutes } from "../arc/taskStageProgress.ts";
@@ -192,6 +195,7 @@ export default function ActiveTaskScreen({
   completeStage = false,
   nextTask = false,
   addInsight = false,
+  addQuestion = false,
   addPositiveEvent = false,
   splitMinutes = null,
 }: {
@@ -204,6 +208,8 @@ export default function ActiveTaskScreen({
   nextTask?: boolean;
   /** ARCHI -- Unified Floating Overlay & Mini ARC Improvements task: the unified floating panel's own "💡 הוסף תובנה" button, while a task session is active/paused, deep-links here with addInsight=1 -- opens the existing insight editor with this task as its return context, never a second insight editor. */
   addInsight?: boolean;
+  /** ARC Questions task, section 2: the floating timer's own "+ שאלה" button, while a task session is active/paused, deep-links here with addQuestion=1 -- opens the ARC Questions composer with this task as its return context, never finishing/canceling/resetting the active task or timer. */
+  addQuestion?: boolean;
   /** Positive Memory, Success Recall & Quick Capture task, section 3A: the floating cube's/Android widget's own "✨ הוסף אירוע חיובי" button, while a task session is active/paused, deep-links here with addPositiveEvent=1 -- opens the positive-event documentation entry screen with this task as its return context, never finishing/canceling/resetting the active task or timer. */
   addPositiveEvent?: boolean;
   /**
@@ -935,6 +941,16 @@ export default function ActiveTaskScreen({
       router.push({ pathname: "/insights/new", params: { returnToTaskId: task.id } });
       return;
     }
+    // ARC Questions task, section 2: the SAME convention as addInsight
+    // right above -- the floating timer's own "+ שאלה" button, while a
+    // task session is active/paused, opens the ARC Questions composer
+    // with this task's own id as its return context. Never
+    // pauses/touches the timer.
+    if (addQuestion) {
+      autoActionConsumed.current = true;
+      router.push({ pathname: "/questions/new", params: { returnToTaskId: task.id } });
+      return;
+    }
     // Positive Memory, Success Recall & Quick Capture task, section 3A:
     // the SAME convention as addInsight right above -- the floating
     // cube's/Android widget's own "✨ הוסף אירוע חיובי" button, while a
@@ -969,7 +985,7 @@ export default function ActiveTaskScreen({
       // fully intact and still reachable from inside this same flow.
       router.push({ pathname: "/tasks/[id]/postpone-obstacle", params: { id: taskId } });
     }
-  }, [task, timerRun, restRun, autoStart, openPostpone, needArc, completeStage, nextTask, addInsight, addPositiveEvent, taskId]);
+  }, [task, timerRun, restRun, autoStart, openPostpone, needArc, completeStage, nextTask, addInsight, addQuestion, addPositiveEvent, taskId]);
 
   if (!task) {
     return (
@@ -1106,6 +1122,19 @@ export default function ActiveTaskScreen({
     // fresh, never left armed/displayed for a slot that's no longer
     // actually free.
     void recomputeFreeTimeWindowNotification();
+    // Action-Based Tasks task, section 4: starting a task through ANY
+    // path here re-arms the ARC-Memory reminder for whichever
+    // today-scheduled task now has the soonest upcoming one -- same
+    // "called from the exact same mutation sites" discipline as the two
+    // recomputes above. For a To-Do task with no scheduledTime (so no
+    // "5 minutes before" moment can ever be resolved for it), the
+    // reminder is shown immediately instead, right when the task
+    // itself starts.
+    if (task.isTodoItem && !task.scheduledTime && task.linkedArcGymMemoryExerciseIds.length > 0) {
+      void displayTaskMemoryReminderForTask(task.id);
+    } else {
+      void recomputeTaskMemoryReminderNotification();
+    }
     // Resolves "was the task actually started" the moment a real start happens.
     void markSupportiveBodySensationUsagesTaskOutcome(
       resolveBodySensationContextKeys({ taskId: task.id, arcGymSituationId: null, arcGymMemoryExerciseId: null, arcPerspectiveId: null, arcFocusPracticeId: null }, task.linkedArcGymSituationId ?? null),
@@ -1260,6 +1289,52 @@ export default function ActiveTaskScreen({
     // הכתיבה" button (below) can reopen it without restarting the task.
     if (task.taskKind === "arcWriting") {
       await openArcWritingTarget(task);
+    }
+    // Action-Based Tasks task, section 3/9: the ONE central, extensible
+    // "task -> internal action" mechanism (arc/taskLinkedAction.ts) --
+    // checked LAST, after every existing taskKind/calendarEntryKind
+    // branch above, so a task that never sets linkedAction (every task
+    // today) is completely unaffected. By this point the REAL work
+    // timer has already been created above (same fall-through pattern
+    // "arcWriting" already uses right above) -- requirement 3.1's "the
+    // task's own timer starts" always holds, then we additionally
+    // navigate to the linked internal action via router.push (never
+    // replace), so Task LIVE stays on the nav stack underneath and the
+    // floating overlay keeps running, exactly like every other
+    // special-kind branch in this function.
+    if (task.linkedAction && task.linkedAction.kind !== "none") {
+      await openLinkedAction(task, task.linkedAction);
+    }
+  }
+
+  async function openLinkedAction(targetTask: Task, linkedAction: TaskLinkedAction) {
+    // arc_focus: the one kind whose existing taskKind==="arcFocus" path
+    // also creates a fresh ArcFocusSession first (see that branch above)
+    // -- mirrored here exactly, since a linked-action task never sets
+    // taskKind to "arcFocus" itself.
+    if (linkedAction.kind === "arc_focus") {
+      const now = new Date().toISOString();
+      const settings = await loadArcFocusSettings(targetTask.id);
+      const practiceId = generateArcFocusPracticeId();
+      await saveArcFocusSession(createArcFocusSession(practiceId, targetTask.id, settings, now));
+      router.push({ pathname: "/tasks/[id]/arc-focus/check-in", params: { id: targetTask.id, arcFocusPracticeId: practiceId } } as never);
+      return;
+    }
+    // arc_book: itemId is a specific ArcBookChapter id -- resolving its
+    // owning book id needs a lookup, exactly like openArcWritingTarget's
+    // own arcWritingChapterId branch above, so it can't live in the
+    // pure resolveLinkedActionStaticRoute table.
+    if (linkedAction.kind === "arc_book" && linkedAction.itemId) {
+      const chapters = await loadArcBookChapters();
+      const chapter = chapters.find((candidate) => candidate.id === linkedAction.itemId);
+      if (chapter) {
+        router.push({ pathname: "/arc-gym/book/[id]/chapter/[chapterId]", params: { id: chapter.bookId, chapterId: chapter.id } } as never);
+        return;
+      }
+    }
+    const route = resolveLinkedActionStaticRoute(linkedAction, targetTask.id);
+    if (route) {
+      router.push({ pathname: route.pathname, params: route.params } as never);
     }
   }
 
@@ -1645,6 +1720,7 @@ export default function ActiveTaskScreen({
     }
     await recomputeTaskTransitionNotification(task.id);
     await recomputeTaskNotStartedNotification();
+    await recomputeTaskMemoryReminderNotification();
     await recomputeFreeTimeWindowNotification();
   }
 
@@ -1680,6 +1756,7 @@ export default function ActiveTaskScreen({
     // "המשימה הושלמה" state in place.
     await recomputeTaskTransitionNotification(task.id);
     await recomputeTaskNotStartedNotification();
+    await recomputeTaskMemoryReminderNotification();
     await recomputeFreeTimeWindowNotification();
   }
 

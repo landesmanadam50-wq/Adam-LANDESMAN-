@@ -45,6 +45,18 @@ export interface ArcLearningInsight {
   mentalImages: string[];
   /** Section 5 ("הפוך לתובנה חדשה" / "convert a saved relationship into a brand-new ARC Learning insight... retaining references back to the original insights"): the ArcCreativityConnection.id this insight was created from, or null for an ordinary, independently-captured insight. The connection record itself already holds insightIdA/insightIdB, so both original insights stay reachable through this one back-reference without duplicating their ids here. */
   derivedFromConnectionId: string | null;
+  /** Central Insight Collection x ARC Learning task: the arc/arcInsightBelief.ts ArcInsight.id this record was "promoted"/"started learning" from, or null for an insight captured directly inside ARC Learning's own wizard. Same back-reference convention as derivedFromConnectionId right above -- rawText is seeded once from the originating ArcInsight's own text, never re-copied, so the two stay linked without a second, disconnected copy of the same insight floating around. */
+  sourceArcInsightId: string | null;
+  /** ARC Learning Deep Dive task: an optional, unbounded chain of follow-up "למה?" questions/answers building on the "למה?" explanatory step (reasonAnswer) above -- entirely additive, never replacing or gating meaningAnswer/reasonAnswer/mechanismAnswer or any existing learning step. Empty by default; "+ למה?" appends one entry, "המשך" proceeds regardless of length. */
+  whyChain: ArcLearningWhyChainEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ArcLearningWhyChainEntry {
+  id: string;
+  question: string;
+  answer: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -65,14 +77,40 @@ export function createArcLearningInsight(id: string, rawText: string, now: strin
     mechanismAnswer: null,
     mentalImages: [],
     derivedFromConnectionId: null,
+    sourceArcInsightId: null,
+    whyChain: [],
     createdAt: now,
     updatedAt: now,
   };
 }
 
+/** Central Insight Collection x ARC Learning task: "promotes" a central ArcInsight into ARC Learning's own track -- rawText seeded from its text (never re-editable back onto the original ArcInsight, same one-way-copy convention as every other "turn X into a learning insight" entry point), sourceArcInsightId stamped so the two stay linked, wantsToLearn left false by default ("לא חייב להתחיל ללמוד... יכול לשמור ולחזור"). */
+export function createArcLearningInsightFromArcInsight(id: string, arcInsightId: string, arcInsightText: string, now: string): ArcLearningInsight {
+  return { ...createArcLearningInsight(id, arcInsightText, now), sourceArcInsightId: arcInsightId };
+}
+
 /** Section 5's "הפוך לתובנה חדשה": stamps the one back-reference to the ArcCreativityConnection this insight was converted from -- set once, at creation, never cleared by later edits. */
 export function setArcLearningInsightDerivedFromConnection(insight: ArcLearningInsight, connectionId: string, now: string): ArcLearningInsight {
   return { ...insight, derivedFromConnectionId: connectionId, updatedAt: now };
+}
+
+/** ARC Learning Deep Dive task: the first "+ למה?" tap on a chain-less insight seeds whyChain[0] retroactively from the existing reasonAnswer (the spec's own example starts its deepening chain from the already-answered "למה?" step), then every subsequent call simply appends. Caller decides the seeded question text (always "למה?" for the first entry). */
+export function appendArcLearningWhyChainEntry(insight: ArcLearningInsight, question: string, answer: string, now: string): ArcLearningInsight {
+  const trimmedAnswer = answer.trim();
+  if (!trimmedAnswer) return insight;
+  const entry: ArcLearningWhyChainEntry = { id: `arc-learning-why-chain-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`, question: question.trim(), answer: trimmedAnswer, createdAt: now, updatedAt: now };
+  return { ...insight, whyChain: [...insight.whyChain, entry], updatedAt: now };
+}
+
+/** "לאפשר לחזור לשאלות ולתשובות קודמות ולערוך אותן" -- edits one existing chain entry's answer in place, never reordering or removing the entries around it. */
+export function updateArcLearningWhyChainEntry(insight: ArcLearningInsight, entryId: string, newAnswer: string, now: string): ArcLearningInsight {
+  const index = insight.whyChain.findIndex((entry) => entry.id === entryId);
+  if (index === -1) return insight;
+  const trimmed = newAnswer.trim();
+  if (!trimmed) return insight;
+  const nextChain = [...insight.whyChain];
+  nextChain[index] = { ...nextChain[index], answer: trimmed, updatedAt: now };
+  return { ...insight, whyChain: nextChain, updatedAt: now };
 }
 
 export function setArcLearningInsightWantsToLearn(insight: ArcLearningInsight, wantsToLearn: boolean, now: string): ArcLearningInsight {
@@ -171,5 +209,7 @@ export function normalizeArcLearningInsight(insight: ArcLearningInsight): ArcLea
     mechanismAnswer: typeof insight.mechanismAnswer === "string" ? insight.mechanismAnswer : null,
     mentalImages: Array.isArray(insight.mentalImages) ? insight.mentalImages : [],
     derivedFromConnectionId: typeof insight.derivedFromConnectionId === "string" ? insight.derivedFromConnectionId : null,
+    sourceArcInsightId: typeof insight.sourceArcInsightId === "string" ? insight.sourceArcInsightId : null,
+    whyChain: Array.isArray(insight.whyChain) ? insight.whyChain : [],
   };
 }

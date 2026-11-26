@@ -34,7 +34,7 @@ test("ActiveTaskScreen accepts splitMinutes as an optional prop defaulting to nu
 
 test("required test 12 continued: performStart computes isTodoSplit ONLY when the task is itself a To-Do item AND a splitMinutes value was actually supplied -- never for an ordinary scheduled/one-off task even if splitMinutes were somehow present, and never for a To-Do item started without a split", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 8300);
+  const fnBody = screen.slice(fnIndex, fnIndex + 9100);
   assert.ok(fnBody.includes("const isTodoSplit = task.isTodoItem && splitMinutes !== null;"));
 });
 
@@ -43,7 +43,7 @@ test("required test 12 continued: when isTodoSplit, the TaskTimerRun is created 
   // Window widened (8500 -> 9000): the BodySensation task's own
   // markSupportiveBodySensationUsagesTaskOutcome call/comment, inserted
   // near the top of performStart, pushed every later line further from fnIndex.
-  const fnBody = screen.slice(fnIndex, fnIndex + 9000);
+  const fnBody = screen.slice(fnIndex, fnIndex + 9800);
   // ARCHI -- To-Do Bank + Duration/Split Selection task, section 3/4:
   // a pendingSplitSegment (the new "עבודה מחולקת" mode) now outranks
   // isTodoSplit (the "עבודה רציפה" splitMinutes reuse), which still
@@ -63,7 +63,7 @@ test("required test 8/9 (split session persisted at start): performStart saves a
   // Window widened (9100 -> 9600): the BodySensation task's own
   // markSupportiveBodySensationUsagesTaskOutcome call/comment, inserted
   // near the top of performStart, pushed every later line further from fnIndex.
-  const fnBody = screen.slice(fnIndex, fnIndex + 9600);
+  const fnBody = screen.slice(fnIndex, fnIndex + 10400);
   assert.ok(fnBody.includes("if (isTodoSplit) await saveTodoSplitSession(createTodoSplitSession(task.id, splitMinutes));"));
   assert.match(screen, /import\s*\{[^}]*createTodoSplitSession[^}]*\}\s*from\s*["']\.\.\/arc\/todoSplitSession\.ts["']/);
   assert.match(screen, /import\s*\{[^}]*saveTodoSplitSession[^}]*\}\s*from\s*["']\.\.\/data\/storage\.ts["']/);

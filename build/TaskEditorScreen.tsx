@@ -20,6 +20,7 @@ import {
   getTask,
   loadArcBuilds,
   loadArcGoals,
+  loadArcGymMemoryExercises,
   loadFeelingActionLinks,
   loadInternalActions,
   loadStateProfiles,
@@ -39,6 +40,7 @@ import { cancelScheduledNotification } from "../data/notifications.ts";
 import { cancelAnyAlarmFor, reconcilePlannedArcAlarms, scheduleTaskAlarm } from "../data/taskAlarm.ts";
 import type { ArcBuild } from "../arc/types.ts";
 import type { ArcGoal } from "../arc/types.ts";
+import type { ArcGymMemoryExercise } from "../arc/arcGym.ts";
 import { PREPARATION_STATE_IDS, PREPARATION_STATE_LABELS } from "../arc/preparationStates.ts";
 import type { StateProfile } from "../arc/stateProfile.ts";
 import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride, resolveEffectiveOccurrence } from "../arc/taskOccurrenceOverride.ts";
@@ -52,6 +54,8 @@ import {
 } from "../arc/supportiveFeelings.ts";
 import type { FeelingActionLink, InternalAction, SupportiveFeeling, TaskFeelingLink } from "../arc/supportiveFeelings.ts";
 import MonthlyCalendar from "../live/components/MonthlyCalendar.tsx";
+import TaskLinkedActionPicker from "../live/components/TaskLinkedActionPicker.tsx";
+import { recomputeTaskMemoryReminderNotification } from "../data/taskMemoryReminderNotification.ts";
 
 const RECURRENCE_DAY_LABELS = ["יום א׳", "יום ב׳", "יום ג׳", "יום ד׳", "יום ה׳", "יום ו׳", "שבת"];
 
@@ -150,6 +154,8 @@ export default function TaskEditorScreen({
   const [expandedFeelingIds, setExpandedFeelingIds] = useState<Set<string>>(new Set());
   const [newFeelingDraft, setNewFeelingDraft] = useState("");
   const [newActionDraftByFeeling, setNewActionDraftByFeeling] = useState<Record<string, string>>({});
+  /** Action-Based Tasks task, section 4: every existing ArcGymMemoryExercise, for the multi-select "link ARC Memory" chips below -- add/edit/remove is just toggling membership in draft.linkedArcGymMemoryExerciseIds through the normal save path, no separate screen. */
+  const [memoryExercises, setMemoryExercises] = useState<ArcGymMemoryExercise[]>([]);
 
   const reload = useCallback(() => {
     Promise.all([
@@ -162,7 +168,8 @@ export default function TaskEditorScreen({
       loadInternalActions(),
       loadTaskFeelingLinks(),
       loadFeelingActionLinks(),
-    ]).then(([task, goals, builds, profiles, overrides, feelings, actions, feelingLinks, actionLinks]) => {
+      loadArcGymMemoryExercises(),
+    ]).then(([task, goals, builds, profiles, overrides, feelings, actions, feelingLinks, actionLinks, memoryExerciseList]) => {
       setArcGoals(goals);
       setArcBuilds(builds);
       setStateProfiles(profiles);
@@ -170,6 +177,7 @@ export default function TaskEditorScreen({
       setAllActions(actions);
       setTaskFeelingLinks(feelingLinks);
       setFeelingActionLinks(actionLinks);
+      setMemoryExercises(memoryExerciseList);
       if (task) {
         setExistingTask(task);
         setDraft(taskDraftFromTask(task));
@@ -255,6 +263,7 @@ export default function TaskEditorScreen({
     // shows the override.
     const reconciledTask = existingTask.status === "planned" ? await scheduleTaskAlarm(existingTask, new Date()) : existingTask;
     if (reconciledTask !== existingTask) await upsertTask(reconciledTask);
+    await recomputeTaskMemoryReminderNotification(new Date());
     router.back();
   }
 
@@ -281,6 +290,11 @@ export default function TaskEditorScreen({
     // "re-sync right after save" discipline as scheduleTaskAlarm above,
     // never left waiting for Today's own next focus.
     await reconcilePlannedArcAlarms(new Date());
+    // Action-Based Tasks task, section 4: this save may have just
+    // added/edited/removed a linked ARC-Memory exercise, or changed the
+    // task's own time -- re-armed immediately, same "re-sync right
+    // after save" discipline as the two calls above.
+    await recomputeTaskMemoryReminderNotification(new Date());
     router.replace({ pathname: "/tasks/[id]", params: { id: saved.id } });
   }
 
@@ -299,6 +313,10 @@ export default function TaskEditorScreen({
     // deleted/unscheduled" -- any "before_task" ARC alarm linked to it
     // must be disarmed immediately too, not just on Today's next focus.
     await reconcilePlannedArcAlarms(new Date());
+    // Action-Based Tasks task, section 4: "cancel if the task is
+    // deleted/canceled" -- archiving a task with linked ARC-Memory
+    // exercises must retire its own armed reminder immediately too.
+    await recomputeTaskMemoryReminderNotification(new Date());
     setConfirmArchive(false);
     router.replace("/tasks");
   }
@@ -506,6 +524,53 @@ export default function TaskEditorScreen({
             <Pressable style={[styles.chip, !draft.taskIsOnPhone && styles.chipSelected]} onPress={() => setDraft({ ...draft, taskIsOnPhone: false })}>
               <Text style={styles.chipText}>לא</Text>
             </Pressable>
+          </View>
+        </Field>
+
+        {/*
+          Action-Based Tasks task, section 3/9: available regardless of
+          isTodoItem -- see TaskLinkedActionPicker's own doc. Picking any
+          non-"none" kind also defaults taskIsOnPhone to true (section 3's
+          own "treat like the existing 'the task is on the phone'
+          mechanism to prevent unnecessary notifications during
+          execution"), still editable afterward via the chip row above.
+        */}
+        <TaskLinkedActionPicker
+          value={draft.linkedAction}
+          onChange={(linkedAction) => setDraft({ ...draft, linkedAction, taskIsOnPhone: linkedAction && linkedAction.kind !== "none" ? true : draft.taskIsOnPhone })}
+        />
+
+        {/*
+          Action-Based Tasks task, section 4: link zero or more ARC
+          Memory trigger/action pairs to this task -- 5 minutes before
+          its resolved start (or immediately at start, for a To-Do item
+          with no scheduled time), each linked exercise fires as a real
+          OS reminder (data/taskMemoryReminderNotification.ts). Add/edit/
+          remove is just toggling membership here and saving normally,
+          no separate screen.
+        */}
+        <Field label="תזכורות ARC Memory (אופציונלי)">
+          <View style={styles.chipRow}>
+            {memoryExercises.length === 0 && <Text style={styles.hint}>אין עדיין תרגילי ARC Memory שמורים.</Text>}
+            {memoryExercises.map((exercise) => {
+              const linked = draft.linkedArcGymMemoryExerciseIds.includes(exercise.id);
+              return (
+                <Pressable
+                  key={exercise.id}
+                  style={[styles.chip, linked && styles.chipSelected]}
+                  onPress={() =>
+                    setDraft({
+                      ...draft,
+                      linkedArcGymMemoryExerciseIds: linked
+                        ? draft.linkedArcGymMemoryExerciseIds.filter((id) => id !== exercise.id)
+                        : [...draft.linkedArcGymMemoryExerciseIds, exercise.id],
+                    })
+                  }
+                >
+                  <Text style={styles.chipText}>{exercise.situationText}</Text>
+                </Pressable>
+              );
+            })}
           </View>
         </Field>
 
