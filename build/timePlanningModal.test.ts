@@ -185,14 +185,49 @@ test("required (To-Do Bank task): the To-Do tab offers a '+ הוסף מהמאג�
   assert.ok(modal.includes('onPress={() => setShowBankPicker((shown) => !shown)}'));
   assert.ok(modal.includes("+ הוסף מהמאגר"));
   const fnIndex = modal.indexOf("async function handleAddFromBank(");
-  const fnBody = modal.slice(fnIndex, modal.indexOf("\n  }", fnIndex));
-  assert.ok(fnBody.includes("isTodoItem: true, scheduledDate: dateLocal, todoBankItemId: bankItem.id"));
+  const fnBody = modal.slice(fnIndex, modal.indexOf("\n  }", modal.indexOf("await upsertTask(task);", fnIndex)));
+  assert.ok(fnBody.includes("isTodoItem: true,"));
+  assert.ok(fnBody.includes("scheduledDate: dateLocal,"));
+  assert.ok(fnBody.includes("todoBankItemId: bankItem.id,"));
   assert.ok(fnBody.includes("await upsertTask(task);"));
   assert.ok(!fnBody.includes("todoUrgency"), "a fresh placement never copies/sets urgency from the bank item -- it keeps the default, same as any other new to-do");
 });
 
+test("required (Build/To-Do Action-Type Integration task, requirement 4): placing a bank item onto a day ALSO carries its own linkedAction/linkedArcGymMemoryExerciseIds onto the fresh day-occurrence Task -- unlike urgency/importance/duration, this IS configuration meant to transfer, and the ARC-Memory reminder is recomputed right after", () => {
+  const fnIndex = modal.indexOf("async function handleAddFromBank(");
+  const fnBody = modal.slice(fnIndex, modal.indexOf("\n  }", modal.indexOf("await upsertTask(task);", fnIndex)));
+  assert.ok(fnBody.includes("linkedAction: bankItem.linkedAction,"));
+  assert.ok(fnBody.includes("linkedArcGymMemoryExerciseIds: bankItem.linkedArcGymMemoryExerciseIds,"));
+  assert.ok(fnBody.includes("await recomputeTaskMemoryReminderNotification(new Date());"));
+});
+
 test("required (To-Do Bank task): the bank picker lists only ACTIVE (non-archived) bank items, via listActiveTodoBankItems -- never the raw unfiltered list", () => {
   assert.ok(modal.includes("listActiveTodoBankItems(bankItems).map((bankItem) =>"));
+});
+
+test("Build/To-Do Action-Type Integration task, requirement 6: the inline To-Do edit block mounts the exact same TaskLinkedActionPicker component every other task's editor already uses, bound directly to entry.task.linkedAction -- never a second, To-Do-specific picker", () => {
+  assert.ok(modal.includes('import TaskLinkedActionPicker from "../live/components/TaskLinkedActionPicker.tsx";'));
+  assert.ok(modal.includes("<TaskLinkedActionPicker"));
+  assert.ok(modal.includes("value={entry.task.linkedAction}"));
+  assert.ok(modal.includes("onChange={(linkedAction) => handleSetTodoLinkedAction(entry.task.id, linkedAction)}"));
+});
+
+test("handleSetTodoLinkedAction persists via plain upsertTask on the SAME task (never a batched draft), auto-defaults taskIsOnPhone to true for a non-'none' kind (mirroring TaskEditorScreen's own onChange), and recomputes the ARC-Memory reminder, same as every other mutation site that can affect it", () => {
+  const fnIndex = modal.indexOf("async function handleSetTodoLinkedAction(");
+  const fnBody = modal.slice(fnIndex, modal.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes('await upsertTask({ ...task, linkedAction, taskIsOnPhone: linkedAction && linkedAction.kind !== "none" ? true : task.taskIsOnPhone });'));
+  assert.ok(fnBody.includes("await recomputeTaskMemoryReminderNotification(new Date());"));
+  assert.ok(fnBody.includes("onChanged();"));
+});
+
+test("required: a multi-select ARC Memory chip row lets the trainee link memory exercises to a To-Do item right from this popup, via handleSetTodoLinkedMemoryExercises -- the exact same linkedArcGymMemoryExerciseIds field build/TaskEditorScreen.tsx's own chip row already writes", () => {
+  assert.ok(modal.includes("import { deleteTask, getTask, loadArcGymMemoryExercises, loadTaskOccurrenceOverrides, loadTodoBankItems, upsertTask, upsertTaskOccurrenceOverrideEntry } from \"../data/storage.ts\";"));
+  assert.ok(modal.includes("memoryExercises.map((exercise)"));
+  assert.ok(modal.includes("entry.task.linkedArcGymMemoryExerciseIds.includes(exercise.id)"));
+  const fnIndex = modal.indexOf("async function handleSetTodoLinkedMemoryExercises(");
+  const fnBody = modal.slice(fnIndex, modal.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes("await upsertTask({ ...task, linkedArcGymMemoryExerciseIds });"));
+  assert.ok(fnBody.includes("await recomputeTaskMemoryReminderNotification(new Date());"));
 });
 
 test("required: each To-Do row in this popup offers its own direct 'התחל' start button -- closing the modal and navigating straight to the task with autoStart=1, the SAME redirect every other To-Do start entry point already uses, never a second/competing start path", () => {

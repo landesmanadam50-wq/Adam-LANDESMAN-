@@ -28,7 +28,21 @@
  * an already-placed day-occurrence Task -- the two are independent
  * records by construction, satisfying "השלמת משימה או הסרתה מהיום
  * הגמיש לא מוחקת אותה מהמאגר" directly.
+ *
+ * Build/To-Do Action-Type Integration task: unlike urgency/importance/
+ * duration (deliberately per-placement-only, see above), a bank item
+ * CAN carry its own `linkedAction`/`linkedArcGymMemoryExerciseIds` --
+ * the trainee is choosing WHAT the task fundamentally is (e.g. "always
+ * an ARC Writing session"), not WHEN/how urgently to do it, so this is
+ * exactly the kind of configuration a reusable template should hold.
+ * Placing the item onto a day (build/TimePlanningModal.tsx's own
+ * handleAddFromBank) copies both fields onto the fresh day-occurrence
+ * Task, using the exact same `arc/taskLinkedAction.ts` infrastructure
+ * every fixed/weekly task and To-Do item already shares -- never a
+ * second, bank-specific linking mechanism.
  */
+
+import type { TaskLinkedAction } from "./taskLinkedAction.ts";
 
 export interface TodoBankItem {
   id: string;
@@ -36,6 +50,8 @@ export interface TodoBankItem {
   createdAt: string;
   updatedAt: string;
   archived: boolean;
+  linkedAction: TaskLinkedAction | null;
+  linkedArcGymMemoryExerciseIds: string[];
 }
 
 export function generateTodoBankItemId(): string {
@@ -43,15 +59,31 @@ export function generateTodoBankItemId(): string {
 }
 
 export function createTodoBankItem(id: string, title: string, now: string): TodoBankItem {
-  return { id, title: title.trim(), createdAt: now, updatedAt: now, archived: false };
+  return { id, title: title.trim(), createdAt: now, updatedAt: now, archived: false, linkedAction: null, linkedArcGymMemoryExerciseIds: [] };
 }
 
 export function normalizeTodoBankItem(item: TodoBankItem): TodoBankItem {
-  return { ...item, title: typeof item.title === "string" ? item.title : "", archived: item.archived ?? false };
+  return {
+    ...item,
+    title: typeof item.title === "string" ? item.title : "",
+    archived: item.archived ?? false,
+    linkedAction: item.linkedAction ?? null,
+    linkedArcGymMemoryExerciseIds: item.linkedArcGymMemoryExerciseIds ?? [],
+  };
 }
 
 export function renameTodoBankItem(item: TodoBankItem, title: string, now: string): TodoBankItem {
   return { ...item, title: title.trim(), updatedAt: now };
+}
+
+/** Sets (or clears, via null) the bank item's own linked action -- the same `TaskLinkedAction` shape every Task uses, never a bank-specific variant. */
+export function updateTodoBankItemLinkedAction(item: TodoBankItem, linkedAction: TaskLinkedAction | null, now: string): TodoBankItem {
+  return { ...item, linkedAction, updatedAt: now };
+}
+
+/** Replaces the bank item's own linked ARC Memory exercise ids -- the same array shape every Task uses. */
+export function updateTodoBankItemLinkedMemoryExercises(item: TodoBankItem, linkedArcGymMemoryExerciseIds: string[], now: string): TodoBankItem {
+  return { ...item, linkedArcGymMemoryExerciseIds, updatedAt: now };
 }
 
 export function archiveTodoBankItem(item: TodoBankItem, now: string): TodoBankItem {

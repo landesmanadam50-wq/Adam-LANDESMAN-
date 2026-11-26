@@ -48,3 +48,26 @@ test("required: build/WeeklyRoutineScreen.tsx (the Fixed Weekly Routine) offers 
   assert.ok(weeklyRoutine.includes('onPress={() => router.push("/todo-bank")}'));
   assert.ok(weeklyRoutine.includes("🗂️ מאגר To-Do"));
 });
+
+test("Build/To-Do Action-Type Integration task, requirement 1/3: editing a bank item mounts the exact same TaskLinkedActionPicker component every other task's editor already uses -- never a second, bank-specific picker -- bound to a local editLinkedAction draft seeded from the item in startEditing", () => {
+  assert.ok(screen.includes('import TaskLinkedActionPicker from "../live/components/TaskLinkedActionPicker.tsx";'));
+  assert.ok(screen.includes("<TaskLinkedActionPicker value={editLinkedAction} onChange={setEditLinkedAction} />"));
+  const fnIndex = screen.indexOf("function startEditing(");
+  const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes("setEditLinkedAction(item.linkedAction);"));
+  assert.ok(fnBody.includes("setEditLinkedMemoryIds(item.linkedArcGymMemoryExerciseIds);"));
+});
+
+test("Build/To-Do Action-Type Integration task, requirement 2/3: a multi-select ARC Memory chip row lets the trainee link memory exercises to the bank item itself, toggling membership in the local editLinkedMemoryIds draft", () => {
+  assert.ok(screen.includes("import { loadArcGymMemoryExercises, loadTodoBankItems, upsertTodoBankItemEntry } from \"../data/storage.ts\";"));
+  assert.ok(screen.includes("memoryExercises.map((exercise)"));
+  assert.ok(screen.includes("editLinkedMemoryIds.includes(exercise.id)"));
+  assert.ok(screen.includes("setEditLinkedMemoryIds(linked ? editLinkedMemoryIds.filter((id) => id !== exercise.id) : [...editLinkedMemoryIds, exercise.id])"));
+});
+
+test("required: saveEditing persists the title TOGETHER with the linkedAction/linkedArcGymMemoryExerciseIds drafts in one upsertTodoBankItemEntry call -- editing the type never requires a separate save step", () => {
+  const fnIndex = screen.indexOf("async function saveEditing(");
+  const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes("linkedAction: editLinkedAction, linkedArcGymMemoryExerciseIds: editLinkedMemoryIds"));
+  assert.ok(fnBody.includes("await upsertTodoBankItemEntry("));
+});

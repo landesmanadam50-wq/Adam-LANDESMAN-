@@ -112,6 +112,23 @@ test("recordTodoSplitProgress itself is imported from the pure arc/tasks.ts modu
   assert.match(screen, /import\s*\{[^}]*recordTodoSplitProgress[^}]*\}\s*from\s*["']\.\.\/arc\/tasks\.ts["']/);
 });
 
+test("Build/To-Do Action-Type Integration task, requirement 5: performStart's linkedAction branch (arc/taskLinkedAction.ts) is checked unconditionally, with no isTodoItem gate -- a To-Do item that was configured with a linkedAction opens the SAME internal action a fixed/weekly task would, through the exact same openLinkedAction() helper", () => {
+  const fnIndex = screen.indexOf("async function performStart()");
+  const fnBody = screen.slice(fnIndex, fnIndex + 13000);
+  assert.ok(fnBody.includes('if (task.linkedAction && task.linkedAction.kind !== "none") {'));
+  assert.ok(!fnBody.includes('task.isTodoItem && task.linkedAction'), "linkedAction routing must never be gated by isTodoItem -- it applies identically to every task");
+  assert.ok(fnBody.includes("await openLinkedAction(task, task.linkedAction);"));
+});
+
+test("Build/To-Do Action-Type Integration task, requirement 5/7: a To-Do item with no duration/split chosen yet is redirected to the duration-selection screen FIRST (handleStart, preserving the existing Smart To-Do List scheduling behavior) -- but the SAME handleStart() call, once splitMinutes/a pending split plan is present, proceeds straight to performStart(), where the linkedAction branch then fires exactly as for any other task. The difference is purely in WHEN performStart runs, never in whether linkedAction is honored.", () => {
+  const fnIndex = screen.indexOf("async function handleStart()");
+  const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
+  assert.ok(fnBody.includes("if (task.isTodoItem && splitMinutes === null && !hasPendingSplitPlan) {"));
+  assert.ok(fnBody.includes('router.push({ pathname: "/tasks/[id]/duration", params: { id: task.id } });'));
+  assert.ok(fnBody.includes("return;"));
+  assert.ok(fnBody.includes("await performStart();"), "once the redirect condition no longer holds, the SAME handleStart() falls through to the real performStart()");
+});
+
 test("required test 13 (active task/timer never auto-touched by the suggestion layer): accepting a split suggestion ALWAYS requires this explicit navigation + an explicit 'start' tap -- performStart (and therefore the split session) is never created as a side effect of merely computing or displaying a TodoSuggestion", () => {
   const fnIndex = screen.indexOf("async function performStart()");
   assert.ok(fnIndex !== -1);

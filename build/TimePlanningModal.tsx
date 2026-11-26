@@ -9,8 +9,12 @@ import { resolveEffectiveTodoOrder, reorderTodoEntry, resolveResortByRating } fr
 import type { TodoPlanEntry } from "../arc/todoList.ts";
 import { listActiveTodoBankItems } from "../arc/todoBank.ts";
 import type { TodoBankItem } from "../arc/todoBank.ts";
-import { deleteTask, getTask, loadTaskOccurrenceOverrides, loadTodoBankItems, upsertTask, upsertTaskOccurrenceOverrideEntry } from "../data/storage.ts";
+import type { TaskLinkedAction } from "../arc/taskLinkedAction.ts";
+import type { ArcGymMemoryExercise } from "../arc/arcGym.ts";
+import { deleteTask, getTask, loadArcGymMemoryExercises, loadTaskOccurrenceOverrides, loadTodoBankItems, upsertTask, upsertTaskOccurrenceOverrideEntry } from "../data/storage.ts";
 import { reconcileTaskAlarms } from "../data/taskAlarm.ts";
+import { recomputeTaskMemoryReminderNotification } from "../data/taskMemoryReminderNotification.ts";
+import TaskLinkedActionPicker from "../live/components/TaskLinkedActionPicker.tsx";
 
 const TODO_RATING_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const SCHEDULED_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -71,6 +75,7 @@ export default function TimePlanningModal({
   const [rowDrafts, setRowDrafts] = useState<Record<string, { scheduledTime: string; durationMinutes: string }>>({});
   const [bankItems, setBankItems] = useState<TodoBankItem[]>([]);
   const [showBankPicker, setShowBankPicker] = useState(false);
+  const [memoryExercises, setMemoryExercises] = useState<ArcGymMemoryExercise[]>([]);
 
   useEffect(() => {
     if (!visible) {
@@ -81,6 +86,7 @@ export default function TimePlanningModal({
       setShowBankPicker(false);
     } else {
       loadTodoBankItems().then(setBankItems);
+      loadArcGymMemoryExercises().then(setMemoryExercises);
     }
   }, [visible]);
 
@@ -125,11 +131,28 @@ export default function TimePlanningModal({
    * (default 5), same as any other to-do -- rated afterward via the
    * existing rating chips below, same as any other row. Never touches
    * the bank item itself.
+   *
+   * Build/To-Do Action-Type Integration task, requirement 4: the bank
+   * item's own linkedAction/linkedArcGymMemoryExerciseIds (if set) ARE
+   * carried onto the fresh day-occurrence Task -- unlike urgency/
+   * importance/duration above, this is configuration about WHAT the
+   * task is, not how urgently to do it, so it is preserved on transfer.
+   * recomputeTaskMemoryReminderNotification is called right after, same
+   * as every other mutation site that can affect the ARC-Memory
+   * reminder (build/TaskEditorScreen.tsx's own save paths).
    */
   async function handleAddFromBank(bankItem: TodoBankItem) {
     const now = new Date().toISOString();
-    const task = { ...createEmptyTask(generateTaskId(), bankItem.title, bankItem.title, now), isTodoItem: true, scheduledDate: dateLocal, todoBankItemId: bankItem.id };
+    const task = {
+      ...createEmptyTask(generateTaskId(), bankItem.title, bankItem.title, now),
+      isTodoItem: true,
+      scheduledDate: dateLocal,
+      todoBankItemId: bankItem.id,
+      linkedAction: bankItem.linkedAction,
+      linkedArcGymMemoryExerciseIds: bankItem.linkedArcGymMemoryExerciseIds,
+    };
     await upsertTask(task);
+    await recomputeTaskMemoryReminderNotification(new Date());
     setShowBankPicker(false);
     onChanged();
   }
@@ -162,6 +185,34 @@ export default function TimePlanningModal({
   async function handleSetTodoSplittable(taskId: string, todoIsSplittable: boolean) {
     const task = await getTask(taskId);
     if (task) await upsertTask({ ...task, todoIsSplittable });
+    onChanged();
+  }
+
+  /**
+   * Build/To-Do Action-Type Integration task, requirement 6: edits a
+   * To-Do item's own linkedAction right from this popup, reusing the
+   * exact same arc/taskLinkedAction.ts infrastructure and
+   * TaskLinkedActionPicker component build/TaskEditorScreen.tsx already
+   * uses for every other task -- never a second, To-Do-specific linking
+   * mechanism. Picking a non-"none" kind also defaults taskIsOnPhone to
+   * true, same auto-default TaskEditorScreen's own onChange already
+   * applies. recomputeTaskMemoryReminderNotification keeps the ARC-
+   * Memory reminder in sync, mirroring every other save path that can
+   * touch linkedAction/linkedArcGymMemoryExerciseIds.
+   */
+  async function handleSetTodoLinkedAction(taskId: string, linkedAction: TaskLinkedAction | null) {
+    const task = await getTask(taskId);
+    if (!task) return;
+    await upsertTask({ ...task, linkedAction, taskIsOnPhone: linkedAction && linkedAction.kind !== "none" ? true : task.taskIsOnPhone });
+    await recomputeTaskMemoryReminderNotification(new Date());
+    onChanged();
+  }
+
+  async function handleSetTodoLinkedMemoryExercises(taskId: string, linkedArcGymMemoryExerciseIds: string[]) {
+    const task = await getTask(taskId);
+    if (!task) return;
+    await upsertTask({ ...task, linkedArcGymMemoryExerciseIds });
+    await recomputeTaskMemoryReminderNotification(new Date());
     onChanged();
   }
 
@@ -357,6 +408,42 @@ export default function TimePlanningModal({
                             textAlign="right"
                             placeholder="רשות"
                           />
+
+                          {/*
+                            Build/To-Do Action-Type Integration task,
+                            requirement 6: a To-Do item gets the exact same
+                            TaskLinkedActionPicker build/TaskEditorScreen.tsx
+                            already mounts for every other task -- never a
+                            second, cut-down To-Do-only picker.
+                          */}
+                          <TaskLinkedActionPicker
+                            value={entry.task.linkedAction}
+                            onChange={(linkedAction) => handleSetTodoLinkedAction(entry.task.id, linkedAction)}
+                          />
+
+                          <Text style={styles.todoEditLabel}>תזכורות ARC Memory (אופציונלי)</Text>
+                          <View style={styles.chipRow}>
+                            {memoryExercises.length === 0 && <Text style={styles.hint}>אין עדיין תרגילי ARC Memory שמורים.</Text>}
+                            {memoryExercises.map((exercise) => {
+                              const linked = entry.task.linkedArcGymMemoryExerciseIds.includes(exercise.id);
+                              return (
+                                <Pressable
+                                  key={exercise.id}
+                                  style={[styles.chip, linked && styles.chipSelected]}
+                                  onPress={() =>
+                                    handleSetTodoLinkedMemoryExercises(
+                                      entry.task.id,
+                                      linked
+                                        ? entry.task.linkedArcGymMemoryExerciseIds.filter((id) => id !== exercise.id)
+                                        : [...entry.task.linkedArcGymMemoryExerciseIds, exercise.id]
+                                    )
+                                  }
+                                >
+                                  <Text style={styles.chipText}>{exercise.situationText}</Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
                         </View>
                       )}
                     </View>
