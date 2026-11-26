@@ -1,8 +1,11 @@
 package expo.modules.floatingtimeroverlay
 
+import android.app.KeyguardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -122,6 +125,31 @@ class FloatingTimerOverlayModule : Module() {
         context.stopService(Intent(context, OverlayService::class.java))
       }
     }
+
+    // Proactive Support During Task LIVE task: a plain synchronous query
+    // (same bridge style as hasOverlayPermission() above -- no new
+    // module, no SYSTEM_ALERT_WINDOW permission involved), queried by
+    // the JS-side AppState listener at the exact moment the app just
+    // backgrounded. isInteractive=false covers "screen off";
+    // isKeyguardLocked=true covers "locked but the screen is still on"
+    // (e.g. mid-animation) -- together matching the spec's own "כיבה
+    // או נעילה" (off OR locked) wording exactly. Never used to react to
+    // a change over time (no BroadcastReceiver, no event emitted back
+    // to JS) -- this module has never had an event-emission channel,
+    // and a point-in-time answer at the moment JS needs it is all this
+    // feature requires.
+    Function("isScreenLockedOrOff") {
+      isScreenLockedOrOff()
+    }
+  }
+
+  private fun isScreenLockedOrOff(): Boolean {
+    val context = appContext.reactContext ?: return false
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+    val keyguardManager = context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+    val screenOff = powerManager?.isInteractive == false
+    val locked = keyguardManager?.isKeyguardLocked == true
+    return screenOff || locked
   }
 
   private fun hasPermission(): Boolean {

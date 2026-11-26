@@ -114,6 +114,7 @@ import { handleEmotionalCheckInNotificationEvent } from "./emotionalCheckInNotif
 import { handleTaskTransitionNotificationEvent } from "./taskTransitionNotification.ts";
 import { handleTaskNotStartedNotificationEvent, recomputeTaskNotStartedNotification } from "./taskNotStartedNotification.ts";
 import { handleFreeTimeWindowNotificationEvent, recomputeFreeTimeWindowNotification } from "./freeTimeWindowNotification.ts";
+import { handleProactiveSupportNotificationEvent } from "./proactiveSupportNotification.ts";
 import { handleMorningAlarmAction, turnOffMorningAlarm } from "./morningAlarm.ts";
 import { resolveLatestReflectionForTask, resolveTaskAlarmNotificationContent } from "../arc/taskReflection.ts";
 
@@ -1604,6 +1605,17 @@ export async function handleTaskAlarmEvent(event: Event): Promise<void> {
   // onBackgroundEvent/onForegroundEvent registration.
   if (data.kind === "freeTimeWindow") {
     await handleFreeTimeWindowNotificationEvent(event);
+    return;
+  }
+
+  // ARCHI -- Proactive Support During Task LIVE task: the mid-task
+  // support notification's own three actions (😟/🙂/🧠 מחשבה-דחף) and
+  // body-tap (demoted 😄 מעולה) -- routes through the shared
+  // handleProactiveSupportNotificationEvent
+  // (data/proactiveSupportNotification.ts), never a second
+  // onBackgroundEvent/onForegroundEvent registration.
+  if (data.kind === "proactiveSupport") {
+    await handleProactiveSupportNotificationEvent(event);
     return;
   }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, AppState, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 
@@ -69,7 +69,8 @@ import { buildTaskOccurrenceOverride, findTaskOccurrenceOverride, resolveEffecti
 import { createArcInsight, createLearnedBelief, generateArcBeliefId, generateArcInsightId } from "../arc/arcInsightBelief.ts";
 import { cancelScheduledNotification } from "../data/notifications.ts";
 import { armTaskTimerEndAlarm, cancelAnyAlarmFor, cancelTaskTimerEndAlarm, scheduleTaskAlarm } from "../data/taskAlarm.ts";
-import { showFloatingTimerOverlay, showIdleFloatingOverlayPanel, updateFloatingTimerOverlay } from "../data/floatingTimerOverlay.ts";
+import { isScreenLockedOrOffAsync, showFloatingTimerOverlay, showIdleFloatingOverlayPanel, updateFloatingTimerOverlay } from "../data/floatingTimerOverlay.ts";
+import { displayProactiveSupportNotification } from "../data/proactiveSupportNotification.ts";
 import type { NextScheduledTaskForOverlay } from "../arc/floatingTimerOverlayPayload.ts";
 import { playBreakStartSound, playTimerCompletionSound } from "../data/timerSound.ts";
 import { resolveTaskClockTime } from "../arc/todaySchedule.ts";
@@ -821,6 +822,45 @@ export default function ActiveTaskScreen({
     advanceToNextSplitSegment(endedRun);
   }, [task, splitProgress, timerRun, restRun, now]);
 
+  /**
+   * ARCHI -- Proactive Support During Task LIVE task, section 2: "אם
+   * המשתמש יוצא מהאפליקציה כאשר מסך הטלפון דולק" -- active only while
+   * timerRun && !restRun, the exact same visibility gate the live
+   * moodButtonRow below already uses, so a planned break or an idle
+   * screen never arms this (section 4's own "לא לשלוח בהפסקה מתוכננת" /
+   * "אין משימה פעילה" requirements fall out of this gate for free, with
+   * no extra check needed), and the listener tears down the instant
+   * that condition stops holding. In-app navigation (e.g. opening ARC
+   * from this same screen, section 4's "כבר בתרגיל ARC") never changes
+   * AppState at all -- it's a React Navigation push within the same
+   * foregrounded app -- so only a genuine OS-level backgrounding
+   * (home button, app switcher, an incoming call, the phone being
+   * locked) reaches this listener in the first place.
+   *
+   * Two more section-4 exemptions are checked here, in order, before
+   * ever displaying anything: taskIsOnPhone (section 3 -- the trainee
+   * is deliberately using the phone for something else as part of
+   * doing this exact task) and the native screen-lock/off query
+   * (section 2's own explicit carve-out -- "אם המשתמש מכבה או נועל את
+   * מסך הטלפון, אין לשלוח את ההתראה"). Neither check, nor this effect
+   * itself, ever reads or writes TaskTimerRun -- backgrounding stays
+   * completely irrelevant to the timer's own correctness, unchanged.
+   */
+  useEffect(() => {
+    if (!timerRun || restRun || !task) return;
+    const activeTaskId = task.id;
+    const activeTaskIsOnPhone = task.taskIsOnPhone;
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "background" && nextState !== "inactive") return;
+      if (activeTaskIsOnPhone) return;
+      isScreenLockedOrOffAsync().then((lockedOrOff) => {
+        if (lockedOrOff) return;
+        void displayProactiveSupportNotification(activeTaskId, new Date());
+      });
+    });
+    return () => subscription.remove();
+  }, [timerRun, restRun, task]);
+
   // Today screen's own "start"/"postpone" card actions (see this
   // component's own doc comment above) -- fires at most once per screen
   // instance, and never when a timer is already in flight for this task.
@@ -1293,6 +1333,21 @@ export default function ActiveTaskScreen({
         attemptOutcome: "paused",
       })
     );
+  }
+
+  /**
+   * ARCHI -- Proactive Support During Task LIVE task, section 1: "כאשר
+   * המשתמש לוחץ על כפתור השהיית הטיימר" -- the EXPLICIT "השהיה" button
+   * only, never handlePause() itself (which is also called internally
+   * by the 😟/🙂 mood buttons below and by the continuation-loop's own
+   * pause-before-transition calls -- none of those are the trainee
+   * pressing "pause," so none of them should also pop this notification).
+   * Always fires regardless of taskIsOnPhone or screen state -- an
+   * explicit pause always fires it, per the spec.
+   */
+  async function handlePauseButtonPress() {
+    await handlePause();
+    if (task) await displayProactiveSupportNotification(task.id, new Date());
   }
 
   async function handleResume() {
@@ -2152,7 +2207,7 @@ export default function ActiveTaskScreen({
                   <Text style={styles.secondaryButtonText}>המשך</Text>
                 </Pressable>
               ) : (
-                <Pressable style={styles.secondaryButton} onPress={handlePause}>
+                <Pressable style={styles.secondaryButton} onPress={handlePauseButtonPress}>
                   <Text style={styles.secondaryButtonText}>השהיה</Text>
                 </Pressable>
               )}
@@ -2206,6 +2261,21 @@ export default function ActiveTaskScreen({
                 <Text style={styles.secondaryButtonText}>🙂 סבבה</Text>
               </Pressable>
             </View>
+
+            {/*
+              Proactive Support During Task LIVE task: live toggle for
+              Task.taskIsOnPhone -- same persistTask(...) call shape
+              handlePause/handleResume already use, just flipping one
+              different field. Shown in the same gate (!restRun &&
+              timerRun) as the app-exit proactive-support listener this
+              flag governs, so it's reachable exactly while it matters.
+            */}
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => persistTask({ ...task, taskIsOnPhone: !task.taskIsOnPhone, updatedAt: new Date().toISOString() })}
+            >
+              <Text style={styles.secondaryButtonText}>{task.taskIsOnPhone ? "✓ המשימה היא בטלפון" : "המשימה היא בטלפון"}</Text>
+            </Pressable>
 
             {/* Task Shortening/Rescheduling UI, section 5: a nonintrusive,
                 contextual section -- never an automatic replacement of

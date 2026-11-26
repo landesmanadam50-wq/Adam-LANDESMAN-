@@ -398,7 +398,10 @@ test("handleTaskAlarmEvent gives the end-of-timer ring's own single 'עצור' a
   // ARCHI -- Adaptive Task Execution & Emotional Persistence task:
   // widened again (4200 -> 5000) for the new "taskNotStarted" dispatch
   // branch, inserted right after "taskTransition", above this one.
-  const fnBody = module_.slice(fnIndex, fnIndex + 5000);
+  // ARCHI -- Proactive Support During Task LIVE task: widened again
+  // (5000 -> 5600) for the new "proactiveSupport" dispatch branch,
+  // inserted right after "freeTimeWindow", above this one.
+  const fnBody = module_.slice(fnIndex, fnIndex + 5600);
   const branchIndex = fnBody.indexOf('if (data.kind === "taskTimerEnd") {');
   assert.ok(branchIndex !== -1);
   const branchBody = fnBody.slice(branchIndex, branchIndex + 400);

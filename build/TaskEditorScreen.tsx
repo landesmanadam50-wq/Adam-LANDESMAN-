@@ -491,6 +491,24 @@ export default function TaskEditorScreen({
           </>
         )}
 
+        {/*
+          Proactive Support During Task LIVE task: see Task.taskIsOnPhone's
+          own doc -- settable here regardless of isTodoItem (a To-Do item
+          can be phone-based too), remembered and reused automatically the
+          next time this same task runs; also live-toggleable in real time
+          from Task LIVE itself (ActiveTaskScreen.tsx).
+        */}
+        <Field label="המשימה היא בטלפון">
+          <View style={styles.chipRow}>
+            <Pressable style={[styles.chip, draft.taskIsOnPhone && styles.chipSelected]} onPress={() => setDraft({ ...draft, taskIsOnPhone: true })}>
+              <Text style={styles.chipText}>כן</Text>
+            </Pressable>
+            <Pressable style={[styles.chip, !draft.taskIsOnPhone && styles.chipSelected]} onPress={() => setDraft({ ...draft, taskIsOnPhone: false })}>
+              <Text style={styles.chipText}>לא</Text>
+            </Pressable>
+          </View>
+        </Field>
+
         <Field label="תאריך מתוכנן (YYYY-MM-DD, רשות)">
           <TextInput
             style={styles.textInput}

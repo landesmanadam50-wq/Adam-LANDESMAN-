@@ -42,6 +42,8 @@ interface FloatingTimerOverlayNativeModule {
   show(payload: FloatingTimerOverlayPayload): void;
   update(payload: FloatingTimerOverlayPayload): void;
   hide(): void;
+  // Proactive Support During Task LIVE task.
+  isScreenLockedOrOff(): boolean;
 }
 
 let cachedModule: FloatingTimerOverlayNativeModule | null | undefined;
@@ -64,6 +66,23 @@ function getNativeModule(): FloatingTimerOverlayNativeModule | null {
 export async function hasFloatingOverlayPermissionAsync(): Promise<boolean> {
   try {
     return getNativeModule()?.hasOverlayPermission() ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Proactive Support During Task LIVE task: a point-in-time native query
+ * ("is the screen off or locked right now"), never an ongoing signal --
+ * see FloatingTimerOverlayModule.kt's own isScreenLockedOrOff doc.
+ * Defaults to false (not locked) on any platform/build where the native
+ * module isn't registered, or on any native-call error -- the same
+ * "fail open to ordinary behavior" default hasFloatingOverlayPermissionAsync
+ * itself uses for its own unrelated question.
+ */
+export async function isScreenLockedOrOffAsync(): Promise<boolean> {
+  try {
+    return getNativeModule()?.isScreenLockedOrOff() ?? false;
   } catch {
     return false;
   }

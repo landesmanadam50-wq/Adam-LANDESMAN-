@@ -269,6 +269,22 @@ export interface Task {
   /** Same as arcWritingTextId above, but pointing at an ArcBookChapter instead of a standalone text. */
   arcWritingChapterId: string | null;
   /**
+   * Proactive Support During Task LIVE task: true means this task is
+   * expected to involve leaving ARCHI for other apps on the phone as
+   * part of actually doing it (e.g. looking something up, messaging,
+   * using another app) -- so ActiveTaskScreen.tsx's own app-exit
+   * detection must NOT treat backgrounding as a sign of distress while
+   * this task's timer is running, and must never fire the proactive
+   * support notification for that trigger alone. An explicit pause of
+   * the timer still fires it regardless of this flag -- this field only
+   * ever suppresses the EXIT trigger, never the pause trigger. false
+   * (every pre-existing task, and the default for a new one) is the
+   * ordinary case. Settable both in the task editor (persisted, reused
+   * automatically next time) and live, in real time, from Task LIVE
+   * itself.
+   */
+  taskIsOnPhone: boolean;
+  /**
    * Smart To-Do List task: true marks this one-off Task as a To-Do item
    * -- no fixed start time, lives only in the Flexible Daily Schedule's
    * own "To-Do List" tab rather than the chronological scheduled-task
@@ -398,6 +414,7 @@ export function createEmptyTask(id: string, title: string, firstAction: string, 
     arcLearningReviewTopicId: null,
     arcWritingTextId: null,
     arcWritingChapterId: null,
+    taskIsOnPhone: false,
     isTodoItem: false,
     todoUrgency: 5,
     todoImportance: 5,
@@ -464,6 +481,7 @@ export function normalizeTask(task: Task): Task {
     arcLearningReviewTopicId: task.arcLearningReviewTopicId ?? null,
     arcWritingTextId: task.arcWritingTextId ?? null,
     arcWritingChapterId: task.arcWritingChapterId ?? null,
+    taskIsOnPhone: task.taskIsOnPhone ?? false,
     isTodoItem: task.isTodoItem ?? false,
     todoUrgency: task.todoUrgency ?? 5,
     todoImportance: task.todoImportance ?? 5,

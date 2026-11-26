@@ -89,6 +89,8 @@ export interface TaskDraft {
   todoUrgency: string;
   todoImportance: string;
   todoIsSplittable: boolean;
+  /** Proactive Support During Task LIVE task: see Task.taskIsOnPhone's own doc -- editable here regardless of isTodoItem/recurrence, carried straight through by buildTaskFromDraft. */
+  taskIsOnPhone: boolean;
 }
 
 export function createEmptyTaskDraft(): TaskDraft {
@@ -132,6 +134,7 @@ export function createEmptyTaskDraft(): TaskDraft {
     todoUrgency: "5",
     todoImportance: "5",
     todoIsSplittable: true,
+    taskIsOnPhone: false,
   };
 }
 
@@ -164,6 +167,7 @@ export function taskDraftFromTask(task: Task): TaskDraft {
     todoUrgency: String(task.todoUrgency),
     todoImportance: String(task.todoImportance),
     todoIsSplittable: task.todoIsSplittable,
+    taskIsOnPhone: task.taskIsOnPhone,
   };
 }
 
@@ -426,6 +430,7 @@ export function buildTaskFromDraft(draft: TaskDraft, base: Task, now: string): T
     todoOrder: base.todoOrder,
     todoIsSplittable: draft.isTodoItem ? draft.todoIsSplittable : base.todoIsSplittable,
     todoCompletedMinutes: base.todoCompletedMinutes,
+    taskIsOnPhone: draft.taskIsOnPhone,
     updatedAt: now,
   };
 }
