@@ -110,3 +110,12 @@ export function resolveAddictionNotificationAction(pressActionId: string | null 
 export function isArcAddictionNotificationKind(kind: unknown): boolean {
   return kind === ARC_ADDICTION_WAIT_END_KIND || kind === ARC_ADDICTION_WAIT_ONGOING_KIND;
 }
+
+/** The floating overlay's second line: the running wait only (label + absolute end time). */
+export function resolveAddictionOverlaySecondary(session: AddictionSession | null): { label: string; endsAtMs: number } | null {
+  const round = getActiveWaitRound(session);
+  if (!session || !round) return null;
+  const endsAtMs = Date.parse(round.endsAt);
+  if (!Number.isFinite(endsAtMs)) return null;
+  return { label: session.profileName.trim() || "זמן המתנה", endsAtMs };
+}

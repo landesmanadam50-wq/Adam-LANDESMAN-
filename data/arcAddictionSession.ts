@@ -25,9 +25,16 @@ import type { AddictionProfile } from "../arc/arcAddiction.ts";
 import { createAddictionProfile, generateAddictionEpisodeId } from "../arc/arcAddiction.ts";
 import type { AddictionSession, AddictionSessionEvent } from "../arc/arcAddictionFlow.ts";
 import { createAddictionSession, getCurrentWaitRound, reconcileAddictionSession, reduceAddictionSession } from "../arc/arcAddictionFlow.ts";
-import { ARC_ADDICTION_WAIT_END_KIND, isArcAddictionNotificationKind, resolveAddictionNotificationAction, resolveAddictionNotificationPlan } from "../arc/arcAddictionWaitPlan.ts";
+import {
+  ARC_ADDICTION_WAIT_END_KIND,
+  isArcAddictionNotificationKind,
+  resolveAddictionNotificationAction,
+  resolveAddictionNotificationPlan,
+  resolveAddictionOverlaySecondary,
+} from "../arc/arcAddictionWaitPlan.ts";
 import { commitAddictionSession, getAddictionProfile, loadActiveAddictionSessionOrCloseStale } from "./arcAddictionStorage.ts";
 import { applyArcAddictionNotificationPlan, cancelArcAddictionOngoingNotification } from "./arcAddictionWaitNotification.ts";
+import { syncFloatingSecondaryTimer } from "./floatingTimerOverlay.ts";
 
 export const ARC_ADDICTION_SESSION_ROUTE = "/arc-addiction/session";
 const PENDING_OPEN_KEY = "archi.arcAddictionPendingOpen.v1";
@@ -63,22 +70,13 @@ function emit(session: AddictionSession | null): void {
   }
 }
 
-/** Extra side-effect hooks (e.g. the floating overlay's second line, wired in data/floatingTimerOverlay.ts). */
-type SideEffect = (session: AddictionSession | null) => Promise<void> | void;
-const sideEffects: SideEffect[] = [];
-
-export function registerAddictionSideEffect(effect: SideEffect): void {
-  if (!sideEffects.includes(effect)) sideEffects.push(effect);
-}
-
+/** Everything outside the app that reflects the session: alarm, countdown notification, floating overlay second line. */
 export async function syncAddictionSideEffects(session: AddictionSession | null): Promise<void> {
   await applyArcAddictionNotificationPlan(resolveAddictionNotificationPlan(session, Date.now()));
-  for (const effect of sideEffects) {
-    try {
-      await effect(session);
-    } catch (error) {
-      console.warn("[arcAddictionSession] side effect failed", error);
-    }
+  try {
+    await syncFloatingSecondaryTimer(resolveAddictionOverlaySecondary(session));
+  } catch (error) {
+    console.warn("[arcAddictionSession] overlay sync failed", error);
   }
 }
 

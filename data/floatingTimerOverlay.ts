@@ -44,6 +44,9 @@ interface FloatingTimerOverlayNativeModule {
   hide(): void;
   // Proactive Support During Task LIVE task.
   isScreenLockedOrOff(): boolean;
+  /** ARC Addiction: independent second line (absent on an APK built before it existed). */
+  setSecondaryTimer?(label: string, endsAtMs: number): void;
+  clearSecondaryTimer?(): void;
 }
 
 let cachedModule: FloatingTimerOverlayNativeModule | null | undefined;
@@ -160,6 +163,10 @@ export async function updateFloatingTimerOverlay(
 export async function hideFloatingTimerOverlay(): Promise<void> {
   try {
     getNativeModule()?.hide();
+    // ARC Addiction: hide() stops the whole overlay service; an active
+    // urge waiting timer is independent of the task timer, so it is put
+    // straight back (on its own, idle panel) -- ending a task never ends it.
+    if (currentSecondaryTimer) applySecondaryTimer(currentSecondaryTimer);
   } catch {
     // Best-effort.
   }
@@ -189,4 +196,53 @@ export async function showIdleFloatingOverlayPanel(nextScheduledTask: NextSchedu
   } catch {
     // Best-effort -- the in-app Home screen is still completely correct regardless.
   }
+}
+
+// ---------------------------------------------------------------------------
+// ARC Addiction: the floating overlay's independent second line
+// ---------------------------------------------------------------------------
+
+export interface FloatingSecondaryTimer {
+  label: string;
+  endsAtMs: number;
+}
+
+/** What the second line currently shows (in-memory; re-derived from the stored session on every app open). */
+let currentSecondaryTimer: FloatingSecondaryTimer | null = null;
+
+function applySecondaryTimer(timer: FloatingSecondaryTimer | null): void {
+  const native = getNativeModule();
+  if (!native) return;
+  try {
+    if (timer) native.setSecondaryTimer?.(timer.label, timer.endsAtMs);
+    else native.clearSecondaryTimer?.();
+  } catch {
+    // Best-effort, same as every other overlay call here.
+  }
+}
+
+/**
+ * Shows / updates / clears the ARC Addiction waiting timer on the
+ * floating overlay's second line. Never touches the task timer's own
+ * payload (show/update above), so neither timer can pause or reset the
+ * other. Respects the trainee's floating-overlay preference.
+ */
+export async function syncFloatingSecondaryTimer(timer: FloatingSecondaryTimer | null): Promise<void> {
+  if (!getNativeModule()) return;
+  let next = timer;
+  if (next) {
+    try {
+      const preferences = await loadFloatingTimerOverlayPreferences();
+      if (!preferences.enabled || !(await hasFloatingOverlayPermissionAsync())) next = null;
+    } catch {
+      next = null;
+    }
+  }
+  const same = (a: FloatingSecondaryTimer | null, b: FloatingSecondaryTimer | null) => (a === null ? b === null : b !== null && a.label === b.label && a.endsAtMs === b.endsAtMs);
+  // A cleared line is re-cleared every time (harmless; the native side stops a service started only for that),
+  // an unchanged running line is not re-sent.
+  if (next !== null && same(currentSecondaryTimer, next)) return;
+  if (next === null && currentSecondaryTimer === null) return;
+  currentSecondaryTimer = next;
+  applySecondaryTimer(next);
 }
