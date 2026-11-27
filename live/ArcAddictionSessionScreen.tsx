@@ -67,11 +67,19 @@ export default function ArcAddictionSessionScreen() {
   const [localArc, setLocalArc] = useState<AddictionArcState | null>(null);
   const busyRef = useRef(false);
   const arcPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The ARC state waiting for its debounced save – flushed (not dropped) when the screen unmounts. */
+  const pendingArcRef = useRef<AddictionArcState | null>(null);
   const elapsedDispatchedFor = useRef<string | null>(null);
 
   const applySession = useCallback((next: AddictionSession | null) => {
     setSession(next);
-    setLocalArc(next?.arc ?? null);
+    // While the SAME ARC is running, the screen's local copy is the source of truth (it may hold text typed
+    // after the last debounced save) – a stored echo must never roll it back. A new/ended ARC replaces it.
+    setLocalArc((previous) => {
+      const incoming = next?.arc ?? null;
+      if (previous && incoming && previous.kind === incoming.kind && previous.startedAt === incoming.startedAt) return previous;
+      return incoming;
+    });
   }, []);
 
   const reload = useCallback(() => {
@@ -114,7 +122,8 @@ export default function ArcAddictionSessionScreen() {
   const successMemory = useAddictionSuccessMemory(session?.episode.profileId ?? null, session?.stage === "efficacy_arc");
 
   async function send(event: AddictionSessionEvent): Promise<AddictionSession | null> {
-    if (busyRef.current && event.type !== "ARC_UPDATE") return session ?? null;
+    // WAIT_ELAPSED is idempotent in the reducer, so it is never dropped by the busy guard (a dropped one left the timer at 00:00).
+    if (busyRef.current && event.type !== "ARC_UPDATE" && event.type !== "WAIT_ELAPSED") return session ?? null;
     busyRef.current = true;
     try {
       const next = await dispatchAddictionEvent(event);
@@ -141,15 +150,27 @@ export default function ArcAddictionSessionScreen() {
     setLocalArc(arc);
     if (arcPersistTimer.current) clearTimeout(arcPersistTimer.current);
     if (stepChanged) {
+      pendingArcRef.current = null;
       void dispatchAddictionEvent({ type: "ARC_UPDATE", arc });
     } else {
-      arcPersistTimer.current = setTimeout(() => void dispatchAddictionEvent({ type: "ARC_UPDATE", arc }), ARC_PERSIST_DEBOUNCE_MS);
+      pendingArcRef.current = arc;
+      arcPersistTimer.current = setTimeout(() => {
+        pendingArcRef.current = null;
+        void dispatchAddictionEvent({ type: "ARC_UPDATE", arc });
+      }, ARC_PERSIST_DEBOUNCE_MS);
     }
+  }
+
+  function cancelPendingArcSave() {
+    if (arcPersistTimer.current) clearTimeout(arcPersistTimer.current);
+    pendingArcRef.current = null;
   }
 
   useEffect(
     () => () => {
+      // Leaving the screen: save the last edits instead of dropping them.
       if (arcPersistTimer.current) clearTimeout(arcPersistTimer.current);
+      if (pendingArcRef.current) void dispatchAddictionEvent({ type: "ARC_UPDATE", arc: pendingArcRef.current });
     },
     []
   );
@@ -211,11 +232,11 @@ export default function ArcAddictionSessionScreen() {
               circleColor={circleColor}
               onChange={updateArc}
               onComplete={(arc) => {
-                if (arcPersistTimer.current) clearTimeout(arcPersistTimer.current);
+                cancelPendingArcSave();
                 void send({ type: "ARC_COMPLETE", arc });
               }}
               onSkip={() => {
-                if (arcPersistTimer.current) clearTimeout(arcPersistTimer.current);
+                cancelPendingArcSave();
                 void send({ type: "ARC_SKIP" });
               }}
             />

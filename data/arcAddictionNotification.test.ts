@@ -38,7 +38,7 @@ test("existing infrastructure is reused: shared channels + permission helper", (
 
 test("no duplicate alarms: cancel before every re-arm, and identical re-arms are skipped", () => {
   const apply = notification.slice(notification.indexOf("export async function applyArcAddictionNotificationPlan"));
-  assert.ok(apply.indexOf("await cancelArcAddictionWaitEndNotification();") < apply.indexOf("notifee.createTriggerNotification("));
+  assert.ok(apply.indexOf("await cancelArcAddictionWaitEndTrigger();") < apply.indexOf("notifee.createTriggerNotification("));
   assert.match(apply, /armedWaitEndFireAtMs !== plan\.waitEnd\.fireAtMs/);
 });
 
@@ -97,4 +97,34 @@ test("app/_layout reconciles on cold start and on every return to the foreground
   assert.match(layout, /if \(state === "active"\) syncArcAddictionOnOpen\(\)/);
   assert.match(layout, /consumeArcAddictionPendingOpen\(\)/);
   assert.match(layout, /return \(\) => appStateSubscription\.remove\(\);/);
+});
+
+test("review fix: the displayed כן / לא notification is never cancelled just because the trigger is gone", () => {
+  const apply = notification.slice(notification.indexOf("export async function applyArcAddictionNotificationPlan"));
+  assert.match(apply, /if \(plan\.dismissDisplayedWaitEnd\) await dismissDisplayedArcAddictionWaitEnd\(\);/);
+  const triggerOnly = notification.slice(notification.indexOf("async function cancelArcAddictionWaitEndTrigger"), notification.indexOf("async function dismissDisplayedArcAddictionWaitEnd"));
+  assert.ok(!triggerOnly.includes("cancelNotification("), "cancelling the trigger must not remove a displayed notification");
+  const handler = service.slice(service.indexOf("export async function handleArcAddictionNotificationEvent"));
+  assert.match(handler, /markArcAddictionWaitEndDelivered\(\);/);
+});
+
+test("review fix: notification navigation never replaces the current screen", () => {
+  assert.match(service, /router\.navigate\(ARC_ADDICTION_SESSION_ROUTE\)/);
+  assert.ok(!service.includes("router.replace(ARC_ADDICTION_SESSION_ROUTE)"));
+  assert.match(layout, /router\.navigate\(ARC_ADDICTION_SESSION_ROUTE\)/);
+});
+
+test("review fix: pending-open is a timestamp, set before the answer is recorded, and expires", () => {
+  const press = service.slice(service.indexOf("EventType.ACTION_PRESS"));
+  assert.ok(press.indexOf("await markPendingOpen()") < press.indexOf("await dispatchAddictionEvent("));
+  assert.match(service, /AsyncStorage\.setItem\(PENDING_OPEN_KEY, String\(Date\.now\(\)\)\)/);
+  assert.match(service, /return isPendingOpenFresh\(value, Date\.now\(\)\);/);
+});
+
+test("review fix: profile edits outside a session are serialized and applied to a fresh profile", () => {
+  assert.match(service, /export async function mutateAddictionProfile\(id: string, mutate: \(fresh: AddictionProfile\) => AddictionProfile\)/);
+  const editor = read("build/ArcAddictionProfileEditorScreen.tsx");
+  assert.match(editor, /mutateAddictionProfile\(profile\.id, \(fresh\) => updateAddictionProfile\(fresh, changes, nowIso\)\)/);
+  assert.match(read("live/ArcAddictionProgressScreen.tsx"), /mutateAddictionProfile\(profile!\.id, change\)/);
+  assert.match(read("live/components/ArcAddictionArcRunner.tsx"), /mutateAddictionProfile\(profile\.id, \(fresh\) => mergeHelpfulSupportiveSensation\(fresh/);
 });

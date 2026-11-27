@@ -41,10 +41,19 @@ async function safely(label: string, action: () => Promise<unknown>): Promise<vo
   }
 }
 
-export async function cancelArcAddictionWaitEndNotification(): Promise<void> {
+/** Cancels only the PENDING trigger – a notification that is already displayed stays (it may be the user's way to answer). */
+async function cancelArcAddictionWaitEndTrigger(): Promise<void> {
   armedWaitEndFireAtMs = null;
   await safely("cancel trigger", () => notifee.cancelTriggerNotification(ARC_ADDICTION_WAIT_END_NOTIFICATION_ID));
+}
+
+async function dismissDisplayedArcAddictionWaitEnd(): Promise<void> {
   await safely("cancel displayed", () => notifee.cancelNotification(ARC_ADDICTION_WAIT_END_NOTIFICATION_ID));
+}
+
+/** Called when the end-of-wait alarm has just been delivered: the trigger is spent, the displayed notification must stay. */
+export function markArcAddictionWaitEndDelivered(): void {
+  armedWaitEndFireAtMs = null;
 }
 
 export async function cancelArcAddictionOngoingNotification(): Promise<void> {
@@ -53,13 +62,13 @@ export async function cancelArcAddictionOngoingNotification(): Promise<void> {
 }
 
 export async function applyArcAddictionNotificationPlan(plan: AddictionNotificationPlan): Promise<void> {
-  // End-of-wait trigger
+  // End-of-wait: the displayed "כן / לא" (kept while the user is deciding) and the pending trigger are separate decisions.
+  if (plan.dismissDisplayedWaitEnd) await dismissDisplayedArcAddictionWaitEnd();
   if (!plan.waitEnd) {
-    if (armedWaitEndFireAtMs !== null) await cancelArcAddictionWaitEndNotification();
-    else await safely("cancel trigger", () => notifee.cancelTriggerNotification(ARC_ADDICTION_WAIT_END_NOTIFICATION_ID));
+    await cancelArcAddictionWaitEndTrigger();
   } else if (armedWaitEndFireAtMs !== plan.waitEnd.fireAtMs) {
     const waitEnd = plan.waitEnd;
-    await cancelArcAddictionWaitEndNotification();
+    await cancelArcAddictionWaitEndTrigger();
     await safely("arm wait end", async () => {
       await ensureNotifeePermissionAsync();
       await ensureNotifeeReminderChannelAsync();

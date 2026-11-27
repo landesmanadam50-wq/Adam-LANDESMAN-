@@ -41,7 +41,7 @@ import { BODY_SCAN_REGION_LABELS } from "../../arc/bodyScanRegions.ts";
 import { SUPPORTIVE_SENSATION_OPTIONS } from "../../arc/newArcLiveTypes.ts";
 import type { PositiveMemory } from "../../arc/positiveMemory.ts";
 import { recordBodySensationDiscovery, recordBodySensationRating, resolveSuggestedBodySensations } from "../../arc/supportiveBodySensation.ts";
-import { upsertAddictionProfile } from "../../data/arcAddictionStorage.ts";
+import { mutateAddictionProfile } from "../../data/arcAddictionSession.ts";
 import { appendSupportiveBodySensationUsageEntry, loadSupportiveBodySensationUsages, updateSupportiveBodySensationUsageEntry } from "../../data/storage.ts";
 import ArcBodyMantraCircle from "./ArcBodyMantraCircle.tsx";
 import ArcAddictionRatingRow from "./ArcAddictionRatingRow.tsx";
@@ -162,13 +162,9 @@ export default function ArcAddictionArcRunner({
       }
     }
     if (state.supportive) {
-      const merged = mergeHelpfulSupportiveSensation(
-        profile,
-        { region: state.supportive.region, side: state.supportive.side, label: state.supportive.label, movementLabel: state.supportive.movementLabel },
-        state.supportiveEffectRating,
-        nowIso
-      );
-      if (merged !== profile) await upsertAddictionProfile(merged).catch(() => undefined);
+      const sensation = { region: state.supportive.region, side: state.supportive.side, label: state.supportive.label, movementLabel: state.supportive.movementLabel };
+      const rating = state.supportiveEffectRating;
+      await mutateAddictionProfile(profile.id, (fresh) => mergeHelpfulSupportiveSensation(fresh, sensation, rating, nowIso)).catch(() => undefined);
     }
     onComplete(state);
   }

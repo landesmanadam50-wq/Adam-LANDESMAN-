@@ -35,10 +35,10 @@ test("the active session is ONE slot (setItem on a single key, cleared when done
 
 test("progression is applied once, at closing, guarded by progressionAppliedAt", () => {
   const commit = source.slice(source.indexOf("export async function commitAddictionSession"));
-  assert.match(commit, /session\.stage === "closing" \|\| session\.stage === "done"/);
+  assert.match(commit, /session\.stage !== "closing" && session\.stage !== "done"/);
   assert.match(commit, /progressionAppliedAt === null/);
   assert.match(commit, /applyEpisodeToProfile\(profile, session\.episode, now\)/);
-  assert.match(commit, /upsertAddictionEpisode\(stored\.episode\)/);
+  assert.match(commit, /upsertAddictionEpisodeInList\(await loadAddictionEpisodes\(\), stored\.episode\)/);
 });
 
 test("stale sessions are closed with everything kept, then the slot is freed", () => {
@@ -49,9 +49,18 @@ test("stale sessions are closed with everything kept, then the slot is freed", (
 
 test("history is pruned per profile so the key cannot grow without bound", () => {
   assert.match(source, /pruneAddictionEpisodes\(upsertAddictionEpisodeInList\(episodes, episode\)\)/);
+  assert.match(source, /pruneAddictionEpisodes\(upsertAddictionEpisodeInList\(await loadAddictionEpisodes\(\), stored\.episode\)\)/);
 });
 
 test("deleting a profile never deletes its history", () => {
   const fn = source.slice(source.indexOf("export async function deleteAddictionProfile"), source.indexOf("// Episodes"));
   assert.ok(!fn.includes("EPISODES_KEY"));
+});
+
+test("review fix: closing commits profile + history + session in ONE multiSet (progression can never apply twice after a kill)", () => {
+  const commit = source.slice(source.indexOf("export async function commitAddictionSession"));
+  assert.match(commit, /await AsyncStorage\.multiSet\(writes\);/);
+  assert.match(commit, /writes\.push\(\[ARC_ADDICTION_PROFILES_KEY, JSON\.stringify\(profiles\)\]\)/);
+  assert.match(commit, /writes\.push\(\[ARC_ADDICTION_ACTIVE_SESSION_KEY, JSON\.stringify\(stored\)\]\)/);
+  assert.ok(!commit.slice(0, commit.indexOf("multiSet")).includes("upsertAddictionProfile("), "no separate profile write before the atomic one");
 });

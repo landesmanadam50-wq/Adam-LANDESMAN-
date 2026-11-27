@@ -28,12 +28,13 @@ import { createAddictionSession, getCurrentWaitRound, reconcileAddictionSession,
 import {
   ARC_ADDICTION_WAIT_END_KIND,
   isArcAddictionNotificationKind,
+  isPendingOpenFresh,
   resolveAddictionNotificationAction,
   resolveAddictionNotificationPlan,
   resolveAddictionOverlaySecondary,
 } from "../arc/arcAddictionWaitPlan.ts";
-import { commitAddictionSession, getAddictionProfile, loadActiveAddictionSessionOrCloseStale } from "./arcAddictionStorage.ts";
-import { applyArcAddictionNotificationPlan, cancelArcAddictionOngoingNotification } from "./arcAddictionWaitNotification.ts";
+import { commitAddictionSession, getAddictionProfile, loadActiveAddictionSessionOrCloseStale, upsertAddictionProfile } from "./arcAddictionStorage.ts";
+import { applyArcAddictionNotificationPlan, cancelArcAddictionOngoingNotification, markArcAddictionWaitEndDelivered } from "./arcAddictionWaitNotification.ts";
 import { syncFloatingSecondaryTimer } from "./floatingTimerOverlay.ts";
 
 export const ARC_ADDICTION_SESSION_ROUTE = "/arc-addiction/session";
@@ -169,25 +170,42 @@ export async function dispatchAddictionEvent(event: AddictionSessionEvent): Prom
   });
 }
 
+/**
+ * Profile edits made outside a session (editor, progress-screen pace
+ * buttons, a supportive sensation pinned by the ARC) go through the same
+ * queue and are applied to a FRESHLY loaded profile, so they can never
+ * overwrite a target that progression changed meanwhile.
+ */
+export async function mutateAddictionProfile(id: string, mutate: (fresh: AddictionProfile) => AddictionProfile): Promise<AddictionProfile | null> {
+  return serialize(async () => {
+    const fresh = await getAddictionProfile(id);
+    if (!fresh) return null;
+    const next = mutate(fresh);
+    if (next !== fresh) await upsertAddictionProfile(next);
+    return next;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Notification routing (called from data/taskAlarm.ts's shared handleTaskAlarmEvent)
 // ---------------------------------------------------------------------------
 
 async function markPendingOpen(): Promise<void> {
-  await AsyncStorage.setItem(PENDING_OPEN_KEY, "1");
+  await AsyncStorage.setItem(PENDING_OPEN_KEY, String(Date.now()));
 }
 
-/** Consumed by app/_layout.tsx on cold start / return to foreground: if a notification press asked to open the session, navigate there once. */
+/** Consumed by app/_layout.tsx on cold start / return to foreground: if a notification press just asked to open the session, navigate there once. */
 export async function consumeArcAddictionPendingOpen(): Promise<boolean> {
   const value = await AsyncStorage.getItem(PENDING_OPEN_KEY);
-  if (value !== "1") return false;
+  if (value === null) return false;
   await AsyncStorage.removeItem(PENDING_OPEN_KEY);
-  return true;
+  return isPendingOpenFresh(value, Date.now());
 }
 
 function openSessionScreen(): void {
   try {
-    router.replace(ARC_ADDICTION_SESSION_ROUTE);
+    // navigate (not replace): never destroys the screen the user was on (e.g. Task LIVE), and does not stack a second copy.
+    router.navigate(ARC_ADDICTION_SESSION_ROUTE);
   } catch (error) {
     // Cold start: the navigator may not be mounted yet – app/_layout.tsx's pending-open check covers it.
     console.warn("[arcAddictionSession] navigation deferred to app open", error);
@@ -203,8 +221,10 @@ export async function handleArcAddictionNotificationEvent(event: Event): Promise
   const episodeId = typeof data?.episodeId === "string" ? data.episodeId : undefined;
 
   if (event.type === EventType.DELIVERED) {
-    // The end-of-wait alarm fired: retire the countdown and advance the stored session to the decision.
+    // The end-of-wait alarm fired: retire the countdown and advance the stored session to the decision
+    // (the displayed "כן / לא" notification itself stays – the plan keeps it during the decision step).
     if (data?.kind === ARC_ADDICTION_WAIT_END_KIND) {
+      markArcAddictionWaitEndDelivered();
       await cancelArcAddictionOngoingNotification();
       await loadCurrentAddictionSession();
     }
@@ -213,11 +233,12 @@ export async function handleArcAddictionNotificationEvent(event: Event): Promise
 
   if (event.type === EventType.ACTION_PRESS) {
     const mapped = resolveAddictionNotificationAction(event.detail.pressAction?.id);
+    // Pending-open first (a cold start may read it while the answer is still being recorded), then the answer, then navigation.
+    await markPendingOpen();
     if (mapped) {
       // Record the answer BEFORE navigating, so even if navigation is lost on a cold start the app opens on the right step.
       await dispatchAddictionEvent(mapped.type === "ANSWER" ? { ...mapped, episodeId } : mapped);
     }
-    await markPendingOpen();
     openSessionScreen();
     return;
   }

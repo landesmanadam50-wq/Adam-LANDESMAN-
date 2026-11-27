@@ -12,6 +12,8 @@ import {
   ARC_ADDICTION_WAIT_ONGOING_NOTIFICATION_ID,
   isArcAddictionNotificationKind,
   resolveAddictionNotificationAction,
+  isPendingOpenFresh,
+  PENDING_OPEN_MAX_AGE_MS,
   resolveAddictionNotificationPlan,
 } from "./arcAddictionWaitPlan.ts";
 
@@ -26,11 +28,9 @@ function run(session: AddictionSession, events: [AddictionSessionEvent, number][
 const waiting = run(createAddictionSession("e1", profile, null, at(0)), [[{ type: "SKIP_TO_WAIT", initialIntensity: null }, 0]]);
 
 test("no session / no active wait => empty plan (everything gets cancelled)", () => {
-  assert.deepEqual(resolveAddictionNotificationPlan(null, T0), { waitEnd: null, ongoing: null });
+  assert.deepEqual(resolveAddictionNotificationPlan(null, T0), { waitEnd: null, ongoing: null, dismissDisplayedWaitEnd: true });
   const intro = createAddictionSession("e1", profile, null, at(0));
-  assert.deepEqual(resolveAddictionNotificationPlan(intro, T0), { waitEnd: null, ongoing: null });
-  const decided = run(waiting, [[{ type: "END_WAIT_EARLY" }, 10]]);
-  assert.deepEqual(resolveAddictionNotificationPlan(decided, T0 + 10_000), { waitEnd: null, ongoing: null });
+  assert.deepEqual(resolveAddictionNotificationPlan(intro, T0), { waitEnd: null, ongoing: null, dismissDisplayedWaitEnd: true });
 });
 
 test("an active wait plans exactly one end-of-wait alarm at endsAt, with the exact question and כן / לא", () => {
@@ -92,4 +92,25 @@ test("pressing 'לא' from the notification while the app slept answers the righ
   assert.equal(answered.stage, "intensity");
   const pressedTwice = run(answered, [[{ type: "ANSWER", choice: "not_act", episodeId: "e1" }, 401]]);
   assert.equal(pressedTwice, answered);
+});
+
+test("review fix: on the decision step the displayed כן / לא notification is KEPT (it is how the user answers)", () => {
+  const decision = run(waiting, [[{ type: "WAIT_ELAPSED" }, 200]]);
+  assert.equal(decision.stage, "decision");
+  assert.deepEqual(resolveAddictionNotificationPlan(decision, T0 + 200_000), { waitEnd: null, ongoing: null, dismissDisplayedWaitEnd: false });
+});
+
+test("once answered (or a new wait starts) the displayed notification is dismissed", () => {
+  const answered = run(waiting, [[{ type: "WAIT_ELAPSED" }, 200], [{ type: "ANSWER", choice: "not_act" }, 201]]);
+  assert.equal(resolveAddictionNotificationPlan(answered, T0 + 201_000).dismissDisplayedWaitEnd, true);
+  assert.equal(resolveAddictionNotificationPlan(waiting, T0).dismissDisplayedWaitEnd, true);
+});
+
+test("pending-open requests expire after two minutes and ignore garbage", () => {
+  assert.equal(isPendingOpenFresh(String(T0), T0 + 1000), true);
+  assert.equal(isPendingOpenFresh(String(T0), T0 + PENDING_OPEN_MAX_AGE_MS + 1), false);
+  assert.equal(isPendingOpenFresh("1", T0), false);
+  assert.equal(isPendingOpenFresh(null, T0), false);
+  assert.equal(isPendingOpenFresh("abc", T0), false);
+  assert.equal(isPendingOpenFresh(String(T0 + 5000), T0), false);
 });

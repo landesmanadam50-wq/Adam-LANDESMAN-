@@ -1,6 +1,6 @@
 # ARC Addiction – מסוגלות, זמן וקבלה · תוכנית יישום
 
-סטטוס: **טיוטה לאישור** · ענף: `feature/arc-addiction` · בסיס: `origin/claude/task-productivity-integration` @ `47abffd`
+סטטוס: **מומש (שלבים 1–6), ממתין לבדיקות מכשיר ולאינטגרציה** · ענף: `feature/arc-addiction` · בסיס: `origin/claude/task-productivity-integration` @ `47abffd`
 (הענף העדכני ביותר עם קוד מקור – 60 קומיטים מעל `main`, כולל את v86 בלי קומיט ה־APK).
 Worktree מבודד: `/home/user/arc-addiction` (סביבת העבודה הראשית והענפים האחרים לא נגעו).
 
@@ -196,3 +196,14 @@ entry(intensity?) ─► efficacy_arc ─► wait_timer ─► decision ┬─ "
 1. טיימר צף: א׳ (הרחבת Kotlin) או ב׳ (ללא native)?
 2. יעד המתנה התחלתי ברירת מחדל: 1 דק' / 3 / 5 / לבחירה ביצירה?
 3. שם הענף של הצ'אט השני (לתיאום המיזוג בהמשך).
+
+---
+
+## 14. סטטוס מימוש
+
+- החלטות המשתמש: טיימר צף – אפשרות א׳ (שורה שנייה עצמאית ב־Kotlin). יעד התחלתי – לבחירה ביצירה, ברירת מחדל דקה. שני מדדי התקדמות נפרדים, בלי איפוס. ARC קבלה עצמית מלא, מוצע גם כשפעלו לפני סוף ההמתנה.
+- סטייה מהתוכנית: storage בקובץ נפרד (`data/arcAddictionStorage.ts`) ולא ב־`data/storage.ts`, כדי לצמצם קונפליקטים עם הענף המקביל.
+- כניסה מ־Task LIVE: כפתור ב־`ActiveTaskScreen` (רכיב `ArcAddictionTaskLiveEntry`), כי `AddInfoMenu` לא מוצג ב־Task LIVE.
+- Busy gate: `hasActiveTaskConflict` לא שונה. ההתראה של סוף ההמתנה אינה מושתקת בזמן משימה, כי היא נדרשה במפורש.
+- Kotlin: לא קומפל בסביבה הזו (אין Android SDK). נבדק בסקירת קוד ובבדיקות source-text. הקומפילציה תיבדק בבניית ה־APK.
+- בדיקות ידניות על מכשיר: `docs/ARC_ADDICTION_MANUAL_TESTS.md`.

@@ -134,3 +134,13 @@ test("progress screen: every requested metric and pace control", () => {
   assert.match(progress, /להקטין את היעד בדקה/);
   assert.match(progress, /PROGRESS_NOT_RESET_NOTE/);
 });
+
+test("session screen: a stored echo of the running ARC never rolls back the local (possibly newer) copy", () => {
+  const apply = session.slice(session.indexOf("const applySession = useCallback"), session.indexOf("const reload = useCallback"));
+  assert.match(apply, /previous\.kind === incoming\.kind && previous\.startedAt === incoming\.startedAt\) return previous;/);
+});
+
+test("review fix: WAIT_ELAPSED is never dropped by the busy guard; pending ARC edits are flushed on unmount", () => {
+  assert.match(session, /event\.type !== "ARC_UPDATE" && event\.type !== "WAIT_ELAPSED"/);
+  assert.match(session, /if \(pendingArcRef\.current\) void dispatchAddictionEvent\(\{ type: "ARC_UPDATE", arc: pendingArcRef\.current \}\);/);
+});

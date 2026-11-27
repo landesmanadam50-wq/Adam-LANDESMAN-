@@ -54,14 +54,22 @@ export interface PlannedOngoingNotification {
 }
 
 export interface AddictionNotificationPlan {
+  /** The trigger to (re-)arm; null => no trigger should be pending. */
   waitEnd: PlannedWaitEndNotification | null;
   ongoing: PlannedOngoingNotification | null;
+  /**
+   * Whether an already DISPLAYED "כן / לא" notification should be removed.
+   * false while the session is on its decision step – that notification IS
+   * how the user answers; true once answered / ended / no session.
+   */
+  dismissDisplayedWaitEnd: boolean;
 }
 
-export const EMPTY_ADDICTION_NOTIFICATION_PLAN: AddictionNotificationPlan = { waitEnd: null, ongoing: null };
+export const EMPTY_ADDICTION_NOTIFICATION_PLAN: AddictionNotificationPlan = { waitEnd: null, ongoing: null, dismissDisplayedWaitEnd: true };
 
 export function resolveAddictionNotificationPlan(session: AddictionSession | null, nowMs: number): AddictionNotificationPlan {
   const round = getActiveWaitRound(session);
+  if (session?.stage === "decision") return { waitEnd: null, ongoing: null, dismissDisplayedWaitEnd: false };
   if (!session || !round) return EMPTY_ADDICTION_NOTIFICATION_PLAN;
   const endsAtMs = Date.parse(round.endsAt);
   if (!Number.isFinite(endsAtMs)) return EMPTY_ADDICTION_NOTIFICATION_PLAN;
@@ -82,6 +90,8 @@ export function resolveAddictionNotificationPlan(session: AddictionSession | nul
       : null;
   return {
     waitEnd,
+    // A wait is running again (e.g. an extra round): any older displayed "כן / לא" is outdated.
+    dismissDisplayedWaitEnd: true,
     ongoing: {
       id: ARC_ADDICTION_WAIT_ONGOING_NOTIFICATION_ID,
       endsAtMs,
@@ -118,4 +128,13 @@ export function resolveAddictionOverlaySecondary(session: AddictionSession | nul
   const endsAtMs = Date.parse(round.endsAt);
   if (!Number.isFinite(endsAtMs)) return null;
   return { label: session.profileName.trim() || "זמן המתנה", endsAtMs };
+}
+
+/** A pending "open the session screen" request (set by a notification press) older than this is ignored – never a surprise redirect later. */
+export const PENDING_OPEN_MAX_AGE_MS = 2 * 60_000;
+
+export function isPendingOpenFresh(value: string | null, nowMs: number): boolean {
+  if (value === null) return false;
+  const at = Number(value);
+  return Number.isFinite(at) && nowMs - at >= 0 && nowMs - at <= PENDING_OPEN_MAX_AGE_MS;
 }

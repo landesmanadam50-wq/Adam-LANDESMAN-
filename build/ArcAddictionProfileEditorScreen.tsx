@@ -31,6 +31,7 @@ import {
 import { ARC_ADDICTION_DISCLAIMER, PROGRESS_NOT_RESET_NOTE } from "../arc/arcAddictionCopy.ts";
 import { BODY_SCAN_REGION_LABELS } from "../arc/bodyScanRegions.ts";
 import { deleteAddictionProfile, getAddictionProfile, upsertAddictionProfile } from "../data/arcAddictionStorage.ts";
+import { mutateAddictionProfile } from "../data/arcAddictionSession.ts";
 import BodyMapMagnifier from "../live/components/BodyMapMagnifier.tsx";
 import { ARC_ADDICTION_COLORS, arcAddictionStyles as styles } from "../live/components/arcAddictionStyles.ts";
 
@@ -68,6 +69,8 @@ export default function ArcAddictionProfileEditorScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const isNew = id === "new" || !id;
   const [profile, setProfile] = useState<AddictionProfile | null>(null);
+  /** The profile as loaded – only fields the user actually changed are written (onto a freshly loaded copy). */
+  const [original, setOriginal] = useState<AddictionProfile | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -80,7 +83,10 @@ export default function ArcAddictionProfileEditorScreen() {
         return;
       }
       getAddictionProfile(String(id))
-        .then((loaded) => setProfile(loaded))
+        .then((loaded) => {
+          setProfile(loaded);
+          setOriginal(loaded);
+        })
         .catch(() => setProfile(null));
     }, [id, isNew])
   );
@@ -102,7 +108,16 @@ export default function ArcAddictionProfileEditorScreen() {
     if (!validation.valid) return;
     setSaving(true);
     try {
-      await upsertAddictionProfile(updateAddictionProfile(profile, {}, new Date().toISOString()));
+      const nowIso = new Date().toISOString();
+      if (isNew || !original) {
+        await upsertAddictionProfile(updateAddictionProfile(profile, {}, nowIso));
+      } else {
+        const changes: Partial<AddictionProfile> = {};
+        for (const key of Object.keys(profile) as (keyof AddictionProfile)[]) {
+          if (JSON.stringify(profile[key]) !== JSON.stringify(original[key])) (changes as Record<string, unknown>)[key] = profile[key];
+        }
+        await mutateAddictionProfile(profile.id, (fresh) => updateAddictionProfile(fresh, changes, nowIso));
+      }
       router.back();
     } finally {
       setSaving(false);

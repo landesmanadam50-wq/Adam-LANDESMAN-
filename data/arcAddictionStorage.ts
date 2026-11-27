@@ -112,22 +112,31 @@ export async function clearActiveAddictionSession(): Promise<void> {
  * Returns the session as stored (with progression fields filled in).
  */
 export async function commitAddictionSession(session: AddictionSession, now: string): Promise<AddictionSession> {
-  let stored = session;
-  if (session.stage === "closing" || session.stage === "done") {
-    if (session.episode.progressionAppliedAt === null) {
-      const profile = await getAddictionProfile(session.episode.profileId);
-      if (profile) {
-        const result = applyEpisodeToProfile(profile, session.episode, now);
-        if (result.profile !== profile) await upsertAddictionProfile(result.profile);
-        stored = { ...session, episode: result.episode };
-      } else {
-        stored = { ...session, episode: { ...session.episode, progressionAppliedAt: now } };
-      }
-    }
-    await upsertAddictionEpisode(stored.episode);
+  if (session.stage !== "closing" && session.stage !== "done") {
+    await AsyncStorage.setItem(ARC_ADDICTION_ACTIVE_SESSION_KEY, JSON.stringify(session));
+    return session;
   }
+  let stored = session;
+  let profiles: AddictionProfile[] | null = null;
+  if (session.episode.progressionAppliedAt === null) {
+    const loaded = await loadAddictionProfiles();
+    const profile = loaded.find((entry) => entry.id === session.episode.profileId) ?? null;
+    if (profile) {
+      const result = applyEpisodeToProfile(profile, session.episode, now);
+      if (result.profile !== profile) profiles = upsertAddictionProfileInList(loaded, result.profile);
+      stored = { ...session, episode: result.episode };
+    } else {
+      stored = { ...session, episode: { ...session.episode, progressionAppliedAt: now } };
+    }
+  }
+  const episodes = pruneAddictionEpisodes(upsertAddictionEpisodeInList(await loadAddictionEpisodes(), stored.episode));
+  // ONE multiSet (a single transaction on Android): the profile's new targets, the episode history and the
+  // session carrying progressionAppliedAt land together, so a kill mid-commit can never apply progression twice.
+  const writes: [string, string][] = [[ARC_ADDICTION_EPISODES_KEY, JSON.stringify(episodes)]];
+  if (profiles) writes.push([ARC_ADDICTION_PROFILES_KEY, JSON.stringify(profiles)]);
+  if (stored.stage !== "done") writes.push([ARC_ADDICTION_ACTIVE_SESSION_KEY, JSON.stringify(stored)]);
+  await AsyncStorage.multiSet(writes);
   if (stored.stage === "done") await clearActiveAddictionSession();
-  else await AsyncStorage.setItem(ARC_ADDICTION_ACTIVE_SESSION_KEY, JSON.stringify(stored));
   return stored;
 }
 

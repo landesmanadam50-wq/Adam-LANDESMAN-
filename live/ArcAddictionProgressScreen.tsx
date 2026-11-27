@@ -19,7 +19,8 @@ import type { AddictionProfileStats, HistoryRow } from "../arc/arcAddictionStats
 import { buildAddictionHistoryRows, computeAddictionProfileStats, OUTCOME_LABELS } from "../arc/arcAddictionStats.ts";
 import { PROGRESS_NOT_RESET_NOTE, TREND_LABELS } from "../arc/arcAddictionCopy.ts";
 import { decreaseWaitTarget, setWaitProgression } from "../arc/arcAddictionProgression.ts";
-import { getAddictionProfile, loadAddictionEpisodesForProfile, upsertAddictionProfile } from "../data/arcAddictionStorage.ts";
+import { getAddictionProfile, loadAddictionEpisodesForProfile } from "../data/arcAddictionStorage.ts";
+import { mutateAddictionProfile } from "../data/arcAddictionSession.ts";
 import ArcAddictionLineChart from "./components/ArcAddictionLineChart.tsx";
 import { ARC_ADDICTION_COLORS, arcAddictionStyles as styles } from "./components/arcAddictionStyles.ts";
 
@@ -72,8 +73,8 @@ export default function ArcAddictionProgressScreen() {
     );
   }
 
-  async function savePace(next: AddictionProfile) {
-    await upsertAddictionProfile(next);
+  async function savePace(change: (fresh: AddictionProfile) => AddictionProfile) {
+    await mutateAddictionProfile(profile!.id, change);
     reload();
   }
 
@@ -103,11 +104,11 @@ export default function ArcAddictionProgressScreen() {
         <View style={styles.row}>
           <Pressable
             style={[styles.chip, profile.waitProgression.mode === "hold" && styles.chipSelected]}
-            onPress={() => void savePace(setWaitProgression(profile, profile.waitProgression.mode === "hold" ? "increase" : "hold", profile.waitProgression.stepMinutes, nowIso()))}
+            onPress={() => void savePace((fresh) => setWaitProgression(fresh, fresh.waitProgression.mode === "hold" ? "increase" : "hold", fresh.waitProgression.stepMinutes, nowIso()))}
           >
             <Text style={[styles.chipText, profile.waitProgression.mode === "hold" && styles.chipTextSelected]}>להישאר באותו יעד</Text>
           </Pressable>
-          <Pressable style={styles.chip} onPress={() => void savePace(decreaseWaitTarget(profile, 1, nowIso()))}>
+          <Pressable style={styles.chip} onPress={() => void savePace((fresh) => decreaseWaitTarget(fresh, 1, nowIso()))}>
             <Text style={styles.chipText}>להקטין את היעד בדקה</Text>
           </Pressable>
           <Pressable style={styles.chip} onPress={() => router.push({ pathname: "/arc-addiction/profile/[id]", params: { id: profile.id } })}>

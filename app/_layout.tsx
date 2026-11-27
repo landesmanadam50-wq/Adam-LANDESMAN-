@@ -63,7 +63,7 @@ function handleReminderResponse(response: Notifications.NotificationResponse | n
 async function syncArcAddictionOnOpen(): Promise<void> {
   try {
     const session = await loadCurrentAddictionSession();
-    if ((await consumeArcAddictionPendingOpen()) && session) router.replace(ARC_ADDICTION_SESSION_ROUTE);
+    if ((await consumeArcAddictionPendingOpen()) && session) router.navigate(ARC_ADDICTION_SESSION_ROUTE);
   } catch (error) {
     console.warn("[arcAddiction] open sync failed", error);
   }
