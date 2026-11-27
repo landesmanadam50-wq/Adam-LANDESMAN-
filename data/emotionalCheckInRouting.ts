@@ -160,7 +160,16 @@ interface NavigateOptions {
   arcSavingTriggerIdForNewOption?: string;
 }
 
-function navigateTo(target: Parameters<typeof router.push>[0], options: NavigateOptions): void {
+/**
+ * Typed-routes compatibility (type-only, no runtime change): the ARC
+ * openers build their params as a plain Record<string, string> that
+ * always contains `id`, which expo-router's generated route types can't
+ * see -- so that one shape is accepted explicitly here.
+ */
+type NavigateTarget = Parameters<typeof router.push>[0] | { pathname: "/tasks/[id]/arc"; params: Record<string, string> };
+
+function navigateTo(requested: NavigateTarget, options: NavigateOptions): void {
+  const target = requested as Parameters<typeof router.push>[0];
   if (options.replace) {
     router.replace(target);
     return;

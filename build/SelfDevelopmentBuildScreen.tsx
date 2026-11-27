@@ -64,12 +64,12 @@ export default function SelfDevelopmentBuildScreen() {
       setNamingState(true);
       return;
     }
-    const routeByKind: Record<Exclude<ProtocolKind, "state">, string> = {
+    const routeByKind = {
       urge: "/urge-arcs/[id]",
       thought: "/thought-arcs/[id]",
       presence: "/presence-arcs/[id]",
       belief: "/belief-arcs/[id]",
-    };
+    } as const satisfies Record<Exclude<ProtocolKind, "state">, string>;
     router.push({ pathname: routeByKind[kind], params: { id: "new" } });
   }
 

@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import type { Href } from "expo-router";
 
 import type { ArcBuild } from "../arc/types.ts";
 import { createEmptyArcBuildProfile, generateArcBuildId } from "../arc/types.ts";
@@ -54,7 +55,8 @@ export default function IdentityExtensionOfferScreen() {
 
   function finishWithoutIdentity() {
     if (typeof returnTo === "string" && returnTo.length > 0 && returnTo.startsWith("/")) {
-      router.replace(returnTo);
+      // returnTo is a runtime-validated in-app path (starts with "/"), not a statically known route.
+      router.replace(returnTo as Href);
       return;
     }
     router.replace("/self-development");

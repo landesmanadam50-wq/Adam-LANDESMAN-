@@ -883,8 +883,9 @@ export default function FlexibleDailyScreen({ date = null, hideHomeOnlyCards = f
         )}
 
         {/* ARC Addiction – מסוגלות, זמן וקבלה: an independent ARC route
-            card, same convention as ARC Learning/Creativity above. */}
-        {isTodayMode && (
+            card, same convention (and same Replan-screen hiding via
+            hideHomeOnlyCards) as ARC Learning/Creativity above. */}
+        {isTodayMode && !hideHomeOnlyCards && (
           <Pressable style={styles.arcAddictionCard} onPress={() => router.push("/arc-addiction")}>
             <Text style={styles.arcAddictionTitle}>🌱 ARC Addiction — מסוגלות, זמן וקבלה</Text>
             <Text style={styles.arcAddictionSubtitle}>להרחיב בהדרגה את חופש הבחירה מול דחף.</Text>
