@@ -194,3 +194,14 @@ test("supportive-sensation context keys are per profile and per ARC kind", () =>
   assert.equal(resolveAddictionSensationContextKey("p1", "efficacy"), "addiction:p1");
   assert.equal(resolveAddictionSensationContextKey("p1", "acceptance"), "addictionAcceptance:p1");
 });
+
+test("a supportive sensation rated helpful (>= 6) is pinned to the profile once; lower ratings are not", async () => {
+  const { mergeHelpfulSupportiveSensation } = await import("./arcAddiction.ts");
+  const p = profile();
+  const sensation = { region: "palms" as const, side: null, label: "חום", movementLabel: null };
+  assert.equal(mergeHelpfulSupportiveSensation(p, sensation, 5, NOW), p);
+  assert.equal(mergeHelpfulSupportiveSensation(p, sensation, null, NOW), p);
+  const pinned = mergeHelpfulSupportiveSensation(p, sensation, 6, NOW);
+  assert.equal(pinned.supportiveSensations.length, 1);
+  assert.equal(mergeHelpfulSupportiveSensation(pinned, sensation, 9, NOW), pinned);
+});

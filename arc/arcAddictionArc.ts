@@ -261,10 +261,6 @@ function describeSupportive(state: AddictionArcState): string {
   return `${state.supportive.label}${where}`;
 }
 
-function sensationName(profile: AddictionProfile): string {
-  return profile.urgeSensation.trim() || "התחושה";
-}
-
 export function getArcStepCopy(state: AddictionArcState, profile: AddictionProfile): AddictionArcStepCopy {
   const step = getCurrentArcStep(state);
   const areas = describeAreas(state.markedAreas);
@@ -283,8 +279,11 @@ export function getArcStepCopy(state: AddictionArcState, profile: AddictionProfi
       return efficacy
         ? {
             title: "איפה מורגש הדחף?",
-            primary: `סמן את האזורים שבהם מורגשת ${sensationName(profile)}.`,
-            supporting: ["האזורים מהפרופיל מסומנים מראש – אפשר לשנות."],
+            primary: "סמן את האזורים שבהם מורגשת התחושה.",
+            supporting: [
+              ...(profile.urgeSensation.trim() ? [`התחושה: ${profile.urgeSensation.trim()}`] : []),
+              "האזורים מהפרופיל מסומנים מראש – אפשר לשנות.",
+            ],
             continueLabel: "המשך",
           }
         : {

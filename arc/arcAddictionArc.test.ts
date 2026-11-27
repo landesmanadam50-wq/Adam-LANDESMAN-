@@ -94,7 +94,7 @@ test("toggles and text setters", () => {
 test("copy names the user's own sensation, areas and critical thought", () => {
   let s = createAddictionArcState("efficacy", profile, NOW);
   s = { ...s, stepIndex: EFFICACY_ARC_STEPS.indexOf("body_mark") };
-  assert.match(getArcStepCopy(s, profile).primary, /עקצוץ/);
+  assert.ok(getArcStepCopy(s, profile).supporting.some((line) => line.includes("עקצוץ")));
   s = { ...s, stepIndex: EFFICACY_ARC_STEPS.indexOf("dwelling") };
   assert.match(getArcStepCopy(s, profile).primary, /באוזניים/);
   let a = setArcText(createAddictionArcState("acceptance", profile, NOW), "criticalThought", "אני חלש");

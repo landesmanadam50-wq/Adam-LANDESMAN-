@@ -261,6 +261,10 @@ export default function RootLayout() {
         <Stack.Screen name="urge-arcs/index" options={{ title: "בניית Urge ARC" }} />
         <Stack.Screen name="urge-arcs/[id]" options={{ title: "עריכת Urge ARC" }} />
         <Stack.Screen name="urge-arcs/live/[id]" options={{ title: "Urge ARC LIVE" }} />
+        <Stack.Screen name="arc-addiction/index" options={{ title: "ARC Addiction" }} />
+        <Stack.Screen name="arc-addiction/profile/[id]" options={{ title: "פרופיל התנהגות" }} />
+        <Stack.Screen name="arc-addiction/session" options={{ title: "ARC Addiction" }} />
+        <Stack.Screen name="arc-addiction/progress/[id]" options={{ title: "התקדמות" }} />
         <Stack.Screen name="thought-arcs/index" options={{ title: "בניית ARC Thought" }} />
         <Stack.Screen name="thought-arcs/[id]" options={{ title: "עריכת ARC Thought" }} />
         <Stack.Screen name="thought-arcs/live/[id]" options={{ title: "ARC Thought LIVE" }} />

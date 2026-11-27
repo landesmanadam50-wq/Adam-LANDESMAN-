@@ -502,3 +502,26 @@ export function pruneAddictionEpisodes(episodes: readonly AddictionEpisode[], ma
 export function resolveAddictionSensationContextKey(profileId: string, kind: AddictionArcKind): string {
   return kind === "efficacy" ? `addiction:${profileId}` : `addictionAcceptance:${profileId}`;
 }
+
+/** A supportive sensation rated at least this helpful (0..10) is pinned to the profile, so the next efficacy ARC offers it first. */
+export const HELPFUL_SUPPORTIVE_RATING_THRESHOLD = 6;
+
+/**
+ * "התחושות התומכות שעזרו למשתמש לפתח מסוגלות": pins a supportive
+ * sensation that was rated helpful onto the profile (no duplicates by
+ * label + region + side). Returns the same profile object when nothing
+ * changes.
+ */
+export function mergeHelpfulSupportiveSensation(
+  profile: AddictionProfile,
+  sensation: AddictionSupportiveSensation,
+  rating: number | null,
+  now: string
+): AddictionProfile {
+  if (!isValidAddictionRating(rating) || rating < HELPFUL_SUPPORTIVE_RATING_THRESHOLD) return profile;
+  const label = sensation.label.trim();
+  if (!label) return profile;
+  const key = `${label}::${areaKey(sensation)}`;
+  if (profile.supportiveSensations.some((entry) => `${entry.label}::${areaKey(entry)}` === key)) return profile;
+  return { ...profile, supportiveSensations: [...profile.supportiveSensations, { ...sensation, label }], updatedAt: now };
+}

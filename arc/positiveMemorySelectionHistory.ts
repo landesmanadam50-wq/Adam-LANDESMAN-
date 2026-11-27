@@ -13,7 +13,8 @@
  */
 
 /** Section 13: the two reusable ranking strategies -- "encoding_feeling" scopes rotation to a feeling word, "arc_success" scopes it to a taskId. */
-export type PositiveMemorySelectionContext = "encoding_feeling" | "arc_success";
+/** "arc_addiction" (ARC Addiction): rotation scoped to an AddictionProfile id. */
+export type PositiveMemorySelectionContext = "encoding_feeling" | "arc_success" | "arc_addiction";
 
 export interface PositiveMemorySelectionHistoryEntry {
   memoryId: string;
