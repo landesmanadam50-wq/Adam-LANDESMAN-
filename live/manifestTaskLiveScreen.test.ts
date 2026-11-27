@@ -35,10 +35,12 @@ test("the manifest route is registered and passes the id param straight through"
 
 test("live/ActiveTaskScreen.tsx's performStart (reached via handleStart's required-before-tasks gate) routes a 'manifest'-kind task straight into its own guided run, never creating a TaskTimerRun, even via autoStart", () => {
   const fnIndex = activeTaskScreen.indexOf("async function performStart()");
-  // Window widened (2000 -> 2900): Action-Based Tasks task's own
-  // recomputeTaskMemoryReminderNotification call/comment, inserted near
-  // the top of performStart, pushed this branch further from the anchor.
-  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 2900);
+  // Window widened (2000 -> 2900 -> 3200): Action-Based Tasks task's own
+  // recomputeTaskMemoryReminderNotification call/comment, then ARCHI --
+  // Replan Time task's own recomputeReplanTimeNotification call/comment,
+  // both inserted near the top of performStart, pushed this branch
+  // further from the anchor.
+  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 3200);
   assert.ok(fnBody.includes('if (task.taskKind === "manifest")'));
   assert.ok(fnBody.includes('pathname: "/tasks/[id]/manifest"'));
 });

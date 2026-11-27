@@ -375,7 +375,7 @@ test("the dwell timer only ever delays enabling Continue -- it never auto-advanc
 test("the screen accepts an optional plannedArcId prop, defaulting to null for every ad-hoc entry point (mid-task buttons, end-of-timer choice)", () => {
   assert.match(
     screen,
-    /plannedArcId = null,\s*autoStartAfter = false,\s*arcGymSituationId = null,\s*arcFocusPracticeId = null,\s*arcGymMemoryExerciseId = null,\s*arcPerspectiveId = null,\s*arcSavingBodyOptionId = null,\s*arcSavingExerciseId = null,\s*arcSavingTriggerIdForNewOption = null,\s*morningFlowCheckIn = false,?\s*\}:\s*\{\s*taskId: string;\s*startMode\?: ArcInvocationMode;[\s\S]*?skipEmotionSelection\?: boolean;\s*plannedArcId\?: string \| null;\s*autoStartAfter\?: boolean;/
+    /plannedArcId = null,\s*autoStartAfter = false,\s*arcGymSituationId = null,\s*arcFocusPracticeId = null,\s*arcGymMemoryExerciseId = null,\s*arcPerspectiveId = null,\s*arcSavingBodyOptionId = null,\s*arcSavingExerciseId = null,\s*arcSavingTriggerIdForNewOption = null,\s*morningFlowCheckIn = false,\s*returnToReplan = false,?\s*\}:\s*\{\s*taskId: string;\s*startMode\?: ArcInvocationMode;[\s\S]*?skipEmotionSelection\?: boolean;\s*plannedArcId\?: string \| null;\s*autoStartAfter\?: boolean;/
   );
 });
 

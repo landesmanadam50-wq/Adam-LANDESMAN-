@@ -106,6 +106,7 @@ import { recordSilentTaskCompletionReward } from "../data/postTaskRewards.ts";
 import { loadArcTaskReminderSettings } from "../data/storage.ts";
 import { recomputeTaskTransitionNotification } from "../data/taskTransitionNotification.ts";
 import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
+import { recomputeReplanTimeNotification } from "../data/replanTimeNotification.ts";
 import { recomputeFreeTimeWindowNotification } from "../data/freeTimeWindowNotification.ts";
 import { markSupportiveBodySensationUsagesTaskOutcome } from "../data/storage.ts";
 import { resolveBodySensationContextKeys } from "../arc/supportiveBodySensation.ts";
@@ -1116,6 +1117,10 @@ export default function ActiveTaskScreen({
     // starts another way" guarantee recomputeTaskNotStartedNotification
     // already encodes -- never a second, separate cancel call here.
     void recomputeTaskNotStartedNotification();
+    // ARCHI -- Replan Time task: same "update/remove itself the
+    // instant the user starts another way" guarantee, for whichever
+    // task's overdue window this was.
+    void recomputeReplanTimeNotification();
     // ARCHI -- Dynamic Time Planning & Free-Window Utilization task,
     // section 1/4: starting a task through ANY path here also closes
     // off whatever free window it was just started into -- recomputed
@@ -1722,6 +1727,7 @@ export default function ActiveTaskScreen({
     await recomputeTaskNotStartedNotification();
     await recomputeTaskMemoryReminderNotification();
     await recomputeFreeTimeWindowNotification();
+    await recomputeReplanTimeNotification();
   }
 
   /**
@@ -1758,6 +1764,7 @@ export default function ActiveTaskScreen({
     await recomputeTaskNotStartedNotification();
     await recomputeTaskMemoryReminderNotification();
     await recomputeFreeTimeWindowNotification();
+    await recomputeReplanTimeNotification();
   }
 
   /**

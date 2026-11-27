@@ -39,6 +39,7 @@ import { deleteContinuousRoutineGroup, loadContinuousRoutineGroupsForDate, saveN
 import { isConsecutiveSelection, type ContinuousRoutineGroup } from "../arc/continuousRoutineGroup.ts";
 import { reconcileTaskAlarms } from "../data/taskAlarm.ts";
 import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
+import { recomputeReplanTimeNotification } from "../data/replanTimeNotification.ts";
 import { recomputeTaskMemoryReminderNotification } from "../data/taskMemoryReminderNotification.ts";
 import { recomputeFreeTimeWindowNotification } from "../data/freeTimeWindowNotification.ts";
 import { isDailyVisualizationCompletedNow } from "../data/dailyVisualization.ts";
@@ -95,7 +96,21 @@ import TimePlanningModal from "./TimePlanningModal.tsx";
  * Either way this only ever READS existing per-date overrides; nothing
  * about resolving "today" writes or clears one.
  */
-export default function FlexibleDailyScreen({ date = null }: { date?: string | null }) {
+/**
+ * ARCHI -- Replan Time task: `hideHomeOnlyCards`, set only by
+ * live/ReplanTimeScreen.tsx -- hides the Home-only decorative/entry
+ * cards below (cubes, floating-overlay toggle, Daily Visualization
+ * card, morning-alarm link, AddInfoMenu, active-triggers block,
+ * settings row, ARC GYM/Learning/Creativity cards) so Replan stays
+ * focused on "feel + fix today's plan" -- never touches
+ * PersistentTaskControls, the mode row, add/replace/remove/reorder
+ * actions, the woven day list, the Time-Planning card (its own "To-Do
+ * ותכנון היום" button is the entry point Replan needs), or
+ * TimePlanningModal itself, all of which stay fully functional
+ * regardless of this prop. Home's own rendering (this prop omitted/
+ * false) is completely unaffected.
+ */
+export default function FlexibleDailyScreen({ date = null, hideHomeOnlyCards = false }: { date?: string | null; hideHomeOnlyCards?: boolean }) {
   const isTodayMode = date === null;
   const [dateLocal, setDateLocal] = useState<string>(() => (isValidCalendarDateString(date) ? date : todayLocalDateString(new Date())));
   const { year, month, day } = parseCalendarDate(dateLocal);
@@ -249,6 +264,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
       await resyncFloatingOverlayToCurrentState();
       void topUpRemindersIfNeeded();
       void recomputeTaskNotStartedNotification();
+      void recomputeReplanTimeNotification();
       void recomputeFreeTimeWindowNotification();
       void recomputeTaskMemoryReminderNotification();
     }
@@ -714,7 +730,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
             preserves every existing button this block used to render
             (urge/perspective rows included) -- only the 😄 smiley was
             dropped, per spec. */}
-        {isTodayMode && (
+        {isTodayMode && !hideHomeOnlyCards && (
           <>
             <TaskCube />
             <FeelingCube />
@@ -728,7 +744,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
             native overlay state" via overlayActive, reloaded on every
             focus from the SAME preference the Settings screen's own
             Switch reads/writes. */}
-        {isTodayMode && (
+        {isTodayMode && !hideHomeOnlyCards && (
           <Pressable
             style={[styles.overlayToggleButton, overlayActive && styles.overlayToggleButtonActive]}
             onPress={handleToggleFloatingOverlay}
@@ -742,7 +758,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
             preparation sequence's own persistent, always-reachable
             entry point -- additive to (never replacing) the check-in
             bar above and the ARC GYM/PersistentTaskControls below. */}
-        {isTodayMode && (
+        {isTodayMode && !hideHomeOnlyCards && (
           <Pressable style={styles.dailyVisualizationCard} onPress={handleOpenDailyVisualization}>
             <Text style={styles.dailyVisualizationTitle}>🧘 הכנה יומית — דמיין את היום שלך</Text>
             <Text style={styles.dailyVisualizationSubtitle}>דמיון המשימות שלך, סריקת גוף, והכנה לסוף היום.</Text>
@@ -753,7 +769,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
             later from Home/Settings" -- this Home-level link is
             additive to the identical one in build/TasksListScreen.tsx
             (Settings). */}
-        {isTodayMode && (
+        {isTodayMode && !hideHomeOnlyCards && (
           <Pressable style={styles.morningAlarmLink} onPress={() => router.push("/tasks/morning-alarm-settings")}>
             <Text style={styles.morningAlarmLinkText}>⏰ שעון מעורר להכנה יומית</Text>
           </Pressable>
@@ -783,14 +799,14 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
             preserved verbatim (same routes, same showHomeInsightButton
             gating) behind the single, shared "+ להוסיף מידע" menu --
             never deleted, only reorganized. */}
-        {isTodayMode && <AddInfoMenu showHomeInsightButton={showHomeInsightButton} />}
+        {isTodayMode && !hideHomeOnlyCards && <AddInfoMenu showHomeInsightButton={showHomeInsightButton} />}
 
         {/* ARC Saving task, section 11: the trainee's own currently-
             active trigger shortcuts -- tapping one opens the SAME
             activate flow "+ ARC Save" opens, pre-selecting that trigger
             so the trainee skips straight to its own body-option/mood
             choice (never auto-starting ARC on its own, per section 8). */}
-        {isTodayMode && activeTriggers.length > 0 && (
+        {isTodayMode && !hideHomeOnlyCards && activeTriggers.length > 0 && (
           <View style={styles.activeTriggersBlock}>
             <Text style={styles.activeTriggersTitle}>הטריגרים שלי כרגע</Text>
             <View style={styles.activeTriggersRow}>
@@ -803,7 +819,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
           </View>
         )}
 
-        {isTodayMode && (
+        {isTodayMode && !hideHomeOnlyCards && (
           <View style={styles.settingsRow}>
             <Pressable style={styles.settingsLink} onPress={() => router.push("/settings")}>
               <Text style={styles.settingsLinkText}>⚙️ הגדרות</Text>
@@ -841,7 +857,7 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
         {/* ARC GYM task, section 1: a clearly visible entry card, additive
             to (never replacing) the daily timetable/check-in/Task LIVE/
             smiles/Manifest below and above it. */}
-        {isTodayMode && (
+        {isTodayMode && !hideHomeOnlyCards && (
           <Pressable style={styles.arcGymCard} onPress={() => router.push("/arc-gym")}>
             <Text style={styles.arcGymTitle}>🏋️ ARC GYM — חדר הכושר של ARC</Text>
             <Text style={styles.arcGymSubtitle}>תרגל את ההתנהגויות שאתה רוצה לפתח.</Text>
@@ -852,14 +868,14 @@ export default function FlexibleDailyScreen({ date = null }: { date?: string | n
             task, section 1: a clearly visible, independent entry card --
             never nested under ARC GYM/ARC Goal -- additive to every
             other card on this screen. */}
-        {isTodayMode && (
+        {isTodayMode && !hideHomeOnlyCards && (
           <Pressable style={styles.arcLearningCard} onPress={() => router.push("/arc-learning")}>
             <Text style={styles.arcLearningTitle}>📚 ARC Learning — למידה</Text>
             <Text style={styles.arcLearningSubtitle}>תפוס תובנות, למד אותן, וחזק את הזיכרון שלך לאורך זמן.</Text>
           </Pressable>
         )}
 
-        {isTodayMode && (
+        {isTodayMode && !hideHomeOnlyCards && (
           <Pressable style={styles.arcCreativityCard} onPress={() => router.push("/arc-creativity")}>
             <Text style={styles.arcCreativityTitle}>💡 ARC Creativity — יצירתיות</Text>
             <Text style={styles.arcCreativitySubtitle}>מצא קשרים בין תובנות וגלה עקרונות חדשים.</Text>

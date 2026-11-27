@@ -41,6 +41,7 @@ export default function TaskArc() {
     arcSavingExerciseId,
     arcSavingTriggerIdForNewOption,
     morningFlowCheckIn,
+    returnToReplan,
   } = useLocalSearchParams<{
     id: string;
     mini?: string;
@@ -64,6 +65,7 @@ export default function TaskArc() {
     arcSavingExerciseId?: string;
     arcSavingTriggerIdForNewOption?: string;
     morningFlowCheckIn?: string;
+    returnToReplan?: string;
   }>();
   return (
     <NewArcLiveScreen
@@ -80,6 +82,7 @@ export default function TaskArc() {
       arcSavingExerciseId={arcSavingExerciseId ?? null}
       arcSavingTriggerIdForNewOption={arcSavingTriggerIdForNewOption ?? null}
       morningFlowCheckIn={morningFlowCheckIn === "1"}
+      returnToReplan={returnToReplan === "1"}
     />
   );
 }

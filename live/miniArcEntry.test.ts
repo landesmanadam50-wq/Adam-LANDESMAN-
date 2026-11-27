@@ -22,7 +22,7 @@ const route = readSource("app/tasks/[id]/arc.tsx");
 const screen = readSource("live/NewArcLiveScreen.tsx");
 
 test("the route reads 'mini'/'spontaneous'/'shortened' params and resolves them to exactly one startMode, never guessing from anything else", () => {
-  assert.match(route, /const \{\s*id,\s*mini,\s*spontaneous,\s*shortened,\s*skipEmotionSelection,\s*plannedArcId,\s*autoStartAfter,\s*arcGymSituationId,\s*arcFocusPracticeId,\s*arcGymMemoryExerciseId,\s*arcPerspectiveId,\s*arcSavingBodyOptionId,\s*arcSavingExerciseId,\s*arcSavingTriggerIdForNewOption,\s*morningFlowCheckIn,?\s*\}\s*=\s*useLocalSearchParams/);
+  assert.match(route, /const \{\s*id,\s*mini,\s*spontaneous,\s*shortened,\s*skipEmotionSelection,\s*plannedArcId,\s*autoStartAfter,\s*arcGymSituationId,\s*arcFocusPracticeId,\s*arcGymMemoryExerciseId,\s*arcPerspectiveId,\s*arcSavingBodyOptionId,\s*arcSavingExerciseId,\s*arcSavingTriggerIdForNewOption,\s*morningFlowCheckIn,\s*returnToReplan,?\s*\}\s*=\s*useLocalSearchParams/);
   assert.ok(route.includes("startMode={resolveStartMode(mini, spontaneous, shortened)}"));
   assert.match(route, /if \(mini === "1"\) return "plannedMini";/);
   assert.match(route, /if \(spontaneous === "1"\) return "spontaneous";/);

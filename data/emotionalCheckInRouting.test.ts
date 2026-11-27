@@ -152,6 +152,36 @@ test("openFullArc threads arcGymSituationId/morningFlowCheckIn through to Full A
   assert.ok(fnBody.includes('if (options.morningFlowCheckIn) params.morningFlowCheckIn = "1";'));
 });
 
+// --- ARCHI -- Replan Time task ---
+
+test("required: NavigateOptions gains a returnToReplan field, and both openFullArc/openShortenedArc thread it through to the ARC route's own params, same precedent as morningFlowCheckIn", () => {
+  assert.match(module_, /returnToReplan\?: boolean;/);
+  const fullFnIndex = module_.indexOf("export async function openFullArc(");
+  const fullFnBody = module_.slice(fullFnIndex, module_.indexOf("\n}", fullFnIndex));
+  assert.ok(fullFnBody.includes('if (options.returnToReplan) params.returnToReplan = "1";'));
+  const shortenedFnIndex = module_.indexOf("export async function openShortenedArc(");
+  const shortenedFnBody = module_.slice(shortenedFnIndex, module_.indexOf("\n}", shortenedFnIndex));
+  assert.ok(shortenedFnBody.includes('if (options.returnToReplan) params.returnToReplan = "1";'));
+});
+
+test("required: live/ReplanTimeScreen.tsx's own 3-smiley check-in calls the shared handleEmotionalCheckInChoice dispatcher with returnToReplan: true -- never a second, separately-authored ARC-routing mechanism", () => {
+  const replanScreen = readSource("live/ReplanTimeScreen.tsx");
+  assert.match(replanScreen, /import \{ handleEmotionalCheckInChoice \} from "\.\.\/data\/emotionalCheckInRouting\.ts";/);
+  assert.ok(replanScreen.includes("void handleEmotionalCheckInChoice(choice, null, { returnToReplan: true });"));
+});
+
+test("required: openUrgeArc never forwards returnToReplan -- the combined מחשבה/דחף shortcut is not one of Replan's own 3 smileys", () => {
+  const fnIndex = module_.indexOf("export async function openUrgeArc(");
+  const fnBody = module_.slice(fnIndex, module_.indexOf("\n}", fnIndex));
+  assert.ok(!fnBody.includes("returnToReplan"));
+});
+
+test("required: resolveAndOpenNextTask ('😄 מעולה') never reads/forwards returnToReplan -- it always resolves its own target fresh, exactly like every other unused NavigateOptions field there", () => {
+  const fnIndex = module_.indexOf("export async function resolveAndOpenNextTask(");
+  const fnBody = module_.slice(fnIndex, module_.indexOf("\nexport async function handleEmotionalCheckInChoice", fnIndex));
+  assert.ok(!fnBody.includes("returnToReplan"));
+});
+
 // --- ARC Perspective task ---
 
 test("openFullArc/openShortenedArc both thread arcPerspectiveId through to their own params, same convention as arcFocusPracticeId -- and never force the id to the standalone sentinel on their own (unlike arcGymSituationId/arcGymMemoryExerciseId)", () => {

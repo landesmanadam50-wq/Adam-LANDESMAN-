@@ -204,6 +204,8 @@ export default function RootLayout() {
         <Stack.Screen name="today" options={{ title: "תכנון משימות" }} />
         <Stack.Screen name="routine-week" options={{ title: "שבוע קבוע" }} />
         <Stack.Screen name="routine-day" options={{ title: "היום הגמיש" }} />
+        {/* ARCHI -- Replan Time task: reached from the "תכנון זמן מחדש" notification (data/replanTimeNotification.ts) when a task's full allocated window elapsed with nothing started. */}
+        <Stack.Screen name="replan-time" options={{ title: "תכנון זמן מחדש" }} />
         <Stack.Screen name="todo-bank" options={{ title: "מאגר To-Do" }} />
         <Stack.Screen name="daily-schedule-legacy" options={{ title: "לוח יומי (ישן)" }} />
         <Stack.Screen name="routine-setup-legacy" options={{ title: "בניית שגרה (ישן)" }} />

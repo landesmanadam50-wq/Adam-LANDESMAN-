@@ -89,7 +89,7 @@ test("section 1: openFullArc/openShortenedArc thread morningFlowCheckIn into the
 });
 
 test("section 1: the /tasks/[id]/arc route parses morningFlowCheckIn and threads it straight through to NewArcLiveScreen, alongside (never replacing) the existing params", () => {
-  assert.match(arcRoute, /arcGymSituationId,\s*arcFocusPracticeId,\s*arcGymMemoryExerciseId,\s*arcPerspectiveId,\s*arcSavingBodyOptionId,\s*arcSavingExerciseId,\s*arcSavingTriggerIdForNewOption,\s*morningFlowCheckIn,?\s*\}\s*=\s*useLocalSearchParams/);
+  assert.match(arcRoute, /arcGymSituationId,\s*arcFocusPracticeId,\s*arcGymMemoryExerciseId,\s*arcPerspectiveId,\s*arcSavingBodyOptionId,\s*arcSavingExerciseId,\s*arcSavingTriggerIdForNewOption,\s*morningFlowCheckIn,\s*returnToReplan,?\s*\}\s*=\s*useLocalSearchParams/);
   assert.ok(arcRoute.includes('morningFlowCheckIn={morningFlowCheckIn === "1"}'));
 });
 
@@ -117,6 +117,28 @@ test("section 1: returnToTask's own morningFlowCheckIn branch always goes back t
 test("section 1: morningFlowCheckIn is a pure navigation hint, never persisted on the session state or compared in sessionMatchesRequest -- unlike arcGymSituationId, it never affects WHAT the ARC session asks or shows, only where it returns to", () => {
   const newArcLiveTypes = readSource("arc/newArcLiveTypes.ts");
   assert.ok(!newArcLiveTypes.includes("morningFlowCheckIn"), "the session-state/request types must never know about this -- it lives only as a NewArcLiveScreen prop");
+});
+
+// --- ARCHI -- Replan Time task: returnToReplan mirrors morningFlowCheckIn's own threading exactly ---
+
+test("required: the /tasks/[id]/arc route also parses returnToReplan and threads it straight through to NewArcLiveScreen, alongside (never replacing) morningFlowCheckIn and every other existing param", () => {
+  assert.match(arcRoute, /morningFlowCheckIn,\s*returnToReplan,?\s*\}\s*=\s*useLocalSearchParams/);
+  assert.ok(arcRoute.includes('returnToReplan={returnToReplan === "1"}'));
+});
+
+test("required: returnToTask's own returnToReplan branch is checked BEFORE morningFlowCheckIn -- after an ARC exercise started from one of Replan's own 3 smileys, the trainee always lands back on the Replan screen, never Home", () => {
+  const fnIndex = liveScreen.indexOf("async function returnToTask(autoStart: boolean)");
+  const fnBody = liveScreen.slice(fnIndex, fnIndex + 10700);
+  const returnToReplanIndex = fnBody.indexOf("if (returnToReplan) {");
+  const morningFlowIndex = fnBody.indexOf("if (morningFlowCheckIn) {");
+  assert.ok(returnToReplanIndex !== -1 && morningFlowIndex !== -1 && returnToReplanIndex < morningFlowIndex, "the returnToReplan branch must be checked BEFORE the morningFlowCheckIn branch, so it takes priority");
+  const returnToReplanBody = fnBody.slice(returnToReplanIndex, morningFlowIndex);
+  assert.ok(returnToReplanBody.includes('router.replace("/replan-time");'));
+});
+
+test("required: returnToReplan is a pure navigation hint, never persisted on the session state -- same shape as morningFlowCheckIn, it never affects WHAT the ARC session asks or shows, only where it returns to", () => {
+  const newArcLiveTypes = readSource("arc/newArcLiveTypes.ts");
+  assert.ok(!newArcLiveTypes.includes("returnToReplan"), "the session-state/request types must never know about this -- it lives only as a NewArcLiveScreen prop");
 });
 
 test("section 1 (no duplicate ARC sessions): the pathname-resume effect only ever acts when awaitingCheckInReturn was explicitly set -- an unrelated visit to '/' (before checkin was ever reached, or on any other ordinary navigation) is always a no-op, never a stray extra 'continue the sequence' trigger", () => {

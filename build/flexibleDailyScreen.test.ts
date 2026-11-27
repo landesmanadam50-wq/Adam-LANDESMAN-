@@ -253,7 +253,7 @@ test("required test 1 (Home check-in options): the FeelingCube shows both remain
 });
 
 test("the FeelingCube/TaskCube mount only in today mode (ARCHI Home itself) -- a fixed-date instance opened from the Weekly screen never shows them", () => {
-  const checkInBlockIndex = screen.indexOf("{isTodayMode && (\n          <>\n            <TaskCube");
+  const checkInBlockIndex = screen.indexOf("{isTodayMode && !hideHomeOnlyCards && (\n          <>\n            <TaskCube");
   assert.ok(checkInBlockIndex >= 0);
   const checkInBlock = screen.slice(checkInBlockIndex, checkInBlockIndex + 120);
   assert.ok(checkInBlock.includes("<FeelingCube />"));
@@ -564,4 +564,46 @@ test("required: a drag that ends back at the entry's own current spot (pin uncha
   const fnIndex = screen.indexOf("async function handleTodoDragEnd(taskId: string, dy: number)");
   const fnBody = screen.slice(fnIndex, screen.indexOf("\n  }", fnIndex));
   assert.ok(fnBody.includes("if (todoEntry.task.todoPinnedAfterTaskId === newPin) return;"));
+});
+
+// --- ARCHI -- Replan Time task: hideHomeOnlyCards ---
+
+test("required: the screen gains an optional hideHomeOnlyCards prop defaulting to false, so Home's own call site (no prop passed) is completely unaffected", () => {
+  assert.match(screen, /export default function FlexibleDailyScreen\(\{ date = null, hideHomeOnlyCards = false \}: \{ date\?: string \| null; hideHomeOnlyCards\?: boolean \}\)/);
+});
+
+test("required: every Home-only decorative/entry card (cubes, floating-overlay toggle, Daily Visualization card, morning-alarm link, AddInfoMenu, active-triggers block, settings row, ARC GYM/Learning/Creativity cards) is additionally gated on !hideHomeOnlyCards, on top of its existing isTodayMode gate", () => {
+  const gatedBlocks = [
+    "{isTodayMode && !hideHomeOnlyCards && (\n          <>\n            <TaskCube />",
+    "{isTodayMode && !hideHomeOnlyCards && (\n          <Pressable\n            style={[styles.overlayToggleButton,",
+    "{isTodayMode && !hideHomeOnlyCards && (\n          <Pressable style={styles.dailyVisualizationCard}",
+    "{isTodayMode && !hideHomeOnlyCards && (\n          <Pressable style={styles.morningAlarmLink}",
+    '{isTodayMode && !hideHomeOnlyCards && <AddInfoMenu showHomeInsightButton={showHomeInsightButton} />}',
+    "{isTodayMode && !hideHomeOnlyCards && activeTriggers.length > 0 && (",
+    "{isTodayMode && !hideHomeOnlyCards && (\n          <View style={styles.settingsRow}>",
+    "{isTodayMode && !hideHomeOnlyCards && (\n          <Pressable style={styles.arcGymCard}",
+    "{isTodayMode && !hideHomeOnlyCards && (\n          <Pressable style={styles.arcLearningCard}",
+    "{isTodayMode && !hideHomeOnlyCards && (\n          <Pressable style={styles.arcCreativityCard}",
+  ];
+  for (const block of gatedBlocks) assert.ok(screen.includes(block), `missing gated block: ${block.slice(0, 60)}...`);
+});
+
+test("required: PersistentTaskControls, the Time-Planning card (the one entry point into TimePlanningModal from an otherwise-empty day), and the woven day list/add/remove/reorder actions all stay completely unaffected by hideHomeOnlyCards -- never gated on it", () => {
+  assert.ok(screen.includes("<PersistentTaskControls />"));
+  assert.ok(!screen.includes("hideHomeOnlyCards") || !screen.match(/hideHomeOnlyCards[\s\S]{0,40}PersistentTaskControls/), "PersistentTaskControls must never be conditioned on hideHomeOnlyCards");
+  // The Time-Planning card's own two buttons -- including the one that
+  // opens TimePlanningModal -- stay gated ONLY on isTodayMode, exactly
+  // as before this task; Replan needs this exact entry point reachable.
+  const timePlanningIndex = screen.indexOf("styles.timePlanningCard");
+  const timePlanningBlockStart = screen.lastIndexOf("{isTodayMode &&", timePlanningIndex);
+  const timePlanningGate = screen.slice(timePlanningBlockStart, timePlanningBlockStart + 60);
+  assert.ok(timePlanningGate.startsWith("{isTodayMode && (\n"), "the Time-Planning card must stay reachable regardless of hideHomeOnlyCards");
+  assert.ok(screen.includes('<Pressable style={styles.actionButton} onPress={() => setTimePlanningModalVisible(true)}>'));
+});
+
+test("required: TimePlanningModal itself is mounted unconditionally (never behind hideHomeOnlyCards) -- fully intact and functional for Replan", () => {
+  const modalIndex = screen.indexOf("<TimePlanningModal");
+  assert.ok(modalIndex !== -1);
+  const precedingGate = screen.slice(Math.max(0, modalIndex - 60), modalIndex);
+  assert.ok(!precedingGate.includes("hideHomeOnlyCards"));
 });

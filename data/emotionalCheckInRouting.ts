@@ -95,6 +95,16 @@ interface NavigateOptions {
    */
   morningFlowCheckIn?: boolean;
   /**
+   * ARCHI -- Replan Time task: set only by live/ReplanTimeScreen.tsx's
+   * own 3-smiley check-in -- the SAME pure navigation-hint pattern as
+   * morningFlowCheckIn above (never persisted on the ARC session
+   * itself). Threaded through to /tasks/[id]/arc so
+   * live/NewArcLiveScreen.tsx's own returnToTask() knows to come back
+   * to the Replan screen ("/replan-time") instead of Home/the task once
+   * the exercise finishes.
+   */
+  returnToReplan?: boolean;
+  /**
    * ARC Focus task: set only by handleArcFocusCheckInChoice below -- a
    * sibling param threaded straight through to /tasks/[id]/arc,
    * persisted on the ARC session itself (its own arcFocusPracticeId field)
@@ -185,10 +195,11 @@ export async function openFullArc(taskId: string | null, options: NavigateOption
   if (options.arcSavingExerciseId) params.arcSavingExerciseId = options.arcSavingExerciseId;
   if (options.arcSavingTriggerIdForNewOption) params.arcSavingTriggerIdForNewOption = options.arcSavingTriggerIdForNewOption;
   if (options.morningFlowCheckIn) params.morningFlowCheckIn = "1";
+  if (options.returnToReplan) params.returnToReplan = "1";
   navigateTo({ pathname: "/tasks/[id]/arc", params }, options);
 }
 
-/** Shortened ARC == the SAME ARC LIVE screen/engine, "shortened" invocation mode -- never a manually-created Mini ARC, never a second engine. Same `taskId`/`options.arcGymSituationId`/`options.morningFlowCheckIn` contract as openFullArc above. */
+/** Shortened ARC == the SAME ARC LIVE screen/engine, "shortened" invocation mode -- never a manually-created Mini ARC, never a second engine. Same `taskId`/`options.arcGymSituationId`/`options.morningFlowCheckIn`/`options.returnToReplan` contract as openFullArc above. */
 export async function openShortenedArc(taskId: string | null, options: NavigateOptions = {}): Promise<void> {
   const id = options.arcGymSituationId || options.arcGymMemoryExerciseId ? STANDALONE_ARC_TASK_ID : taskId ?? (await resolveHomeCheckInTaskId());
   const params: Record<string, string> = { id, shortened: "1" };
@@ -200,6 +211,7 @@ export async function openShortenedArc(taskId: string | null, options: NavigateO
   if (options.arcSavingExerciseId) params.arcSavingExerciseId = options.arcSavingExerciseId;
   if (options.arcSavingTriggerIdForNewOption) params.arcSavingTriggerIdForNewOption = options.arcSavingTriggerIdForNewOption;
   if (options.morningFlowCheckIn) params.morningFlowCheckIn = "1";
+  if (options.returnToReplan) params.returnToReplan = "1";
   navigateTo({ pathname: "/tasks/[id]/arc", params }, options);
 }
 

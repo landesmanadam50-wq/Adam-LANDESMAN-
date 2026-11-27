@@ -5226,3 +5226,38 @@ export async function saveFreeTimeWindowNotificationState(state: FreeTimeWindowN
 export async function clearFreeTimeWindowNotificationState(): Promise<void> {
   await AsyncStorage.removeItem(FREE_TIME_WINDOW_NOTIFICATION_STATE_KEY);
 }
+
+/**
+ * ARCHI -- Replan Time task: the ONE "replan time" notification's own
+ * persisted state, mirroring TaskNotStartedNotificationState's shape
+ * and purpose exactly (own storage key -- this codebase's standing
+ * convention is one key per notification kind) so
+ * recomputeReplanTimeNotification (data/replanTimeNotification.ts)
+ * always updates the SAME displayed notification in place.
+ */
+export interface ReplanTimeNotificationState {
+  notificationId: string;
+  alertedTaskId: string | null;
+  alertedAt: string;
+}
+
+const REPLAN_TIME_NOTIFICATION_STATE_KEY = "archi.replanTimeNotificationState.v1";
+
+export async function loadReplanTimeNotificationState(): Promise<ReplanTimeNotificationState | null> {
+  const raw = await AsyncStorage.getItem(REPLAN_TIME_NOTIFICATION_STATE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ReplanTimeNotificationState;
+  } catch (error) {
+    console.warn("[storage] Stored ReplanTimeNotificationState is not valid JSON -- treating as unset rather than crashing.", error);
+    return null;
+  }
+}
+
+export async function saveReplanTimeNotificationState(state: ReplanTimeNotificationState): Promise<void> {
+  await AsyncStorage.setItem(REPLAN_TIME_NOTIFICATION_STATE_KEY, JSON.stringify(state));
+}
+
+export async function clearReplanTimeNotificationState(): Promise<void> {
+  await AsyncStorage.removeItem(REPLAN_TIME_NOTIFICATION_STATE_KEY);
+}

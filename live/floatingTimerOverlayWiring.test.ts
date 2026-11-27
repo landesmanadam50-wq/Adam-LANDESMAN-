@@ -37,7 +37,10 @@ test("requirements 1+6: performStart (reached via handleStart's required-before-
   // Action-Based Tasks task: widened again (10500 -> 11000) for the new
   // recomputeTaskMemoryReminderNotification call/comment near the top
   // of performStart.
-  const fnBody = screen.slice(fnIndex, fnIndex + 11000);
+  // ARCHI -- Replan Time task: widened again (11000 -> 11300) for the
+  // new recomputeReplanTimeNotification call/comment near the top of
+  // performStart.
+  const fnBody = screen.slice(fnIndex, fnIndex + 11300);
   assert.ok(fnBody.includes("await showFloatingTimerOverlay(runWithNotification, task, freshStageProgress, nextScheduledTaskForOverlay);"));
 });
 

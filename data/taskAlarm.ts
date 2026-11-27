@@ -113,6 +113,7 @@ import { handleDailyVisualizationAlarmEvent } from "./dailyVisualizationAlarm.ts
 import { handleEmotionalCheckInNotificationEvent } from "./emotionalCheckInNotification.ts";
 import { handleTaskTransitionNotificationEvent } from "./taskTransitionNotification.ts";
 import { handleTaskNotStartedNotificationEvent, recomputeTaskNotStartedNotification } from "./taskNotStartedNotification.ts";
+import { handleReplanTimeNotificationEvent, recomputeReplanTimeNotification } from "./replanTimeNotification.ts";
 import { handleFreeTimeWindowNotificationEvent, recomputeFreeTimeWindowNotification } from "./freeTimeWindowNotification.ts";
 import { handleProactiveSupportNotificationEvent } from "./proactiveSupportNotification.ts";
 import { handleTaskMemoryReminderAlarmFired, handleTaskMemoryReminderNotificationEvent } from "./taskMemoryReminderNotification.ts";
@@ -315,6 +316,15 @@ export function registerTaskAlarmForegroundService(): void {
         // recomputeTaskNotStartedNotification, never duplicated here.
         const isTaskNotStartedArm = notification.data?.kind === "taskNotStartedArm";
 
+        // ARCHI -- Replan Time task: this notification's own silent arm
+        // placeholder -- exactly the isTaskNotStartedArm pattern above.
+        // The real decision (has some task's FULL allocated window
+        // elapsed with nothing started) is entirely
+        // data/replanTimeNotification.ts's own
+        // recomputeReplanTimeNotification, re-derived fresh at this
+        // exact fire moment, never duplicated here.
+        const isReplanTimeArm = notification.data?.kind === "replanTimeArm";
+
         // Action-Based Tasks task, section 4: the ARC-Memory 5-minutes-
         // before reminder's own silent arm placeholder -- exactly the
         // isTaskNotStartedArm pattern above, except the exact taskId to
@@ -366,6 +376,14 @@ export function registerTaskAlarmForegroundService(): void {
 
         if (isTaskNotStartedArm) {
           recomputeTaskNotStartedNotification(new Date()).then(async () => {
+            if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});
+            stop();
+          });
+          return;
+        }
+
+        if (isReplanTimeArm) {
+          recomputeReplanTimeNotification(new Date()).then(async () => {
             if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});
             stop();
           });
@@ -1613,6 +1631,15 @@ export async function handleTaskAlarmEvent(event: Event): Promise<void> {
   // onBackgroundEvent/onForegroundEvent registration.
   if (data.kind === "taskNotStarted") {
     await handleTaskNotStartedNotificationEvent(event);
+    return;
+  }
+
+  // ARCHI -- Replan Time task: the one "תכנון זמן מחדש" notification's
+  // own single action and body-tap -- routes through the shared
+  // handleReplanTimeNotificationEvent (data/replanTimeNotification.ts),
+  // never a second onBackgroundEvent/onForegroundEvent registration.
+  if (data.kind === "replanTime") {
+    await handleReplanTimeNotificationEvent(event);
     return;
   }
 

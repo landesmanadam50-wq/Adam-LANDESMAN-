@@ -12,6 +12,7 @@ import { resolveTodaysScheduledPlan } from "../data/dailyPlan.ts";
 import { recomputeFreeTimeWindowNotification } from "../data/freeTimeWindowNotification.ts";
 import { loadTaskOccurrenceOverrides, upsertTask, upsertTaskOccurrenceOverrideEntry } from "../data/storage.ts";
 import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
+import { recomputeReplanTimeNotification } from "../data/replanTimeNotification.ts";
 import { recomputeTaskMemoryReminderNotification } from "../data/taskMemoryReminderNotification.ts";
 
 /**
@@ -92,6 +93,7 @@ export default function TaskMoveConfirmationScreen({ taskId }: { taskId: string 
     const { reconcileTaskAlarms } = await import("../data/taskAlarm.ts");
     await reconcileTaskAlarms(now);
     await recomputeTaskNotStartedNotification(now);
+    await recomputeReplanTimeNotification(now);
     await recomputeTaskMemoryReminderNotification(now);
     // The window just filled must stop being offered elsewhere.
     await recomputeFreeTimeWindowNotification(now);

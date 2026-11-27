@@ -298,6 +298,8 @@ async function finishOrGiveUpTask(taskId: string, now: Date): Promise<void> {
   const { reconcileTaskAlarms } = await import("./taskAlarm.ts");
   await reconcileTaskAlarms(now);
   await recomputeTaskNotStartedNotification(now);
+  const { recomputeReplanTimeNotification } = await import("./replanTimeNotification.ts");
+  await recomputeReplanTimeNotification(now);
   const { recomputeFreeTimeWindowNotification } = await import("./freeTimeWindowNotification.ts");
   await recomputeFreeTimeWindowNotification(now);
   // ARCHI -- Body-Sensation Discovery & Four-Component Learning task,

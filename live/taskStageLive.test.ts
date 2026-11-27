@@ -24,10 +24,12 @@ const screen = readSource("live/ActiveTaskScreen.tsx");
 
 test("performStart starts the FIRST configured stage's own duration (never the whole task's total at once) and creates a fresh TaskStageProgress for it -- a legacy (no stages) task falls back to task.expectedDurationMinutes exactly as before", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  // Window widened (9900 -> 10700): Action-Based Tasks task's own
-  // recomputeTaskMemoryReminderNotification call/comment, inserted near
-  // the top of performStart, pushed every later line further from the anchor.
-  const fnBody = screen.slice(fnIndex, fnIndex + 10700);
+  // Window widened (9900 -> 10700 -> 11000): Action-Based Tasks task's
+  // own recomputeTaskMemoryReminderNotification call/comment, then
+  // ARCHI -- Replan Time task's own recomputeReplanTimeNotification
+  // call/comment, both inserted near the top of performStart, pushed
+  // every later line further from the anchor.
+  const fnBody = screen.slice(fnIndex, fnIndex + 11000);
   assert.ok(fnBody.includes("const staged = hasConfiguredActionStages(task.actionStages);"));
   assert.ok(fnBody.includes("const firstStage = staged ? resolveFirstActionStage(task.actionStages!) : null;"));
   // Smart To-Do List task, section 6, and ARCHI -- To-Do Bank +

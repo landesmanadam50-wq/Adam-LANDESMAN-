@@ -430,6 +430,7 @@ export default function NewArcLiveScreen({
   arcSavingExerciseId = null,
   arcSavingTriggerIdForNewOption = null,
   morningFlowCheckIn = false,
+  returnToReplan = false,
 }: {
   taskId: string;
   startMode?: ArcInvocationMode;
@@ -453,6 +454,8 @@ export default function NewArcLiveScreen({
   arcSavingTriggerIdForNewOption?: string | null;
   /** Morning Flow Simplification task: true only when this session was started from live/DailyStartupSequenceOverlay.tsx's own "checkin" step -- a pure navigation hint (never persisted on the session itself, unlike arcGymSituationId above) read only by returnToTask() below. */
   morningFlowCheckIn?: boolean;
+  /** ARCHI -- Replan Time task: true only when this session was started from live/ReplanTimeScreen.tsx's own 3-smiley check-in -- a pure navigation hint (never persisted on the session itself, same shape as morningFlowCheckIn above) read only by returnToTask() below, which checks it FIRST (before morningFlowCheckIn) so the trainee always lands back on the Replan screen, never Home. */
+  returnToReplan?: boolean;
 }) {
   const [session, setSession] = useState<NewArcLiveSessionState | null>(null);
   // ARCHI -- Unified 7-Part Update task, Part 7.2: loaded once on focus
@@ -1388,6 +1391,15 @@ export default function NewArcLiveScreen({
       // in-progress record in this codebase); the review screen reads it
       // directly rather than trusting a route param for its own logic.
       router.replace("/arc-saving/review");
+      return;
+    }
+    // ARCHI -- Replan Time task: checked BEFORE morningFlowCheckIn below
+    // -- after completing an ARC exercise started from one of Replan's
+    // own 3 smileys, the trainee always lands back on the Replan screen
+    // itself (never Home, never the task), so they can keep editing the
+    // rest of today's plan right where they left off.
+    if (returnToReplan) {
+      router.replace("/replan-time");
       return;
     }
     // Morning Flow Simplification task, section 1: "after completing
