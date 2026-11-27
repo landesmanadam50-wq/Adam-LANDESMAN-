@@ -120,6 +120,8 @@ import { handleMorningAlarmAction, turnOffMorningAlarm } from "./morningAlarm.ts
 import { resolveLatestReflectionForTask, resolveTaskAlarmNotificationContent } from "../arc/taskReflection.ts";
 
 import { TASK_ALARM_CHANNEL_ID, ensureNotifeePermissionAsync, ensureSilentDeliveryChannelAsync, ensureTaskAlarmChannelAsync, SILENT_DELIVERY_CHANNEL_ID } from "./alarmChannel.ts";
+import { handleArcAddictionNotificationEvent, isArcAddictionNotificationEvent } from "./arcAddictionSession.ts";
+
 const TASK_ALARM_RING_TIMEOUT_MS = 2 * 60 * 1000; // Requirement: rings until turned off OR 2 minutes pass, whichever is first.
 const SNOOZE_MINUTES = 5;
 
@@ -1745,6 +1747,14 @@ export async function handleTaskAlarmEvent(event: Event): Promise<void> {
     if (event.type === EventType.ACTION_PRESS || event.type === EventType.PRESS) {
       routeTappedReminder(data);
     }
+    return;
+  }
+
+  // ARC Addiction: the end-of-wait "כן / לא" alarm and the ongoing
+  // countdown notification -- routed through the shared dispatcher like
+  // every other kind, handled entirely by data/arcAddictionSession.ts.
+  if (isArcAddictionNotificationEvent(event)) {
+    await handleArcAddictionNotificationEvent(event);
     return;
   }
 
