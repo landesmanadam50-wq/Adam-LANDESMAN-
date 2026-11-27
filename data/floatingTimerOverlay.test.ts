@@ -559,15 +559,15 @@ test("the unified panel's full content -- the collapse button's own row, then mo
 
 // --- ARCHI -- Collapsible and Expandable Modes task ---
 
-test("the outer container itself has only two top-level children -- the pill, then expandedContent -- added to WindowManager as the SAME one view with one set of LayoutParams as before this task; collapsing/expanding never swaps in a second overlay view", () => {
+test("the outer container itself has only two top-level children -- the pill (now wrapped, with the ARC Urge button, in its own pillRow), then expandedContent -- added to WindowManager as the SAME one view with one set of LayoutParams as before this task; collapsing/expanding never swaps in a second overlay view", () => {
   const fnIndex = serviceKt.indexOf("private fun ensureOverlayAdded()");
   const fnBody = serviceKt.slice(fnIndex, serviceKt.indexOf("\n  }", fnIndex));
   const containerIndex = fnBody.indexOf("val container = LinearLayout(this).apply {");
   assert.ok(containerIndex !== -1);
   const containerBody = fnBody.slice(containerIndex, fnBody.indexOf("\n      }", containerIndex));
-  assert.ok(containerBody.includes("addView(pillTextView)"));
+  assert.ok(containerBody.includes("addView(pillRow)"));
   assert.ok(containerBody.includes("addView(expandedContent)"));
-  assert.ok(containerBody.indexOf("addView(pillTextView)") < containerBody.indexOf("addView(expandedContent)"));
+  assert.ok(containerBody.indexOf("addView(pillRow)") < containerBody.indexOf("addView(expandedContent)"));
   assert.ok(fnBody.includes("wm.addView(container, params)"), "still exactly one WindowManager.addView call for the whole unit");
 });
 

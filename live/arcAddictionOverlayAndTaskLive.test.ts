@@ -63,7 +63,9 @@ test("native: the second line has its own wall-clock countdown and ticker", () =
 });
 
 test("native: the second line is visible in collapsed and expanded modes and opens the session", () => {
-  assert.match(service, /addView\(pillTextView\)\n\s+addView\(secondaryView\)\n\s+addView\(expandedContent\)/);
+  // ARC Urge task: pillTextView is now wrapped (with the new urgeArcButtonTextView)
+  // in its own pillRow, added to the container in pillTextView's own old place.
+  assert.match(service, /addView\(pillRow\)\n\s+addView\(secondaryView\)\n\s+addView\(expandedContent\)/);
   assert.match(service, /archi:\/\/arc-addiction\/session/);
   const up = service.slice(service.indexOf("MotionEvent.ACTION_UP ->"));
   assert.ok(up.indexOf("downOnSecondary") < up.indexOf("} else if (collapsed) {"));

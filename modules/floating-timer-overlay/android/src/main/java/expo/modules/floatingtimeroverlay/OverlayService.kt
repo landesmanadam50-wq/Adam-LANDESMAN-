@@ -183,6 +183,15 @@ class OverlayService : Service() {
     private const val ARC_SAVING_OPEN_DEBOUNCE_MS = 1500L
     private const val SECONDARY_TAP_DEBOUNCE_MS = 1500L
     private const val SECONDARY_BACKGROUND = "#CC2E7D32"
+    // ARC Urge task: a new, always-visible (collapsed AND expanded)
+    // red button sitting beside the pill/timer -- same source-level
+    // debounce discipline as every other tappable region above, for
+    // its own single deep link into the existing ARC Addiction route.
+    private const val URGE_ARC_OPEN_DEBOUNCE_MS = 1500L
+    // Solid (never translucent) red, so it stands out as an urgent
+    // shortcut distinct from every other row's own translucent/solid-
+    // green styling.
+    private const val URGE_ARC_BACKGROUND = "#FFD32F2F"
     // Section 7's own "רקע ירוק מלא ואחיד" requirement: the ONE shared
     // solid (fully opaque, never translucent like every other row's own
     // #CC... background) green hex for all four quick-action buttons --
@@ -251,6 +260,9 @@ class OverlayService : Service() {
   // therefore the actual touchable/visible area) shrinks to just the
   // pill while collapsed, never leaving dead touchable space around it.
   private var pillView: TextView? = null
+  // ARC Urge task: always visible beside pillView (both collapsed and
+  // expanded) -- never toggled by setCollapsed(), unlike pillView itself.
+  private var urgeArcButtonView: TextView? = null
   private var expandedContentView: View? = null
   private var collapseButtonView: TextView? = null
   private var overlayParams: WindowManager.LayoutParams? = null
@@ -264,6 +276,7 @@ class OverlayService : Service() {
   private var lastPositiveEventTapAtMs: Long = 0L
   private var lastAddTaskTapAtMs: Long = 0L
   private var lastArcSavingOpenAtMs: Long = 0L
+  private var lastUrgeArcTapAtMs: Long = 0L
 
   private var taskId: String = ""
   private var title: String = ""
@@ -449,6 +462,38 @@ class OverlayService : Service() {
     if (now - lastSecondaryTapAtMs < SECONDARY_TAP_DEBOUNCE_MS) return
     lastSecondaryTapAtMs = now
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("archi://arc-addiction/session")).apply {
+      setPackage(packageName)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+      startActivity(intent)
+    } catch (_: Exception) {
+      // No matching activity -- nothing more this side can do.
+    }
+  }
+
+  /**
+   * ARC Urge task: opens the app's own EXISTING ARC Addiction route
+   * (build/ArcAddictionHomeScreen.tsx) directly -- never a parallel
+   * mechanism or a second entry screen. That screen already shows an
+   * active session (if any) to continue, and only ever starts a new
+   * one on an explicit, separate tap there, so merely opening it from
+   * here -- even on a rapid repeated tap -- can never create a
+   * duplicate session or reset an in-progress coping episode. taskId
+   * (when a task is active) is carried only as returnToTaskId, the
+   * SAME param live/components/ArcAddictionTaskLiveEntry.tsx already
+   * uses so the trainee can return to the current task once the
+   * exercise finishes. This function never reads or writes any
+   * task-timer field, so the task timer and the independent ARC
+   * Addiction waiting timer are never paused, reset, or otherwise
+   * touched by opening this.
+   */
+  private fun openArcAddictionUrge() {
+    val now = System.currentTimeMillis()
+    if (now - lastUrgeArcTapAtMs < URGE_ARC_OPEN_DEBOUNCE_MS) return
+    lastUrgeArcTapAtMs = now
+    val uri = if (taskId.isEmpty()) "archi://arc-addiction" else "archi://arc-addiction?returnToTaskId=$taskId"
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
       setPackage(packageName)
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
@@ -1040,6 +1085,27 @@ class OverlayService : Service() {
         text = pillSummaryText(currentRemainingSeconds(), taskId.isEmpty())
       }
 
+      // --- ARC Urge task: a new, always-visible red button beside the
+      // pill -- "the button will appear next to the floating timer and
+      // be reachable even outside the app." It never toggles with
+      // collapsed/expanded (see pillRow below, which wraps it together
+      // with pillTextView but never hides it) and opens the existing
+      // ARC Addiction route via its own debounced, task-independent
+      // deep link (openArcAddictionUrge) -- never a parallel mechanism.
+      val urgeArcButtonTextView = TextView(this).apply {
+        text = "ARC Urge"
+        setTextColor(Color.WHITE)
+        textSize = 12f
+        setPadding(14, 8, 14, 8)
+        setBackgroundColor(Color.parseColor(URGE_ARC_BACKGROUND))
+      }
+      val pillRow = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        addView(pillTextView)
+        addView(urgeArcButtonTextView)
+      }
+
       // ARC Addiction second line: visible in BOTH collapsed and expanded
       // modes (it sits outside expandedContent), GONE while inactive.
       val secondaryView = TextView(this).apply {
@@ -1052,7 +1118,7 @@ class OverlayService : Service() {
 
       val container = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        addView(pillTextView)
+        addView(pillRow)
         addView(secondaryView)
         addView(expandedContent)
       }
@@ -1118,6 +1184,7 @@ class OverlayService : Service() {
         addTaskTextView,
         arcSavingTextView,
         secondaryView,
+        urgeArcButtonTextView,
         params
       )
 
@@ -1139,6 +1206,7 @@ class OverlayService : Service() {
       addTaskView = addTaskTextView
       arcSavingView = arcSavingTextView
       pillView = pillTextView
+      urgeArcButtonView = urgeArcButtonTextView
       expandedContentView = expandedContent
       collapseButtonView = collapseButtonTextView
       secondaryTextView = secondaryView
@@ -1175,6 +1243,7 @@ class OverlayService : Service() {
       addTaskView = null
       arcSavingView = null
       pillView = null
+      urgeArcButtonView = null
       expandedContentView = null
       collapseButtonView = null
       overlayParams = null
@@ -1247,6 +1316,7 @@ class OverlayService : Service() {
     addTaskView: View,
     arcSavingView: View,
     secondaryView: View,
+    urgeArcButtonView: View,
     params: WindowManager.LayoutParams
   ) {
     var initialX = 0
@@ -1268,6 +1338,7 @@ class OverlayService : Service() {
     var downOnAddTask = false
     var downOnArcSaving = false
     var downOnSecondary = false
+    var downOnUrgeArc = false
 
     view.setOnTouchListener { _, event ->
       val wm = windowManager ?: return@setOnTouchListener false
@@ -1292,6 +1363,7 @@ class OverlayService : Service() {
           downOnAddTask = isPointInsideView(view, addTaskView, event.x, event.y)
           downOnArcSaving = isPointInsideView(view, arcSavingView, event.x, event.y)
           downOnSecondary = isPointInsideView(view, secondaryView, event.x, event.y)
+          downOnUrgeArc = isPointInsideView(view, urgeArcButtonView, event.x, event.y)
           true
         }
         MotionEvent.ACTION_MOVE -> {
@@ -1325,6 +1397,11 @@ class OverlayService : Service() {
             // the second line is visible while collapsed and opens the
             // ARC Addiction session.
             openArcAddictionSession()
+          } else if (downOnUrgeArc) {
+            // ARC Urge task: same precedent as downOnSecondary right
+            // above -- the button is visible while collapsed too, so its
+            // own tap must be checked before the collapsed->expand rule.
+            openArcAddictionUrge()
           } else if (collapsed) {
             // ARCHI -- Collapsible and Expandable Modes task: "Tapping
             // the pill expands the floating cube" -- while collapsed,
@@ -1725,6 +1802,7 @@ class OverlayService : Service() {
     addTaskView = null
     arcSavingView = null
     pillView = null
+    urgeArcButtonView = null
     expandedContentView = null
     collapseButtonView = null
     secondaryTextView = null
