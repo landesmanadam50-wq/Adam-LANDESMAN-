@@ -138,8 +138,35 @@ class FloatingTimerOverlayModule : Module() {
     // to JS) -- this module has never had an event-emission channel,
     // and a point-in-time answer at the moment JS needs it is all this
     // feature requires.
+    // ARC Addiction: the independent second line (urge waiting timer).
+    Function("setSecondaryTimer") { label: String, endsAtMs: Double ->
+      startSecondaryCommand(OverlayService.ACTION_SET_SECONDARY, label, endsAtMs.toLong())
+    }
+
+    Function("clearSecondaryTimer") {
+      startSecondaryCommand(OverlayService.ACTION_CLEAR_SECONDARY, null, 0L)
+    }
+
     Function("isScreenLockedOrOff") {
       isScreenLockedOrOff()
+    }
+  }
+
+  private fun startSecondaryCommand(action: String, label: String?, endsAtMs: Long) {
+    val context = appContext.reactContext ?: return
+    val intent = Intent(context, OverlayService::class.java).apply {
+      this.action = action
+      putExtra(OverlayService.EXTRA_SECONDARY_LABEL, label)
+      putExtra(OverlayService.EXTRA_SECONDARY_ENDS_AT_MS, endsAtMs)
+    }
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        context.startForegroundService(intent)
+      } else {
+        context.startService(intent)
+      }
+    } catch (_: Exception) {
+      // Background-start restrictions etc. -- the in-app timer and notifications still work.
     }
   }
 

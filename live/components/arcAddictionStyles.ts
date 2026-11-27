@@ -1,0 +1,46 @@
+import { StyleSheet } from "react-native";
+
+/** Shared styles for the ARC Addiction screens – same palette and RTL conventions as the rest of ARCHI (build/UrgeArcListScreen.tsx). */
+export const ARC_ADDICTION_COLORS = {
+  primary: "#0a7ea4",
+  primarySoft: "#E6F4FE",
+  text: "#222",
+  muted: "#666",
+  danger: "#c0392b",
+  calm: "#2E7D32",
+  urge: "#D32F2F",
+  supportive: "#4FC3F7",
+  border: "#E6F4FE",
+  background: "#fff",
+};
+
+export const arcAddictionStyles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: ARC_ADDICTION_COLORS.background },
+  content: { flexGrow: 1, padding: 20, paddingBottom: 40 },
+  title: { fontSize: 22, fontWeight: "700", textAlign: "right", marginBottom: 4, color: ARC_ADDICTION_COLORS.text },
+  subtitle: { fontSize: 15, textAlign: "right", color: ARC_ADDICTION_COLORS.muted, marginBottom: 14 },
+  sectionTitle: { fontSize: 17, fontWeight: "700", textAlign: "right", marginTop: 18, marginBottom: 8, color: ARC_ADDICTION_COLORS.text },
+  body: { fontSize: 15, textAlign: "right", color: ARC_ADDICTION_COLORS.text, marginBottom: 8, lineHeight: 22 },
+  muted: { fontSize: 13, textAlign: "right", color: ARC_ADDICTION_COLORS.muted, marginBottom: 6, lineHeight: 19 },
+  primaryLine: { fontSize: 19, fontWeight: "600", textAlign: "center", color: ARC_ADDICTION_COLORS.text, marginVertical: 12, lineHeight: 28 },
+  card: { marginBottom: 14, borderWidth: 1, borderColor: ARC_ADDICTION_COLORS.border, borderRadius: 12, padding: 14, backgroundColor: "#fff" },
+  cardTitle: { fontSize: 17, fontWeight: "700", textAlign: "right", color: ARC_ADDICTION_COLORS.primary, marginBottom: 6 },
+  cardRow: { fontSize: 14, textAlign: "right", color: "#333", marginBottom: 2 },
+  noticeCard: { borderRadius: 12, padding: 12, backgroundColor: "#F6F8FA", marginBottom: 14 },
+  button: { backgroundColor: ARC_ADDICTION_COLORS.primary, paddingVertical: 13, paddingHorizontal: 18, borderRadius: 12, alignItems: "center", marginTop: 10 },
+  buttonText: { color: "#fff", fontWeight: "600", fontSize: 16, textAlign: "center" },
+  secondaryButton: { borderWidth: 1, borderColor: ARC_ADDICTION_COLORS.primary, paddingVertical: 12, paddingHorizontal: 18, borderRadius: 12, alignItems: "center", marginTop: 10 },
+  secondaryButtonText: { color: ARC_ADDICTION_COLORS.primary, fontWeight: "600", fontSize: 15, textAlign: "center" },
+  linkButton: { paddingVertical: 10, alignItems: "center" },
+  linkButtonText: { color: ARC_ADDICTION_COLORS.primary, fontSize: 14, textAlign: "center" },
+  dangerText: { color: ARC_ADDICTION_COLORS.danger },
+  disabled: { opacity: 0.45 },
+  row: { flexDirection: "row-reverse", gap: 10, flexWrap: "wrap", alignItems: "center" },
+  chip: { borderWidth: 1, borderColor: ARC_ADDICTION_COLORS.primary, borderRadius: 18, paddingVertical: 7, paddingHorizontal: 12, marginBottom: 6 },
+  chipSelected: { backgroundColor: ARC_ADDICTION_COLORS.primary },
+  chipText: { color: ARC_ADDICTION_COLORS.primary, fontSize: 14 },
+  chipTextSelected: { color: "#fff" },
+  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 10, padding: 10, fontSize: 15, textAlign: "right", marginBottom: 10 },
+  bigTimer: { fontSize: 56, fontWeight: "700", textAlign: "center", color: ARC_ADDICTION_COLORS.primary, marginVertical: 18, fontVariant: ["tabular-nums"] },
+  footerRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginTop: 16 },
+});

@@ -882,6 +882,15 @@ export default function FlexibleDailyScreen({ date = null, hideHomeOnlyCards = f
           </Pressable>
         )}
 
+        {/* ARC Addiction – מסוגלות, זמן וקבלה: an independent ARC route
+            card, same convention as ARC Learning/Creativity above. */}
+        {isTodayMode && (
+          <Pressable style={styles.arcAddictionCard} onPress={() => router.push("/arc-addiction")}>
+            <Text style={styles.arcAddictionTitle}>🌱 ARC Addiction — מסוגלות, זמן וקבלה</Text>
+            <Text style={styles.arcAddictionSubtitle}>להרחיב בהדרגה את חופש הבחירה מול דחף.</Text>
+          </Pressable>
+        )}
+
         {/* Nine Functional Improvements task, Improvement 2: a clearly
             visible entry card, additive to (never replacing) the
             check-in/Daily Visualization/ARC GYM cards above and
@@ -1125,6 +1134,9 @@ const styles = StyleSheet.create({
   arcCreativityCard: { backgroundColor: "#6A1B9A", borderRadius: 14, padding: 16, marginBottom: 14 },
   arcCreativityTitle: { color: "#fff", fontSize: 16, fontWeight: "700", textAlign: "right" },
   arcCreativitySubtitle: { color: "#EAD9F2", fontSize: 13, textAlign: "right", marginTop: 4 },
+  arcAddictionCard: { backgroundColor: "#2E7D32", borderRadius: 14, padding: 16, marginBottom: 14 },
+  arcAddictionTitle: { color: "#fff", fontSize: 16, fontWeight: "700", textAlign: "right" },
+  arcAddictionSubtitle: { color: "#DCEFD9", fontSize: 13, textAlign: "right", marginTop: 4 },
   overlayToggleButton: { backgroundColor: "#546E7A", borderRadius: 14, padding: 14, marginBottom: 14, alignItems: "center" },
   overlayToggleButtonActive: { backgroundColor: "#37474F" },
   overlayToggleButtonText: { color: "#fff", fontSize: 15, fontWeight: "700" },

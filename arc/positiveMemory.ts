@@ -69,8 +69,33 @@ export interface PositiveMemory {
   successDescription: string | null;
   taskId: string | null;
   linkedGoalIds: string[];
+  /**
+   * ARC Addiction: OPTIONAL origin of a memory created by another
+   * feature (e.g. a success moment saved from an ARC Addiction
+   * profile). Absent on every memory saved before this field existed
+   * and on every memory created elsewhere -- always read defensively
+   * (see resolvePositiveMemorySource), never required.
+   */
+  source?: PositiveMemorySource | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PositiveMemorySource {
+  kind: "arc_addiction";
+  /** The AddictionProfile id the success moment belongs to. */
+  refId: string;
+}
+
+/** Defensive read of the optional `source` field -- anything malformed is treated as "no source". */
+export function resolvePositiveMemorySource(memory: PositiveMemory): PositiveMemorySource | null {
+  const source = memory.source;
+  if (!source || typeof source !== "object" || source.kind !== "arc_addiction" || typeof source.refId !== "string") return null;
+  return { kind: source.kind, refId: source.refId };
+}
+
+export function setPositiveMemorySource(memory: PositiveMemory, source: PositiveMemorySource | null, now: string): PositiveMemory {
+  return { ...memory, source, updatedAt: now };
 }
 
 export function generatePositiveMemoryId(): string {

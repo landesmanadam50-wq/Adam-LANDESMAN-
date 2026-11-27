@@ -127,6 +127,7 @@ import type { PurposeManifest } from "../arc/purposeManifest.ts";
 import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
 import { resolveTaskPurposeContext } from "../arc/taskPurposeContext.ts";
 import TaskPurposeCard from "./components/TaskPurposeCard.tsx";
+import ArcAddictionTaskLiveEntry from "./components/ArcAddictionTaskLiveEntry.tsx";
 
 /**
  * Smart Postponement Flow, requirement 6: the ONE place "did the
@@ -2360,6 +2361,11 @@ export default function ActiveTaskScreen({
                 <Text style={styles.secondaryButtonText}>🙂 סבבה</Text>
               </Pressable>
             </View>
+
+            {/* ARC Addiction: open the route for this task (returns here),
+                or show the running urge-waiting timer -- independent of
+                the task timer, which is never paused by it. */}
+            <ArcAddictionTaskLiveEntry taskId={task.id} />
 
             {/*
               Proactive Support During Task LIVE task: live toggle for

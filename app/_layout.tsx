@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { AppState } from "react-native";
 import { Stack, router } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -10,6 +11,7 @@ import { handleTaskAlarmEvent, registerTaskAlarmForegroundService } from "../dat
 import { syncEmotionalCheckInNotification } from "../data/emotionalCheckInNotification.ts";
 import { syncMorningAlarm } from "../data/morningAlarm.ts";
 import { topUpRemindersIfNeeded } from "../data/arcReminderScheduler.ts";
+import { ARC_ADDICTION_SESSION_ROUTE, consumeArcAddictionPendingOpen, loadCurrentAddictionSession } from "../data/arcAddictionSession.ts";
 import DailyStartupSequenceOverlay from "../live/DailyStartupSequenceOverlay.tsx";
 
 /**
@@ -58,6 +60,15 @@ function handleReminderResponse(response: Notifications.NotificationResponse | n
   routeTappedReminder(data as Record<string, unknown>);
 }
 
+async function syncArcAddictionOnOpen(): Promise<void> {
+  try {
+    const session = await loadCurrentAddictionSession();
+    if ((await consumeArcAddictionPendingOpen()) && session) router.navigate(ARC_ADDICTION_SESSION_ROUTE);
+  } catch (error) {
+    console.warn("[arcAddiction] open sync failed", error);
+  }
+}
+
 export default function RootLayout() {
   useEffect(() => {
     // Cold start: the app was opened BY tapping a reminder notification.
@@ -89,6 +100,19 @@ export default function RootLayout() {
       subscription.remove();
       unsubscribeTaskAlarm();
     };
+  }, []);
+
+  useEffect(() => {
+    // ARC Addiction: on cold start and on every return to the
+    // foreground, reconcile the active session (a wait that ended while
+    // the app was closed advances to the decision; stale sessions
+    // close; notifications/overlay re-derive from the stored state) and
+    // open the session screen once if a notification press asked for it.
+    syncArcAddictionOnOpen();
+    const appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") syncArcAddictionOnOpen();
+    });
+    return () => appStateSubscription.remove();
   }, []);
 
   return (
@@ -239,6 +263,10 @@ export default function RootLayout() {
         <Stack.Screen name="urge-arcs/index" options={{ title: "בניית Urge ARC" }} />
         <Stack.Screen name="urge-arcs/[id]" options={{ title: "עריכת Urge ARC" }} />
         <Stack.Screen name="urge-arcs/live/[id]" options={{ title: "Urge ARC LIVE" }} />
+        <Stack.Screen name="arc-addiction/index" options={{ title: "ARC Addiction" }} />
+        <Stack.Screen name="arc-addiction/profile/[id]" options={{ title: "פרופיל התנהגות" }} />
+        <Stack.Screen name="arc-addiction/session" options={{ title: "ARC Addiction" }} />
+        <Stack.Screen name="arc-addiction/progress/[id]" options={{ title: "התקדמות" }} />
         <Stack.Screen name="thought-arcs/index" options={{ title: "בניית ARC Thought" }} />
         <Stack.Screen name="thought-arcs/[id]" options={{ title: "עריכת ARC Thought" }} />
         <Stack.Screen name="thought-arcs/live/[id]" options={{ title: "ARC Thought LIVE" }} />

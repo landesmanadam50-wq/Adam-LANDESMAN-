@@ -86,6 +86,14 @@ class OverlayService : Service() {
   companion object {
     const val ACTION_SHOW = "show"
     const val ACTION_UPDATE = "update"
+    // ARC Addiction: an INDEPENDENT second line (the urge waiting timer).
+    // It has its own commands and state and never reads or writes any of
+    // the task timer's fields below, so the two timers can never pause,
+    // reset or overwrite each other.
+    const val ACTION_SET_SECONDARY = "setSecondary"
+    const val ACTION_CLEAR_SECONDARY = "clearSecondary"
+    const val EXTRA_SECONDARY_LABEL = "secondaryLabel"
+    const val EXTRA_SECONDARY_ENDS_AT_MS = "secondaryEndsAtMs"
     const val EXTRA_TASK_ID = "taskId"
     const val EXTRA_TITLE = "title"
     const val EXTRA_REMAINING_SECONDS = "remainingSeconds"
@@ -173,6 +181,8 @@ class OverlayService : Service() {
     // new quick-action shortcuts ("➕ משימה"/"💾 ARC Save").
     private const val ADD_TASK_TAP_DEBOUNCE_MS = 1500L
     private const val ARC_SAVING_OPEN_DEBOUNCE_MS = 1500L
+    private const val SECONDARY_TAP_DEBOUNCE_MS = 1500L
+    private const val SECONDARY_BACKGROUND = "#CC2E7D32"
     // Section 7's own "רקע ירוק מלא ואחיד" requirement: the ONE shared
     // solid (fully opaque, never translucent like every other row's own
     // #CC... background) green hex for all four quick-action buttons --
@@ -277,6 +287,16 @@ class OverlayService : Service() {
   // when the service first started.
   private var collapsed: Boolean = true
 
+  // ARC Addiction second line -- see ACTION_SET_SECONDARY.
+  private var secondaryLabel: String? = null
+  private var secondaryEndsAtMs: Long = 0L
+  private var secondaryTextView: TextView? = null
+  private var secondaryTickRunnable: Runnable? = null
+  private var lastSecondaryTapAtMs: Long = 0L
+  // True once a task/idle payload (ACTION_SHOW/UPDATE) arrived -- a
+  // service started ONLY to clear the second line stops itself again.
+  private var primaryActive: Boolean = false
+
   override fun onCreate() {
     super.onCreate()
     collapsed = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(PREF_COLLAPSED, true)
@@ -286,6 +306,12 @@ class OverlayService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     if (intent == null) return START_NOT_STICKY
+
+    if (intent.action == ACTION_SET_SECONDARY || intent.action == ACTION_CLEAR_SECONDARY) {
+      handleSecondaryCommand(intent)
+      return START_NOT_STICKY
+    }
+    primaryActive = true
 
     taskId = intent.getStringExtra(EXTRA_TASK_ID) ?: taskId
     title = intent.getStringExtra(EXTRA_TITLE) ?: title
@@ -323,6 +349,7 @@ class OverlayService : Service() {
 
   override fun onDestroy() {
     stopTicking()
+    stopSecondaryTicking()
     removeOverlayIfAdded()
     super.onDestroy()
   }
@@ -354,6 +381,82 @@ class OverlayService : Service() {
       .putInt(PREF_X, clampedX)
       .putInt(PREF_Y, clampedY)
       .apply()
+  }
+
+  // --- ARC Addiction second line ----------------------------------------
+
+  private fun handleSecondaryCommand(intent: Intent) {
+    // Started via startForegroundService: startForeground must always run.
+    startForeground(NOTIFICATION_ID, buildNotification(formatRemaining(currentRemainingSeconds())))
+    if (intent.action == ACTION_SET_SECONDARY) {
+      secondaryLabel = intent.getStringExtra(EXTRA_SECONDARY_LABEL)
+      secondaryEndsAtMs = intent.getLongExtra(EXTRA_SECONDARY_ENDS_AT_MS, 0L)
+    } else {
+      secondaryLabel = null
+      secondaryEndsAtMs = 0L
+    }
+    stopSecondaryTicking()
+    val canDraw = overlayEnabled && hasOverlayPermission()
+    if (!primaryActive && (secondaryLabel == null || !canDraw)) {
+      // Nothing else is showing: this service was only started for the
+      // second line, which is being cleared or cannot be drawn -- never
+      // leave an empty foreground service running.
+      stopSelf()
+      return
+    }
+    if (secondaryLabel != null && canDraw) ensureOverlayAdded()
+    // Re-renders the (unchanged) primary state too, so a panel created here
+    // shows the correct idle/task rows -- reads the task fields, never writes them.
+    renderNow()
+    renderSecondary()
+    if (secondaryLabel != null && secondaryRemainingSeconds() > 0.0) startSecondaryTicking()
+  }
+
+  private fun secondaryRemainingSeconds(): Double {
+    return ((secondaryEndsAtMs - System.currentTimeMillis()) / 1000.0).coerceAtLeast(0.0)
+  }
+
+  private fun renderSecondary() {
+    val view = secondaryTextView ?: return
+    val label = secondaryLabel
+    if (label == null) {
+      view.visibility = View.GONE
+      return
+    }
+    val remaining = secondaryRemainingSeconds()
+    view.text = if (remaining > 0.0) "🌱 $label  ⏳ " + formatRemaining(remaining) else "🌱 $label  · זמן ההמתנה הסתיים"
+    view.visibility = View.VISIBLE
+  }
+
+  private fun startSecondaryTicking() {
+    val runnable = object : Runnable {
+      override fun run() {
+        renderSecondary()
+        if (secondaryLabel != null && secondaryRemainingSeconds() > 0.0) handler.postDelayed(this, TICK_INTERVAL_MS)
+      }
+    }
+    secondaryTickRunnable = runnable
+    handler.postDelayed(runnable, TICK_INTERVAL_MS)
+  }
+
+  private fun stopSecondaryTicking() {
+    secondaryTickRunnable?.let { handler.removeCallbacks(it) }
+    secondaryTickRunnable = null
+  }
+
+  private fun openArcAddictionSession() {
+    val now = System.currentTimeMillis()
+    if (now - lastSecondaryTapAtMs < SECONDARY_TAP_DEBOUNCE_MS) return
+    lastSecondaryTapAtMs = now
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("archi://arc-addiction/session")).apply {
+      setPackage(packageName)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+      startActivity(intent)
+    } catch (_: Exception) {
+      // No matching activity -- nothing more this side can do.
+    }
   }
 
   private fun hasOverlayPermission(): Boolean {
@@ -937,9 +1040,20 @@ class OverlayService : Service() {
         text = pillSummaryText(currentRemainingSeconds(), taskId.isEmpty())
       }
 
+      // ARC Addiction second line: visible in BOTH collapsed and expanded
+      // modes (it sits outside expandedContent), GONE while inactive.
+      val secondaryView = TextView(this).apply {
+        setTextColor(Color.WHITE)
+        textSize = 12f
+        setPadding(14, 8, 14, 8)
+        setBackgroundColor(Color.parseColor(SECONDARY_BACKGROUND))
+        visibility = View.GONE
+      }
+
       val container = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         addView(pillTextView)
+        addView(secondaryView)
         addView(expandedContent)
       }
       // Exactly one of the two is ever visible -- set BEFORE the
@@ -1003,6 +1117,7 @@ class OverlayService : Service() {
         urgeTextView,
         addTaskTextView,
         arcSavingTextView,
+        secondaryView,
         params
       )
 
@@ -1026,7 +1141,9 @@ class OverlayService : Service() {
       pillView = pillTextView
       expandedContentView = expandedContent
       collapseButtonView = collapseButtonTextView
+      secondaryTextView = secondaryView
       overlayParams = params
+      renderSecondary()
       // Visibility for the mood row's 3rd smile, the current-task row,
       // and the next-task action is set by onStartCommand's own
       // unconditional renderNow() call right after this function
@@ -1041,6 +1158,7 @@ class OverlayService : Service() {
       // the ongoing notification above already started successfully and
       // keeps working completely independently of this.
       overlayContainer = null
+      secondaryTextView = null
       timerTextView = null
       nextActionTextView = null
       completeButtonView = null
@@ -1128,6 +1246,7 @@ class OverlayService : Service() {
     urgeView: View,
     addTaskView: View,
     arcSavingView: View,
+    secondaryView: View,
     params: WindowManager.LayoutParams
   ) {
     var initialX = 0
@@ -1148,6 +1267,7 @@ class OverlayService : Service() {
     var downOnUrge = false
     var downOnAddTask = false
     var downOnArcSaving = false
+    var downOnSecondary = false
 
     view.setOnTouchListener { _, event ->
       val wm = windowManager ?: return@setOnTouchListener false
@@ -1171,6 +1291,7 @@ class OverlayService : Service() {
           downOnUrge = isPointInsideView(view, urgeView, event.x, event.y)
           downOnAddTask = isPointInsideView(view, addTaskView, event.x, event.y)
           downOnArcSaving = isPointInsideView(view, arcSavingView, event.x, event.y)
+          downOnSecondary = isPointInsideView(view, secondaryView, event.x, event.y)
           true
         }
         MotionEvent.ACTION_MOVE -> {
@@ -1199,6 +1320,11 @@ class OverlayService : Service() {
               .putInt(PREF_X, params.x)
               .putInt(PREF_Y, params.y)
               .apply()
+          } else if (downOnSecondary) {
+            // ARC Addiction: checked before the collapsed->expand rule --
+            // the second line is visible while collapsed and opens the
+            // ARC Addiction session.
+            openArcAddictionSession()
           } else if (collapsed) {
             // ARCHI -- Collapsible and Expandable Modes task: "Tapping
             // the pill expands the floating cube" -- while collapsed,
@@ -1601,6 +1727,7 @@ class OverlayService : Service() {
     pillView = null
     expandedContentView = null
     collapseButtonView = null
+    secondaryTextView = null
     overlayParams = null
   }
 }
