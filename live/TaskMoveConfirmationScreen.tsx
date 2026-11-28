@@ -14,6 +14,7 @@ import { loadTaskOccurrenceOverrides, upsertTask, upsertTaskOccurrenceOverrideEn
 import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
 import { recomputeReplanTimeNotification } from "../data/replanTimeNotification.ts";
 import { recomputeTaskMemoryReminderNotification } from "../data/taskMemoryReminderNotification.ts";
+import { recomputeDynamicPlanningNotification } from "../data/dynamicPlanningNotification.ts";
 
 /**
  * live/TaskMoveConfirmationScreen.tsx (route /tasks/[id]/move-confirm)
@@ -97,6 +98,7 @@ export default function TaskMoveConfirmationScreen({ taskId }: { taskId: string 
     await recomputeTaskMemoryReminderNotification(now);
     // The window just filled must stop being offered elsewhere.
     await recomputeFreeTimeWindowNotification(now);
+    await recomputeDynamicPlanningNotification(now);
     router.replace("/");
   }
 

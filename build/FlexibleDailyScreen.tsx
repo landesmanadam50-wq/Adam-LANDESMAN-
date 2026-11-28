@@ -42,6 +42,7 @@ import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotif
 import { recomputeReplanTimeNotification } from "../data/replanTimeNotification.ts";
 import { recomputeTaskMemoryReminderNotification } from "../data/taskMemoryReminderNotification.ts";
 import { recomputeFreeTimeWindowNotification } from "../data/freeTimeWindowNotification.ts";
+import { recomputeDynamicPlanningNotification } from "../data/dynamicPlanningNotification.ts";
 import { isDailyVisualizationCompletedNow } from "../data/dailyVisualization.ts";
 import { isValidCalendarDateString, parseCalendarDate, todayLocalDateString } from "../program/dateUtils.ts";
 import PersistentTaskControls from "../live/PersistentTaskControls.tsx";
@@ -267,6 +268,7 @@ export default function FlexibleDailyScreen({ date = null, hideHomeOnlyCards = f
       void recomputeReplanTimeNotification();
       void recomputeFreeTimeWindowNotification();
       void recomputeTaskMemoryReminderNotification();
+      void recomputeDynamicPlanningNotification();
     }
   }, [dateLocal, weekday, isTodayMode]);
 

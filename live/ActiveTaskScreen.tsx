@@ -108,6 +108,7 @@ import { recomputeTaskTransitionNotification } from "../data/taskTransitionNotif
 import { recomputeTaskNotStartedNotification } from "../data/taskNotStartedNotification.ts";
 import { recomputeReplanTimeNotification } from "../data/replanTimeNotification.ts";
 import { recomputeFreeTimeWindowNotification } from "../data/freeTimeWindowNotification.ts";
+import { recomputeDynamicPlanningNotification } from "../data/dynamicPlanningNotification.ts";
 import { markSupportiveBodySensationUsagesTaskOutcome } from "../data/storage.ts";
 import { resolveBodySensationContextKeys } from "../arc/supportiveBodySensation.ts";
 import { createArcFocusSession, generateArcFocusPracticeId } from "../arc/arcFocusSession.ts";
@@ -128,6 +129,7 @@ import type { ArcGymGoal } from "../arc/arcGymGoal.ts";
 import { resolveTaskPurposeContext } from "../arc/taskPurposeContext.ts";
 import TaskPurposeCard from "./components/TaskPurposeCard.tsx";
 import ArcAddictionTaskLiveEntry from "./components/ArcAddictionTaskLiveEntry.tsx";
+import DynamicPlanningTaskLiveEntry from "./components/DynamicPlanningTaskLiveEntry.tsx";
 
 /**
  * Smart Postponement Flow, requirement 6: the ONE place "did the
@@ -1128,6 +1130,13 @@ export default function ActiveTaskScreen({
     // fresh, never left armed/displayed for a slot that's no longer
     // actually free.
     void recomputeFreeTimeWindowNotification();
+    // ARCHI -- Rolling Dynamic Planning task, sections 1+2+4: starting a
+    // task through ANY path here also means whatever "plan the next gap"
+    // reminder was armed for the PREVIOUS fixed task (the one this task
+    // was the to-do candidate for, or just started as itself) is now
+    // moot -- recomputed fresh against today's updated plan, never left
+    // armed/displayed for a moment that already passed.
+    void recomputeDynamicPlanningNotification();
     // Action-Based Tasks task, section 4: starting a task through ANY
     // path here re-arms the ARC-Memory reminder for whichever
     // today-scheduled task now has the soonest upcoming one -- same
@@ -1729,6 +1738,7 @@ export default function ActiveTaskScreen({
     await recomputeTaskMemoryReminderNotification();
     await recomputeFreeTimeWindowNotification();
     await recomputeReplanTimeNotification();
+    await recomputeDynamicPlanningNotification();
   }
 
   /**
@@ -1766,6 +1776,7 @@ export default function ActiveTaskScreen({
     await recomputeTaskMemoryReminderNotification();
     await recomputeFreeTimeWindowNotification();
     await recomputeReplanTimeNotification();
+    await recomputeDynamicPlanningNotification();
   }
 
   /**
@@ -2366,6 +2377,14 @@ export default function ActiveTaskScreen({
                 or show the running urge-waiting timer -- independent of
                 the task timer, which is never paused by it. */}
             <ArcAddictionTaskLiveEntry taskId={task.id} />
+
+            {/* ARCHI -- Rolling Dynamic Planning task, spec section 2:
+                "at the start of the fixed task, if not yet confirmed via
+                the notification, an edit panel appears" -- a To-Do item
+                has no "gap after it" of its own until it is itself
+                confirmed into a fixed slot, so this is only ever shown
+                for a genuinely fixed (non-To-Do) task. */}
+            {!task.isTodoItem && <DynamicPlanningTaskLiveEntry taskId={task.id} />}
 
             {/*
               Proactive Support During Task LIVE task: live toggle for

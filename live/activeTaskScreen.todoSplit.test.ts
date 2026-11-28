@@ -34,16 +34,22 @@ test("ActiveTaskScreen accepts splitMinutes as an optional prop defaulting to nu
 
 test("required test 12 continued: performStart computes isTodoSplit ONLY when the task is itself a To-Do item AND a splitMinutes value was actually supplied -- never for an ordinary scheduled/one-off task even if splitMinutes were somehow present, and never for a To-Do item started without a split", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  const fnBody = screen.slice(fnIndex, fnIndex + 9100);
+  // Window widened (9100 -> 9700): ARCHI -- Rolling Dynamic Planning
+  // task's own recomputeDynamicPlanningNotification call/comment,
+  // inserted near the top of performStart, pushed every later line
+  // further from fnIndex.
+  const fnBody = screen.slice(fnIndex, fnIndex + 9700);
   assert.ok(fnBody.includes("const isTodoSplit = task.isTodoItem && splitMinutes !== null;"));
 });
 
 test("required test 12 continued: when isTodoSplit, the TaskTimerRun is created for EXACTLY splitMinutes -- never the task's full expectedDurationMinutes -- so the timer only ever runs for the confirmed split chunk", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  // Window widened (8500 -> 9000): the BodySensation task's own
-  // markSupportiveBodySensationUsagesTaskOutcome call/comment, inserted
+  // Window widened (8500 -> 9000 -> 9600): the BodySensation task's own
+  // markSupportiveBodySensationUsagesTaskOutcome call/comment, then
+  // ARCHI -- Rolling Dynamic Planning task's own
+  // recomputeDynamicPlanningNotification call/comment, both inserted
   // near the top of performStart, pushed every later line further from fnIndex.
-  const fnBody = screen.slice(fnIndex, fnIndex + 9800);
+  const fnBody = screen.slice(fnIndex, fnIndex + 10400);
   // ARCHI -- To-Do Bank + Duration/Split Selection task, section 3/4:
   // a pendingSplitSegment (the new "עבודה מחולקת" mode) now outranks
   // isTodoSplit (the "עבודה רציפה" splitMinutes reuse), which still
@@ -60,12 +66,14 @@ test("required test 12 continued: when isTodoSplit, the TaskTimerRun is created 
 
 test("required test 8/9 (split session persisted at start): performStart saves a TodoSplitSession for this task/plannedMinutes pair ONLY when isTodoSplit -- an ordinary task start never creates one", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  // Window widened (9100 -> 9600 -> 10400 -> 10700): the BodySensation
-  // task's own markSupportiveBodySensationUsagesTaskOutcome call/comment,
-  // then ARCHI -- Replan Time task's own recomputeReplanTimeNotification
-  // call/comment, both inserted near the top of performStart, pushed
+  // Window widened (9100 -> 9600 -> 10400 -> 10700 -> 11300): the
+  // BodySensation task's own markSupportiveBodySensationUsagesTaskOutcome
+  // call/comment, then ARCHI -- Replan Time task's own
+  // recomputeReplanTimeNotification call/comment, then ARCHI -- Rolling
+  // Dynamic Planning task's own recomputeDynamicPlanningNotification
+  // call/comment, all inserted near the top of performStart, pushed
   // every later line further from fnIndex.
-  const fnBody = screen.slice(fnIndex, fnIndex + 10700);
+  const fnBody = screen.slice(fnIndex, fnIndex + 11300);
   assert.ok(fnBody.includes("if (isTodoSplit) await saveTodoSplitSession(createTodoSplitSession(task.id, splitMinutes));"));
   assert.match(screen, /import\s*\{[^}]*createTodoSplitSession[^}]*\}\s*from\s*["']\.\.\/arc\/todoSplitSession\.ts["']/);
   assert.match(screen, /import\s*\{[^}]*saveTodoSplitSession[^}]*\}\s*from\s*["']\.\.\/data\/storage\.ts["']/);
@@ -116,10 +124,12 @@ test("recordTodoSplitProgress itself is imported from the pure arc/tasks.ts modu
 
 test("Build/To-Do Action-Type Integration task, requirement 5: performStart's linkedAction branch (arc/taskLinkedAction.ts) is checked unconditionally, with no isTodoItem gate -- a To-Do item that was configured with a linkedAction opens the SAME internal action a fixed/weekly task would, through the exact same openLinkedAction() helper", () => {
   const fnIndex = screen.indexOf("async function performStart()");
-  // Window widened (13000 -> 13300): ARCHI -- Replan Time task's own
-  // recomputeReplanTimeNotification call/comment, inserted near the top
-  // of performStart, pushed every later line further from fnIndex.
-  const fnBody = screen.slice(fnIndex, fnIndex + 13300);
+  // Window widened (13000 -> 13300 -> 13900): ARCHI -- Replan Time task's
+  // own recomputeReplanTimeNotification call/comment, then ARCHI --
+  // Rolling Dynamic Planning task's own recomputeDynamicPlanningNotification
+  // call/comment, both inserted near the top of performStart, pushed
+  // every later line further from fnIndex.
+  const fnBody = screen.slice(fnIndex, fnIndex + 13900);
   assert.ok(fnBody.includes('if (task.linkedAction && task.linkedAction.kind !== "none") {'));
   assert.ok(!fnBody.includes('task.isTodoItem && task.linkedAction'), "linkedAction routing must never be gated by isTodoItem -- it applies identically to every task");
   assert.ok(fnBody.includes("await openLinkedAction(task, task.linkedAction);"));

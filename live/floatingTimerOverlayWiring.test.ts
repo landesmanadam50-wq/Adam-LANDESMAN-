@@ -40,7 +40,10 @@ test("requirements 1+6: performStart (reached via handleStart's required-before-
   // ARCHI -- Replan Time task: widened again (11000 -> 11300) for the
   // new recomputeReplanTimeNotification call/comment near the top of
   // performStart.
-  const fnBody = screen.slice(fnIndex, fnIndex + 11300);
+  // ARCHI -- Rolling Dynamic Planning task: widened again (11300 ->
+  // 11900) for the new recomputeDynamicPlanningNotification call/comment
+  // near the top of performStart.
+  const fnBody = screen.slice(fnIndex, fnIndex + 11900);
   assert.ok(fnBody.includes("await showFloatingTimerOverlay(runWithNotification, task, freshStageProgress, nextScheduledTaskForOverlay);"));
 });
 

@@ -426,6 +426,11 @@ export default function RootLayout() {
             reached by tapping the task-not-started notification's own
             body when it offered a move suggestion. */}
         <Stack.Screen name="tasks/[id]/move-confirm" options={{ title: "העברת המשימה" }} />
+        {/* ARCHI -- Rolling Dynamic Planning task, spec sections 1+2+4: the
+            planning/confirmation screen for a fixed task's own upcoming gap
+            -- reached from the dynamic-planning notification's own "edit"
+            action/body-tap, or from the start-of-task banner on Task LIVE. */}
+        <Stack.Screen name="tasks/[id]/plan-next" options={{ title: "תכנון זמן מתגלגל" }} />
         <Stack.Screen name="tasks/[id]/reflect" options={{ title: "רפלקציה קצרה" }} />
         {/* Task Reflection Memory task: review/edit/delete this task's own saved "מה למדתי" history. */}
         <Stack.Screen name="tasks/[id]/reflections" options={{ title: "מה שלמדתי" }} />

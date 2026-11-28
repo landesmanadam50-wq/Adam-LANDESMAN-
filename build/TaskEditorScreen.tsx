@@ -91,6 +91,8 @@ export default function TaskEditorScreen({
   initialScheduledDate = null,
   initialTitle = null,
   initialArcGymGoalId = null,
+  initialIsTodoItem = false,
+  initialTodoPinnedAfterTaskId = null,
 }: {
   id: string;
   occurrenceDate?: string | null;
@@ -100,11 +102,15 @@ export default function TaskEditorScreen({
   initialTitle?: string | null;
   /** ARC Gym + ARC Goal Integration task: links a brand-new task to its ArcGymGoal, the same way an existing task's own arcGymGoalId already survives every save (buildTaskFromDraft spreads `...base` and never overrides this field) -- here `base` for a NEW task is built from this value instead of arc/tasks.ts's own always-null default. Never applies to an EXISTING task and ignored once `id` isn't "new", same rule as the two props above. */
   initialArcGymGoalId?: string | null;
+  /** ARCHI -- Rolling Dynamic Planning task, spec section 1: live/DynamicPlanningConfirmScreen.tsx's own "+ הוסף משימת To-Do" action -- prefills a brand-new task's own isTodoItem toggle, same never-auto-saves rule as every other initial* prop above. */
+  initialIsTodoItem?: boolean;
+  /** Same task/screen as above: prefills a brand-new To-Do's own todoPinnedAfterTaskId, so it weaves straight into the exact gap the trainee opened the planning screen for -- carried through from `base` exactly like initialArcGymGoalId above (buildTaskFromDraft never overrides this field). Ignored once `id` isn't "new". */
+  initialTodoPinnedAfterTaskId?: string | null;
 }) {
   const isNew = id === "new";
   const [existingTask, setExistingTask] = useState<Task | null>(null);
   const [draft, setDraft] = useState<TaskDraft>(() =>
-    isNew ? { ...createEmptyTaskDraft(), ...(initialScheduledDate ? { scheduledDate: initialScheduledDate } : {}), ...(initialTitle ? { title: initialTitle } : {}) } : createEmptyTaskDraft()
+    isNew ? { ...createEmptyTaskDraft(), ...(initialScheduledDate ? { scheduledDate: initialScheduledDate } : {}), ...(initialTitle ? { title: initialTitle } : {}), ...(initialIsTodoItem ? { isTodoItem: true, scheduledTime: "" } : {}) } : createEmptyTaskDraft()
   );
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [arcGoals, setArcGoals] = useState<ArcGoal[]>([]);
@@ -271,7 +277,10 @@ export default function TaskEditorScreen({
     const validationErrors = validateTaskDraft(draft);
     setErrors(validationErrors);
     if (validationErrors.length > 0) return;
-    const base = existingTask ?? { ...emptyTaskBase(generateTaskId(), new Date().toISOString()), arcGymGoalId: initialArcGymGoalId };
+    const base = existingTask ?? {
+      ...{ ...emptyTaskBase(generateTaskId(), new Date().toISOString()), arcGymGoalId: initialArcGymGoalId },
+      ...(initialTodoPinnedAfterTaskId ? { todoPinnedAfterTaskId: initialTodoPinnedAfterTaskId } : {}),
+    };
     const saved = buildTaskFromDraft(draft, base, new Date().toISOString());
     // Productivity upgrade task, requirement 2: the schedule the trainee
     // just saved (date/time/recurrence) may have changed what "it's time

@@ -139,7 +139,11 @@ test("build/TaskEditorScreen.tsx recomputes the ARC-Memory reminder on every sav
 
 test("live/ActiveTaskScreen.tsx's performStart re-arms the ARC-Memory reminder on every start, OR displays it immediately for a To-Do task with no scheduledTime (since no '5 minutes before' moment can ever be resolved for it)", () => {
   const fnIndex = activeTaskScreen.indexOf("async function performStart()");
-  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 2000);
+  // Window widened (2000 -> 2600): ARCHI -- Rolling Dynamic Planning
+  // task's own recomputeDynamicPlanningNotification call/comment,
+  // inserted near the top of performStart, pushed this branch further
+  // from the anchor.
+  const fnBody = activeTaskScreen.slice(fnIndex, fnIndex + 2600);
   assert.ok(fnBody.includes('if (task.isTodoItem && !task.scheduledTime && task.linkedArcGymMemoryExerciseIds.length > 0) {'));
   assert.ok(fnBody.includes("void displayTaskMemoryReminderForTask(task.id);"));
   assert.ok(fnBody.includes("void recomputeTaskMemoryReminderNotification();"));

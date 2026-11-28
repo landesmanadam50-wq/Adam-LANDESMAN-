@@ -115,6 +115,7 @@ import { handleTaskTransitionNotificationEvent } from "./taskTransitionNotificat
 import { handleTaskNotStartedNotificationEvent, recomputeTaskNotStartedNotification } from "./taskNotStartedNotification.ts";
 import { handleReplanTimeNotificationEvent, recomputeReplanTimeNotification } from "./replanTimeNotification.ts";
 import { handleFreeTimeWindowNotificationEvent, recomputeFreeTimeWindowNotification } from "./freeTimeWindowNotification.ts";
+import { handleDynamicPlanningAlarmFired, handleDynamicPlanningNotificationEvent } from "./dynamicPlanningNotification.ts";
 import { handleProactiveSupportNotificationEvent } from "./proactiveSupportNotification.ts";
 import { handleTaskMemoryReminderAlarmFired, handleTaskMemoryReminderNotificationEvent } from "./taskMemoryReminderNotification.ts";
 import { handleMorningAlarmAction, turnOffMorningAlarm } from "./morningAlarm.ts";
@@ -347,6 +348,17 @@ export function registerTaskAlarmForegroundService(): void {
         // exact fire moment, never duplicated here.
         const isFreeTimeWindowArm = notification.data?.kind === "freeTimeWindowArm";
 
+        // ARCHI -- Rolling Dynamic Planning task, sections 1+2+4: the
+        // rolling dynamic-planning reminder's own silent arm placeholder --
+        // exactly the isTaskNotStartedArm pattern above. The real decision
+        // (does the fixed task about to start still have an upcoming gap
+        // that needs planning/confirming) is entirely
+        // data/dynamicPlanningNotification.ts's own
+        // recomputeDynamicPlanningNotification, re-derived fresh at this
+        // exact fire moment via handleDynamicPlanningAlarmFired, never
+        // duplicated here.
+        const isDynamicPlanningArm = notification.data?.kind === "dynamicPlanningArm";
+
         const stop = () => {
           if (notificationId) pendingForegroundServiceStops.delete(notificationId);
           resolve();
@@ -402,6 +414,14 @@ export function registerTaskAlarmForegroundService(): void {
 
         if (isFreeTimeWindowArm) {
           recomputeFreeTimeWindowNotification(new Date()).then(async () => {
+            if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});
+            stop();
+          });
+          return;
+        }
+
+        if (isDynamicPlanningArm) {
+          handleDynamicPlanningAlarmFired(new Date()).then(async () => {
             if (notificationId) await notifee.cancelNotification(notificationId).catch(() => {});
             stop();
           });
@@ -1653,6 +1673,16 @@ export async function handleTaskAlarmEvent(event: Event): Promise<void> {
   // onBackgroundEvent/onForegroundEvent registration.
   if (data.kind === "freeTimeWindow") {
     await handleFreeTimeWindowNotificationEvent(event);
+    return;
+  }
+
+  // ARCHI -- Rolling Dynamic Planning task, sections 1+2+4: the dynamic-
+  // planning notification's own two actions (edit/skip) and body-tap --
+  // routes through the shared handleDynamicPlanningNotificationEvent
+  // (data/dynamicPlanningNotification.ts), never a second
+  // onBackgroundEvent/onForegroundEvent registration.
+  if (data.kind === "dynamicPlanning") {
+    await handleDynamicPlanningNotificationEvent(event);
     return;
   }
 
